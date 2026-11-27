@@ -306,7 +306,12 @@ protected is how to avoid losing that.
   because that is the identity the certificate asserts.
 * **`amr` is `["swk"]`** — RFC 8176's software key — and `acr` is `"1"`. One
   factor, and a factor whose private key sits in a file: claiming `hwk` would
-  say a hardware key was used and this service cannot know that.
+  say a hardware key was used and this service cannot know that. **Unless
+  it can (#1955 P1)**: where an active hardware token's attestation evidence
+  covers the certificate, `certificateAmrOf()` answers `["hwk"]`, and
+  `["hwk","sc"]` where the evidence says the key is on a smart card. The
+  sign-in screen's certificate door takes the same answer from
+  `screenCertificateHolder()`. Never inferred: `common/hardware_tokens.ts`.
 * **One session per browser at most.** `startCertificateSessionIn()` reads an
   existing session rather than replacing it, so a second call to
   `/tls/sign-in` from a browser that already holds one starts nothing — which
@@ -414,6 +419,38 @@ through `checkSocket()`, which also refuses a realm mismatch — they have an
 ambient realm. `/tls/sign-in` has one too, being a route like any other, and
 still does not use it: the session goes in the realm of the authority that
 signed the leaf, because that is the realm the certificate names.
+
+## AND THE ISSUERS BENEATH THE ROOT ARE NAMED TOO (#2292, 2026-11-27)
+
+**A YubiKey's piv-auth leaf, from a realm's EST Issuing CA, signed nobody in
+from Firefox.** The card holds the leaf alone; node builds the
+CertificateRequest's `certificate_authorities` from the subjects in `ca`,
+which held the Root alone; and Firefox (NSS's
+`FilterPotentialClientCertificatesByCANames`, its log: *no client
+certificates available after filtering by CA*) dropped the certificate and
+sent none. The listener could not have verified a leaf sent alone either.
+
+* **`issuedClientCertificateAnchor()` is the Root plus
+  `tls_client_certificates.issuerPems()`**: every built realm's Intermediate
+  and its `CLIENT_ISSUER_USE_CASES` Issuing CAs (`tls-client`, `est`, `acme`,
+  `scep`, `spiffe`), read per call, behind the same switch as the Root. A
+  client matches the leaf's ISSUER against the names, so it needs no path.
+* **IT TRUSTS NOTHING MORE.** OpenSSL ends a path only at a SELF-SIGNED
+  trusted certificate unless `X509_V_FLAG_PARTIAL_CHAIN` is set, and node
+  never sets it, so an Intermediate in `ca` is an issuer OpenSSL may use,
+  never an anchor: a leaf still verifies only through the Root.
+  `tests/client_ca_names.js` C holds an outside leaf refused.
+* **A BRANCH BUILT LATER REACHES THE LISTENERS.** `common/keystore.js`'s held
+  hierarchies are an `ObservedPkiMap` whose `set`/`delete` call
+  `onPkiChange()` observers (`STS-KEYS-0218` for one that throws), so a
+  branch built, adopted from another process or node, or dropped is seen
+  whichever of the ten write sites made it. This module coalesces a turn's
+  notifications (`setImmediate`, a debounce) and calls `applyAnchors()` only
+  when `issuedAnchorsSignature()` differs from what `applyAnchors()` last
+  applied.
+* **The cost is the request's size**: about seventy bytes per name, six names
+  per realm. A deployment with hundreds of realms sends a CertificateRequest
+  of tens of kilobytes; no client in reach has refused one.
 
 ## A PRESENTED CERTIFICATE'S REVOCATION IS CONSULTED (2026-09-12)
 
@@ -1244,6 +1281,26 @@ node name gets a key of its own (and is announced as a restart, from the
 service's last announcement); a changed `tls.selfSignedKeyBits` makes a new
 key; a start with no store makes a key per start.
 
+## THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS RUNS (#2220, 2026-11-25)
+
+`pki.start()` and the console's Renew re-issued the listener certificate over
+the same key once less than a third of its validity was left, and nothing
+else did, so a node that ran past that point without a restart presented a
+certificate nobody renewed. **`tls.server-certificate-renew` is a PER-PROCESS
+job** (`tls_server.js`, *THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS
+RUNS*), for this file's rule that a socket is one process's: every node's
+front process holds a leaf over its own listener key, so a cluster job would
+renew one node. It is registered in every process and off in a request
+worker. Its run goes through `request_pool.js`'s `reconcileTheListener({ renew:
+true })`, the one listener pass at a time, so a renewal never races a
+hierarchy reconcile on the socket, and the renewed bundle reaches the workers
+by the IPC path a rebuilt hierarchy already takes. The renewal is
+`pki.certifyRegistered({ repairBranch: false, renewWithinMs })` — the call a
+start makes, with `tls.serverCertificateRenewLeadDays` as a lead on top of the
+third (`pki.heldCertificateCurrent()`'s `renewWithinMs`) — and never builds a
+branch. `tls.serverCertificateRenewal` off is the way back.
+`tests/key_renewal.js` B holds it.
+
 ## WHAT THE SOCKET PRESENTS, ASKED FROM ANY PROCESS (2026-09-26, #248)
 
 The SAML identity provider's metadata publishes the certificate its back
@@ -1362,6 +1419,49 @@ is worse than an operator reading a red row. **A BLOCK OF THE FILE IT REFUSES IS
 LEFT OUT, NOT FATAL** (`STS-TLS-0057`): an expired CA in the file must not stop the
 service, and an anchor left out trusts less rather than more. `common/CLAUDE.md`
 (3dd) argues the mode.
+
+**TWO ANCHORS WITH ONE SUBJECT (#1242).** OpenSSL looks an issuer up by subject
+name, compared canonically, and narrows by the authority key identifier only
+when the certificate being verified carries one; it does not try the next
+same-name anchor when the signature fails. Which one it finds first is NOT
+promised (it follows the order of `ca`, which a restart rebuilds from the
+file, the directory and the Root in an order the store need not keep), so
+nothing here says "earlier" or "later". Two anchors share a subject when their
+canonical names are equal and their subject key identifiers do not tell them
+apart (either has none, or both the same); the add keeps both and warns with
+both fingerprints, the log line carries `STS-TLS-0064` (the warning does not:
+it names the caller's subject, so it is not fixed help text), and EACH row's
+`shadowedBy` names the other (the lowest fingerprint, when several share it).
+The candidates are every anchor a listener verifies against: the rows, each
+listener's own `trustAnchorsFile` and the service Root. The names and key ids
+are read by `common/crypto.js`'s `certificateLookupNames()`, whose name
+reading (`certificateNameRdns()`) `pki.js`'s `rdnsOfName()` asks too; this
+file parses no ASN.1.
+
+**THE HANDSHAKE PROMOTES ONLY A SELF-SIGNED ANCHOR, AND RE-ASKS WHAT OPENSSL
+MAY NOT HAVE REPORTED** (`recogniseInstalledAnchor()`). A refused client certificate is taken as
+verified only when it IS an anchor of that listener by fingerprint, is
+self-signed (names equal, signature verified under its own key), another
+anchor of that listener has its subject with a different fingerprint, OpenSSL's
+error is `DEPTH_ZERO_SELF_SIGNED_CERT`, `CERT_SIGNATURE_FAILURE` or
+`SELF_SIGNED_CERT_IN_CHAIN`, and `crypto.js`'s `presentedAnchorProblem()` finds
+nothing: node reports ONE error of the chain, so the sslclient purpose
+(extendedKeyUsage naming `clientAuth` when present, keyUsage holding
+digitalSignature or keyAgreement when present), the validity and unhandled
+critical extensions are asked again. **`UNABLE_TO_VERIFY_LEAF_SIGNATURE` was in
+that list until the review of #1994 and must not come back**: it is what an
+Intermediate installed alone, or an outside authority's end entity installed
+alone, gets, and promoting it made any such anchor an identity for whoever held
+its key — certificate sign-in, `/xacml/pep/*`, RFC 8705. "Self-signed" is not
+node's `checkIssued(self)`, which refuses a self-signed end entity whose
+keyUsage lacks keyCertSign; `certificateSelfSigned()` says why.
+
+**`peerChainOf()` makes a leaf its own issuer only when it is a self-signed
+anchor.** Any other anchor presented as a leaf walks like any leaf, so the path
+rules, `holdPeer`, revocation and the curve check see its real issuer. A
+certificate a shadowed anchor issued stays refused while both are installed;
+two anchors whose subject key identifiers differ are a rollover: no warning,
+and both verify. `tests/tls_same_subject_anchors.js` holds all of it.
 
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
@@ -1584,7 +1684,7 @@ rcbj asked for:
 
 The settings are drawn, all on Server configuration → Listeners
 (`admin-ui/listeners_admin.ts`), along with the TLS group that moved there
-from this page and, since #472, the Custom listeners group. `docs/v1.1.0/tls.md` has
+from this page and, since #472, the Custom listeners group. `docs/v1.2.0/tls.md` has
 the table.
 
 * **A POLICY PER LISTENER, FROM ONE FUNCTION.** `policyFor(kind, realmId)`
@@ -2060,7 +2160,7 @@ refuses any other realm's path on a realm's listener (STS-TLS-0041), and its
 listener (STS-TLS-0047); `common/request_pool.js` carries the id to a worker
 in a header it strips from the client first. Which application is where, and
 where URLs are built, is `common/CLAUDE.md`'s (*Hosted applications and the
-listeners they are on*); `docs/v1.1.0/listeners.md` is the operator's half.
+listeners they are on*); `docs/v1.2.0/listeners.md` is the operator's half.
 
 ## MONITORING → TLS CONNECTION, AND NO OPEN DOOR (#597, 2026-10-12)
 
@@ -2171,7 +2271,9 @@ functions `GET /tls/sign-in` runs:
   verdict, then those two functions, answering the holder (with
   `recordVerification()`, the #127 identity verification `GET /tls/sign-in`
   records once its session starts) or a refusal with its STS-AUTHN-0463..0466
-  code and an English sentence for the screen.
+  code and a sentence for the screen — a `refusals.authn.certificate*`
+  catalog sentence (#2006), English to every text reader, which the screen
+  draws in its own language (the PIV card-auth refusal is still text).
 * **TWO DIFFERENCES, BOTH FORCED.** The realm is the PENDING SIGN-IN'S, not
   the certificate's — the protocol that sent the person decided it — so
   `tls_client_certificates.checkSocket()` refuses a certificate from another
@@ -2220,9 +2322,157 @@ module's:
   here. The connection page (`/admin/tls-connection`) still calls
   `issuedIdentityOf()` WITHOUT `stored`: it describes what arrived, and
   reports an outside certificate as `issuedHere: false` as before.
+* **AN OUTSIDE PIV OR CAC CARD (#1955 P2, D8)** reaches `storedIdentityOf()`
+  as any outside certificate does, and is answered by its card UUID when no
+  entry stores it (`common/CLAUDE.md` 3ag argues the mapping): this module
+  changes nothing for it, and its refusals are the same `NOT_STORED` /
+  `STORED_TWICE` with the same codes. **A `piv-card-auth` certificate is
+  refused at both sign-in doors** (`cardAuthRefusalOf()`, `STS-PIV-0013`) by
+  `startCertificateSessionIn()` and `screenCertificateHolder()` unless
+  `piv.cardAuthSignIn`: its key needs no PIN.
 * **WHAT HAS NO IN-PROCESS TEST**: a stored outside certificate over a real
   HTTP request to `/tls/sign-in` is held only by the protocol jobs that
   present one (`sts_tls_connection`, `sts_main_port_pooling`,
   `sts_global_logout`), which need a stack; they were not run in #1061's
   session.
 
+## A CERTIFICATE SIGN-IN ON A LISTENER OF ITS OWN, AND A PROXY'S CERTIFICATE (#2012, 2026-11-23)
+
+`common/CLAUDE.md` 3dh has the profiles, the bindings and the revocation
+requirement; what is this directory's:
+
+* **THE HANDOFF, `tls/certificate_handoff.ts` (rcbj: an option, OFF by
+  default, `certSignIn.handoff`).** The screen's certificate offer (#1051)
+  reads the certificate on the SCREEN's connection, so the listener the screen
+  is on must ask every connection for one, and a browser holding a smart card
+  then prompts whoever came to type a password. The handoff moves the ask to
+  one request: the view's `certificate.handoff` links to
+  `/authn/certificate/continue?h=<id>`, the new `certificate-sign-in` hosted
+  application (`common/hosted_applications.js`, prefix `/authn/certificate`,
+  longer than `/authn` and so found first), which an administrator maps to a
+  custom listener whose `clientAuth` asks for a certificate. With
+  `tls.mainPortDisableOptionalClientCertificate` on, the main port then asks
+  nobody.
+* **WHAT IT ASKS IS `screenCertificateHolder()`**, the screen's own door, in
+  the pending sign-in's realm (the link carries the realm prefix): revocation
+  and the realm's requirement, the identity gate, every profile, the
+  card-authentication refusal. Its answer is written on the handoff row, with
+  `verificationFacts` (the #127 facts the screen's `recordVerification()`
+  needs, which a closure cannot carry across processes), and the browser goes
+  back to `/authn/login?authn=<id>` — a Location `step_address.hide()` moves
+  into the fragment in product, as every redirect to the screen is.
+* **BOUND TO THE BROWSER ON BOTH LEGS.** The handoff row names the pending
+  sign-in AND the `sts_session` the view was drawn for. `continue` refuses
+  another session (403, STS-TLS-0075), so a link sent to somebody else cannot
+  attach their certificate to the sender's sign-in; the act takes the answer
+  only for its own pending sign-in and session, once (`resultFor(…, true)`).
+  The cookie must reach the listener, which is why the application is
+  `session: true`: `listener_map.js`'s D3 rule then refuses a mapping onto a
+  host the cookie does not reach. The rows are `tls.certificateHandoffs`, a
+  `realms.map()` kept and expiring like `authn.pending` (five minutes), cell
+  tier with it.
+* **RFC 9440, `common/forwarded_client_certificate.ts`.** From a proxy named by
+  its certificate AND its address, the request's `req.socket` is a view of the
+  real one answering the forwarded certificate, so every door here —
+  `/tls/sign-in`, the screen, RFC 8705, SCIM, XACML — reads it without a line
+  changed, and none can read the PROXY's certificate as a person's. Installed
+  in `common/app.js` above the request pool, so `request_pool.js`'s `peerOf()`
+  hands a worker the forwarded leaf and its built chain.
+* **THE REVOCATION REQUIREMENT** is in `certificateRefusal()`, after the
+  revoked refusal and before the identity gate, as `refusedOnRevocation` with
+  `revocationRequired` — `GET /tls/sign-in` marks STS-TLS-0071, the screen
+  answers its STS-AUTHN-0464.
+* **WHAT HAS NO TEST**: the handoff with a real browser (its certificate
+  chooser and PIN prompt; rcbj tests those with a physical card), and a
+  request through a real TLS-terminating proxy. The handoff over two real
+  listeners is `tests/protocol/sts_cert_handoff.js` (#2081): a realm's own
+  listener on 8099 asking for a certificate, `certificate-sign-in` mapped to
+  it, the screen's link, the 303 back, the act on the main port, and the
+  refusals.
+
+## A SMART CARD OR NOT (#2031, 2026-11-23)
+
+`smartCardOf(cert, gated, amr)` answers `{ smartCard, cardAuth }` from
+evidence only (`common/CLAUDE.md` 3bd, *The smart-card rows*). Both sign-in
+doors ask it: `startCertificateSessionIn()` puts it on the session's
+credential, `screenCertificateHolder()` on its answer (and the handoff row
+carries it), so the authentication policy's `smartCard` or `certificate` row
+is asked for the kind the certificate is. `cardAuthRefusalOf()` is unchanged;
+the rule it asks now reads the policy's `smartCardCardAuth` row.
+  `tests/certificate_binding.js` holds both in process over stubs; no protocol
+  job binds a second listener for it yet.
+
+## LDAPS PRESENTS EVERY CERTIFICATE, AND EVERY LISTENER COUNTS ITS KEY EXCHANGE (#2220, 2026-11-25)
+
+* **636 serves what the main port serves.** The ldapjs fork's constructor
+  refuses anything but a string or a Buffer for `certificate`, so LDAPS is
+  built with the first certificate and its context replaced at once with
+  `clientTruststoreOptions()`'s parallel `key`/`cert` arrays — through
+  `trustClientCertificatesOn()`'s callback (which until #2220 answered the
+  first certificate alone, so `applyAnchors()` put RSA back on every
+  truststore change) and `rekeyLdaps()`. No change to the fork.
+* **`tls/key_exchange.ts` counts the group each handshake negotiated**,
+  per listener (`main`, `ldaps`, `debugger`, `custom:<id>`), installed beside
+  `alert_close.ts` on each. The server side has no `getEphemeralKeyInfo()`
+  (null on a server socket), so the group is read from `getSession()`:
+  OpenSSL's SSL_SESSION DER carries `kex_group` under [19], the IANA code
+  point the ServerHello named. An encoding that is OpenSSL's, read
+  defensively: anything else is `unknown`, never a failure. The counts are
+  the front process's, so `GET /admin-api/tls/key-exchange` is in
+  `request_pool.js`'s NEVER_DISPATCHED, and under `/admin/tls` for
+  `admin_scope.ts` (a realm's token is refused it). `/admin/crypto-metadata`
+  composes it; `connectionView()` adds `connection.keyExchange`.
+  `tests/tls_pq_listeners.js` holds both halves.
+
+## OCSP STAPLING ON EVERY LISTENER (#2254, 2026-11-25)
+
+**Every listener this process holds answers `status_request` with a staple**
+— the main port and every custom listener (`server.js`), LDAPS
+(`ldap/ldap_server.js`) and the debugger (`debugger/debugger_server.ts`),
+each through `tls/ocsp_stapling.ts`'s `install()` beside `key_exchange.ts`'s.
+**A new listener owes that line**, as it owes `onServerCertificateChange()`.
+`tls.ocspStapling` decides (`auto` is `mode.staplesOcsp()`: product). The
+module's header argues it in full; what is easy to get wrong:
+
+* **The staple is the responder's own answer.** `pki_revocation.stapleFor()`
+  builds an OCSP request for the leaves and answers it with `answerOcsp()`,
+  the function `/pki/ocsp/{scope}/{ca}` uses — same signer through
+  `common/crypto.js`, same register and catch-up, same `nextUpdate`. No
+  second reading of "is this revoked" exists to drift.
+* **node names the context's LAST certificate**, not the one OpenSSL then
+  selects for the client (seen with `rsa,ml-dsa-65`, node 22 and 24), so a
+  staple carries one SingleResponse per leaf `presentedCertificatePems()`
+  lists under the same issuer. A staple for the event's certificate alone
+  would be the wrong answer to every client handed the other leaf.
+* **Per process, keyed by (certificate, issuer) fingerprints.** A renewed
+  certificate (#2220's job, a custom listener's `renewDue()`) is a new key and
+  is made at its first handshake; `onServerCertificateChange()` drops the lot;
+  a revocation in this process re-makes at once. Bounded at 64, LRU at the
+  insert.
+* **`tls.ocsp-staple-refresh` is per process** (this file's rule: the socket
+  is one process's), every quarter of `pki.crlLifetimeMinutes`, 30 s – 15
+  min, and RE-MAKES every staple each run rather than only near its
+  `nextUpdate`: it is one signature per distinct leaf set, and it is what
+  carries a revocation made in a worker or on another node to the staple.
+* **Never an error to node's callback** — node fails the handshake on one.
+  A making slower than three seconds (one `setTimeout`, not a chain) lets the
+  handshake go unstapled; a failure keeps a still-current staple, is logged
+  when it starts (`STS-TLS-0079`) and when it ends, and is retried by a
+  handshake at most once a minute. A staple saying `revoked` is logged once
+  (`STS-TLS-0080`).
+* **An outside authority's certificate is not stapled, by choice**: no AIA
+  fetch on the front process's listener path, and a supplied certificate is
+  left alone (*A SUPPLIED CERTIFICATE IS LEFT ALONE*, above). No TLS Feature
+  (must-staple) extension is issued either.
+
+`tests/tls_ocsp_stapling.js` holds it as handshakes verified by
+`openssl ocsp`: each listener kind, TLS 1.2 and 1.3, the ML-DSA leaf's
+answer, revoked after a refresh, the setting off, the job, and a responder
+that throws or never answers. **tlsfuzzer's `test-ocsp-stapling` follows the
+setting (#2265)**: `sts_tlsfuzzer` works out from `tls.ocspStapling`,
+`global.mode`, `tls.certificateFile` and whether the certificate is
+self-signed (no issuer, so never stapled) whether the main port and LDAPS
+staple (`tests/protocol/tlsfuzzer_kit.js` `staplesOcsp()`, held to
+`OcspStapling.enabled()` by `tests/tlsfuzzer_plan.js`), and passes
+`--no-status` only where they do not — so a change to what `auto` means
+owes the same change there.

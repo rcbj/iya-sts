@@ -8,8 +8,14 @@
   "resource": "資源",
   "application": "應用程式",
   "requester": "請求方",
+  "entitlement": "申請的存取",
+  "actor": "代理方",
   "waits": "等待至 {when}。",
   "approve": "核准",
   "deny": "拒絕",
-  "done": "{status, select, approved {存取請求已核准。應用程式現在可以再次詢問。} denied {存取請求已拒絕。} other {存取請求狀態為 {status}。}}"
+  "done": "{status, select, approved {存取請求已核准。應用程式現在可以再次詢問。} denied {存取請求已拒絕。} other {存取請求狀態為 {status}。}}",
+  "yours": "您給出且仍然有效的核准。撤銷其中一項意味著之後攜帶它的評估不會被核准。",
+  "until": "此核准持續到 {when}。",
+  "revoke": "撤銷",
+  "revoked": "該核准已撤銷。之後攜帶它的評估不會被核准。"
 }

@@ -88,9 +88,24 @@ const APPLICATIONS = [
     // sends the browser on to the protocol's own endpoint, so it is the
     // sign-in service's. The links to it are built for this application
     // (`LaunchLinks.launchUrl()`), wherever the page drawing them is.
+    // `/wsapi/2.0/verify` is YK-VAL's (#1955 P5, `authn/ykval.ts`): it
+    // checks a YubiKey OTP, one of the second factors this service signs
+    // people in with, against the same inventory and counter.
     prefixes: ['/authn', '/authn-api', '/logout', '/launch',
-               '/.well-known/hoba'],
+               '/.well-known/hoba', '/wsapi'],
     exact: ['/tls/sign-in'] },
+  // THE CERTIFICATE SIGN-IN HANDOFF (#2012, `tls/certificate_handoff.ts`):
+  // the one path a listener that asks for a client certificate needs to
+  // answer, so an administrator maps it to such a listener and leaves the
+  // screen where it is. A longer prefix than `/authn`, so found first.
+  // `session` because both legs carry the sign-on session's cookie, which is
+  // how the certificate is bound to the browser that started it — so the
+  // cookie rule (`listener_map.js`, D3) holds the listener it is mapped to.
+  { id: 'certificate-sign-in', label: 'Certificate sign-in',
+    session: true,
+    what: 'The listener a certificate sign-in is handed to: the one ' +
+          'request that asks for a smart card or certificate.',
+    prefixes: ['/authn/certificate'], exact: [] },
   // `/account-api` IS THE PORTAL'S (#568): the portal is a static
   // application that draws every page from it, so the two are one
   // application on one listener and the portal never has to be told where
@@ -194,10 +209,14 @@ const APPLICATIONS = [
     prefixes: ['/.well-known/est'], exact: [] },
   { id: 'scep', label: 'SCEP', what: 'Certificate enrollment by SCEP.',
     prefixes: ['/enroll/scep'], exact: [] },
+  // The Web Key Directory (#1955 P6, `common/openpgp_keys.ts`) publishes
+  // the OpenPGP keys people registered here: public keys, beside the
+  // certificates this application already publishes.
   { id: 'pki', label: 'Certificate authority',
-    what: 'CRLs, OCSP, the CA certificates and chains, and the ' +
-          'cryptographic metadata documents.',
-    prefixes: ['/pki', '/crypto'], exact: [] },
+    what: 'CRLs, OCSP, the CA certificates and chains, the ' +
+          'cryptographic metadata documents and the Web Key Directory\'s ' +
+          'OpenPGP keys.',
+    prefixes: ['/pki', '/crypto', '/.well-known/openpgpkey'], exact: [] },
   // MS-KKDCP alone since #595: `/krb5/principals` was deleted and
   // `/krb5/service`, `/spnego` and `/spnego/protected` are the development
   // companion's.

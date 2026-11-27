@@ -9,8 +9,10 @@
 // THE BROWSER TRANSLATES (#570, rcbj's decision 3, 2026-10-12).
 //
 // A static public surface draws its words in the reader's language with no
-// help from the API it draws from: the APIs stay language-free, and errors
-// stay English (#539's decision 6). This is how a runtime gets there:
+// help from the API it draws from: the APIs stay language-free. A refusal's
+// sentence is drawn in the page's language too since #2006, from the
+// `messages` an answer carries beside its English `errors`
+// (`common/sentence.ts`). This is how a runtime gets there:
 //
 //   1. THE INDEX: `GET /web/locales/catalogs.json?v=<build>` — which
 //      catalogs exist and which locales the chooser offers, the same
@@ -106,6 +108,17 @@ class WebI18n {
     // the footer its shell drew, so every surface loads them.
     if (this.namespaces.indexOf('footer') < 0) {
       this.namespaces.push('footer');
+    }
+    // A refusal's words (#2006, `common/sentence.ts`): any surface's API
+    // may refuse with a sentence a shared library wrote, so every surface
+    // loads them.
+    if (this.namespaces.indexOf('refusals') < 0) {
+      this.namespaces.push('refusals');
+    }
+    // WHAT A BROWSER LACKS (#2220): any surface may have to say it cannot
+    // sign in here, use a passkey or copy, so every surface loads them.
+    if (this.namespaces.indexOf('browser') < 0) {
+      this.namespaces.push('browser');
     }
     this.index = null;
     this.parts = [];

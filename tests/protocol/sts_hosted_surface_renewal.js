@@ -43,6 +43,7 @@ const assert = require("assert");
 const { runStamp, usernameFor } = require("./random_username.js");
 const signin = require("./console_signin.js");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -161,6 +162,17 @@ async function auditRows(apiBase, action, target) {
   });
 }
 
+// The session.start rows naming `who` as their actor.
+async function startsOf(who) {
+  log.debug("Entering startsOf(). who=" + who);
+  const rows = (await auditRows(realmApi, "session.start")).filter(
+      function (row) {
+    return row.actor === who;
+  });
+  log.debug("Leaving startsOf(). " + rows.length);
+  return rows;
+}
+
 // ---------------------------------------------------------------------------
 // SETUP: a realm, a person, short tokens on both clients, and a lead time that
 // renews on every request.
@@ -192,12 +204,19 @@ async function setUp() {
 async function ensurePerson(who) {
   log.debug("Entering ensurePerson(). who=" + who);
   const r = await call("POST", realmApi + "/users/create", {
-    username: who, invent: false, credential: "password", password: PASSWORD,
+    username: who, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Renewal " + who, sn: who, givenName: "Renewal",
                   displayName: "Renewal " + who,
                   mail: who + "@renewal.test" } });
   assert.ok(r.status === 200 && r.body.ok,
             "created " + who + ": " + r.raw.slice(0, 300));
+  // Temporary, then the person's own (#2160, `own_password.js`).
+  await ownPassword.ownPassword(base + R, who, PASSWORD,
+    function (one, value) {
+      return call("POST", realmApi + "/users/set-password",
+                  { user: one, password: value });
+    });
   log.debug("Leaving ensurePerson().");
 }
 
@@ -240,6 +259,12 @@ async function thePortalRenewsInPlace() {
   });
   const firstToken = client.token;
   const firstRefresh = client.refreshToken;
+  // THE SESSIONS THIS PERSON STARTED BEFORE THE RENEWAL (#2258). Giving them
+  // their own password (#2160, `own_password.js`) signs them in once at the
+  // screen in product, a sign-on session of its own in a jar nobody keeps,
+  // so the person has two session.start rows before the portal does
+  // anything. What the renewal must not do is add one.
+  const startsBefore = await startsOf(held.who);
   await sleep(1100);
   const renewed = await client.refresh();
   check("the refresh grant answers a new DPoP-bound access token and " +
@@ -258,17 +283,21 @@ async function thePortalRenewsInPlace() {
     assert.strictEqual(me.status, 200, JSON.stringify(me.json));
     assert.strictEqual(me.json.user.username, held.who);
   });
-  const starts = (await auditRows(realmApi, "session.start")).filter(
-      function (row) {
-    return row.actor === held.who;
+  const starts = await startsOf(held.who);
+  const sid = sidOf(held.signOnCookie);
+  const signOn = starts.filter(function (one) {
+    return one.target === sid ||
+           String(one.summary || "").indexOf(sid) >= 0;
   });
-  check("AND NO NEW SESSION: one session.start row for this person — the " +
-        "sign-on session; the portal holds a token and no session of its " +
-        "own (#568)", function () {
-    assert.strictEqual(starts.length, 1,
-                       JSON.stringify(starts.map(function (row) {
+  check("AND NO NEW SESSION: one session.start row names the portal's " +
+        "sign-on session, and the renewal added none for this person — " +
+        "the portal holds a token and no session of its own (#568)",
+        function () {
+    const summaries = JSON.stringify(starts.map(function (row) {
       return row.summary;
-    })));
+    }));
+    assert.strictEqual(signOn.length, 1, sid + " " + summaries);
+    assert.strictEqual(starts.length, startsBefore.length, summaries);
   });
   const row = (await sessionsIn(realmApi)).filter(function (s) {
     return s.sessionId === sidOf(held.signOnCookie);

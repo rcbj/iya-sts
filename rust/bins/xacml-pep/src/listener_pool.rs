@@ -971,9 +971,12 @@ fn kept_path(raw: &str) -> Option<String> {
     Some(path.to_string())
 }
 
-/// Counts one request after it has been answered. 401, 403 and 503 are
-/// refusals; a 404 is a count without one, because a missing page is not
-/// the PEP turning the caller away.
+/// Counts one request after it has been answered. 401 and 403 are
+/// refusals — every PEP failure is a 403 since #2208, so a 503 is no longer
+/// one of the PEP's and is not counted as one (an application's own 503,
+/// passed through, is not the PEP turning anyone away); a 404 is a count
+/// without one, because a missing page is not the PEP turning the caller
+/// away.
 pub async fn observe(
     request: axum::extract::Request,
     next: axum::middleware::Next,
@@ -982,7 +985,7 @@ pub async fn observe(
     let path = request.uri().path().to_string();
     let response = next.run(request).await;
     if let (Some(method), Some(path)) = (method, kept_path(&path)) {
-        let refused = matches!(response.status().as_u16(), 401 | 403 | 503);
+        let refused = matches!(response.status().as_u16(), 401 | 403);
         record_path(&method, &path, refused);
     }
     response

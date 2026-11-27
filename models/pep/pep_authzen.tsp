@@ -6,19 +6,30 @@
 // Written by hand (#1830). THE SOURCE OF THE REMOTE PEP AUTHZEN OPENAPI
 // DOCUMENT (`xacml-pep/openapi/pep-authzen.json`): the AuthZEN edge PDP
 // (#1179) that `rust/bins/xacml-pep/src/authzen.rs` answers on the PEP's API
-// listeners — the access evaluation, the batch, and the metadata. The
-// service's own AuthZEN API is `models/authzen/`, a validation model of the
-// requests it reads; this is the edge's WIRE, and it differs from the
-// service's where the edge does (`xacml-pep/CLAUDE.md`, *THE AUTHZEN EDGE
-// PDP*), each said where it is declared:
+// listeners — the access evaluation, the batch, and the metadata, plus the
+// Search and Access Request paths the edge refuses because the service
+// answers them (#1205). The service's own AuthZEN API is `models/authzen/`,
+// a validation model of the requests it reads; this is the edge's WIRE, and
+// it differs from the service's where the edge does (`xacml-pep/CLAUDE.md`,
+// *THE AUTHZEN EDGE PDP*), each said where it is declared:
 //
-// * no search endpoints and no Access Request profile: those paths are the
-//   PEP's generic 404;
-// * the metadata names only the PDP and the two evaluation endpoints, and is
-//   404 when the PEP cannot name its own origin;
-// * Content-Type is not read, so there is no 415;
-// * `context.application` is the only reserved context member: every other
-//   one is a catalogue property or refused (STS-AUTHZEN-0004);
+// * the three Search POSTs and the Access Request profile's collection,
+//   schema, task and cancel paths are 403 (STS-XPEP-0138, STS-XPEP-0139;
+//   501 before #2208: AuthZEN 1.0 prescribes no status for them),
+//   with the evaluation error object, before admission. A method the
+//   profile does not answer, and HEAD of any of them, stays the generic
+//   404. A token-exchange binding tuple is 403 on the evaluation
+//   endpoints (STS-XPEP-0140, a PEP failure), not a path of its own;
+// * the metadata names the PDP, the two evaluation endpoints, and
+//   `supported_obligations` while the realm's obligations profile is on.
+//   It names no search, access-request, key, capability or signed_metadata
+//   member, and is 404 when the PEP cannot name its own origin;
+// * a POST's Content-Type must be application/json after the caller is
+//   admitted (415 STS-AUTHZEN-0117);
+// * `context.supported_obligations`, `context.approval` and
+//   `context.application` are reserved: every other context member is a
+//   catalogue property or refused (STS-AUTHZEN-0004). Approval is
+//   recognized and not written as a trusted fact;
 // * a forwarded evaluation (an application enforcing fine-grained
 //   authorization, #564 P7) passes the service's `context` through whole, so
 //   `DecisionContext` is open;
@@ -37,7 +48,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP AuthZEN edge PDP",
     `version`:"1",
-    `description`:"AuthZEN Authorization API 1.0's access evaluation, evaluations and metadata, answered by a remote PEP from the policy and attribute catalogue it pulled from its realm, so that a PEP nearby can ask a PDP nearby. A caller is admitted by a client certificate (mutual TLS) on the HTTPS listener it connected to, which must ask for one and verify it (PEP_AUTHZEN_CLIENT_CA or its trust anchors, and its tuning asking), verified against PEP_AUTHZEN_CLIENT_CA and named on the caller list the PEP pulls from the service (GET /xacml/pep/authzen-callers), optionally narrowed by PEP_AUTHZEN_CALLERS. The metadata admits anybody. Every answer is application/json with Cache-Control: no-store; a POST's answer echoes a valid X-Request-ID. Error codes are recorded in the PEP's log and never sent. Paths not listed, the search and access-request endpoints among them, are 404 with the PEP's NotFound body."
+    `description`:"AuthZEN Authorization API 1.0's access evaluation, evaluations and metadata, answered by a remote PEP from the policy and attribute catalogue it pulled from its realm, so that a PEP nearby can ask a PDP nearby. A caller is admitted by a client certificate (mutual TLS) on the HTTPS listener it connected to, which must ask for one and verify it (PEP_AUTHZEN_CLIENT_CA or its trust anchors, and its tuning asking), verified against PEP_AUTHZEN_CLIENT_CA and named on the caller list the PEP pulls from the service (GET /xacml/pep/authzen-callers), optionally narrowed by PEP_AUTHZEN_CALLERS. The metadata admits anybody. The Search APIs and the Access Request profile are 403 without admission: the service holds the directory and the approval store. A switched-off API is 403 too, and the metadata names only the endpoints that answer: AuthZEN 1.0 prescribes no status for an API a PDP does not serve or has switched off (its section 10.1.2 defines 400, 401, 403 and 500), only that an endpoint absent from the metadata is one the PDP is not capable of (section 9.1.1). Every answer is application/json with Cache-Control: no-store; a POST's answer echoes a valid X-Request-ID. EVERY PEP FAILURE IS A 403, never a 5xx: nothing pulled yet, an engine fault, a binding tuple the edge cannot decide, a forward the service did not answer or answered with anything but a decision, 400 or 413. Error codes are recorded in the PEP's log and never sent. Paths not listed are 404 with the PEP's NotFound body."
   },
   `servers`:#[
     #{`url`:"https://localhost:9443",`description`:"The HTTPS listener, PEP_HTTPS_PORT, or an HTTPS listener of purpose api the service defines."}
@@ -46,7 +57,7 @@ using IyaSts.ApiLib;
     `securitySchemes`:#{
       `mutualTLS`:#{
         `type`:"mutualTLS",
-        `description`:"A client certificate verified against PEP_AUTHZEN_CLIENT_CA whose SHA-256 is on a pulled caller's certificates, the caller's endpoints naming this endpoint. Refusals: 401 the listener the request arrived on asks for no certificate it can verify (STS-XPEP-0039; on plain HTTP, the environment's HTTPS listener is asked), none presented or plain HTTP (0035), did not verify (0036), the realm's caller door is not mtls (0052); 403 not on the pulled list (0051), endpoint not admitted (0053), not on PEP_AUTHZEN_CALLERS (0054, or 0037 before the first pull); 503 no list pulled and none configured (0050). No challenge header is sent."
+        `description`:"A client certificate verified against PEP_AUTHZEN_CLIENT_CA whose SHA-256 is on a pulled caller's certificates, the caller's endpoints naming this endpoint. Refusals: 401 the listener the request arrived on asks for no certificate it can verify (STS-XPEP-0039; on plain HTTP, the environment's HTTPS listener is asked), none presented or plain HTTP (0035), did not verify (0036), the realm's caller door is not mtls (0052); 403 not on the pulled list (0051), endpoint not admitted (0053), not on PEP_AUTHZEN_CALLERS (0054, or 0037 before the first pull); 403 no list pulled and none configured (0050, a PEP failure). No challenge header is sent."
       }
     }
   },
@@ -91,8 +102,16 @@ namespace IyaSts.Pep.Authzen {
 @js(#{`$apTrue`:true,`$noProps`:true,`description`:"Members the realm's attribute catalogue declares, a dotted path of at most six segments nested as objects; a value is a scalar of the row's datatype, or for a bag row an array of at most 256. An undeclared member is 400 STS-AUTHZEN-0004, a null 0005, a wrong type or form 0006, a wrong multiplicity 0007, a wrong nesting 0008."})
 @component model `Properties` {}
 
-@js(#{`$apTrue`:true,`description`:"application names the application asked about, one of the caller's; required when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused when not one of them (403 STS-AUTHZEN-0025). Every other member is a catalogue property, as in Properties."})
+@js(#{`$apTrue`:true,`description`:"Unknown members are ignored. id is required when the object is present."})
+@component model `Approval` {
+  @js(#{`minLength`:1,`maxLength`:1024}) `id`: string;
+}
+
+@js(#{`$apTrue`:true,`description`:"application names the application asked about, one of the caller's; required when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused when not one of them (403 STS-AUTHZEN-0025). supported_obligations and approval are reserved and are not catalogue properties: a bad shape is 400 STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084); the answer's context then says reason approval_unverifiable and next_action none. Every other member is a catalogue property, as in Properties."})
 @component model `Context` {
+  @js(#{`maxItems`:32,`description`:"Each item at most 64 characters. Present, including an empty array, is supplied and not mapped."})
+  `supported_obligations`?: string[];
+  `approval`?: `Approval`;
   @js(#{`minLength`:1,`maxLength`:1024}) `application`?: string;
 }
 
@@ -142,18 +161,33 @@ namespace IyaSts.Pep.Authzen {
   `en`: string;
 }
 
-@js(#{`$apTrue`:true,`description`:"Decided here: present only when the realm's authzen.returnReasons is on, holding xacml_decision and reason_admin, and undischargeable_obligations and advice when not empty. Forwarded to the service (an application enforcing fine-grained authorization): the service's context, whole, whatever returnReasons says. On a batch item that failed: error alone."})
+@js(#{`$apTrue`:true,`$noProps`:true,`description`:"The obligation's properties: a registered type's, or xacml_obligation for custom. A value is the assignment's lexical form, a string; an array member is an array even of one."})
+@component model `ObligationProperties` {}
+
+@component model `Obligation` {
+  `id`: string;
+  `type`: string;
+  `properties`: `ObligationProperties`;
+}
+
+@js(#{`$apTrue`:true,`description`:"Decided here: present when the realm's authzen.returnReasons is on, holding xacml_decision and reason_admin, and undischargeable_obligations and advice when not empty; and whenever obligations were handed, whether or not reasons are on. Forwarded to the service (an application enforcing fine-grained authorization): the service's context, whole, whatever returnReasons says. On a batch item that failed: error alone."})
 @component model `DecisionContext` {
   `xacml_decision`?: "Permit" | "Deny" | "NotApplicable" | "Indeterminate";
   `reason_admin`?: `ReasonAdmin`;
   @js(#{`description`:"Obligation ids that made a Permit false (STS-AUTHZEN-0029)."})
   `undischargeable_obligations`?: string[];
   `advice`?: `Advice`[];
+  @js(#{`description`:"Handed when the PEP declared every type and the realm's obligations profile is on. A Permit is then true."})
+  `obligations`?: `Obligation`[];
+  @js(#{`description`:"When the request presented context.approval: approval_unverifiable, since this edge verifies no approval (STS-AUTHZEN-0084), as the service answers an approval it cannot verify."})
+  `reason`?: "approval_unverifiable";
+  @js(#{`description`:"With reason: none, since this edge serves no access-request endpoint."})
+  `next_action`?: "none";
   `error`?: `ErrorDetail`;
 }
 
 @component model `EvaluationResponse` {
-  @js(#{`description`:"True only on a Permit with nothing undischargeable; decided deny-biased. A failed batch item is false with context.error."})
+  @js(#{`description`:"True only on a Permit with nothing undischargeable, or a Permit whose obligations were handed because the caller declared every type; decided deny-biased. A failed batch item is false with context.error, including a token-exchange tuple (403, STS-XPEP-0140)."})
   `decision`: boolean;
   `context`?: `DecisionContext`;
 }
@@ -169,12 +203,14 @@ namespace IyaSts.Pep.Authzen {
   `access_evaluation_endpoint`: string;
   @js(#{`description`:"Only while the realm's authzen.batchEnabled is on."})
   `access_evaluations_endpoint`?: string;
+  @js(#{`description`:"step-up, notification, session_termination, then custom. Only while the realm's authzen.obligationsProfile is on. No signed_metadata, access_request_endpoint, jwks_uri or capabilities member is published."})
+  `supported_obligations`?: string[];
 }
 
 @endpoint("/access/v1/evaluation", "post", #{
   `operationId`:"postEvaluation",
   `summary`:"Access evaluation (AuthZEN 1.0 section 6)",
-  `description`:"Decided here against the pulled root policy, deny-biased, the PIP consulted when subject.type is one of the realm's resolveSubjectTypes; or, for an application that enforces fine-grained authorization, forwarded to the service's POST /access/v1/evaluation with context.application set, and its answer passed through. Content-Type is not read.",
+  `description`:"Decided here against the pulled root policy, deny-biased, the PIP consulted when subject.type is one of the realm's resolveSubjectTypes; or, for an application that enforces fine-grained authorization, forwarded to the service's POST /access/v1/evaluation with context.application set, and its answer passed through. While the realm's authzen.tokenExchange is on, a token-exchange binding tuple (every gate and scope tuple, and a declared detail type beside a token-exchange gate) is 403 (STS-XPEP-0140, a PEP failure) before it is read or forwarded; off, it is an ordinary evaluation. Either way a context member the binding reads, on a tuple that is not the binding's, is 400 STS-AUTHZEN-0101. Content-Type must be application/json after admission (415 STS-AUTHZEN-0117).",
   `security`:#[#{`mutualTLS`:#[]}],
   `parameters`:#[
     #{`name`:"X-Request-ID",`in`:"header",`required`:false,`description`:"Echoed on the answer when it matches the pattern; else neither echoed nor forwarded.",`schema`:#{`type`:"string",`pattern`:"^[\\x21-\\x7e]{1,128}$"}}
@@ -182,16 +218,11 @@ namespace IyaSts.Pep.Authzen {
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"The decision.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"The request's shape or the catalogue refused it (STS-AUTHZEN-0001 to 0008), it names no application among several (0027), or the service answered 400 to a forward (STS-XPEP-0057).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"The request's shape or the catalogue refused it (STS-AUTHZEN-0001 to 0008), a context member the token-exchange binding reads on a tuple that is not the binding's (0101), it names no application among several (0027), or the service answered 400 to a forward (STS-XPEP-0057).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"Admission: see the mutualTLS scheme.",`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"Admission, or an application the caller is not scoped to (STS-AUTHZEN-0025) or no application at all (0026).",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"Admission, or an application the caller is not scoped to (STS-AUTHZEN-0025) or no application at all (0026). Or a PEP failure: nothing pulled yet, the policies and catalogue (STS-XPEP-0043) or the callers (0050); the engine could not evaluate it (STS-AUTHZEN-0028); a token-exchange binding tuple (STS-XPEP-0140); a forward the service did not answer or answered too late (PEP_AUTHZEN_FORWARD_TIMEOUT_MS, 0055), refused this PEP (0056), answered a 5xx or another status (0057) or no decision (0058). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): Turned off here (PEP_AUTHZEN, STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114).",`content`:#{`application/json`:#{`schema`:null}}},
-    `413`:#{`description`:"Larger than PEP_MAX_BODY_BYTES (STS-XPEP-0046), or the service's 413 to a forward (0057).",`content`:#{`application/json`:#{`schema`:null}}},
-    `500`:#{`description`:"The engine could not evaluate it (STS-AUTHZEN-0028), or the service's 500 to a forward (STS-XPEP-0057).",`content`:#{`application/json`:#{`schema`:null}}},
-    `501`:#{`description`:"Turned off here (PEP_AUTHZEN, STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014), or the service's 501 to a forward (STS-XPEP-0057).",`content`:#{`application/json`:#{`schema`:null}}},
-    `502`:#{`description`:"A forward failed: the service unreachable (STS-XPEP-0055), refused this PEP (0056), answered another status (0057) or no decision (0058).",`content`:#{`application/json`:#{`schema`:null}}},
-    `503`:#{`description`:"Nothing pulled yet: the policies and catalogue (STS-XPEP-0043) or the callers (0050); or the service's 503 to a forward (0057).",`content`:#{`application/json`:#{`schema`:null}}},
-    `504`:#{`description`:"A forward timed out (PEP_AUTHZEN_FORWARD_TIMEOUT_MS, STS-XPEP-0055).",`content`:#{`application/json`:#{`schema`:null}}}
+    `413`:#{`description`:"Larger than PEP_MAX_BODY_BYTES (STS-XPEP-0046), or the service's 413 to a forward (0057).",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `postEvaluation`(`requestBody/content/application~1json/schema`: `EvaluationRequest`,
@@ -200,12 +231,7 @@ op `postEvaluation`(`requestBody/content/application~1json/schema`: `EvaluationR
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/404/content/application~1json/schema`: `NotFound`,
-  `responses/413/content/application~1json/schema`: `Error`,
-  `responses/500/content/application~1json/schema`: `Error`,
-  `responses/501/content/application~1json/schema`: `Error`,
-  `responses/502/content/application~1json/schema`: `Error`,
-  `responses/503/content/application~1json/schema`: `Error`,
-  `responses/504/content/application~1json/schema`: `Error`): void;
+  `responses/413/content/application~1json/schema`: `Error`): void;
 
 @endpoint("/access/v1/evaluations", "post", #{
   `operationId`:"postEvaluations",
@@ -220,13 +246,8 @@ op `postEvaluation`(`requestBody/content/application~1json/schema`: `EvaluationR
     `200`:#{`description`:"The decisions; or, with no items, one decision.",`content`:#{`application/json`:#{`schema`:null}}},
     `400`:#{`description`:"Not an object (STS-AUTHZEN-0001), evaluations or options of the wrong type (0003), an unknown semantic (0036), too large (0037), too many items (0038); with no items, the single endpoint's 400s.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"Admission: see the mutualTLS scheme.",`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"Admission; with no items, the single endpoint's 403s.",`content`:#{`application/json`:#{`schema`:null}}},
-    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114).",`content`:#{`application/json`:#{`schema`:null}}},
-    `500`:#{`description`:"With no items only: as the single endpoint.",`content`:#{`application/json`:#{`schema`:null}}},
-    `501`:#{`description`:"Turned off here (STS-XPEP-0044), in the realm (STS-AUTHZEN-0013, 0014), or the batch off (0039).",`content`:#{`application/json`:#{`schema`:null}}},
-    `502`:#{`description`:"With no items only: as the single endpoint.",`content`:#{`application/json`:#{`schema`:null}}},
-    `503`:#{`description`:"Nothing pulled yet (STS-XPEP-0043, 0050).",`content`:#{`application/json`:#{`schema`:null}}},
-    `504`:#{`description`:"With no items only: as the single endpoint.",`content`:#{`application/json`:#{`schema`:null}}}
+    `403`:#{`description`:"Admission, or nothing pulled yet (STS-XPEP-0043, 0050: a PEP failure); with no items, the single endpoint's 403s. Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): Turned off here (STS-XPEP-0044), in the realm (STS-AUTHZEN-0013, 0014), or the batch off (0039).",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114).",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `postEvaluations`(`requestBody/content/application~1json/schema`: `EvaluationsRequest`,
@@ -234,27 +255,130 @@ op `postEvaluations`(`requestBody/content/application~1json/schema`: `Evaluation
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
-  `responses/404/content/application~1json/schema`: `NotFound`,
-  `responses/500/content/application~1json/schema`: `Error`,
-  `responses/501/content/application~1json/schema`: `Error`,
-  `responses/502/content/application~1json/schema`: `Error`,
-  `responses/503/content/application~1json/schema`: `Error`,
-  `responses/504/content/application~1json/schema`: `Error`): void;
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
 
 @endpoint("/.well-known/authzen-configuration", "get", #{
   `operationId`:"getAuthzenConfiguration",
   `summary`:"PDP metadata (AuthZEN 1.0 section 9)",
-  `description`:"No admission. Reads the Host header, or the request's authority when it has none (an HTTP/2 client's :authority), to name the identifier when no identifier is set; no search, obligation, access-request, key or capability member is ever published. HEAD is answered as GET without the body.",
+  `description`:"No admission. Reads the Host header, or the request's authority when it has none (an HTTP/2 client's :authority), to name the identifier when no identifier is set. supported_obligations is published while the realm's obligations profile is on. No search, access-request, key, capability or signed_metadata member is published. HEAD is answered as GET without the body.",
   `responses`:#{
     `200`:#{`description`:"The metadata.",`content`:#{`application/json`:#{`schema`:null}}},
-    `404`:#{`description`:"No identifier: none is set and the request was not HTTPS with a usable Host or authority (STS-XPEP-0045); or the CRL-only listener (0114, NotFound body).",`content`:#{`application/json`:#{`schema`:null}}},
-    `501`:#{`description`:"Turned off here (STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",`content`:#{`application/json`:#{`schema`:null}}},
-    `503`:#{`description`:"The policies and catalogue not yet pulled (STS-XPEP-0043).",`content`:#{`application/json`:#{`schema`:null}}}
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): Turned off here (STS-XPEP-0044) or in the realm (STS-AUTHZEN-0013, 0014).",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"No identifier: none is set and the request was not HTTPS with a usable Host or authority (STS-XPEP-0045); or the CRL-only listener (0114, NotFound body).",`content`:#{`application/json`:#{`schema`:null}}}
   }
 })
 op `getAuthzenConfiguration`(`responses/200/content/application~1json/schema`: `Metadata`,
-  `responses/404/content/application~1json/schema`: `Error` | `NotFound`,
-  `responses/501/content/application~1json/schema`: `Error`,
-  `responses/503/content/application~1json/schema`: `Error`): void;
+  `responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `Error` | `NotFound`): void;
+
+// The Search APIs and the Access Request profile (#1205). No admission, no
+// body read. The 403 is the evaluation error object. HEAD is not an
+// operation: it stays 404. A turned-off edge, and one that has not pulled,
+// answer their own 403 before this one (#2208).
+
+@endpoint("/access/v1/search/subject", "post", #{
+  `operationId`:"postSearchSubject",
+  `summary`:"Search subjects (the service's)",
+  `description`:"403 STS-XPEP-0138. This edge does not hold the directory or the catalogues. Not advertised in the metadata. HEAD is 404.",
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off (STS-XPEP-0044, STS-AUTHZEN-0013, 0014).",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `postSearchSubject`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
+
+@endpoint("/access/v1/search/resource", "post", #{
+  `operationId`:"postSearchResource",
+  `summary`:"Search resources (the service's)",
+  `description`:"403 STS-XPEP-0138, as postSearchSubject.",
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `postSearchResource`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
+
+@endpoint("/access/v1/search/action", "post", #{
+  `operationId`:"postSearchAction",
+  `summary`:"Search actions (the service's)",
+  `description`:"403 STS-XPEP-0138, as postSearchSubject.",
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Search API is the service's (STS-XPEP-0138), or the AuthZEN API is off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `postSearchAction`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
+
+@endpoint("/access/v1/access-requests", "post", #{
+  `operationId`:"postAccessRequest",
+  `summary`:"Submit an access request (the service's)",
+  `description`:"403 STS-XPEP-0139, the evaluation error object, not problem+json. This edge does not hold the approval store. Not advertised. GET of the collection is 404.",
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD, or GET.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `postAccessRequest`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
+
+@endpoint("/access/v1/access-requests/schema", "get", #{
+  `operationId`:"getAccessRequestSchema",
+  `summary`:"The access-request schema (the service's)",
+  `description`:"403 STS-XPEP-0139. POST of this path is 404. HEAD is 404.",
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD, or POST.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `getAccessRequestSchema`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
+
+@endpoint("/access/v1/access-requests/{id}", "get", #{
+  `operationId`:"getAccessRequest",
+  `summary`:"Read an access request (the service's)",
+  `description`:"403 STS-XPEP-0139. POST of this path, without /cancel, is 404. HEAD is 404.",
+  `parameters`:#[
+    #{`name`:"id",`in`:"path",`required`:true,`description`:"The task id. Anything after it but /cancel is 404.",`schema`:#{`type`:"string"}}
+  ],
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD, or POST.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `getAccessRequest`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
+
+@endpoint("/access/v1/access-requests/{id}/cancel", "post", #{
+  `operationId`:"postCancelAccessRequest",
+  `summary`:"Cancel an access request (the service's)",
+  `description`:"403 STS-XPEP-0139. GET of this path is 404.",
+  `parameters`:#[
+    #{`name`:"id",`in`:"path",`required`:true,`schema`:#{`type`:"string"}}
+  ],
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD, or GET.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `postCancelAccessRequest`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
+
+@endpoint("/access/v1/access-requests/{id}/cancel", "delete", #{
+  `operationId`:"deleteCancelAccessRequest",
+  `summary`:"Cancel an access request, DELETE (the service's)",
+  `description`:"403 STS-XPEP-0139, the same path as POST.",
+  `parameters`:#[
+    #{`name`:"id",`in`:"path",`required`:true,`schema`:#{`type`:"string"}}
+  ],
+  `responses`:#{
+    `403`:#{`description`:"A PEP failure: the policies and catalogue not yet pulled (STS-XPEP-0043). Or the API not served or switched off (501 before #2208; AuthZEN 1.0 prescribes no status for it): The Access Request profile is the service's (STS-XPEP-0139), or the AuthZEN API is off.",`content`:#{`application/json`:#{`schema`:null}}},
+    `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114), or HEAD.",`content`:#{`application/json`:#{`schema`:null}}}
+  }
+})
+op `deleteCancelAccessRequest`(`responses/403/content/application~1json/schema`: `Error`,
+  `responses/404/content/application~1json/schema`: `NotFound`): void;
 
 }

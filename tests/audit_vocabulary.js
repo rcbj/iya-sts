@@ -135,6 +135,18 @@ const BUILT = {
   "authzen/authzen_access_request.ts|'authzen.access-request.' + status": {
     via: { call: 'self.finish', arg: 1, prefix: 'authzen.access-request.' } },
   // ---- common
+  // #1955: the register's and the OATH inventory's local recordAudit(),
+  // every caller a literal (or a ternary of literals).
+  'common/hardware_tokens.ts|action': {
+    via: { call: 'this.recordAudit', arg: 0 } },
+  'common/oath_tokens.ts|action': {
+    via: { call: 'this.recordAudit', arg: 0 } },
+  'common/yubiotp_store.ts|action': {
+    via: { call: 'this.recordAudit', arg: 0 } },
+  // #1955 P6: the OpenPGP keys' local recordAudit(), every caller a
+  // literal; register()'s refusal closure calls it as `self.`.
+  'common/openpgp_keys.ts|action': {
+    via: { call: ['this.recordAudit', 'self.recordAudit'], arg: 0 } },
   // recordHttp(): httpActionFor()'s five answers.
   'common/audit.js|action': {
     values: ['api.change', 'api.read', 'admin.change', 'admin.view',
@@ -488,7 +500,9 @@ function literalValues(text) {
  */
 function callsOf(text, masked, name) {
   log.debug("Entering callsOf().");
-  const escaped = name.replace(/[.$()]/g, '\\$&');
+  // Every metacharacter, the backslash included, not just the ones a
+  // callee name usually holds.
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const re = new RegExp('(^|[^\\w$.])' + escaped + '\\(', 'g');
   const out = [];
   let m;

@@ -52,7 +52,13 @@ const SURFACES = pool.SURFACE_POOL;
 // worker whose state could not be brought up does; anything else listens and
 // says ready, after STUB_DELAY_MS when that is set (a slow start, for the
 // start gate). STUB_MODE=slow first says it is slow to start, as a worker
-// past workers.startTimeoutMs does (#820), and then comes up. GET /die makes it exit on its own, as a crash does:
+// past workers.startTimeoutMs does (#820), and then comes up. GET /wedged
+// makes it ask to be replaced, as a worker whose change-log pull waited out
+// its own flush does (#1934); STUB_MODE=stubborn ignores the `stop` that
+// follows, as a worker whose drain waits on that flush would. GET
+// /wedged-flushing asks the same with its flush still out, giving it up two
+// seconds from now, as `persistence.js`'s ask carries it. GET /die
+// makes it exit on its own, as a crash does:
 // `process.exit()` in a thread ends the thread and nothing else. `stop` is
 // what a drain sends.
 const STUB = [
@@ -60,7 +66,9 @@ const STUB = [
   "const http = require('http');",
   "const wt = require('worker_threads');",
   "wt.parentPort.on('message', function (m) {",
-  "  if (m && m.stop) { process.exit(0); }",
+  "  if (m && m.stop && process.env.STUB_MODE !== 'stubborn') {",
+  "    process.exit(0);",
+  "  }",
   "  if (!m || !m.begin) { return; }",
   "  if (process.env.STUB_MODE === 'fail') {",
   "    wt.parentPort.postMessage({ ready: false,",
@@ -73,6 +81,16 @@ const STUB = [
   "  }",
   "  const server = http.createServer(function (req, res) {",
   "    if (req.url === '/die') { process.exit(3); }",
+  "    if (req.url === '/wedged') {",
+  "      wt.parentPort.postMessage({ replaceWorker: {",
+  "        code: 'STS-STORE-0176', reason: 'the stub is wedged' } });",
+  "    }",
+  "    if (req.url === '/wedged-flushing') {",
+  "      const now = Date.now();",
+  "      wt.parentPort.postMessage({ replaceWorker: {",
+  "        code: 'STS-STORE-0177', reason: 'the stub\\'s flush is out',",
+  "        flushing: { since: now - 1000, giveUpAt: now + 2000 } } });",
+  "    }",
   "    res.end(String(wt.threadId));",
   "  });",
   "  const delay = Number(process.env.STUB_DELAY_MS) || 0;",
@@ -315,6 +333,97 @@ async function checkADeadWorkerIsReplaced(t, stubPath) {
             'and the table holds exactly the configured two');
   });
   log.debug("Leaving checkADeadWorkerIsReplaced().");
+}
+
+// ---------------------------------------------------------------------------
+// 2b. A WORKER THAT ASKS TO BE REPLACED IS RETIRED AND REPLACED (#1934).
+// ---------------------------------------------------------------------------
+async function checkAWedgedWorkerIsReplaced(t, stubPath) {
+  log.debug("Entering checkAWedgedWorkerIsReplaced().");
+  t.log.info('=== a worker whose pull is wedged on its own flush is ' +
+             'retired and replaced (#1934) ===');
+  await withStubPool(stubPath, 2, 'ok', async function () {
+    pool.fork(PROTO, 0);
+    pool.fork(PROTO, 1);
+    t.check(await waitFor(function () { return ready(PROTO).length === 2; },
+                          10000), 'two stub workers come up', '');
+    const first = ready(PROTO).filter(function (one) {
+      return one.slot === 0;
+    })[0];
+    await ask(first, '/wedged');
+    t.check(await waitFor(function () {
+      return first.retiring === true;
+    }, 5000), 'a worker that reports its pull wedged is RETIRED at once, ' +
+    'so nothing more is routed to it', '');
+    t.check(await waitFor(function () {
+      const now = ready(PROTO);
+      return now.length === 2 && now.every(function (one) {
+        return one.pid !== first.pid;
+      });
+    }, 10000), 'and once its drain ends it is REPLACED, the pool back to two',
+    JSON.stringify(ready(PROTO).map(function (one) { return one.pid; })));
+    const replacement = ready(PROTO).filter(function (one) {
+      return one.slot === 0;
+    })[0];
+    t.check(!!replacement && replacement.pid !== first.pid,
+            'in its own slot', '');
+    t.equal(first.child.exitCode, 0,
+            'it left through the drain (`stop`), not a kill');
+    t.equal(statsOf(PROTO).replaced, 1, 'stats() counts one replacement');
+    t.equal(pool.workerTable().length, 2,
+            'and the table holds exactly the configured two');
+  });
+  t.log.info('=== a retired worker whose drain never ends is ended ===');
+  await withStubPool(stubPath, 1, 'stubborn', async function () {
+    pool.fork(PROTO, 0);
+    t.check(await waitFor(function () { return ready(PROTO).length === 1; },
+                          10000), 'a stub worker that ignores `stop` comes up',
+    '');
+    const stuck = ready(PROTO)[0];
+    await ask(stuck, '/wedged');
+    // The drain's bound is 8000 ms (stop()'s default), so this waits past
+    // it and no further.
+    t.check(await waitFor(function () {
+      const now = ready(PROTO);
+      return now.length === 1 && now[0].pid !== stuck.pid;
+    }, 14000), 'a retired worker that never finishes its drain is ENDED ' +
+    'past the bound and replaced (STS-WORKER-0056)',
+    JSON.stringify(ready(PROTO).map(function (one) { return one.pid; })));
+  });
+  t.log.info('=== a retired worker whose own flush is out is not ended ' +
+             'before that flush is given up on ===');
+  await withStubPool(stubPath, 1, 'stubborn', async function () {
+    pool.fork(PROTO, 0);
+    t.check(await waitFor(function () { return ready(PROTO).length === 1; },
+                          10000), 'a stub worker that ignores `stop` comes up',
+    '');
+    const flushing = ready(PROTO)[0];
+    const asked = Date.now();
+    await ask(flushing, '/wedged-flushing');
+    t.check(await waitFor(function () {
+      return flushing.retiring === true;
+    }, 5000), 'a worker whose flush is stuck is retired at once', '');
+    // Its flush is given up on 2000 ms after the ask, and the drain's own
+    // 8000 ms run from there: alive past 8000 ms, which ended it before.
+    await sleep(Math.max(0, 9000 - (Date.now() - asked)));
+    t.check(flushing.child.exitCode === null &&
+            flushing.child.signalCode === null &&
+            pool.workerTable().some(function (one) {
+              return one.pid === flushing.pid;
+            }),
+    'A RETIRED WORKER WHOSE OWN FLUSH IS OUT IS NOT ENDED at the drain\'s ' +
+    '8000 ms: a flush that is only slow keeps its writes',
+    'exit ' + flushing.child.exitCode + ' after ' + (Date.now() - asked) +
+    ' ms');
+    t.check(await waitFor(function () {
+      const now = ready(PROTO);
+      return now.length === 1 && now[0].pid !== flushing.pid;
+    }, 8000), 'and once the flush is given up on and the drain\'s bound ' +
+    'has passed after it, it is ended and replaced (STS-WORKER-0057)',
+    'after ' + (Date.now() - asked) + ' ms: ' +
+    JSON.stringify(ready(PROTO).map(function (one) { return one.pid; })));
+  });
+  log.debug("Leaving checkAWedgedWorkerIsReplaced().");
 }
 
 // ---------------------------------------------------------------------------
@@ -643,6 +752,7 @@ async function run(t) {
   fs.writeFileSync(stubPath, STUB);
   try {
     await checkADeadWorkerIsReplaced(t, stubPath);
+    await checkAWedgedWorkerIsReplaced(t, stubPath);
     await checkStoppingReplacesNothing(t, stubPath);
     await checkAFailedStartIsBounded(t, stubPath);
     await checkASlowStartIsKept(t, stubPath);
@@ -666,6 +776,8 @@ module.exports = {
             'pool and slot, not while stopping, not past the configured ' +
             'size, and a worker that cannot start is ended and retried a ' +
             'bounded number of times before a cool-down tries one again ' +
-            '(#333), and that workers are started one at a time (#342)',
+            '(#333), that workers are started one at a time (#342), and ' +
+            'that a worker reporting its pull wedged is retired and ' +
+            'replaced (#1934)',
   run: run
 };

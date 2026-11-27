@@ -40,6 +40,9 @@
 //   7. ACME turned off in the realm: the card goes and the door refuses.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const path = require("path");
@@ -47,6 +50,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const est = require("./est_client.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -220,7 +224,7 @@ async function test() {
   for (const who of [OWNER, OTHER]) {
     const made = await apiPost("/users/create", {
       username: who, invent: false, credential: "password",
-      password: PASSWORD,
+      password: ownPassword.temporaryFor(PASSWORD),
       // The realm's attribute policy (#396) requires givenName, sn and mail
       // of every person in product mode.
       attributes: { cn: "Portal Certificates " + who,
@@ -230,6 +234,13 @@ async function test() {
       assert.strictEqual(made.status, 200,
                          JSON.stringify(made.body).slice(0, 300));
     });
+    // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary
+    // in product, so they choose PASSWORD at the sign-in screen
+    // (`own_password.js`; in development it is simply set).
+    await ownPassword.ownPassword(base, who, PASSWORD,
+      function (one, value) {
+        return apiPost("/users/set-password", { user: one, password: value });
+      });
   }
 
   log.info("=== 1. the page ===");
@@ -275,8 +286,10 @@ async function test() {
                        "the HMAC key is not 32 bytes");
     assert.ok(/no-store/.test(made.headers.get("cache-control") || ""),
               "the page carrying the secret is cacheable");
+    // The address ends where the line's word does, so a longer path at
+    // the same base is not taken for the directory.
     assert.ok(new RegExp("--server " + base.replace(/[.*+?^${}()|[\]\\]/g,
-      "\\$&") + "/enroll/acme/directory").test(made.text),
+      "\\$&") + "/enroll/acme/directory(?:[\\s\"'<&]|$)").test(made.text),
               "no certbot line naming this service's ACME directory");
   });
   const again = await page(owner);

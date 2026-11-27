@@ -50,6 +50,9 @@ const { usernameFor, passwordFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const testCa = require("./outbound_test_ca.js");
 const portalSignin = require("./portal_signin.js");
+const registry = require("./sts_applications.js");
+const dns = require("dns");
+const net = require("net");
 
 // The CA section 6's push listener is certified by, made in section 0, and the
 // path the service reads its certificate at (null: no shared directory).
@@ -109,6 +112,39 @@ const answer = h.answer;
 const finishParams = h.finishParams;
 const readAccess = h.readAccess;
 const ensurePerson = h.ensurePerson;
+
+// Whether every address a host resolves to is loopback, private, link-local
+// or reserved — the compose stacks' `tests` container — which a product
+// realm will not push to (#1614). sts_jar_admin_client.js's check.
+async function isPrivateHost(host) {
+  log.debug("Entering isPrivateHost(). " + host);
+  let found = [];
+  try {
+    found = await dns.promises.lookup(host, { all: true });
+  } catch (e) {
+    log.debug("Caught in isPrivateHost(): " + ((e && e.message) || e));
+    log.debug("Leaving isPrivateHost(). Unresolved.");
+    return false;
+  }
+  const internal = function (address) {
+    if (net.isIPv4(address)) {
+      const o = address.split(".").map(Number);
+      return o[0] === 10 || o[0] === 127 || o[0] === 0 ||
+             (o[0] === 172 && o[1] >= 16 && o[1] <= 31) ||
+             (o[0] === 192 && o[1] === 168) ||
+             (o[0] === 169 && o[1] === 254) ||
+             (o[0] === 100 && o[1] >= 64 && o[1] <= 127);
+    }
+    const a = address.toLowerCase();
+    return a === "::1" || a.indexOf("fc") === 0 || a.indexOf("fd") === 0 ||
+           a.indexOf("fe80") === 0 || a.indexOf("::ffff:") === 0;
+  };
+  const answer = found.length > 0 && found.every(function (one) {
+    return internal(one.address);
+  });
+  log.debug("Leaving isPrivateHost(). " + answer);
+  return answer;
+}
 
 function grantBody(client, extra) {
   log.debug("Entering grantBody().");
@@ -631,6 +667,28 @@ async function test() {
                      { interact: { start: ["redirect"],
                                    finish: { method: "push", uri: pushUri,
                                                                       nonce: "push-nonce-1" } } });
+    // A PRODUCT REALM PUSHES NOTHING TO A PRIVATE ADDRESS (#1614, ASVS 5.0.0
+    // 1.3.6). The push finish URI goes through the federation outbound
+    // policy's address rules, which in product resolve the name once and
+    // refuse a loopback, private, link-local or reserved address — at the
+    // grant request, so the client learns at once (STS-GNAP-0606). The
+    // compose stacks' `tests` container is such an address, so there the
+    // product half asserts that refusal; only a job host with a public
+    // address sees the push delivered — sts_jar_admin_client.js's
+    // arrangement for a request_uri (#1609).
+    if (await registry.isProduct(base) && await isPrivateHost(callbackHost)) {
+      r = await pusher.send("POST", GRANT, { json: body });
+      check("product: a push finish URI at a private address is refused " +
+            "invalid_interaction at the grant request", function () {
+        refused(r, "invalid_interaction", "a private push finish URI");
+        assert.ok(/loopback, private, link-local or reserved/.test(
+          JSON.stringify(r.json)), r.text.slice(0, 400));
+      });
+      check("and nothing reached the push listener", function () {
+        assert.strictEqual(pushed.length, 0, JSON.stringify(pushed));
+      });
+      listener.close();
+    } else {
     r = await pusher.send("POST", GRANT, { json: body });
     check("a push-finish grant request is answered with an interaction",
           function () {
@@ -669,6 +727,7 @@ async function test() {
       assert.ok(r.json.access_token);
     });
     listener.close();
+    }
   }
 
   // =========================================================================

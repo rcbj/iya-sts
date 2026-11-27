@@ -71,5 +71,8 @@
   "jobOn": "på",
   "scheduler": "Schemaläggare",
   "jobOnEnd": ".",
-  "settings": "Inställningar"
+  "settings": "Inställningar",
+  "newSource.button": "Lägg till en källa",
+  "newSource.yes": "ja",
+  "newSource.no": "nej"
 }

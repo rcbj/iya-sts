@@ -70,6 +70,8 @@ import ModelTables = require('../common/model_tables');
 // What a request may name and hold (#1483): a leaf that registers nothing.
 import RequestHeaders = require('../common/request_headers');
 import helpers = require('../common/helpers');
+// A refusal's sentence as a catalog message (#2006).
+import Sentence = require('../common/sentence');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
@@ -116,7 +118,15 @@ const PASSWORD_CHANGE_BODY = ModelZod.body('authn', 'changePassword');
 //   * `credential` — a ceremony's result, bounded and parsed downstream.
 //   * `key` — the passkey a person chose (#534), a credential id.
 //   * `t` — a mailed link's token, as the link carried it.
+//   * `code2` — the next code of an HOTP token (#1996), on `checkCode`
+//     only: the two-code resynchronisation is a sign-in step's, so the
+//     app enrolment and the emailed code each read their own model and
+//     carry `code` alone.
 const CODE_BODY = ModelZod.body('authn', 'checkCode');
+
+const ENROLMENT_CODE_BODY = ModelZod.body('authn', 'confirmAppEnrolment');
+
+const EMAILED_CODE_BODY = ModelZod.body('authn', 'checkEmailedCode');
 
 const BACKUP_CODE_BODY = ModelZod.body('authn', 'spendRecoveryCode');
 
@@ -128,12 +138,20 @@ const CREDENTIAL_BODY = ModelZod.body('authn', 'finishPasskeyStep');
 
 const SEND_BODY = ModelZod.body('authn', 'sendEmailedFactor');
 
+const ROLES_BODY = ModelZod.body('authn', 'chooseRoles');
+
+// The post-login mail-encryption activity's acts (#2009 P2).
+const POST_LOGIN_MAIL_BODY = ModelZod.body('authn', 'answerPostLoginMail');
+
+// The post-login PIV re-issue's acts (#2009 P3).
+const POST_LOGIN_PIV_BODY = ModelZod.body('authn', 'answerPostLoginPiv');
+
 const OPEN_BODY = ModelZod.body('authn', 'spendEmailedLink');
 
 // The pages a step's view is asked for (`?page=`), and the passkey chosen.
 const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
                    'email-code', 'email-link', 'email-link-open',
-                   'post-login'];
+                   'post-login', 'roles'];
 
 const MFA_QUERY = ModelZod.query('authn', 'getStep');
 
@@ -318,7 +336,7 @@ const SCREEN_OPERATIONS = [
   { method: 'POST', path: API + '/mfa/:id/setup/confirm',
     operationId: 'confirmAppEnrolment', access: 'mfa',
     action: 'confirm-totp',
-    handler: 'mfaAct', body: CODE_BODY },
+    handler: 'mfaAct', body: ENROLMENT_CODE_BODY },
   { method: 'POST', path: API + '/mfa/:id/setup/webauthn',
     operationId: 'beginKeyEnrolment', access: 'mfa',
     action: 'webauthn',
@@ -336,6 +354,21 @@ const SCREEN_OPERATIONS = [
     operationId: 'skipPostLoginActivity', access: 'mfa',
     action: 'skip',
     handler: 'mfaAct', body: EMPTY_BODY, refusedCode: 'STS-AUTHN-0474' },
+  // --- the mail-encryption activity (#2009 P2) -----------------------------
+  { method: 'POST', path: API + '/mfa/:id/post-login/mail',
+    operationId: 'answerPostLoginMail', access: 'mfa',
+    action: 'mail',
+    handler: 'mfaAct', body: POST_LOGIN_MAIL_BODY },
+  // --- the PIV re-issue (#2009 P3) ----------------------------------------
+  { method: 'POST', path: API + '/mfa/:id/post-login/piv',
+    operationId: 'answerPostLoginPiv', access: 'mfa',
+    action: 'piv',
+    handler: 'mfaAct', body: POST_LOGIN_PIV_BODY },
+  // --- the role step (#1072) -----------------------------------------------
+  { method: 'POST', path: API + '/mfa/:id/roles',
+    operationId: 'chooseRoles', access: 'mfa',
+    action: 'choose',
+    handler: 'mfaAct', body: ROLES_BODY },
   { method: 'POST', path: API + '/mfa/:id/email/send',
     operationId: 'sendEmailedFactor', access: 'mfa',
     action: 'send',
@@ -343,7 +376,7 @@ const SCREEN_OPERATIONS = [
   { method: 'POST', path: API + '/mfa/:id/email/code',
     operationId: 'checkEmailedCode', access: 'mfa',
     action: 'verify',
-    handler: 'mfaAct', body: CODE_BODY },
+    handler: 'mfaAct', body: EMAILED_CODE_BODY },
   { method: 'POST', path: API + '/mfa/:id/email-link/open',
     operationId: 'spendEmailedLink', access: 'mfa',
     action: 'open',
@@ -523,6 +556,12 @@ interface AuthnApiDeps {
  */
 class AuthnApi {
   /**
+   * The API's own version, for the document's `info.version` where the
+   * build may not be shown (#2142).
+   */
+  static readonly API_VERSION = '1';
+
+  /**
    * Builds the API over its dependencies.
    *
    * @param deps - the modules it uses
@@ -565,12 +604,20 @@ class AuthnApi {
   // it as every API answer. The code was marked on the response by the
   // caller; it is never in the body.
   // error-code: none — the definition of this helper; every call site marks its own code first
-  private refuse(res: Json, status: number, why: string): void {
+  private refuse(res: Json, status: number, why: string | Sentence): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.refuse(). " + status);
-    authn.answerJson(res, status, { ok: false, errors: [why],
-                                    error: 'invalid_request',
-                                    error_description: why });
+    // `messages` beside `errors` where the sentence is a catalog message
+    // (#2006), which the page draws in its own language; the
+    // `error_description` stays English, as a protocol's does.
+    const body: Json = { ok: false, errors: [String(why)],
+                         error: 'invalid_request',
+                         error_description: String(why) };
+    const messages = Sentence.messagesOf([why]);
+    if (messages) {
+      body.messages = messages;
+    }
+    authn.answerJson(res, status, body);
     log.debug("Leaving AuthnApi.refuse().");
   }
 
@@ -606,8 +653,7 @@ class AuthnApi {
     const type = String((req.headers && req.headers['content-type']) || '');
     if (!/^application\/json\s*(;|$)/i.test(type)) {
       errorCodes.mark(res, 'STS-AUTHN-0325');
-      this.refuse(res, 415, 'This operation takes a JSON body ' +
-        '(Content-Type: application/json).');
+      this.refuse(res, 415, Sentence.say('refusals.authn.apiJsonOnly'));
       log.debug("Leaving AuthnApi.bound(). Not JSON.");
       return false;
     }
@@ -621,9 +667,8 @@ class AuthnApi {
     }
     if (!origin || own.indexOf(origin) < 0) {
       errorCodes.mark(res, 'STS-AUTHN-0326');
-      this.refuse(res, 403, 'This operation is sent by a page of this ' +
-        'service: the request carried ' + (origin ? 'another origin'
-                                                  : 'no Origin') + '.');
+      this.refuse(res, 403, Sentence.say('refusals.authn.apiOrigin',
+        { origin: origin ? 'other' : 'none' }));
       log.debug("Leaving AuthnApi.bound(). Not this origin.");
       return false;
     }
@@ -636,9 +681,7 @@ class AuthnApi {
     // with the status every operation already declares for this refusal.
     if (!expected && authn.realmAtSessionCap()) {
       errorCodes.mark(res, 'STS-AUTHN-0337');
-      this.refuse(res, 403, 'This realm is holding as many sign-in ' +
-        'sessions as it allows, so no new one can start in this browser ' +
-        'now. Try again later.');
+      this.refuse(res, 403, Sentence.say('refusals.authn.apiSessionCap'));
       log.debug("Leaving AuthnApi.bound(). The realm is at its session cap.");
       return false;
     }
@@ -646,10 +689,8 @@ class AuthnApi {
         !stsCrypto.constantTimeEquals(presented, expected)) {
       errorCodes.mark(res, 'STS-AUTHN-0327');
       this.refuse(res, 403, expected
-        ? 'The ' + CSRF_HEADER + ' header is missing or is not this ' +
-          'browser\'s. Load the sign-in page again.'
-        : 'This browser holds no session for this sign-in. Load the ' +
-          'sign-in page again.');
+        ? Sentence.say('refusals.authn.apiCsrf', { header: CSRF_HEADER })
+        : Sentence.say('refusals.authn.apiNoSession'));
       log.debug("Leaving AuthnApi.bound(). The token.");
       return false;
     }
@@ -665,7 +706,8 @@ class AuthnApi {
                                          ID_PARAMS);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0001');
-      this.refuse(res, 400, 'That is not the id of a sign-in.');
+      this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiNotSignInId'));
       log.debug("Leaving AuthnApi.idOf(). Not an id.");
       return null;
     }
@@ -686,9 +728,7 @@ class AuthnApi {
     const record = authn.pendingFor(id);
     if (!record) {
       errorCodes.mark(res, 'STS-AUTHN-0003');
-      this.refuse(res, 400, 'There is no sign-in waiting under that id, or ' +
-        'it has expired. Start the request again from the application that ' +
-        'sent you here.');
+      this.refuse(res, 400, Sentence.say('refusals.authn.apiNoSignIn'));
       log.debug("Leaving AuthnApi.pendingOf(). Nothing pending.");
       return null;
     }
@@ -707,7 +747,8 @@ class AuthnApi {
       errorCodes.mark(res, op.refusedCode || (op.access === 'step'
         ? 'STS-AUTHN-0145'
         : (op.access === 'mfa' ? 'STS-AUTHN-0330' : 'STS-AUTHN-0002')));
-      this.refuse(res, 400, String(posted.detail || 'The body is refused.'));
+      this.refuse(res, 400, posted.detail ||
+        Sentence.say('refusals.authn.apiBodyRefused'));
       log.debug("Leaving AuthnApi.bodyOf(). Refused.");
       return null;
     }
@@ -758,9 +799,13 @@ class AuthnApi {
   openApi(req: AuthnRequest<'openApi'>, res: AuthnAnswering<'openApi'>): void {
     const { log, authn, helpers } = this.deps;
     log.debug("Entering AuthnApi.openApi().");
+    // OpenAPI requires `info.version`; where the build may not be shown
+    // (#2142) it is this API's own, as the reports API's document says.
+    const shown = require('../common/mode').publishesBuildDetail();
     authn.answerJson(res, 200, AuthnApi.document({
       baseUrl: helpers.baseUrlOf(req),
-      version: String(version.load().version || '') }));
+      version: shown ? String(version.load().version || '') :
+        AuthnApi.API_VERSION }));
     log.debug("Leaving AuthnApi.openApi().");
   }
 
@@ -855,6 +900,8 @@ class AuthnApi {
       use_webauthn: AuthnApi.flagOf(body.use_webauthn),
       webauthn_only: AuthnApi.flagOf(body.webauthn_only),
       remember_browser: AuthnApi.flagOf(body.remember_browser),
+      // "Choose roles for this sign-in" (#1072), beside it.
+      choose_roles: AuthnApi.flagOf(body.choose_roles),
       device_fp: body.device_fp,
       passkey_credential: body.credential };
     await authn.screenAct(req, res, record, fields);
@@ -896,7 +943,9 @@ class AuthnApi {
       errorCodes.mark(res, 'STS-AUTHN-0332');
       res.set('Retry-After', String(allowed.retryAfterS || 60));
       authn.answerJson(res, 429, { ok: false, next: 'refused',
-                                   errors: [String(allowed.detail)] });
+                                   errors: [String(allowed.detail)],
+                                   messages: Sentence.messagesOf(
+                                     [allowed.said || allowed.detail]) });
       log.debug("Leaving AuthnApi.passkeyOptions(). Rate limited.");
       return;
     }
@@ -904,7 +953,9 @@ class AuthnApi {
     if (!armed.ok) {
       errorCodes.mark(res, errorCodes.codeOf(armed) || 'STS-AUTHN-0301');
       authn.answerJson(res, 400, { ok: false, next: 'refused',
-                                   errors: [String(armed.why)] });
+                                   errors: [String(armed.why)],
+                                   messages: Sentence.messagesOf(
+                                     [armed.why]) });
       log.debug("Leaving AuthnApi.passkeyOptions(). Not offered.");
       return;
     }
@@ -921,7 +972,8 @@ class AuthnApi {
                                                    'params', ID_PARAMS);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0145');
-      this.refuse(res, 400, 'That is not the id of a password change.');
+      this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiNotPasswordChangeId'));
       log.debug("Leaving AuthnApi.stepOf(). Not an id.");
       return null;
     }
@@ -973,7 +1025,8 @@ class AuthnApi {
                                                    'params', ID_PARAMS);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0145');
-      this.refuse(res, 400, 'That is not the id of a password change.');
+      this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiNotPasswordChangeId'));
       log.debug("Leaving AuthnApi.changePassword(). Not an id.");
       return;
     }
@@ -1013,7 +1066,8 @@ class AuthnApi {
                                                    'params', ID_PARAMS);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0145');
-      this.refuse(res, 400, 'That is not the id of a password change.');
+      this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiNotPasswordChangeId'));
       log.debug("Leaving AuthnApi.passwordChangeStartOver(). Not an id.");
       return;
     }
@@ -1059,7 +1113,8 @@ class AuthnApi {
                                          MFA_QUERY);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0330');
-      this.refuse(res, 400, 'That is not a page of a sign-in step.');
+      this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiNotAStepPage'));
       log.debug("Leaving AuthnApi.mfaStep(). Not a page.");
       return;
     }
@@ -1073,7 +1128,10 @@ class AuthnApi {
       authn.answerJson(res, seen.status, Object.assign({
         ok: seen.status === 200, view: seen.view, csrf: csrf,
         uiLocales: seen.uiLocales },
-        seen.status === 200 ? {} : { errors: [String(seen.view.sentence)] },
+        // The end view's sentence with its catalog message (#2006).
+        seen.status === 200 ? {} : Object.assign(
+          { errors: [String(seen.view.sentence)] },
+          seen.view.refusal ? { messages: seen.view.refusal.messages } : {}),
         seen.preferredLanguage ? { preferredLanguage: seen.preferredLanguage }
                                : {}));
       log.debug("Leaving AuthnApi.mfaStep(). " + page);
@@ -1083,7 +1141,7 @@ class AuthnApi {
     if (seen.problem) {
       errorCodes.mark(res, seen.problem.code);
       // error-code: none — marked on the line above, stepProblem()'s code
-      this.refuse(res, 400, String(seen.problem.why));
+      this.refuse(res, 400, seen.problem.why);
       log.debug("Leaving AuthnApi.mfaStep(). Refused.");
       return;
     }
@@ -1103,6 +1161,7 @@ class AuthnApi {
     const factor = String((step && step.factor) || '');
     const out = factor === 'enrol' || factor === 'enrol-totp' ? 'setup'
       : factor === 'post-login' ? 'post-login'
+      : factor === 'roles' ? 'roles'
       : (['totp', 'webauthn', 'password', 'email-code', 'email-link']
           .indexOf(factor) >= 0 ? factor : 'totp');
     log.debug("Leaving AuthnApi.pageOf(). " + out);
@@ -1196,6 +1255,24 @@ class AuthnApi {
         authn.postLoginAct(req,
           res as IyaApi.AuthnAnswering<'skipPostLoginActivity'>, id, 'skip');
         break;
+      case 'answerPostLoginMail':
+        // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): a challenge, a key or a
+        // certificate, each the step's to judge.
+        await authn.postLoginMailAct(req,
+          res as IyaApi.AuthnAnswering<'answerPostLoginMail'>, id, body);
+        break;
+      case 'answerPostLoginPiv':
+        // THE PIV RE-ISSUE (#2009 P3): a slot's enrolment, or going on.
+        await authn.postLoginPivAct(req,
+          res as IyaApi.AuthnAnswering<'answerPostLoginPiv'>, id, body);
+        break;
+      case 'chooseRoles':
+        // THE ROLE STEP (#1072): the names ticked, held to the step's own
+        // offer there.
+        authn.rolesAct(req, res as IyaApi.AuthnAnswering<'chooseRoles'>, id,
+                       Array.isArray(body.roles) ? body.roles.map(String)
+                                                 : []);
+        break;
       case 'sendEmailedFactor':
         await ef.sendAct(req,
           res as IyaApi.AuthnAnswering<'sendEmailedFactor'>,
@@ -1249,9 +1326,8 @@ class AuthnApi {
     const record = enabled ? authn.pendingForAccounts(id) : null;
     if (!record) {
       errorCodes.mark(res, enabled ? 'STS-AUTHN-0003' : 'STS-AUTHN-0343');
-      this.refuse(res, 400, 'There is no sign-in waiting on an account ' +
-        'choice under that id, or it has expired. Start the request again ' +
-        'from the application that sent you here.');
+      this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiNoAccountChoice'));
       log.debug("Leaving AuthnApi.accountsPendingOf(). Nothing waiting.");
       return null;
     }
@@ -1362,7 +1438,8 @@ class AuthnApi {
                                          LOGOUT_QUERY);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-LOGOUT-0003');
-      this.refuse(res, 400, String(asked.detail || 'The query is refused.'));
+      this.refuse(res, 400, asked.detail ||
+        Sentence.say('refusals.authn.apiQueryRefused'));
       log.debug("Leaving AuthnApi.logoutView(). The query.");
       return;
     }
@@ -1393,7 +1470,8 @@ class AuthnApi {
                                          LOGOUT_QUERY);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-LOGOUT-0003');
-      this.refuse(res, 400, String(asked.detail || 'The query is refused.'));
+      this.refuse(res, 400, asked.detail ||
+        Sentence.say('refusals.authn.apiQueryRefused'));
       log.debug("Leaving AuthnApi.logoutAccountsView(). The query.");
       return;
     }
@@ -1416,7 +1494,7 @@ class AuthnApi {
    */
   logoutAccountsAct(req: AuthnRequest<'logoutAccountsAct'>,
                     res: AuthnAnswering<'logoutAccountsAct'>,
-                    op: Operation): void {
+                    op: Operation): void | Promise<void> {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutAccountsAct().");
     if (!this.bound(req, res)) {
@@ -1428,12 +1506,17 @@ class AuthnApi {
       log.debug("Leaving AuthnApi.logoutAccountsAct(). The body.");
       return;
     }
-    const done = AuthnApi.logout().signOutAccountsAct(req, res, body);
-    if (done.code) {
-      errorCodes.mark(res, done.code);
-    }
-    authn.answerJson(res, done.status, done.json);
-    log.debug("Leaving AuthnApi.logoutAccountsAct(). " + done.status);
+    // AWAITED (#1955 P8 follow-up): what the sign-out offers the browser
+    // is signed off the event loop first where the realm's keys are in the
+    // HSM. The promise goes back to the express guard.
+    log.debug("Leaving AuthnApi.logoutAccountsAct(). Signing out.");
+    return AuthnApi.logout().signOutAccountsActAsync(req, res, body)
+      .then((done) => {
+        if (done.code) {
+          errorCodes.mark(res, done.code);
+        }
+        authn.answerJson(res, done.status, done.json);
+      });
   }
 
   /**
@@ -1446,7 +1529,7 @@ class AuthnApi {
    */
   logoutAct(req: AuthnRequest<'logoutAct'>,
             res: AuthnAnswering<'logoutAct'>,
-            op: Operation): void {
+            op: Operation): void | Promise<void> {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutAct().");
     if (!this.bound(req, res)) {
@@ -1458,12 +1541,16 @@ class AuthnApi {
       log.debug("Leaving AuthnApi.logoutAct(). The body.");
       return;
     }
-    const done = AuthnApi.logout().signOutAct(req, res, body);
-    if (done.code) {
-      errorCodes.mark(res, done.code);
-    }
-    authn.answerJson(res, done.status, done.json);
-    log.debug("Leaving AuthnApi.logoutAct(). " + done.status);
+    // AWAITED (#1955 P8 follow-up): what the sign-out offers the browser
+    // is signed off the event loop first where the realm's keys are in the
+    // HSM. The promise goes back to the express guard.
+    log.debug("Leaving AuthnApi.logoutAct(). Signing out.");
+    return AuthnApi.logout().signOutActAsync(req, res, body).then((done) => {
+      if (done.code) {
+        errorCodes.mark(res, done.code);
+      }
+      authn.answerJson(res, done.status, done.json);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1551,7 +1638,8 @@ class AuthnApi {
                                          ID_PARAMS);
     if (!asked.ok) {
       errorCodes.mark(res, 'STS-OAUTH-0148');
-      this.refuse(res, 400, 'That is not the id of a consent.');
+      this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiNotConsentId'));
       log.debug("Leaving AuthnApi.consent(). Not an id.");
       return;
     }
@@ -1562,7 +1650,7 @@ class AuthnApi {
       if (!found.ok) {
         errorCodes.mark(res, found.code);
         // error-code: none — marked on the line above, askedOf()'s code
-        this.refuse(res, 400, String(found.why));
+        this.refuse(res, 400, found.why);
         log.debug("Leaving AuthnApi.consent(). " + found.code);
         return;
       }
@@ -1597,19 +1685,19 @@ class AuthnApi {
       function (one: Json): boolean {
         return /^lim_/.test(String(one.path[0] || ''));
       })[0];
-    let problem = '';
+    let problem: string | Sentence = '';
     if (limitIssue && limitIssue.params && limitIssue.params.unrecognized) {
-      problem = 'The body has a field this operation does not take: ' +
-        String(limitIssue.path[0]) + '.';
+      problem = Sentence.say('refusals.authn.apiUnknownField',
+                             { field: String(limitIssue.path[0]) });
     } else if (limitIssue) {
-      problem = 'The limit ' + String(limitIssue.path[0]) + ' is not a ' +
-        'string or a list of strings of a reasonable size.';
+      problem = Sentence.say('refusals.authn.apiBadLimit',
+                             { limit: String(limitIssue.path[0]) });
     }
     const posted = validation.checkParsed(answer, 'body', CONSENT_BODY);
     if (problem || !posted.ok) {
       errorCodes.mark(res, 'STS-OAUTH-0148');
-      this.refuse(res, 400, problem || String(posted.detail ||
-                                              'The body is refused.'));
+      this.refuse(res, 400, problem || posted.detail ||
+        Sentence.say('refusals.authn.apiBodyRefused'));
       log.debug("Leaving AuthnApi.consent(). The body.");
       return;
     }
@@ -1735,7 +1823,7 @@ class AuthnApi {
     }
     errorCodes.mark(res, SHAPE_CODES[String(shape.problem)]);
     // error-code: none — marked on the line above, SHAPE_CODES's by the kind
-    this.refuse(res, 400, String(shape.sentence));
+    this.refuse(res, 400, shape.sentence);
     log.debug("Leaving AuthnApi.shapeRefused(). " + shape.problem);
     return true;
   }
@@ -1811,7 +1899,8 @@ class AuthnApi {
           : authn.claimStepForBrowser(req.params.id, sid, kind);
         if (!held) {
           errorCodes.mark(res, 'STS-AUTHN-0552');
-          this.refuse(res, 400, 'That sign-in was started in another browser.');
+                this.refuse(res, 400,
+        Sentence.say('refusals.authn.apiOtherBrowser'));
           return;
         }
         next();
@@ -1857,8 +1946,11 @@ class AuthnApi {
               ((e && (e.stack || e.message)) || e));
     if (!res.headersSent) {
       errorCodes.mark(res, email ? 'STS-AUTHN-0267' : 'STS-AUTHN-0328');
-      authn.answerJson(res, 500, { ok: false,
-        errors: ['Something went wrong; this sign-in could not continue.'] });
+      // In the page's language (#2006): the merger's review found the
+      // last English sentence of the sign-in's own.
+      const said = Sentence.say('refusals.authn.apiFailed');
+      authn.answerJson(res, 500, { ok: false, errors: [String(said)],
+                                   messages: Sentence.messagesOf([said]) });
     }
     log.debug("Leaving AuthnApi.failed().");
   }

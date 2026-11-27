@@ -606,7 +606,8 @@ class RequestObject {
         port: target.port || (secure ? 443 : 80),
         path: target.pathname + target.search, method: 'GET',
         headers: { 'Accept': MEDIA_TYPE + ', application/jwt;q=0.9',
-                   'User-Agent': version.userAgent('request-uri') },
+                   'User-Agent': version.userAgent('request-uri',
+                     mode.publishesBuildDetail()) },
         timeout: timeout
       };
       if (vetted.address) {
@@ -798,8 +799,31 @@ class RequestObject {
         'request_object_encryption_enc_values_supported).');
     }
     const options: Json = { allowedAlg: [alg], allowedEnc: [enc] };
-    const kemKey = stsCrypto.describeJweKemAlg(alg)
+    // THE KEYS A SCHEDULED ROTATION RETIRED (#2220): each still opens what a
+    // client encrypted to it before it read the new one, until its overlap
+    // ends — tried after the current key, and only those of this alg's kind.
+    const retired = function (kind: string): Json[] {
+      log.debug("Entering retired().");
+      let found: Json[] = [];
+      try {
+        found = helpers.retiredEncryptionKeysFor(kind, keySet) || [];
+      } catch (e) {
+        log.debug("Caught in retired(): " + ((e && e.message) || e));
+        found = [];
+      }
+      log.debug("Leaving retired(). " + found.length + ".");
+      return found;
+    };
+    const extra: Json[] = [];
+    let kemKey = stsCrypto.describeJweKemAlg(alg)
       ? helpers.kemDecryptionKeyFor(alg, keySet) : null;
+    if (kemKey && header.kid &&
+        String(header.kid) !== String(kemKey.publicJwk.kid)) {
+      kemKey = retired('kem').filter(function (one: Json): boolean {
+        return one.alg === alg && one.publicJwk &&
+               String(one.publicJwk.kid) === String(header.kid);
+      })[0] || kemKey;
+    }
     if (kemKey) {
       // THE REALM'S KEY FOR THIS ONE ALG (#82). Named by its kid as the
       // RSA and EC keys are below, for their reason.
@@ -813,6 +837,13 @@ class RequestObject {
           'marked use "enc" with that alg at /oauth2/jwks.');
       }
       options.privateJwk = kemKey.privateJwk;
+      if (!header.kid) {
+        retired('kem').forEach(function (one: Json): void {
+          if (one.alg === alg) {
+            extra.push({ privateJwk: one.privateJwk });
+          }
+        });
+      }
     } else if (stsCrypto.JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
       if (!client.client_secret) {
         log.debug("Leaving RequestObject.decrypt(). No secret to decrypt " +
@@ -825,8 +856,23 @@ class RequestObject {
       options.secret = self.symmetricKeyFor(alg, enc, client.client_secret);
     } else {
       const keys = helpers.requestObjectKeysFor(keySet);
-      const own = stsCrypto.JWE_ECDH_ALGS.indexOf(alg) >= 0 ? keys.ec
-                                                            : keys.rsa;
+      const ecdh = stsCrypto.JWE_ECDH_ALGS.indexOf(alg) >= 0;
+      let own = ecdh ? keys.ec : keys.rsa;
+      const before = retired('ro').map(function (one: Json): Json {
+        return ecdh ? one.ec : one.rsa;
+      }).filter(function (one: Json): boolean {
+        return !!(one && one.publicJwk);
+      });
+      if (header.kid && own && own.publicJwk &&
+          String(header.kid) !== String(own.publicJwk.kid)) {
+        own = before.filter(function (one: Json): boolean {
+          return String(one.publicJwk.kid) === String(header.kid);
+        })[0] || own;
+      } else if (!header.kid) {
+        before.forEach(function (one: Json): void {
+          extra.push({ privateKey: one.privateKey });
+        });
+      }
       if (header.kid && own && own.publicJwk &&
           String(header.kid) !== String(own.publicJwk.kid)) {
         log.debug("Leaving RequestObject.decrypt(). Encrypted to another key.");
@@ -842,6 +888,7 @@ class RequestObject {
       options.privateKey = own.privateKey;
     }
     let opened = null;
+    let failure = '';
     try {
       // ASYNC, so that a PBES2 key is derived off the event loop (ASVS
       // 5.0.0 11.4.4); every other algorithm is opened as before.
@@ -849,9 +896,24 @@ class RequestObject {
     } catch (e) {
       log.debug("Caught in RequestObject.decrypt(): " +
                 "" + ((e && e.message) || e));
+      failure = String((e && e.message) || e);
+    }
+    // A JWE naming no kid is tried with each retired key in turn (#2220);
+    // the current key's failure is the one reported.
+    for (let i = 0; i < extra.length && !opened; i++) {
+      try {
+        opened = await stsCrypto.decryptJweCompactAsync(compact,
+          Object.assign({ allowedAlg: [alg], allowedEnc: [enc] }, extra[i]));
+      } catch (e) {
+        log.debug("Caught in RequestObject.decrypt(): " +
+                  ((e && e.message) || e));
+        opened = null;
+      }
+    }
+    if (!opened) {
       log.debug("Leaving RequestObject.decrypt(). It would not decrypt.");
       return self.refusal('STS-OAUTH-0353', 'invalid_request_object',
-        'the encrypted request object could not be decrypted: ' + e.message);
+        'the encrypted request object could not be decrypted: ' + failure);
     }
     const jws = String(opened.plaintext || '').trim();
     if (jws.split('.').length !== 3) {
@@ -1012,10 +1074,12 @@ class RequestObject {
         oauthJwks: client.jwks, oauthAssertionJwks: client.assertion_jwks,
         oauthJwksUri: client.jwks_uri
       };
-      // A registered `jwks_uri` is fetched (#120), `client_jwks.js`'s cache.
+      // A registered `jwks_uri` is fetched (#120), `client_jwks.js`'s cache,
+      // and so is that of a key set bound to this client (#2149).
       const fetched = await assertionGrant.ensurePartyKeys(party,
-        'application', header && header.kid);
-      const read = assertionGrant.keysForParty(party, 'application');
+        'application', header && header.kid, String(clientId || ''));
+      const read = assertionGrant.keysForParty(party, 'application',
+                                               String(clientId || ''));
       candidates = read.keys;
       if (!candidates.length) {
         why = 'this client holds no key a request object could be verified ' +

@@ -46,6 +46,7 @@ import errorCodes = require('../common/error_codes');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
 import outbound = require('../federation/federation_http');
+import OutboundTls = require('../common/outbound_tls');
 
 type NodeAttestationContext =
   import('../types/spiffe-attestation').NodeAttestationContext;
@@ -208,16 +209,24 @@ class K8sPsatAttestor {
       caFile = caFile || IN_CLUSTER + '/ca.crt';
       tokenFile = tokenFile || IN_CLUSTER + '/token';
     }
-    // These two name a file the answer's bearer token comes from (#1481).
+    // These two name a file the answer's bearer token comes from (#1481),
+    // refused here before anything is dialled, and read below through one
+    // descriptor that is checked again (#2247).
     const confine = require('../common/outbound_tls').assertNamedFile;
+    const readNamed = require('../common/outbound_tls').readNamedFile;
     if (caFile) {
       confine(caFile);
     }
     if (tokenFile) {
       confine(tokenFile);
     }
-    const ca = caFile ? fs.readFileSync(caFile, 'utf8') : '';
-    const token = tokenFile ? fs.readFileSync(tokenFile, 'utf8').trim() : '';
+    // A cluster's own caFile is that cluster's, and wins; otherwise
+    // `outbound-k8s-api`'s truststores where it is assigned (#2118).
+    const assigned = cluster.caFile ? null :
+      OutboundTls.assignedCa('outbound-k8s-api');
+    const ca = assigned && !assigned.problem ? String(assigned.ca || '') :
+      caFile ? readNamed(caFile, { fs: fs }) : '';
+    const token = tokenFile ? readNamed(tokenFile, { fs: fs }).trim() : '';
     log.debug("Leaving K8sPsatAttestor.reach().");
     return { base: base, ca: ca, token: token };
   }

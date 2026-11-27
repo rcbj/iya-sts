@@ -103,10 +103,28 @@ const DIGEST_LABEL = 'directory-index';
 // it. Like `usercertificatesha256`, no attribute of that name is ever on an
 // entry, and an entry written before this carries no key until it is next
 // written (rcbj's no-migration rule on #636 and #1061).
+//
+// **AND `stspivcarduuid` (#1955 P2, D8)**: an outside PIV or CAC card's FIPS
+// 201 card UUID, which `ldap_server.js`'s `pivCardHolders()` asks for when a
+// card certificate from a configured outside issuer is presented. An
+// attribute an administrator writes, compared lower-cased, and like the two
+// above it moves no schema version: an entry written before this carries no
+// key until it is next written, and recording the UUID IS that write.
+//
+// **AND A THIRD DERIVED KEY: `certificatebinding` (#2012).** A client
+// certificate a realm's `certSignIn.profiles` covers is bound to a person by
+// a value of `stsCertificateBinding` (canonical when written, so keyed as it
+// stands, lower-cased) or, under a profile that opts in to it, by its SAN UPN
+// matched to `userPrincipalName` — keyed `upn:<lower-cased>`, because the
+// directory's own spelling of a UPN is not the certificate's case. One key
+// for both, so `ldap_server.js`'s `certificateBindingHolders()` asks one
+// index. Like the two above, no attribute of that name is ever on an entry
+// and an entry written before this carries no key until it is next written.
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
                        'federationlink', 'stsdevicekeythumbprint',
                        'stsdevicesecrethash', 'stsdevicecredentialid',
-                       'owner', 'usercertificatesha256', 'grantinggroup'];
+                       'owner', 'usercertificatesha256', 'grantinggroup',
+                       'stspivcarduuid', 'certificatebinding'];
 
 // The attributes that confer something on the members of the group they
 // name (#358, #607): a role's member group, the three owner attributes, an
@@ -116,6 +134,13 @@ const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
 const GRANTING_ATTRIBUTES = Object.freeze(['rolemembergroup', 'owner',
   'appowner', 'stsserviceaccountowner', 'appdelegationsubjectgroup',
   'fedsubjectgroup']);
+
+// THE ATTRIBUTES WHOSE ENTRIES `granting_index_backfill.js` RE-KEYS (#2012):
+// the granting ones (#1311) and the two the `certificatebinding` key is
+// derived from, so a `userPrincipalName` stored before #2012 is found by a
+// low-affinity `upn` binding without waiting for its entry's next write.
+const BACKFILL_ATTRIBUTES = Object.freeze(GRANTING_ATTRIBUTES.concat([
+  'userprincipalname', 'stscertificatebinding']));
 
 // A value written as a DN: an attribute type and `=` at the front. The
 // directory's own `DN_SHAPED`.
@@ -303,6 +328,33 @@ function grantingGroupKeysOf(attrs) {
   return out;
 }
 
+/**
+ * The `certificatebinding` keys of an entry (#2012): each
+ * `stsCertificateBinding` value trimmed and lower-cased, and `upn:` before
+ * each `userPrincipalName`, lower-cased; each once.
+ *
+ * @param attrs - the entry's attributes, plaintext
+ * @returns the keys
+ */
+function certificateBindingKeysOf(attrs) {
+  log.debug("Entering certificateBindingKeysOf().");
+  const out = [];
+  const add = function (key) {
+    if (key && out.indexOf(key) < 0) {
+      out.push(key);
+    }
+  };
+  valuesOf(attrs, 'stscertificatebinding').forEach(function (one) {
+    add(String(one).trim().toLowerCase());
+  });
+  valuesOf(attrs, 'userprincipalname').forEach(function (one) {
+    const upn = String(one).trim().toLowerCase();
+    add(upn ? 'upn:' + upn : '');
+  });
+  log.debug("Leaving certificateBindingKeysOf(). " + out.length + ".");
+  return out;
+}
+
 function lowered(list) {
   log.debug("Entering lowered().");
   log.debug("Leaving lowered().");
@@ -336,7 +388,8 @@ function indexOf(attrs) {
     const values = name === 'usercertificatesha256'
       ? certificateDigestsOf(a)
       : (name === 'grantinggroup' ? grantingGroupKeysOf(a)
-        : unique(valuesOf(a, name)));
+        : (name === 'certificatebinding' ? certificateBindingKeysOf(a)
+          : unique(valuesOf(a, name))));
     values.forEach(function (one) {
       valueKeys.push(lookupOf('attr:' + name, one));
     });
@@ -611,12 +664,14 @@ module.exports = {
   LABEL: LABEL,
   VALUE_INDEXED: VALUE_INDEXED,
   GRANTING_ATTRIBUTES: GRANTING_ATTRIBUTES,
+  BACKFILL_ATTRIBUTES: BACKFILL_ATTRIBUTES,
   grantingKeysOf: grantingKeysOf,
   grantingGroupKeysOf: grantingGroupKeysOf,
   CLASS_INDEXED: CLASS_INDEXED,
   CERTIFICATE_ATTRIBUTES: CERTIFICATE_ATTRIBUTES,
   certificateDerOf: certificateDerOf,
   certificateDigestsOf: certificateDigestsOf,
+  certificateBindingKeysOf: certificateBindingKeysOf,
   create: create,
   // The same, for the postgres driver, whose own factory is `create()`: a
   // `create(` in its body reads to tests/no_periodic_timers.js as the

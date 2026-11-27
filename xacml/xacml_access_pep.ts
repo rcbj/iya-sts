@@ -115,6 +115,8 @@ interface AccessQuestion {
   // A report definition or job (#1030): `common/access_gate.ts`.
   reportObject?: {
     kind: string; owner: string; groups?: string[]; person: string;
+    // The source a report reads, and those for administrators (#2126).
+    sources?: string[]; adminSources?: string[];
   } | null;
   // An AuthZEN access request being decided (#1180):
   // `common/access_gate.ts`.
@@ -124,6 +126,8 @@ interface AccessQuestion {
     application: string; eligible: boolean; door: string;
     approverIdentity: string[];
   } | null;
+  sshPrincipal?: string;
+  sshPrincipalKind?: string;
 }
 
 // What a decision answers.
@@ -407,6 +411,20 @@ class XacmlAccessPep {
         .action(ATTRIBUTE.ADMIN_ACTION, [String(owned.action || '')])
         .subject(ATTRIBUTE.OWNER_SUBJECT, [String(owned.person || '')]);
     }
+    // THE SSH CA'S PRINCIPAL-SPECIFIC DECISION (#1955 P3): the caller asks
+    // once per UID or group CN, so a policy can permit some names and refuse
+    // others without treating the whole certificate as one decision.
+    if (asked.sshPrincipal) {
+      req.resource(ATTRIBUTE.SSH_PRINCIPAL,
+                   [String(asked.sshPrincipal)]);
+    }
+    // AND ITS KIND (the #1955 review): `uid` for the person's own name,
+    // `group` for a group `pki.sshGroupPrincipals` offers, so a rule can
+    // refuse group principals, or some of them, without listing names.
+    if (asked.sshPrincipalKind) {
+      req.resource(ATTRIBUTE.SSH_PRINCIPAL_KIND,
+                   [String(asked.sshPrincipalKind)]);
+    }
     // THE REPORT RULE'S QUESTION (#1030): the row's kind and the groups it
     // is shared with, and the person for the PIP's owner identity. The
     // row's owner is in `owner` above, the first rule's comparison.
@@ -416,6 +434,18 @@ class XacmlAccessPep {
         .resource(ATTRIBUTE.REPORT_SHARED_GROUP,
                   (row.groups || []).map(String))
         .subject(ATTRIBUTE.OWNER_SUBJECT, [String(row.person || '')]);
+      // THE SOURCE A REPORT READS (#2126, ASVS 5.0.0 8.2.3), on the
+      // question asked before it is defined, run or downloaded: the first
+      // and third rules permit one the catalog marks for administrators
+      // only to REPORT_ADMIN. Sent only when given, so a plain read of a
+      // row carries neither and is decided as before.
+      if (Array.isArray(row.sources) && row.sources.length) {
+        req.resource(ATTRIBUTE.REPORT_SOURCE, row.sources.map(String));
+      }
+      if (Array.isArray(row.adminSources) && row.adminSources.length) {
+        req.resource(ATTRIBUTE.REPORT_ADMIN_SOURCE,
+                     row.adminSources.map(String));
+      }
     }
     // THE ACCESS REQUEST RULE'S QUESTION (#1180): the request's tuple and
     // who asked it on the resource, who the approver is and whether the

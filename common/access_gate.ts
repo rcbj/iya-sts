@@ -207,7 +207,16 @@ const RESOURCE = {
   // their own request); the built-in document's fourth rule decides it,
   // over the facts in `accessRequestObject`, so self-approval and
   // separation of duties are policy (rcbj's decision 2 on #1180).
-  AUTHZEN_ACCESS_REQUEST: 'authzen-access-request'
+  AUTHZEN_ACCESS_REQUEST: 'authzen-access-request',
+  // AN ESCROWED PIV KEY-MANAGEMENT KEY (#1955 P2, D7), the eleventh
+  // resource, asked by `common/piv_enrolment.ts`'s `recover()` before an
+  // administrator recovers somebody's escrowed decryption key, with
+  // PIV_KEY_RECOVERY in `requiredRoles`: the first rule decides it, so who
+  // may read another person's mail is policy and not Admin Write.
+  PIV_KEY_ESCROW: 'piv-key-escrow',
+  // THE SSH USER CA (#1955 P3): every requested principal is asked
+  // independently through ISSUE_SSH_PRINCIPAL.
+  SSH_USER_CA: 'ssh-user-ca'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's
@@ -231,10 +240,23 @@ const ACTION = {
   // which is why it is a word of its own rather than `read` with a note. A
   // realm's override narrows or widens it through `reportSharedActions`.
   RUN: 'run',
-  // DECIDING AN AUTHZEN ACCESS REQUEST (#1180): approving it, denying it,
-  // or revoking its approval, one question for all three — who may decide
-  // a request is who may decide it either way.
-  APPROVE_ACCESS_REQUEST: 'approve-access-request'
+  // DECIDING AN AUTHZEN ACCESS REQUEST (#1180): approving it or denying
+  // it, one question for both — who may decide a request is who may decide
+  // it either way.
+  APPROVE_ACCESS_REQUEST: 'approve-access-request',
+  // REVOKING AN APPROVAL ONE GAVE (#1203): its own question since the
+  // review of #1203, so a policy can let a person approve and not revoke,
+  // or the reverse. The built-in document's fourth rule permits it
+  // wherever it permits an approval, and a repository policy that never
+  // names it is asked APPROVE_ACCESS_REQUEST instead
+  // (`authzen_access_request.ts`'s `mayRevoke()`).
+  REVOKE_ACCESS_REQUEST: 'revoke-access-request',
+  // RECOVERING AN ESCROWED KEY (#1955 P2): neither a read of a page nor a
+  // change to one — it hands a person's decryption key to someone else.
+  RECOVER_KEY: 'recover-key',
+  // ISSUING AN SSH CERTIFICATE FOR ONE PRINCIPAL (#1955 P3): every
+  // principal is a separate access decision.
+  ISSUE_SSH_PRINCIPAL: 'issue-ssh-principal'
 };
 
 // The person a decision is about — the SECURITY CONTEXT's, never the
@@ -273,6 +295,11 @@ interface AccessRequest {
   ownedObject?: OwnedObject | null;
   reportObject?: ReportObject | null;
   accessRequestObject?: AccessRequestObject | null;
+  // The one SSH certificate principal being considered (#1955 P3).
+  sshPrincipal?: string;
+  // And whether it is the person's uid or a group's name (the #1955
+  // review).
+  sshPrincipalKind?: string;
   context?: Record<string, unknown>;
   [key: string]: unknown;
 }
@@ -313,6 +340,12 @@ interface ReportObject {
   // The PERSON the token is for, by username, for the PIP's owner identity;
   // empty for an application's own token.
   person: string;
+  // The catalog source the report reads (#2126), sent only on the
+  // question asked before a report is defined, run or downloaded.
+  sources?: string[];
+  // Those of them the catalog marks for report administrators (#2126):
+  // the policy permits a question carrying one only to REPORT_ADMIN.
+  adminSources?: string[];
 }
 
 // The object an owner would administer (#607). See `check()`.

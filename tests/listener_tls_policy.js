@@ -216,8 +216,14 @@ function childMain() {
     note(added && added.added === 1, 'precondition: the test CA is a ' +
          'truststore anchor', JSON.stringify(added));
 
+    // Named for the address the clients below dial, so they VERIFY it (the
+    // certificate is its own anchor): what every case asks is the listener's
+    // policy, never whether its certificate could be trusted.
     const made = stsCrypto.selfSignedRsaCertificate({
-      commonName: 'localhost' });
+      commonName: 'localhost',
+      extensions: [{ name: 'subjectAltName',
+                     altNames: [{ type: 2, value: 'localhost' },
+                                { type: 7, ip: '127.0.0.1' }] }] });
     const own = { key: made.privateKeyPem, cert: made.certPem };
     const listen = async function (kind, realmId) {
       const policy = tlsServer.policyFor(kind, realmId);
@@ -745,7 +751,7 @@ function childMain() {
     const ask = function (port, agent) {
       return new Promise(function (resolve, reject) {
         const req = https.request({ host: '127.0.0.1', port: port, path: '/',
-                                    rejectUnauthorized: false,
+                                    ca: [own.cert],
                                     agent: agent || new https.Agent({
                                       keepAlive: true }) },
           function (res) {
@@ -821,7 +827,7 @@ function childMain() {
     w = config.setOverride('listenerMain.maxConnections', '1');
     await settle();
     const held = require('tls').connect({ host: '127.0.0.1', port: mainPort,
-                                          rejectUnauthorized: false });
+                                          ca: [own.cert] });
     await new Promise(function (ok) {
       held.once('secureConnect', ok);
       held.once('error', ok);

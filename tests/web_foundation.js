@@ -88,6 +88,13 @@ function childMain() {
     // end of the body. Everything else is the bytes it always was.
     const footer = require(ROOT_DIR + '/common/page_footer').html();
     const FOOTER_CSS = '<link rel="stylesheet" href="/web/footer.css">';
+    // AND THE BROWSER CHECK (#2220): `/web/browser-check.js` before the
+    // surface's script, its notice hidden after the opening markup, and the
+    // link to what this service needs from a browser at the end of the
+    // `<noscript>` — all three the shell writer's, in English here.
+    const CHECK = '<script src="/web/browser-check.js" defer></script>';
+    const NOTICE = ShellDocument.unsupportedNotice(null, {});
+    const SUPPORT = ShellDocument.supportLink(null);
     // THE CONSOLE'S SHELL AS `AdminConsole.shellDocument()` DREW IT BY HAND
     // BEFORE #570, copied as it was.
     const adminBefore = function (registered, elsewhere) {
@@ -106,9 +113,10 @@ function childMain() {
         'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
         'initial-scale=1"><title>IYA STS admin</title>' +
         '<link rel="stylesheet" href="/admin/console.css">' + FOOTER_CSS +
-        (refused ? '' : '<script src="/admin/console.js" defer></script>') +
+        (refused ? '' : CHECK +
+                        '<script src="/admin/console.js" defer></script>') +
         '</head><body><div class="shell"><div class="main"><div ' +
-        'class="card"><h1>IYA STS admin</h1>' +
+        'class="card"><h1>IYA STS admin</h1>' + (refused ? '' : NOTICE) +
         (refused
           ? admin.warn(esc(registered.why || 'This console cannot sign ' +
                            'in at this address.'),
@@ -116,7 +124,8 @@ function childMain() {
           : '<noscript>' + admin.warn('This console is a script that runs ' +
               'in your browser and draws every page from <code>/admin-api' +
               '</code>; with scripts blocked there is nothing it can show.',
-              'Scripts are blocked') + '</noscript><p class="lede">' +
+              'Scripts are blocked') + SUPPORT +
+            '</noscript><p class="lede">' +
             'Signing in&hellip;</p>') +
         '</div></div></div>' + footer + '</body></html>\n';
     };
@@ -139,17 +148,18 @@ function childMain() {
         'content="width=device-width,initial-scale=1"><title>Your account — ' +
         'IYA STS</title><link rel="stylesheet" href="' + BASE +
         '/portal.css">' + FOOTER_CSS +
-        (refused ? '' : '<script src="' + BASE +
+        (refused ? '' : CHECK + '<script src="' + BASE +
                         '/portal.js" defer></script>') +
         '</head><body><div class="wrap"><div class="card">' +
-        '<h1>Your account</h1>' +
+        '<h1>Your account</h1>' + (refused ? '' : NOTICE) +
         (refused
           ? '<div class="err">' + kit.esc(registered.why ||
               'The portal cannot sign in at this address.') + '</div>'
           : '<noscript><div class="err">This portal is a script that runs ' +
             'in your browser and draws every page from <code>/account-api' +
             '</code>; with scripts blocked there is nothing it can show.' +
-            '</div></noscript><p class="sub">Loading&hellip;</p>') +
+            '</div>' + SUPPORT + '</noscript><p class="sub">Loading&hellip;' +
+            '</p>') +
         '</div></div>' + footer + '</body></html>\n';
     };
     const odd = 'https://h.example:8443/realm/a?x=1&y="q"\'<b>';
@@ -602,8 +612,14 @@ function childMain() {
         return n === 'action' ? '/demo/other' : null;
       }
     }, null);
-    note(one.env.document.body.innerHTML.indexOf('has no API operation') >= 0,
-         'E3. a form no operation mirrors is refused, not guessed');
+    // In the page's language since #2006: this page is drawn in French
+    // (`ui_locales=fr`), and so is the runtime's own refusal, which still
+    // names the control it refused.
+    note(one.env.document.body.innerHTML.indexOf(
+           'aucune opération d’API (/demo/other)') >= 0,
+         'E3. a form no operation mirrors is refused, not guessed, in the ' +
+         'page\'s language',
+         one.env.document.body.innerHTML.slice(0, 400));
     const two = await drive('/realm/acme/demo',
                             { 'data-sts-prefix': '/realm/acme' });
     const body2 = two.env.document.body.innerHTML;

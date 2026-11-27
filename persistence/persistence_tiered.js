@@ -65,7 +65,8 @@ const log = bunyan.createLogger({ name: 'sts-persistence-tiered' });
 const GLOBAL_METHODS = [
   'loadRealms', 'saveRealms', 'loadOverrides', 'saveOverrides',
   'loadKeys', 'loadDekRows', 'saveKeys', 'deleteKeys', 'loadKey',
-  'mergeKeys', 'ensureSharedSecret',
+  'mergeKeys', 'ensureSharedSecret', 'readSharedSecret',
+  'replaceSharedSecret',
   // THE USED-ASSERTION HISTORY IS GLOBAL (#98): an RFC 7523 or 7522
   // assertion is accepted once EVER (rule 3ae), and every cell answers on
   // the same public name — a history per cell would accept it once per cell.
@@ -77,8 +78,8 @@ const GLOBAL_METHODS = [
 ];
 
 // The methods that go to BOTH databases, whose answers are combined below.
-const BOTH_METHODS = ['open', 'close', 'loadDirectory', 'saveDirectory',
-                      'readEntry', 'loadMinted', 'saveMinted', 'readMinted',
+const BOTH_METHODS = ['open', 'close', 'boundStatements', 'loadDirectory',
+                      'saveDirectory', 'readEntry', 'loadMinted', 'saveMinted', 'readMinted',
                       'readMintedMany', 'purgeMinted', 'purgeExpiredMinted',
                       'purgeTombstones',
                       'changeRowsWritten', 'adoptOrigin', 'renewOrigin',
@@ -670,6 +671,17 @@ function create(options) {
     return globalDriver.open().then(function () {
       return cellDriver.open();
     });
+  };
+
+  // The statement bound (#2220), on both databases' pools.
+  driver.boundStatements = function (ms) {
+    log.debug("Entering tiered boundStatements().");
+    [cellDriver, globalDriver].forEach(function (one) {
+      if (typeof one.boundStatements === 'function') {
+        one.boundStatements(ms);
+      }
+    });
+    log.debug("Leaving tiered boundStatements().");
   };
 
   driver.close = function () {

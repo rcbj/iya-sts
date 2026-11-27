@@ -111,6 +111,11 @@
 #                        of tests/protocol/sts_uma.js (#1196): a thin command
 #                        line over it, tests/tools/keycloak-uma-driver, built
 #                        in the `uma-java` stage exactly as jscep's is.
+#   wss4j-ws-security-dom 4.0.3  Apache-2.0. Apache WSS4J's DOM
+#                        WS-Security engine, the independent peer a WS-Trust
+#                        message this service signs or encrypts is held to
+#                        (#1917, #1918): tests/tools/wss4j-driver, built in
+#                        the `wss4j-java` stage exactly as jscep's is.
 #
 # NOTHING OF THEIRS IS VENDORED: each is fetched from its publisher at build
 # time, each archive is held to a sha256 here, and a GitHub archive of a
@@ -276,6 +281,13 @@ COPY tests/tools/keycloak-uma-driver /usr/src/keycloak-uma-driver
 RUN /usr/src/keycloak-uma-driver/build.sh /usr/src/keycloak-uma-driver \
       /out/keycloak-uma
 
+# APACHE WSS4J, THROUGH ITS DRIVER (#1917, #1918): see the header and
+# tests/tools/wss4j-driver/build.sh — jscep's arrangement, a stage of its
+# own so that neither rebuilds the other.
+FROM maven:3.9.16-eclipse-temurin-21-noble AS wss4j-java
+COPY tests/tools/wss4j-driver /usr/src/wss4j-driver
+RUN /usr/src/wss4j-driver/build.sh /usr/src/wss4j-driver /out/wss4j
+
 # THE SECOND SCIM HARNESS, COMPILED IN A STAGE OF ITS OWN (#206).
 # scim2/test-suite is Go, and a Go toolchain in the runner image would be
 # ~600 MB for one binary; so it is fetched at a pinned commit, checked by
@@ -349,6 +361,19 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY tests/kerberos-interop/build-heimdal.sh /usr/src/build-heimdal.sh
 RUN /usr/src/build-heimdal.sh /opt/heimdal
+
+# ---------------------------------------------------------------------------
+# THE PKCS#11 BINDING (#1955 P8), for `tests/pkcs11_kek.js` and
+# `tests/pkcs11_signing.js`'s SoftHSM2 halves. `pkcs11js` is a native addon
+# (node-gyp) and the final stage below carries no compiler, so it is built
+# here, on the node the service image runs, and copied in; N-API keeps the
+# binary good on the final stage's node. It is NOT one of the tests' own
+# dependencies (tests/package.json): the service treats it as an optional
+# peer, loaded lazily, and so does the test — from /opt/pkcs11js, where the
+# service's own require cannot reach it by accident.
+# ---------------------------------------------------------------------------
+FROM node:24.22.1-bookworm AS pkcs11js
+RUN mkdir -p /opt/pkcs11js && cd /opt/pkcs11js  && npm init -y >/dev/null  && npm install --omit=dev pkcs11js@2.1.7  && npm cache clean --force
 
 FROM ubuntu:latest
 
@@ -676,10 +701,25 @@ COPY --from=uma-java /out/keycloak-uma /opt/uma-clients/keycloak
 RUN ln -s /opt/uma-clients/keycloak/keycloak-uma-driver \
       /usr/local/bin/keycloak-uma-driver \
  && (keycloak-uma-driver 2>&1 | head -1)
+# Apache WSS4J (#1917, #1918): its driver, runtime and licences.
+COPY --from=wss4j-java /out/wss4j /opt/wss-clients/wss4j
+RUN ln -s /opt/wss-clients/wss4j/wss4j-driver /usr/local/bin/wss4j-driver \
+ && (wss4j-driver 2>&1 | head -1)
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing
 # eighty lines later inside node with a message about a module.
+# SOFTHSM2 AND THE BINDING (#1955 P8): a software PKCS#11 token, so the HSM
+# key-encryption key and HSM signing keys are exercised against a real module
+# as well as the fake one. A token is initialised by the test itself, in a
+# directory of its own (SOFTHSM2_CONF), so nothing here holds key material.
+COPY --from=pkcs11js /opt/pkcs11js /opt/pkcs11js
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        softhsm2 \
+ && rm -rf /var/lib/apt/lists/*
+ENV STS_TEST_PKCS11JS=/opt/pkcs11js/node_modules/pkcs11js
+ENV STS_TEST_SOFTHSM_MODULE=/usr/lib/softhsm/libsofthsm2.so
 COPY . ./
 RUN if [ ! -f tests/tools/run-report.js ]; then \
       echo "tests/ is missing from the build context, so there is nothing" >&2; \

@@ -292,6 +292,11 @@ const GLOBAL_MINTED = {
   // `audit.export.cursors`, which is cell-tier with the ring it walks.
   'audit.export.destinations': 'where a realm\'s audit events are ' +
     'delivered',
+  // Whether a realm's administrative device requirement is ARMED (#2179):
+  // one row, when it was armed, and nobody's data (who and through which
+  // device are on the audit row). A latch every cell must honour alike.
+  'devices.adminRequirement': 'whether a realm\'s administrators need a ' +
+    'compliant registered device yet',
   // A realm's sign-in logo (#717): configuration every cell's sign-in
   // pages draw, as the mail templates are.
   'branding.assets': 'a realm\'s sign-in logo',
@@ -305,11 +310,21 @@ const GLOBAL_MINTED = {
   // row is a component's name, times and counts — nobody's data.
   'xacml_pep_registry.liveness': 'a remote PEP\'s last heartbeat and ' +
     'counters',
+  // ADMINISTRATOR ACTS HELD FOR A SECOND ADMINISTRATOR (#2166): a held
+  // realm deletion, CA re-key or KEK rotation is control-plane state, and
+  // every cell's console must show it and let it be decided. A row names
+  // the two administrators and the operation's body; no resident's data.
+  'dualControl.requests': 'administrator acts held for a second ' +
+    'administrator',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',
   'oidfed.registerGeneration': 'the OpenID Federation register generation',
   'signing.history': 'the signer generations every cell publishes',
+  // When each credential signer and request-decryption key was first seen
+  // (#2220): the age the scheduled rotations count, of keys every cell holds
+  // alike. A kid and an instant; nobody's data.
+  'keys.renewalClock': 'when each rotated key was first seen',
   'spiffe.authorities': 'the SPIFFE trust domain authorities',
   'spiffe.federatedBundles': 'the SPIFFE federated bundles',
   'spiffe.sigstoreTuf': 'the Sigstore TUF trust root',
@@ -359,7 +374,21 @@ const GLOBAL_MINTED = {
   // worth of load. A row is a client id, a failure count, two times and the
   // probe's row id — nobody's data — and it is written only on a failure and
   // on the recovery.
-  'scimClient.pause': 'the outbound SCIM clients\' shared backoff pause'
+  'scimClient.pause': 'the outbound SCIM clients\' shared backoff pause',
+  // YK-VAL clients (#1955 P5): an operator's client id and a sealed HMAC
+  // key. Every cell answers /wsapi/2.0/verify, so the clients are one list.
+  // A row names no person.
+  'yubiotp.ykvalClients': 'the YK-VAL clients a realm accepts',
+  // A YK-VAL nonce is chosen by the client and is valid at every cell that
+  // answers the endpoint. A replay set per cell would accept it once per
+  // cell. A row is a client id and a nonce — the OTP is not stored.
+  'yubiotp.nonces': 'YK-VAL nonces already accepted',
+  // THE SSH CERTIFICATES A REALM ISSUED (the #1955 review; they were on the
+  // global PKI row until then): one KRL per realm, published by every cell,
+  // so a certificate issued in one cell and revoked in another must be on
+  // every cell's KRL. A row is a serial, a key fingerprint, two times and
+  // the owner's urn:uuid subject — what the PKI row held, globally.
+  'ssh_user_ca.issued': 'the SSH user certificates a realm issued'
 };
 
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
@@ -371,10 +400,12 @@ const CELL_MINTED = [
   // somebody's sign-in. Each cell's console shows what that cell saw.
   'acme.accountKeys', 'acme.accounts', 'acme.authorizations',
   'acme.certificates', 'acme.orders', 'acme.renewalInfo', 'acme.usedNonces',
-  // AuthZEN access requests and their index (#1180): a request names the
-  // person it is about and the approver who decided it — somebody's, made in
-  // this cell. A PEP polls the cell it submitted to.
-  'authzen.accessRequestIndex', 'authzen.accessRequests',
+  // AuthZEN access requests, the denial record an evaluation_id resolves
+  // (#1204) and their index (#1180): a request names the person it is about
+  // and the approver who decided it — somebody's, made in this cell. A PEP
+  // polls the cell it submitted to.
+  'authzen.accessRequestDenials', 'authzen.accessRequestIndex',
+  'authzen.accessRequests',
   // A browser's account set and its selection tickets (#561), and their
   // counters: a browser and its sessions are pinned to one cell.
   'admin_stats.accountCounts', 'authn.accountSets', 'authn.accountTickets',
@@ -386,6 +417,9 @@ const CELL_MINTED = [
   // ring itself: another cell's cursor would point into events it never held.
   'audit.export.cursors',
   'audit.nums', 'authn.pending',
+  // A certificate sign-in handoff (#2012): a pending sign-in's, bound to a
+  // browser's session, beside the pending sign-in itself.
+  'tls.certificateHandoffs',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',
   'authn.webauthnCredentials', 'authorization_details.consented',
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
@@ -410,6 +444,32 @@ const CELL_MINTED = [
   // A partner's refresh token held for one session (#930): the session's
   // cell's, as the session is.
   'federation_sp.partnerRefresh',
+  // The hardware token register (#1955): a token is somebody's — its
+  // holder's — and is attested where their keys were registered, so it is
+  // kept beside their entry in this cell.
+  'hardware_tokens.register',
+  // The OATH token inventory (#1955 P4): an imported token becomes
+  // somebody's, its secret on their entry in this cell, so the row that
+  // described it (and, until it is assigned, held that secret sealed) stays
+  // beside the entry.
+  'oath_tokens.inventory',
+  // A YubiKey OTP inventory and the public-id index (#1955 P5): an
+  // unassigned token's secret, and once assigned the person it names.
+  // Somebody's, beside their entry in this cell. The YK-VAL clients and
+  // the nonce replay set are global, above.
+  'yubiotp.inventory', 'yubiotp.publicIds',
+  // A person's OpenPGP registration challenge and their Web Key Directory
+  // publication (#1955 P6): somebody's, beside their entry in this cell.
+  'openpgp.challenges', 'openpgp.wkd',
+  // The classical OpenPGP keys kept beside a post-quantum one, and until
+  // when (#2009 P2): somebody's, beside their entry in this cell.
+  'openpgp.classicalKept',
+  // What a PIV re-issue replaces, until the new certificate is first used
+  // (#2009 P3, D5): somebody's certificates, beside their entry.
+  'piv.supersedes',
+  // When each certificate a person holds expires, and which reminder steps
+  // they were told at (#2247): somebody's, beside their entry in this cell.
+  'credential_expiry.due',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
@@ -478,6 +538,10 @@ const CELL_MINTED = [
   // An announcement a surface's receiver took in (#1086), for its own tabs:
   // minted here, beside the inbox it came out of.
   'ssf_receivers.announcements',
+  // The relying parties a sign-on session carried when it ended (#2234),
+  // for a few minutes, so the event that ended it still reaches them: a
+  // session's own facts, minted here beside the sessions.
+  'ssf_application_sessions.ended',
   'ssf_receivers.inbox', 'ssf_streams.deadLetters', 'ssf_streams.queued',
   'ssf_streams.streams', 'tls.listenerAnnounced',
   // Each node's own listener key (2026-10-08), sealed: a node is a member of
@@ -498,6 +562,10 @@ const CELL_MINTED = [
   // A remote PEP's Basic tickets (#1760): a person's sign-in, handed to the
   // PEP that asked this cell, and looked up by it alone.
   'xacml.pepTickets',
+  // What each bound embedded PEP was last sent (#2028): a token per PEP,
+  // written by the pulls this cell answered and read by the change it
+  // decides on. Its PEPs pull here; another cell keeps its own.
+  'xacml.pepTokens',
   'xacml_monitor.counters'
 ];
 
@@ -521,6 +589,10 @@ const CELL_PREFIXES = ['enrollment_monitor.', 'test.'];
 const GLOBAL_JOBS = [
   'signing.rotate', 'signing.retire', 'signing.rotate-now',
   'krb5.krbtgt-rotate', 'krb5.krbtgt-rotate-now',
+  // The renewals of #2220: a CA row, a realm's key set and a service
+  // principal's entry are the global tier's, so one cell renews each.
+  'krb5.service-key-rotate', 'pki.ca-renew',
+  'keys.credential-signer-rotate', 'keys.encryption-key-rotate',
   'oidfed.key-rotate', 'oidfed.key-rotate-now', 'oidfed.collection-crawl',
   'oidfed.registrations-expire', 'federation.encryption-key-retire',
   'federation.client-certificate-renew',
@@ -531,6 +603,9 @@ const GLOBAL_JOBS = [
   // a job of its own every cell's leader purged the one global sts_minted.
   // The cell's half, persistence.minted-expiry-purge, runs in every cell.
   'persistence.minted-expiry-purge-global',
+  // The YK-VAL nonce map is global (a client-chosen replay key). One cell
+  // sweeps it; every cell would each drop the same rows.
+  'yubiotp.nonce-sweep',
   // And the global tier's tombstone sweep, for the same reason (#1313);
   // the cell's half, persistence.tombstone-purge, runs in every cell.
   'persistence.tombstone-purge-global'
@@ -550,8 +625,13 @@ const GLOBAL_RUN_SCOPE = 'scheduler.run.global';
 // (`sts_pki_distribution_points`: "jose.crl is named by certificates of two
 // different authorities"), where the `cluster` mode, one database, did not.
 const PKI_BUILD_SCOPE = 'pki.build';
+// A YK-VAL NONCE (the #1955 review, `common/yubiotp_store.ts`): chosen by
+// the client and valid at every cell that answers the endpoint, so the
+// claim that spends it is the whole service's, `yubiotp.nonces`' reason.
+const YKVAL_NONCE_SCOPE = 'yubiotp.ykval-nonce';
 // The claim scopes kept in the global tier.
-const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE];
+const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE,
+                             YKVAL_NONCE_SCOPE];
 
 /**
  * Tells whether a scheduler job's work is the global tier's.

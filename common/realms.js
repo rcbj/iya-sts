@@ -1404,6 +1404,9 @@ function create(given) {
   realms.set(id, realm);
   // A realm removed and defined again takes rows again. See acceptsRows().
   retired.delete(id);
+  // And a realm that has arrived is no longer one to forget (#1938): the
+  // rows that came first are its own.
+  unarrived.delete(id);
   log.info('realms: "' + id + '" defined; its endpoints are under ' +
            prefixOf(realm) + '/.');
   // AFTER the row is written, because a builder may want to read the realm
@@ -2099,6 +2102,150 @@ function onRemove(fn) {
 }
 
 // ---------------------------------------------------------------------------
+// AND WHAT A PROCESS HOLDS FOR A REALM IT NEVER DEFINED, WHICH THE STORE NO
+// LONGER LISTS, IS FORGOTTEN (2026-11-20, #1938).
+//
+// `acceptsRows()` admits a row of a realm that has not arrived here — its
+// rows may come first — so a realm created and removed on another node
+// between two of this process's realm reads leaves rows here in partitions
+// no `remove()` will ever purge: this process never defined the realm, so
+// it never removes it. Run #569's single-node stack showed it for the
+// keystore (#1937 fixed the data keys; #1938 the signing-key set); every
+// per-realm store this file declares has the same door, because a
+// replicated minted row of that realm is written into its partition by
+// `restore()`, and the realm's removal deletes its `sts_minted` rows in one
+// statement with no change row per row. The rows stayed for the life of the
+// process, and a realm later created under the same id would have arrived
+// holding them — the one surprise `remove()`'s purges exist to prevent.
+//
+// **THE STORE IS THE JUDGE, NOT A TIMER**, as in #1937: `persistence.js`'s
+// realm applier hands `forgetUnarrived()` the ids `sts_realms` lists and the
+// ids this process held something for BEFORE it read them. An id held
+// before the read, not listed by it and still not defined here is a realm
+// that was removed before it arrived: a realm's rows reach this process only
+// after its `sts_realms` row commits (a realm is answered after its commit,
+// and everything minted in it is minted by a request after that), so a
+// realm that is merely on its way is listed by any read that began after
+// its rows were here.
+//
+// **A FORGET IS NOT A PURGE.** It touches memory only — a purge also
+// deletes store rows, counts removals and tells observers, all of which
+// belong to a realm that existed here — and it does not retire the id:
+// a realm created under it later takes rows as any new realm does.
+// ---------------------------------------------------------------------------
+const forgetters = [];
+
+// Ids a partition was built for while no realm of that id was defined here.
+// Filled by `keyed()` on the miss, which is the only place a partition is
+// made; emptied by `create()` and `remove()` and by a forget.
+const unarrived = new Set();
+
+/**
+ * Registers an in-memory drop for a realm this process never defined and the
+ * store no longer lists (#1938). A forget deletes nothing from the store.
+ *
+ * @param forget - called with the realm id
+ * @param held - optional; answers the ids of realms not defined here that
+ *   the registrant holds something for
+ */
+function onForget(forget, held) {
+  log.debug("Entering onForget().");
+  forgetters.push({ forget: forget,
+                    held: typeof held === 'function' ? held : null });
+  log.debug("Leaving onForget().");
+}
+
+// Whether `id` names a realm that could be forgotten: not the default realm,
+// not an internal scope (a leading `*`, which no realm id can carry), not
+// defined here, and not removed here (a removed realm's partitions are the
+// purge's, and it has run).
+function forgettable(id) {
+  log.debug("Entering forgettable().");
+  const key = String(id || '');
+  log.debug("Leaving forgettable().");
+  return key !== '' && key !== DEFAULT_ID && key !== 'default' &&
+         key.charAt(0) !== '*' && !realms.has(key) && !retired.has(key);
+}
+
+/**
+ * The ids of realms not defined here that this process holds something for,
+ * in a partition or in a registrant's own maps (#1938). Taken BEFORE the
+ * store's realm list is read, so `forgetUnarrived()` judges only what was
+ * here before the read began.
+ *
+ * @returns a Set of realm ids
+ */
+function heldUnarrivedIds() {
+  log.debug("Entering heldUnarrivedIds().");
+  const out = new Set();
+  unarrived.forEach(function (id) {
+    if (forgettable(id)) {
+      out.add(id);
+    }
+  });
+  forgetters.forEach(function (one) {
+    if (!one.held) {
+      return;
+    }
+    try {
+      Array.from(one.held() || []).forEach(function (id) {
+        if (forgettable(id)) {
+          out.add(String(id));
+        }
+      });
+    } catch (e) {
+      // Not fatal: what that registrant holds is judged at the next read.
+      log.debug("Caught in heldUnarrivedIds(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving heldUnarrivedIds(). " + out.size);
+  return out;
+}
+
+/**
+ * Forgets what this process holds for each id of `heldBefore` the store's
+ * realm list `listedIds` does not name and no realm here defines (#1938).
+ * Memory only: nothing is deleted from the store, and the id is not retired.
+ *
+ * @param listedIds - the ids `sts_realms` lists (a Set or an array)
+ * @param heldBefore - `heldUnarrivedIds()`, taken before that list was read
+ * @returns the ids forgotten
+ */
+function forgetUnarrived(listedIds, heldBefore) {
+  log.debug("Entering forgetUnarrived().");
+  const listed = new Set(Array.from(listedIds || []).map(String));
+  const gone = Array.from(heldBefore || []).map(String).filter(function (id) {
+    return forgettable(id) && !listed.has(id);
+  });
+  gone.forEach(function (id) {
+    let refused = false;
+    forgetters.forEach(function (one) {
+      try {
+        one.forget(id);
+      } catch (e) {
+        refused = true;
+        log.warn(errorCodes.tag('STS-CORE-0180') + 'realms: a store ' +
+                 'refused to forget what it holds for "' + id + '", a ' +
+                 'realm this process never defined and the store no longer ' +
+                 'lists: ' + ((e && e.message) || e) + '. It is asked ' +
+                 'again at the next realm read.');
+      }
+    });
+    if (!refused) {
+      unarrived.delete(id);
+    }
+  });
+  if (gone.length) {
+    log.info('realms: ' + gone.length + ' realm(s) this process never ' +
+             'defined are not in the store, so they were removed before ' +
+             'they arrived here; what this process held for them was ' +
+             'forgotten (' + gone.join(', ') + ').');
+  }
+  log.debug("Leaving forgetUnarrived(). " + gone.length);
+  return gone;
+}
+
+// ---------------------------------------------------------------------------
 // AND THE OTHER END: A REALM THAT NEEDS SOMETHING BUILT MUST GET IT BUILT.
 //
 // `keyed()` covers every store that can be built LAZILY — a Map made on first
@@ -2285,6 +2432,24 @@ function removalBoundMs() {
  * @returns null when it is not being removed, else `{ since, sinceIso,
  *   inProgress, interrupted, finishesBy, refusing, why, finish }`
  */
+// THE WORDS OF A RETIRING REALM'S REFUSAL, once (#2006): the catalog
+// sentence, `retiringState()`'s `why` being its English. `sentence` is
+// required here and not at load: `helpers.js` requires this file, and
+// `sentence` requires `helpers.js`.
+function retiringSentence(id, state) {
+  log.debug("Entering retiringSentence().");
+  const Sentence = require('./sentence');
+  const out = !state
+    ? Sentence.say('refusals.account.realmRetiring', { realm: id })
+    : (state.inProgress
+      ? Sentence.say('refusals.account.realmRetiringSince',
+                     { realm: id, since: state.sinceIso })
+      : Sentence.say('refusals.account.realmRetiringInterrupted',
+                     { realm: id, since: state.sinceIso }));
+  log.debug("Leaving retiringSentence().");
+  return out;
+}
+
 function retiringState(realmOrId) {
   log.debug("Entering retiringState().");
   const id = realmOrId === undefined || realmOrId === null
@@ -2312,14 +2477,9 @@ function retiringState(realmOrId) {
               'credential, certificate and SVID in this realm ' +
               '(STS-CORE-0121); sign-out, revocation, introspection, ' +
               'UserInfo, metadata and the SSF poll endpoint still answer',
-    why: inProgress
-      ? 'The trust realm "' + id + '" is being removed (the removal ' +
-        'began at ' + sinceIso + '), so nothing new is signed in or ' +
-        'issued in it.'
-      : 'The trust realm "' + id + '" was being removed from ' + sinceIso +
-        ', and that removal was interrupted before it finished — the ' +
-        'process doing it stopped. Nothing new is signed in or issued in ' +
-        'it until an administrator finishes the removal.',
+    // One copy of the words (#2006): the catalog sentence's English.
+    why: String(retiringSentence(id, { inProgress: inProgress,
+                                       sinceIso: sinceIso })),
     finish: inProgress
       ? 'Wait: the removal finishes by itself by ' +
         new Date(finishesBy).toISOString() + '.'
@@ -2372,14 +2532,19 @@ function retiringRefusal(realmOrId) {
     : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
                                      : String(realmOrId));
   const state = retiringState(id);
+  // A CATALOG SENTENCE (#2006), so a sign-in page draws it in its
+  // language: `retiringSentence()`, `retiringState()`'s words too.
+  const why = retiringSentence(id, state);
   log.debug("Leaving retiringRefusal(). Refused.");
+  // `why` IS THE ENGLISH, as it always was: three issuers hand it to a
+  // protocol's own error answer; `said` is the sentence the sign-in screen
+  // draws in the page's language (#2006, `issuance_gate.js`'s `asText()`).
   return errorCodes.mark({
     realm: id,
     since: state ? state.since : 0,
     interrupted: !!(state && state.interrupted),
-    why: state ? state.why
-               : 'The trust realm "' + id + '" is being removed, so ' +
-                 'nothing new is signed in or issued in it.'
+    why: String(why),
+    said: why
   }, 'STS-CORE-0121');
 }
 
@@ -2608,6 +2773,7 @@ function remove(id) {
   // Before the purges, so a replicated row arriving while they run is refused
   // rather than rebuilding a partition they just emptied. See acceptsRows().
   retired.add(realm.id);
+  unarrived.delete(realm.id);
   purges.forEach(function (purge) {
     try {
       purge(realm.id);
@@ -3186,6 +3352,8 @@ function keyed(factory, onLookup) {
   // it is on the path of every property read of `helpers.js`'s STS proxy.
   const observe = typeof onLookup === 'function' ? onLookup : null;
   onRemove(function (id) { per.delete(id); });
+  // And forgotten with a realm never defined here (#1938). See onForget().
+  onForget(function (id) { per.delete(id); });
   function forCurrent() {
     log.debug("Entering forCurrent().");
     const id = currentId();
@@ -3203,7 +3371,13 @@ function keyed(factory, onLookup) {
     log.debug("Entering of().");
     const held = per.has(id);
     if (!held) {
-      per.set(id, factory(get(id) || DEFAULT_REALM));
+      const realm = get(id);
+      // A partition for a realm not defined here (#1938): its rows came
+      // first, and `forgetUnarrived()` judges them at the next realm read.
+      if (!realm && forgettable(id)) {
+        unarrived.add(String(id));
+      }
+      per.set(id, factory(realm || DEFAULT_REALM));
     }
     if (observe) {
       observe(held);
@@ -4434,6 +4608,12 @@ function segmentedArr(options, per, size) {
     bases.delete(id);
     restored.delete(id);
   });
+  // And forgotten with a realm never defined here (#1938); the partition
+  // itself is `keyed()`'s, which forgets it too.
+  onForget(function (id) {
+    bases.delete(id);
+    restored.delete(id);
+  });
 
   function baseOf(id) {
     log.debug("Entering baseOf().");
@@ -5102,8 +5282,9 @@ function realmSupport() {
             'main port is https or it is not, for every realm at once, and ' +
             'GET /oauth2/rfc9700 reports which.' },
     { family: 'Authentication service', state: 'full', by: 'path',
-      cards: ['WebAuthn / CTAP', 'One-time passwords (TOTP)', 'Recovery codes',
-              'Email codes and links', 'Device Bound Session Credentials'],
+      cards: ['WebAuthn / CTAP', 'One-time passwords (TOTP)', 'Yubico OTP',
+              'Recovery codes', 'Email codes and links',
+              'Device Bound Session Credentials'],
       note: 'Its own sessions and second factors — WebAuthn credentials, ' +
             'TOTP secrets and recovery codes — so signing in to one ' +
             'realm signs you in to that realm only. That is the point of a ' +
@@ -5123,6 +5304,16 @@ function realmSupport() {
             'realm as well as the SP digest. The SERVICE PROVIDER ENTRIES ' +
             'are per realm, for the reason the OAuth clients are: they are ' +
             'applications in the realm\'s own directory.' },
+    { family: 'OpenPGP and the Web Key Directory', state: 'full',
+      by: 'path',
+      cards: ['OpenPGP'],
+      note: 'A person\'s OpenPGP key is on their entry in the realm\'s own ' +
+            'directory, its registration challenge is the realm\'s, and ' +
+            'the Web Key Directory answers for the realm\'s own mail ' +
+            'domains (openpgp.wkdDomains, or its DNS domain) with keys of ' +
+            'its own people. A WKD client knows a domain and never a realm ' +
+            'path, so a request with no realm segment is answered by the ' +
+            'realm that serves its domain, the default realm first.' },
     { family: 'WS-Trust', state: 'full', by: 'path',
       cards: ['WS-Trust'],
       note: 'Its own token issuer and signing key.' },
@@ -5480,6 +5671,11 @@ module.exports = {
   isEstLabel: isEstLabel,
   onCreate: onCreate,
   onRemove: onRemove,
+  // #1938: what a process holds for a realm it never defined, forgotten once
+  // the store's realm list no longer names it (`persistence.js`).
+  onForget: onForget,
+  heldUnarrivedIds: heldUnarrivedIds,
+  forgetUnarrived: forgetUnarrived,
   onRetire: onRetire,
   retire: retire,
   isRetiring: isRetiring,

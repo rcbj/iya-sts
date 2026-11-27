@@ -147,6 +147,8 @@ const grantingBackfill = require('./granting_index_backfill');
 // The risk engine's statements on MariaDB (#677). A LIBRARY, built in
 // create() only on an engine that is not PostgreSQL.
 const riskPortable = require('./risk_portable');
+// THE AUDIT LOG'S STATEMENTS ON MARIADB (#1616): `audit_portable.js`.
+const auditPortable = require('./audit_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -189,6 +191,14 @@ const capabilities = require('../cluster/cluster_capabilities');
 // connection within the pool's wait now answers its request 503 rather than
 // being acknowledged and lost (`cluster/cluster_barrier.js`, rule 2).
 const POOL_FLOOR = 4;
+// THE POOL'S WAITS, WHERE THE CALLER NAMES NONE (#2220): the connect
+// timeout and the wait for a free connection were both 5 s and an idle
+// connection was closed after 30 s, fixed. `persistence.connectTimeoutMs`,
+// `persistence.poolWaitMs` and `persistence.idleTimeoutMs` set them now,
+// passed in by `persistence.js` (this driver reads no setting), and these
+// are their defaults — the numbers it always had.
+const CONNECT_TIMEOUT_MS = 5000;
+const IDLE_TIMEOUT_MS = 30000;
 
 // A PURE FUNCTION of the node's request-worker count, so the scheduler's cap
 // (cluster/scheduler.ts, maxConcurrentRuns()) and the pool agree. No log
@@ -197,12 +207,19 @@ const POOL_FLOOR = 4;
  * Returns how many connections each process's pool holds.
  *
  * Twice the node's request-worker count, and never fewer than four, so the
- * scheduler's cap and the pool agree.
+ * scheduler's cap and the pool agree — unless `size` names one
+ * (`persistence.poolSize`, #2220), which is then the size, never below two:
+ * the flush and the change-log pull each need one.
  * @param workers - the node's request workers (`workers.requestCount` plus
  * `workers.surfaceCount`)
+ * @param [size] - the configured size; 0 or absent for the automatic one
  * @returns the pool size
  */
-function poolMax(workers) {
+function poolMax(workers, size) {
+  const configured = Math.floor(Number(size) || 0);
+  if (configured > 0) {
+    return Math.max(2, configured);
+  }
   const n = Math.max(0, Number(workers) || 0);
   return Math.max(POOL_FLOOR, 2 * n);
 }
@@ -327,7 +344,15 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // started_at DESC, key`, `WHERE chosen`). `started_at` is set once, so
 // the index does not newly make an update non-HOT. How a large store
 // builds it is in `postgres/CLAUDE.md`.
-const SCHEMA_VERSION = 32;
+// 33 SINCE 2026-11-24 (#1616, ASVS 5.0.0 16.4.2): `sts_audit`, the audit
+// log as one sealed row per event, where the application role holds INSERT
+// and SELECT and nothing else, and the two SECURITY DEFINER functions rows
+// leave it through (`sts_audit_retain`, `sts_audit_purge_realm`). The table
+// is created here like any other, which only a role that could also alter
+// it can do — so `auditPrivileges()` reports whether this role can change
+// it, and `/admin/mode` says so. `postgres/upgrade-1.1.0.sql` builds it on a
+// 1.1.x store; the rows the ring held move in at the first start.
+const SCHEMA_VERSION = 33;
 // How many times a directory flush re-reads the data-key rows and tries
 // again when a locked row is sealed under a key this process does not hold
 // yet, and the pause between tries (2026-10-27; saveDirectory()).
@@ -1214,7 +1239,7 @@ const SCHEMA_ROUTINES = [
 // fall between the count and the first trigger. Only when the counters hold
 // nothing: a second run, a second process, or the script after the driver,
 // adds nothing. Linear in the rows, ONCE: at 200M a long first start, said
-// in `docs/v1.1.0/postgres-schema.md`.
+// in `docs/v1.2.0/postgres-schema.md`.
 // ---------------------------------------------------------------------------
 const LOCK_FOR_BACKFILL =
   'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';
@@ -2324,12 +2349,14 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
  * @param [ca] - PEM text of the certificates trusted for this connection in
  * place of node's default store, or '' for that store
  * @param [engine] - 'postgres' (the default) or 'mariadb' (#677)
+ * @param [client] - `{ cert, key }`, the PEM client certificate (chain) and
+ * its private key this connection presents (#2254), or null for none
  * @returns `{ connectionString, ssl, refused, verifyChain, verifyHostname }`;
  * `refused` is '' or why the string is not dialled (it would be in the
  * clear, or cannot be told); `verifyChain` and `verifyHostname` say what is
  * checked of the server's certificate
  */
-function dialOptions(url, verifyTls, ca, engine) {
+function dialOptions(url, verifyTls, ca, engine, client) {
   const raw = String(url || '');
   const mariadb = engine === 'mariadb';
   // A MariaDB string spells "no TLS" as `ssl=false` or `ssl-mode=DISABLED`
@@ -2382,7 +2409,8 @@ function dialOptions(url, verifyTls, ca, engine) {
   const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
   /**
    * @type {{ rejectUnauthorized: boolean, ca?: string,
-   *          checkServerIdentity?: Function, checkHost?: string }}
+   *          checkServerIdentity?: Function, checkHost?: string,
+   *          cert?: string, key?: string }}
    */
   // `stsOutboundVariant`: the store's row of the outbound gate (#1360,
   // `common/certificate_trust.ts`); node ignores a member it does not know.
@@ -2392,6 +2420,18 @@ function dialOptions(url, verifyTls, ca, engine) {
     // The database's own trust anchors, in place of the default store for
     // this connection only (the header).
     ssl.ca = String(ca);
+  }
+  if (client && client.cert && client.key) {
+    // THE CLIENT CERTIFICATE THIS CONNECTION PRESENTS (#2254): node's own
+    // `cert` and `key`, which `pg` and `mysql2` both hand to `tls.connect`
+    // as they are. Text, so it crosses to the directory bridge's thread as
+    // the trust anchors do. With it the database may authenticate the
+    // connection by its certificate alone (pg_hba's `cert`, MariaDB's
+    // `REQUIRE X509`), or by the certificate AND the password in the string
+    // (`clientcert=verify-full`); which is the database's choice, and the
+    // string is dialled as written either way.
+    ssl.cert = String(client.cert);
+    ssl.key = String(client.key);
   }
   if (verifyChain && !verifyHostname) {
     // libpq's verify-ca: the chain, and no host name. Node checks the host
@@ -2575,7 +2615,15 @@ function create(options) {
     { table: 'sts_minted', keys: ['handle', 'realm', 'key'],
       column: 'key_sealed', jsonb: false, change: null },
     { table: 'sts_changes', keys: ['seq'], column: 'key', jsonb: false,
-      change: null }
+      change: null },
+    // THE APPEND-ONLY AUDIT LOG (#1616): COUNTED, NEVER RE-SEALED. This role
+    // may not UPDATE `sts_audit`, by design (ASVS 5.0.0 16.4.2), so a row
+    // keeps the data key it was sealed under — and because a key is
+    // destroyed only on a count of zero (`data_key_rotation.ts`), counting
+    // these is what keeps a retired key while an audit row still names it,
+    // until retention has aged those rows out (rcbj's decision 6).
+    { table: 'sts_audit', keys: ['realm', 'origin', 'seq'], column: 'body',
+      jsonb: false, change: null, countOnly: true }
   ];
 
   // The column as text, for LIKE and for the regular expression.
@@ -3165,7 +3213,7 @@ function create(options) {
         'value_keys END AS value_keys FROM sts_ldap_entries WHERE ' +
         '(realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $4',
         [cursor ? cursor.realm : '', cursor ? cursor.dnKey : '',
-         require('./directory_codec').GRANTING_ATTRIBUTES.slice(), limit]
+         require('./directory_codec').BACKFILL_ATTRIBUTES.slice(), limit]
       ).then(function (r) {
         return (r && r.rows) || [];
       });
@@ -3428,7 +3476,13 @@ function create(options) {
   // `dialOptions()`, above create(), is the one reading of it (#98): this
   // driver's pools and an out-of-process tool dial the same way.
   const tlsCa = String(options.tlsCa || '');
-  const dial = dialOptions(url, options.verifyTls, tlsCa, engine);
+  // The client certificate and key (#2254), PEM, or null: `let`, because a
+  // renewed pair replaces it (`useClientCertificate()`).
+  let tlsClient = options.tlsClient && options.tlsClient.cert &&
+    options.tlsClient.key
+    ? { cert: String(options.tlsClient.cert),
+        key: String(options.tlsClient.key) } : null;
+  const dial = dialOptions(url, options.verifyTls, tlsCa, engine, tlsClient);
   if (dial.refused) {
     throw new Error(errorCodes.tag('STS-STORE-0078') +
                     'persistence: the database connection string is not ' +
@@ -3479,7 +3533,24 @@ function create(options) {
   // it into a socket option, which is what stops the two disagreeing again.
   // That place is `dialOptions()` since #98, so a process that is not the
   // service dials the same way.
-  const dialled = dial.connectionString;
+  // `let` since #2220: a password read again replaces it
+  // (`useConnectionString()`).
+  let dialled = dial.connectionString;
+  // `let` since #2254: a client certificate read again replaces it
+  // (`useClientCertificate()`).
+  let dialSsl = dial.ssl;
+  if (tlsClient) {
+    log.info('persistence: the database connection presents a client ' +
+             'certificate (persistence.databaseTlsClientCertFile).');
+  }
+  // The connect timeout, the wait for a free connection and the idle close
+  // (#2220): the caller's, or the numbers this driver always had.
+  const connectMs = Number(options.connectTimeoutMs) > 0
+    ? Number(options.connectTimeoutMs) : CONNECT_TIMEOUT_MS;
+  const waitMs = Number(options.poolWaitMs) > 0
+    ? Number(options.poolWaitMs) : connectMs;
+  const idleMs = Number(options.idleTimeoutMs) > 0
+    ? Number(options.idleTimeoutMs) : IDLE_TIMEOUT_MS;
 
   // ONE PLACE THE CONNECTION IS DESCRIBED, because the pool and the change
   // listener have to dial the same database the same way — and a listener that
@@ -3494,16 +3565,18 @@ function create(options) {
     return {
       engine: engine,
       connectionString: dialled,
-      ssl: dial.ssl,
-      connectionTimeoutMillis: 5000
+      ssl: dialSsl,
+      connectionTimeoutMillis: connectMs
     };
   }
 
   // Knex's pool over the writer (#326; `knex_store.js` argues the shape).
   // A mock must not hang waiting for a database that is not there: the
   // failure has to arrive as a logged error and a service that keeps
-  // answering, which needs the connection attempt to give up — the 5 s in
-  // `clientOptions()` bounds both the dial and the wait for a free slot.
+  // answering, which needs the connection attempt to give up — the connect
+  // timeout in `clientOptions()` bounds the dial and `waitMs` the wait for a
+  // free slot (5 s each by default; `persistence.connectTimeoutMs` and
+  // `persistence.poolWaitMs` since #2220).
   const pool = knexStore.openPool(clientOptions(), {
     // Small on purpose. The directory flush is one transaction at a time
     // (persistence.js). At most two minted flushes of non-overlapping keys
@@ -3512,7 +3585,8 @@ function create(options) {
     // A mock does not need a connection per core.
     max: Number(options.poolMax) > 0 ? Number(options.poolMax)
       : POOL_FLOOR,
-    idleTimeoutMillis: 30000
+    idleTimeoutMillis: idleMs,
+    acquireTimeoutMillis: waitMs
   });
 
   // -------------------------------------------------------------------------
@@ -3600,7 +3674,7 @@ function create(options) {
   const tallyPool = knexStore.openPool(
     Object.assign({}, clientOptions(),
                   { options: '-c synchronous_commit=off' }),
-    { max: 2, idleTimeoutMillis: 30000 });
+    { max: 2, idleTimeoutMillis: idleMs, acquireTimeoutMillis: waitMs });
   tallyPool.on('error', function (err) {
     log.error(errorCodes.tag('STS-STORE-0030') +
               'persistence: an idle postgres client of the tally pool ' +
@@ -3616,7 +3690,7 @@ function create(options) {
     if (!readUrl || readUrl === url) {
       return pool;
     }
-    const readDial = dialOptions(readUrl, verify, tlsCa, engine);
+    const readDial = dialOptions(readUrl, verify, tlsCa, engine, tlsClient);
     if (readDial.refused) {
       throw new Error(errorCodes.tag('STS-STORE-0078') +
                       'persistence: the read database connection string is ' +
@@ -3626,12 +3700,13 @@ function create(options) {
       engine: engine,
       connectionString: readDial.connectionString,
       ssl: readDial.ssl,
-      connectionTimeoutMillis: 5000
+      connectionTimeoutMillis: connectMs
     };
     const made = knexStore.openPool(readOptions, {
       max: Number(options.poolMax) > 0 ? Number(options.poolMax)
         : POOL_FLOOR,
-      idleTimeoutMillis: 30000
+      idleTimeoutMillis: idleMs,
+      acquireTimeoutMillis: waitMs
     });
     made.on('error', function (err) {
       log.error(errorCodes.tag('STS-STORE-0030') +
@@ -4178,6 +4253,14 @@ function create(options) {
         shapes: { dataset: riskDatasetFrom, version: riskVersionFrom,
                   range: riskRangeFrom, failure: riskFailureFrom }
       })
+    : null;
+
+  // THE AUDIT LOG ON MARIADB (#1616), or null for PostgreSQL's own
+  // statements below: INSERT IGNORE for an INSERT that may meet its own row,
+  // the two definer procedures by CALL, and information_schema for the
+  // privilege probe.
+  const auditLib = dialect.engine !== 'postgres'
+    ? auditPortable.forDriver({ dialect: dialect, pool: pool })
     : null;
 
   // ---------------------------------------------------------------------
@@ -5878,6 +5961,20 @@ function create(options) {
     // The online indexes' settlement (#876, #882), for a caller that wants
     // to know it is over: `{ built, told }` (MariaDB's adds `failed`).
     // Never rejects.
+    // THE STATEMENT BOUND (#2220), set by `persistence.start()` once the
+    // store is open and restored: every pool of this driver (the writer,
+    // the tally pool, the read replica's) lends its connections under it.
+    // `knex_store.js`, `boundStatements()`, argues what is outside it.
+    boundStatements: function (ms) {
+      log.debug('Entering the postgres driver boundStatements(). ' + ms);
+      [pool, tallyPool, readPool].forEach(function (one) {
+        if (one && typeof one.boundStatements === 'function') {
+          one.boundStatements(ms);
+        }
+      });
+      log.debug('Leaving the postgres driver boundStatements().');
+    },
+
     onlineIndexes: function () {
       log.debug('Entering the postgres driver onlineIndexes().');
       log.debug('Leaving the postgres driver onlineIndexes().');
@@ -6021,7 +6118,11 @@ function create(options) {
             // changes either.
             return client.query(mariadb
               ? 'SET SESSION max_statement_time = 0' : 'RESET ALL'
-            ).catch(function (err) {
+            ).then(function () {
+              // The pool's statement bound (#2220) went with the reset:
+              // set again before this connection is next lent.
+              client.sessionReset();
+            }).catch(function (err) {
               log.warn(errorCodes.tag('STS-STORE-0033') +
                        'persistence: a metrics connection could not be reset ' +
                        '(' + err.message + '); it is being discarded rather ' +
@@ -9920,6 +10021,155 @@ function create(options) {
       });
     },
 
+    // -------------------------------------------------------------------
+    // THE APPEND-ONLY AUDIT LOG (#1616, ASVS 5.0.0 16.4.2). One sealed row
+    // per event in `sts_audit`, where this role holds INSERT and SELECT and
+    // nothing else: `common/audit_store.ts` seals and opens, and these only
+    // write, read and ask. Rows LEAVE through the owner's two SECURITY
+    // DEFINER functions, never a DELETE of this role's. An INSERT that meets
+    // its own row (a retried flush, the one-time copy of the old ring run
+    // again) does nothing, which needs no UPDATE.
+    // -------------------------------------------------------------------
+    auditInsert: function (rows) {
+      log.debug("Entering auditInsert(). " + rows.length);
+      if (auditLib) {
+        log.debug("Leaving auditInsert(). Portable.");
+        return auditLib.auditInsert(rows);
+      }
+      if (!rows.length) {
+        log.debug("Leaving auditInsert(). Nothing.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving auditInsert().");
+      return pool.query(
+        'INSERT INTO sts_audit (realm, origin, seq, at, body) ' +
+        'SELECT * FROM unnest($1::text[], $2::text[], $3::bigint[], ' +
+        '$4::bigint[], $5::text[]) ' +
+        'ON CONFLICT (realm, origin, seq) DO NOTHING',
+        [rows.map(function (r) { return String(r.realm); }),
+         rows.map(function (r) { return String(r.origin || ''); }),
+         rows.map(function (r) { return Number(r.seq); }),
+         rows.map(function (r) { return Number(r.at); }),
+         rows.map(function (r) { return String(r.body); })]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // A realm's newest rows, newest first, in the audit page's order.
+    // `origin`, when given, narrows to one process's rows: what a process
+    // takes back into its own ring at a start.
+    auditNewest: function (realm, limit, origin) {
+      log.debug("Entering auditNewest(). realm=" + realm);
+      if (auditLib) {
+        log.debug("Leaving auditNewest(). Portable.");
+        return auditLib.auditNewest(realm, limit, origin);
+      }
+      const one = origin !== undefined && origin !== null;
+      log.debug("Leaving auditNewest().");
+      return pool.query(
+        'SELECT realm, origin, seq, at, body FROM sts_audit WHERE realm = $1 ' +
+        (one ? 'AND origin = $3 ' : '') +
+        'ORDER BY at DESC, origin DESC, seq DESC LIMIT $2',
+        one ? [String(realm), Math.max(1, Number(limit) || 1), String(origin)]
+          : [String(realm), Math.max(1, Number(limit) || 1)]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { realm: row.realm, origin: row.origin,
+                   seq: Number(row.seq), at: Number(row.at), body: row.body };
+        });
+      });
+    },
+
+    // Retention, through the owner's function, which keeps at least 1000
+    // rows whatever `keep` says. Answers how many left, or null.
+    auditRetain: function (realm, keep) {
+      log.debug("Entering auditRetain(). realm=" + realm);
+      if (auditLib) {
+        log.debug("Leaving auditRetain(). Portable.");
+        return auditLib.auditRetain(realm, keep);
+      }
+      log.debug("Leaving auditRetain().");
+      return pool.query('SELECT sts_audit_retain($1, $2) AS gone',
+                        [String(realm), Number(keep) || 0])
+        .then(function (r) {
+          return Number((r.rows[0] || {}).gone) || 0;
+        });
+    },
+
+    // A realm's rows, through the owner's function, which deletes nothing
+    // of a realm that is live or of the default one.
+    auditPurgeRealm: function (realm) {
+      log.debug("Entering auditPurgeRealm(). realm=" + realm);
+      if (auditLib) {
+        log.debug("Leaving auditPurgeRealm(). Portable.");
+        return auditLib.auditPurgeRealm(realm);
+      }
+      log.debug("Leaving auditPurgeRealm().");
+      return pool.query('SELECT sts_audit_purge_realm($1) AS gone',
+                        [String(realm)])
+        .then(function (r) {
+          return Number((r.rows[0] || {}).gone) || 0;
+        });
+    },
+
+    // The realms `sts_audit` holds rows of: what the retention job compares
+    // with the live realms, to purge a removed realm's (#1616).
+    auditRealms: function () {
+      log.debug("Entering auditRealms().");
+      if (auditLib) {
+        log.debug("Leaving auditRealms(). Portable.");
+        return auditLib.auditRealms();
+      }
+      log.debug("Leaving auditRealms().");
+      return pool.query('SELECT DISTINCT realm FROM sts_audit')
+        .then(function (r) {
+          return r.rows.map(function (row) { return String(row.realm); });
+        });
+    },
+
+    // THE OLD RING'S SEGMENTS, once copied into `sts_audit` (#1616): every
+    // `sts_minted` row of the handle they were written under. This role
+    // may delete `sts_minted` rows; only `sts_audit` is append-only.
+    auditDropLegacy: function (handle) {
+      log.debug("Entering auditDropLegacy(). " + handle);
+      if (auditLib) {
+        log.debug("Leaving auditDropLegacy(). Portable.");
+        return auditLib.auditDropLegacy(handle);
+      }
+      log.debug("Leaving auditDropLegacy().");
+      return pool.query('DELETE FROM sts_minted WHERE handle = $1',
+                        [String(handle)])
+        .then(function (r) {
+          return r.rowCount || 0;
+        });
+    },
+
+    // Whether the table and its functions are there, and whether THIS role
+    // could change a row — which an owner always can, so a table this role
+    // made for itself reads as writable too (#1616, decision 7).
+    auditPrivileges: function () {
+      log.debug("Entering auditPrivileges().");
+      if (auditLib) {
+        log.debug("Leaving auditPrivileges(). Portable.");
+        return auditLib.auditPrivileges();
+      }
+      log.debug("Leaving auditPrivileges().");
+      return pool.query(
+        'SELECT to_regclass(\'sts_audit\') IS NOT NULL AS present, ' +
+        '(to_regprocedure(\'sts_audit_retain(text,bigint)\') IS NOT NULL ' +
+        'AND to_regprocedure(\'sts_audit_purge_realm(text)\') IS NOT NULL) ' +
+        'AS functions, CASE WHEN to_regclass(\'sts_audit\') IS NULL THEN ' +
+        'false ELSE has_table_privilege(\'sts_audit\', \'UPDATE\') OR ' +
+        'has_table_privilege(\'sts_audit\', \'DELETE\') OR ' +
+        'has_table_privilege(\'sts_audit\', \'TRUNCATE\') END AS writable'
+      ).then(function (r) {
+        const row = r.rows[0] || {};
+        return { present: !!row.present, functions: !!row.functions,
+                 writable: !!row.writable };
+      });
+    },
+
     // One attributable failure. The address arrives sealed and as a prefix;
     // the name as a subject or a keyed digest — never as typed.
     riskRecordFailure: function (row) {
@@ -10985,7 +11235,10 @@ function create(options) {
             });
           }, Promise.resolve());
         }).then(function () {
-          return EXTRA_SEALED.reduce(function (c, one) {
+          // A count-only column (the audit log, #1616) is left as it is.
+          return EXTRA_SEALED.filter(function (one) {
+            return !one.countOnly;
+          }).reduce(function (c, one) {
             return c.then(function () {
               return resealExtra(one, like, limit, reseal, tally);
             });
@@ -11100,6 +11353,122 @@ function create(options) {
                          createdAt: Number(row.created_at),
                          offered: (inserted.rowCount || 0) > 0 } : null;
         });
+      });
+    },
+
+    // ---------------------------------------------------------------------
+    // A DATABASE PASSWORD READ AGAIN (#2220): the same database dialled with
+    // another connection string — `persistence.js` re-reads the password
+    // from its secret store and hands the finished string here. It is
+    // decided by `dialOptions()` exactly as the first was, and every pool of
+    // the WRITER takes it for the connections it makes from now on (the
+    // read pool too when it is the writer's). Open connections are left: a
+    // session outlives its role's password change. A string `dialOptions()`
+    // refuses changes nothing, and the refusal is the answer.
+    // ---------------------------------------------------------------------
+    useConnectionString: function (nextUrl) {
+      log.debug("Entering useConnectionString().");
+      const nextDial = dialOptions(nextUrl, verify, tlsCa, engine,
+                                   tlsClient);
+      if (nextDial.refused) {
+        log.debug("Leaving useConnectionString(). Refused.");
+        return { ok: false, refused: nextDial.refused };
+      }
+      dialled = nextDial.connectionString;
+      pool.setConnectionString(dialled);
+      tallyPool.setConnectionString(dialled);
+      log.debug("Leaving useConnectionString().");
+      return { ok: true };
+    },
+
+    // ---------------------------------------------------------------------
+    // A CLIENT CERTIFICATE READ AGAIN (#2254): a renewed certificate and
+    // key for the connections made from now on, the way a password read
+    // again is (#2220, above). The TLS options are decided again by
+    // `dialOptions()` with the new pair, and every pool takes them —
+    // the writer's two and the read pool, which is the same database's
+    // replica and presents the same identity. Knex dials every new
+    // connection, pooled or dedicated (LISTEN, liveness, an online index
+    // build), from the settings it holds then
+    // (`StorePool.setSsl()`), and an open connection keeps the session its
+    // handshake made: the database does not end a session when a
+    // certificate it accepted is replaced. The directory bridge's thread
+    // is handed the options when it starts (`bridgeConnection()`), so it
+    // keeps the pair it was given until it is started again.
+    // ---------------------------------------------------------------------
+    useClientCertificate: function (next) {
+      log.debug("Entering useClientCertificate().");
+      if (!next || !next.cert || !next.key) {
+        log.debug("Leaving useClientCertificate(). No pair.");
+        return { ok: false, refused: 'no certificate and key were given' };
+      }
+      tlsClient = { cert: String(next.cert), key: String(next.key) };
+      const nextDial = dialOptions(dialled, verify, tlsCa, engine,
+                                   tlsClient);
+      if (nextDial.refused) {
+        log.debug("Leaving useClientCertificate(). Refused.");
+        return { ok: false, refused: nextDial.refused };
+      }
+      dialSsl = nextDial.ssl;
+      pool.setSsl(dialSsl);
+      tallyPool.setSsl(dialSsl);
+      if (readOptions && readPool !== pool) {
+        const readDial = dialOptions(readUrl, verify, tlsCa, engine,
+                                     tlsClient);
+        if (!readDial.refused) {
+          readOptions.ssl = readDial.ssl;
+          readPool.setSsl(readDial.ssl);
+        }
+      }
+      log.debug("Leaving useClientCertificate().");
+      return { ok: true };
+    },
+
+    // Whether this driver's connections present a client certificate
+    // (#2254), for the status report.
+    presentsClientCertificate: function () {
+      log.debug("Entering presentsClientCertificate().");
+      log.debug("Leaving presentsClientCertificate().");
+      return !!tlsClient;
+    },
+
+    // A pooled connection to the writer that could not be made (#2220):
+    // `persistence.js` reads the password again when the database refused
+    // it.
+    onConnectFailure: function (fn) {
+      log.debug("Entering onConnectFailure().");
+      pool.onCreateFailure(fn);
+      tallyPool.onCreateFailure(fn);
+      log.debug("Leaving onConnectFailure().");
+    },
+
+    // THE ROW AS IT IS, for the shared secrets' refresh (#2220): null where
+    // nothing is stored under the name.
+    readSharedSecret: function (name) {
+      log.debug("Entering readSharedSecret(). name=" + name);
+      log.debug("Leaving readSharedSecret().");
+      return dialect.run(pool, 'readSharedSecret',
+        kx('sts_cluster_secrets').select('material')
+          .where({ name: String(name) })
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || null;
+        return row ? { material: row.material } : null;
+      });
+    },
+
+    // A ROTATION'S WRITE (#2220): the row is replaced only while it still
+    // holds what the rotation read, so two runs that raced cannot both
+    // rotate one secret — the second changes nothing and says so.
+    replaceSharedSecret: function (name, expected, material) {
+      log.debug("Entering replaceSharedSecret(). name=" + name);
+      log.debug("Leaving replaceSharedSecret().");
+      return dialect.run(pool, 'replaceSharedSecret',
+        kx('sts_cluster_secrets')
+          .update({ material: String(material) })
+          .where({ name: String(name), material: String(expected) })
+      ).then(function (r) {
+        return { replaced: (Number(r.rowCount) ||
+                            Number(r.affectedRows) || 0) > 0 };
       });
     },
 

@@ -231,6 +231,54 @@
     "en": "228f7d738861aa3c",
     "text": "رُفض تغيير تطبيق المصادقة بسبب رمز CSRF غير صالح"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "عُرض على شخص ما سرّ جديد لرمز الرموز لمرة واحدة"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "أعدّ شخص ما رمزًا للرموز لمرة واحدة على حسابه"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "لم يُؤكَّد إعداد رمز للرموز لمرة واحدة"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "أزال شخص ما رمز الرموز لمرة واحدة من حسابه"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "أعاد شخص ما مزامنة رمز الرموز لمرة واحدة الخاص به"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "لم تُعَد مزامنة رمز للرموز لمرة واحدة"
+  },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "عُرض على شخص ما سطر برمجة OTP لـ YubiKey"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "أعدّ شخص ما OTP لـ YubiKey على حسابه"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "لم يُؤكَّد إعداد OTP لـ YubiKey"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "أزال شخص ما OTP لـ YubiKey من حسابه"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "طالب شخص ما بـ OTP مستورد لـ YubiKey"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "لم يُطالَب بـ OTP لـ YubiKey"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "عُرض سر تطبيق مصادقة أثناء استهلاك رابط تفعيل"
@@ -354,6 +402,34 @@
   "audit.actions.keys.retire.label": {
     "en": "04a39be278dba264",
     "text": "أُسقطت مفاتيح توقيع متقاعدة تجاوزت مهلة السماح"
+  },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "جُدِّدت شهادة سلطة تصديق على مفتاحها نفسه"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "جُدِّدت شهادة المستمع"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "تم تدوير مفاتيح موقِّع بيانات الاعتماد المخصص"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "تم تدوير مفاتيح تشفير كائنات الطلب وKEM وطلبات بيانات الاعتماد"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "تم تدوير سر مشترك في المجموعة"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "تم تدوير سر العميل لتطبيق تلقائيًا"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "أُعيدت قراءة كلمة مرور قاعدة البيانات وتغيّرت"
   },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
@@ -486,6 +562,138 @@
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "لم يعد إثبات مفتاح الأمان موثوقًا: قائمة حالة إثبات Android من Google تبطل سلسلته"
+  },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "سُجّل رمز مادي من شهادته"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "أُضيفت بيانات اعتماد إلى رمز مادي"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "سجّل رمزًا ماديًا شخص غير حامله"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "أُبلغ عن فقد رمز مادي وأُبطلت بيانات اعتماده"
+  },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "أُزيل رمز مادي من إدخال شخص، وغادرت بيانات اعتماده عليه السجل"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "رُفض رمز كُتب على إدخال شخص وأُعيد كما هو مسجل"
+  },
+  "audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "استُورد ملف بذور PSKC لمورّد، أو رُفض"
+  },
+  "audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "أُسند رمز OATH مستورد إلى شخص، أو طالب به شخص"
+  },
+  "audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "رُفضت مطالبة شخص برمز OATH مستورد"
+  },
+  "audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "أُزيل رمز OATH غير مُسنَد من المخزون"
+  },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "سُحب رمز OATH مخصص لأنه أُزيل من إدخال حامله"
+  },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "استُورد ملف CSV لـ OTP الخاص بـ YubiKey، أو رُفض"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "أُسند OTP مستورد لـ YubiKey إلى شخص"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "طالب شخص بـ OTP مستورد لـ YubiKey، أو رُفضت المطالبة"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "أُزيل OTP غير مُسنَد لـ YubiKey من المخزون"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "سُحب YubiKey OTP مخصص لأنه أُزيل من إدخال حامله"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "أُنشئ عميل YK-VAL"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "أُزيل عميل YK-VAL"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "سأل عميل YK-VAL عما إذا كانت كلمة مرور YubiKey لمرة واحدة صالحة"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "استُرد مفتاح مودَع لإدارة مفاتيح PIV"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "صدر تحدٍّ لتسجيل مفتاح OpenPGP"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "سُجّل مفتاح OpenPGP بناءً على إثبات حيازة"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "لم يُسجَّل مفتاح OpenPGP"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "أُزيل مفتاح OpenPGP"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "نُشر مفتاح OpenPGP في دليل مفاتيح الويب (Web Key Directory) أو سُحب منه"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "تغيّرت طريقة تشفير البريد المرسل إلى شخص"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "عُيّنت شهادة S/MIME لشخص أو أُزيلت"
+  },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "صدر تحدٍّ لإثبات حيازة مفتاح S/MIME من نوع ML-KEM"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "لم تصدر شهادة S/MIME من نوع ML-KEM"
+  },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "احتُفظ بمفتاح OpenPGP تقليدي بجانب مفتاح ما بعد الكم الذي حلّ محله"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "أُزيل مفتاح OpenPGP تقليدي محتفظ به"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "أُعيد إصدار شهادة PIV بعد تسجيل الدخول"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "أُلغيت شهادة PIV بعدما استُخدمت بديلتها لتسجيل الدخول"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -667,6 +875,14 @@
     "en": "478c7ee15248637f",
     "text": "أزال مشغّل تطبيق المصادقة الخاص بأحدهم"
   },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "مسح مشغّل رمز الرموز لمرة واحدة لشخص ما"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "أزال مشغّل YubiKey OTP الخاص بشخص"
+  },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",
     "text": "أزال مشغّل مفتاح الأمان الخاص بأحدهم"
@@ -674,6 +890,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "أعاد مشغّل تسمية مفتاح المرور الخاص بأحدهم"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "استورد مشغّل مفتاح أمان U2F لشخص ما"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -802,6 +1022,10 @@
   "audit.actions.admin.pki.trust.change.label": {
     "en": "ab34b1a9778d5c8e",
     "text": "غُيّر مخزن ثقة الموقّعين أو إعداد PKI paranoid"
+  },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "تم تغيير مخزن ثقة مسمى أو تعيين مخازن الثقة لحالة استخدام"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -991,6 +1215,46 @@
     "en": "432e877d55af1913",
     "text": "أُرسل رد نداء طلب وصول AuthZEN أو أخفق"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "فشل طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "كان مخزن حالات الرفض القابلة للطلب في AuthZEN ممتلئًا"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "احتُجز إجراء مسؤول بانتظار مسؤول ثانٍ"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "تمت الموافقة على إجراء مسؤول محتجز ونُفّذ"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "رُفض إجراء مسؤول محتجز"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "سحب صاحب الطلب إجراء مسؤول محتجزًا"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "انتهت صلاحية إجراء مسؤول محتجز دون قرار"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "تمت الموافقة على إجراء مسؤول محتجز ولم يُنفَّذ"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "رُفض لأحدهم البتّ في إجراء مسؤول محتجز"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "نُفّذ إجراء مسؤول عالي الخطورة دون مسؤول ثانٍ"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "رفض PEP الإصدار أن تسكّ هذه الخدمة شيئًا"
@@ -1014,6 +1278,14 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "اعتُمد مفتاح تأكيد PEP بعيد من طلبه"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "رُبط PEP بعيد مضمَّن بتطبيقه، أو فُكَّ ربطه"
+  },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "بدأ PEP بعيد في جلب نطاق سياسات آخر"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -1230,6 +1502,10 @@
   "audit.actions.persistence.minted-drop.label": {
     "en": "065f403ac7419f76",
     "text": "أُسقط صف مسكوك لم يكن ليمكن إيداعه أبدًا"
+  },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "أُعيدت قراءة شهادة العميل لقاعدة البيانات وتغيّرت"
   },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
@@ -1643,6 +1919,18 @@
     "en": "55c1155d5daa1c68",
     "text": "أبطل شخص أحد أزواج مفاتيح التوقيع الخاصة به"
   },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "صدرت لشخص شهادة مستخدم SSH"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "ألغى شخص إحدى شهادات مستخدم SSH الخاصة به"
+  },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "رُفضت شهادة مستخدم SSH كُتبت على إدخال شخص: لم تصدرها السلطة له، أو أنها ملغاة أو منتهية"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "نشر شخص did:web خاصًا به"
@@ -1778,6 +2066,34 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "عُيّن وصف دور أو اسم عرضه أو أنواع أعضائه"
+  },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "جُعل دور ثابتًا أو قابلاً للاختيار ديناميكيًا"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "حُددت طريقة اختيار دور ديناميكي عند تسجيل الدخول"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "تقرّرت أهلية شخص لدور ديناميكي"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "عُرضت أدوار ديناميكية عند تسجيل دخول"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "اختيرت أدوار ديناميكية عند تسجيل دخول"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "رُفض اختيار الأدوار الديناميكية لتسجيل دخول"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "أُسقط دور ديناميكي مختار من رمز"
   },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
@@ -2118,6 +2434,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "ضُبط مستوى مخاطر جهاز مسجّل"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "يحتاج مسؤولو نطاق الثقة الآن إلى جهاز مسجّل ومتوافق"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

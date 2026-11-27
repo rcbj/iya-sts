@@ -505,6 +505,66 @@ function listFor(realmId, username, kind, purpose) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// A PERSON'S TLS CLIENT CERTIFICATE TOLD TO THE EXPIRY REMINDER (#2247),
+// `common/credential_expiry.ts`, which keeps the index its reminders read.
+// Required at the moment of use: it is built after this module, and it never
+// requires this one at load. A failure is the reminder's, never the issue's
+// or the revocation's, which have already happened.
+// ---------------------------------------------------------------------------
+function noteCredentialExpiry(what, scope, username, pem) {
+  log.debug("Entering noteCredentialExpiry(). " + what);
+  try {
+    const expiry = require('./credential_expiry');
+    realms.run(scope, function () {
+      return what === 'held'
+        ? expiry.noteHeld(username, pem, 'tls-client')
+        : expiry.noteGone(username, pem);
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-MAIL-0247') + 'tls: the TLS client ' +
+              'certificate of ' + username + ' was not told to the expiry ' +
+              'reminder: ' + ((e && e.message) || e));
+  }
+  log.debug("Leaving noteCredentialExpiry().");
+}
+
+/**
+ * The people's valid TLS client certificates of a realm, for the expiry
+ * reminder's one-time backfill (#2247): one walk of the realm's register.
+ *
+ * @param realmId - the realm; the ambient realm when absent
+ * @returns `[{ username, certificatePem }]`
+ */
+function personCertificatesOf(realmId) {
+  log.debug("Entering personCertificatesOf().");
+  const scope = scopeOf(realmId);
+  const useCase = PURPOSES['tls-client'].useCase;
+  const now = Date.now();
+  const out = [];
+  pki.certificatesFor(scope, useCase).forEach(function (one) {
+    const holder = slotHolder(one.slot);
+    if (!holder || holder.kind !== 'person' || !one.certificatePem ||
+        !(new Date(one.notAfter).getTime() > now)) {
+      return;
+    }
+    let revoked = null;
+    try {
+      revoked = revocation().isRevoked(scope, useCase, one.serialHex);
+    } catch (e) {
+      // No revocation register here: listed on its validity, as listFor().
+      log.debug("Caught in personCertificatesOf(): " +
+                ((e && e.message) || e));
+      revoked = null;
+    }
+    if (!revoked) {
+      out.push({ username: holder.id, certificatePem: one.certificatePem });
+    }
+  });
+  log.debug("Leaving personCertificatesOf(). " + out.length);
+  return out;
+}
+
 /**
  * Lists the holder's certificates that are still valid.
  *
@@ -1059,6 +1119,13 @@ async function issue(realmId, spec) {
       reasonUser: kind === 'application'
         ? 'A ' + purpose.noun + ' was issued to this application.'
         : 'You were issued a ' + purpose.noun + '.' }));
+  // THE EXPIRY REMINDER'S INDEX (#2247): a person's TLS client certificate
+  // is what certificate sign-in presents, and it is kept here, not on the
+  // entry, so its row is filed here. Lazily: the module is built later.
+  if (kind === 'person' && purposeId === 'tls-client') {
+    noteCredentialExpiry('held', scope, username,
+                         made.record.certificatePem);
+  }
   log.debug("Leaving issue().");
   return {
     ok: true,
@@ -1313,6 +1380,9 @@ function revoke(realmId, username, serialHex, reasonId, kind, purpose) {
             'else may have its key.' }));
     }
   }
+  if (done.ok && holderKind === 'person' && purposeId === 'tls-client') {
+    noteCredentialExpiry('gone', scope, username, mine.certificatePem);
+  }
   log.debug("Leaving revoke(). ok=" + !!done.ok);
   return Object.assign({ certificate: mine, reason: reason }, done);
 }
@@ -1544,6 +1614,78 @@ function trustAnchorPem(trust) {
 }
 
 // ---------------------------------------------------------------------------
+// THE ISSUERS BENEATH THAT ROOT, NAMED TO EVERY CLIENT (#2292).
+//
+// node builds a listener's CertificateRequest `certificate_authorities` from
+// the subjects of its `ca` list, so with the Root alone a client is told
+// "a certificate under iya-sts Root CA". A client holding only its leaf has
+// to build the path to that name itself, and Firefox (NSS's
+// `FilterPotentialClientCertificatesByCANames`) drops a smart card's
+// certificate when it cannot, sending none: found with a YubiKey whose
+// piv-auth leaf came from a realm's EST Issuing CA. A client matches a
+// name against the leaf's ISSUER too, so naming every realm's Intermediate
+// and the Issuing CAs that issue client certificates makes the leaf
+// acceptable with no path built.
+//
+// IT TRUSTS NOTHING THE ROOT DID NOT ALREADY. Each is a CA this service's
+// own Root signed, already trusted through it. OpenSSL, without
+// X509_V_FLAG_PARTIAL_CHAIN (node never sets it), ends a path only at a
+// SELF-SIGNED trusted certificate, so an Intermediate in `ca` is an issuer
+// it may use, never an anchor: a leaf still verifies only through the Root,
+// and a branch the Root no longer signs verifies nothing. Revocation of a
+// leaf is `revocation_status.js`'s, as before; what an identity is stays
+// `identityOf()`'s. The list follows the same switch as the Root.
+// ---------------------------------------------------------------------------
+const CLIENT_ISSUER_USE_CASES = ['tls-client', 'est', 'acme', 'scep',
+                                 'spiffe'];
+
+/**
+ * Answers the CA certificates beneath the service Root that the client
+ * truststore names: every built realm's Intermediate and its Issuing CAs
+ * for client certificates, read on each call.
+ *
+ * @param trust - a listener's own trustIssuedClientCertificates, or
+ *   undefined for the service's
+ * @returns PEMs, without the Root; empty when the switch is off or there is
+ *   no hierarchy
+ */
+function issuerPems(trust) {
+  log.debug("Entering issuerPems().");
+  if (!trustAnchorPem(trust)) {
+    log.debug("Leaving issuerPems(). No Root.");
+    return [];
+  }
+  const out = [];
+  const seen = new Set();
+  const add = function (tier) {
+    const pem = tier && tier.certificatePem;
+    if (pem && !seen.has(pem)) {
+      seen.add(pem);
+      out.push(pem);
+    }
+  };
+  realms.list().forEach(function (realm) {
+    let row = null;
+    try {
+      row = pki.rawRowFor(realm.id);
+    } catch (e) {
+      // A realm whose branch is not readable here names nothing.
+      log.debug("Caught in issuerPems(): " + ((e && e.message) || e));
+      row = null;
+    }
+    if (!row || !row.intermediate) {
+      return;
+    }
+    add(row.intermediate);
+    CLIENT_ISSUER_USE_CASES.forEach(function (useCase) {
+      add((row.issuing || {})[useCase]);
+    });
+  });
+  log.debug("Leaving issuerPems(). " + out.length);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // RECOGNISE.
 //
 // `input` is `revocation_status.fromSocket()`'s shape — `{ leaf, chain,
@@ -1771,11 +1913,40 @@ function serviceAccountChecked(answer) {
 //     is neither a person nor an application) or 'STORED_TWICE' (on more than
 //     one), with `why`.
 // ---------------------------------------------------------------------------
-function storedIdentityOf(leafBytes, realmId) {
+//
+// **A CERTIFICATE SIGN-IN PROFILE COVERS IT FIRST (#2012).** Where one of the
+// realm's `certSignIn.profiles` names a CA in the certificate's validated
+// path, `certificate_binding.identityOf()` answers — the profile's checks,
+// then every binding method it enables — and the two mappings below are not
+// asked: a profile is what the realm said about that authority. No profile
+// covering it, the answer is the one this function always gave, with one
+// change: a certificate stored on one person whose card UUID another person
+// holds names two accounts and is refused as STORED_TWICE (#2012), where it
+// signed in the first.
+function storedIdentityOf(leafBytes, realmId, chain) {
   log.debug("Entering storedIdentityOf().");
   const fingerprint = crypto.digest('sha256', leafBytes, 'hex');
   const realmIdNow = realmId ? String(realmId) : realms.currentId();
   const realm = realms.get(realmIdNow);
+  const above = chainDersOf(chain);
+  let profiled = null;
+  try {
+    const askProfile = function () {
+      return require('./certificate_binding').identityOf(leafBytes, above,
+                                                         realmIdNow);
+    };
+    profiled = realm ? realms.run(realm, askProfile) : askProfile();
+  } catch (e) {
+    log.debug("Caught in storedIdentityOf(): " + ((e && e.message) || e));
+    profiled = null;
+  }
+  if (profiled) {
+    log.debug("Leaving storedIdentityOf(). A certificate sign-in profile, " +
+              (profiled.accepted ? 'bound.' : 'not bound.'));
+    return Object.assign({ issuedHere: false, outside: true, accepted: false,
+                           realm: realmIdNow, fingerprint: fingerprint },
+                         profiled);
+  }
   let holders = null;
   try {
     const ask = function () {
@@ -1800,6 +1971,61 @@ function storedIdentityOf(leafBytes, realmId) {
            }).join(', ') + '), so it names nobody; store it on exactly one' });
   }
   const one = list[0];
+  // AN OUTSIDE PIV OR CAC CARD (#1955 P2, D8): a certificate stored on no
+  // entry may still be a card one of the realm's `piv.externalIssuers`
+  // issued, which names its person by the FIPS 201 card UUID in its
+  // subjectAltName and nothing else. `piv_attestation.cardIdentityOf()`
+  // answers null when that mapping does not apply, and the refusal below
+  // stands; otherwise its answer, accepted or refused, is this one's.
+  //
+  // AND WHERE IT IS STORED ON ONE PERSON, the card is asked too (#2012):
+  // both mappings are bindings of this certificate, and two that name
+  // different people name nobody.
+  if (one && one.kind === 'person') {
+    let other = null;
+    try {
+      const askCard = function () {
+        return require('./piv_attestation').cardIdentityOf(leafBytes,
+                                                            realmIdNow);
+      };
+      other = realm ? realms.run(realm, askCard) : askCard();
+    } catch (e) {
+      log.debug("Caught in storedIdentityOf(): " + ((e && e.message) || e));
+      other = null;
+    }
+    if (other && other.accepted &&
+        String(other.dn || '').toLowerCase() !==
+        String(one.dn || '').toLowerCase()) {
+      log.info(errorCodes.tag('STS-TLS-0067') + 'tls_client_certificates: ' +
+               'a certificate stored on ' + String(one.dn) + ' carries a ' +
+               'card UUID held by ' + String(other.dn) + '.');
+      log.debug("Leaving storedIdentityOf(). The mappings disagree.");
+      return Object.assign(base, { error: 'STORED_TWICE',
+        holders: [String(one.dn), String(other.dn)],
+        why: 'the certificate is from an outside certificate authority, is ' +
+             'stored in userCertificate on ' + String(one.dn) + ' and ' +
+             'names a PIV card UUID held by ' + String(other.dn) + ' in the ' +
+             '"' + realmIdNow + '" realm, so it names nobody' });
+    }
+  }
+  if (!one) {
+    let card = null;
+    try {
+      const ask = function () {
+        return require('./piv_attestation').cardIdentityOf(leafBytes,
+                                                            realmIdNow);
+      };
+      card = realm ? realms.run(realm, ask) : ask();
+    } catch (e) {
+      log.debug("Caught in storedIdentityOf(): " + ((e && e.message) || e));
+      card = null;
+    }
+    if (card) {
+      log.debug("Leaving storedIdentityOf(). A PIV card, " +
+                (card.accepted ? 'mapped.' : 'not mapped.'));
+      return Object.assign(base, card);
+    }
+  }
   if (!one || (one.kind !== 'person' && one.kind !== 'application')) {
     log.debug("Leaving storedIdentityOf(). Not stored on an identity.");
     return Object.assign(base, { error: 'NOT_STORED',
@@ -1821,6 +2047,27 @@ function storedIdentityOf(leafBytes, realmId) {
     why: 'an outside certificate authority\'s certificate, stored in ' +
          'userCertificate on ' + String(one.dn) + ' in the "' + realmIdNow +
          '" realm' });
+}
+
+// The DER of each certificate of a verdict input's chain (#2012), which may
+// arrive as DER, PEM or a parsed certificate; one that cannot be read is
+// left out, which a profile's policy check then finds missing.
+function chainDersOf(chain) {
+  log.debug("Entering chainDersOf().");
+  const out = [];
+  (Array.isArray(chain) ? chain : []).forEach(function (one) {
+    try {
+      if (Buffer.isBuffer(one)) {
+        out.push(one);
+      } else if (one) {
+        out.push(Buffer.from(crypto.parseCertificate(one).raw));
+      }
+    } catch (e) {
+      log.debug("Caught in chainDersOf(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving chainDersOf(). " + out.length + ".");
+  return out;
 }
 
 /**
@@ -1870,7 +2117,7 @@ function identityOf(input, options) {
   // memoised (STORED, above); the memo still says whether it IS outside.
   const settle = function (answer) {
     if (!answer.issuedHere && opts.stored === true) {
-      return storedIdentityOf(leafBytes, opts.realm);
+      return storedIdentityOf(leafBytes, opts.realm, input.chain);
     }
     // `anyHolderForm` (#1827, rcbj): a door that authenticates whoever a
     // valid credential names, whichever spelling it names them in, skips the
@@ -2429,6 +2676,7 @@ module.exports = {
   storedIdentityOf: storedIdentityOf,
   listFor: listFor,
   activeFor: activeFor,
+  personCertificatesOf: personCertificatesOf,
   labelProblem: labelProblem,
   personDirectorySubject: personDirectorySubject,
   plannedPersonSubject: plannedPersonSubject,
@@ -2439,6 +2687,8 @@ module.exports = {
   revoke: revoke,
   forgetDeletedHolder: forgetDeletedHolder,
   trustAnchorPem: trustAnchorPem,
+  issuerPems: issuerPems,
+  CLIENT_ISSUER_USE_CASES: CLIENT_ISSUER_USE_CASES,
   identityOf: identityOf,
   checkSocket: checkSocket,
   checkCertificate: checkCertificate,

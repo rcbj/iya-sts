@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Ang mga response_type value na puwedeng hingin ng client na ito — ang response_types ng RFC 7591 section 2, mula sa isang registration o isinulat ng isang administrator, bawat value ay isang response type (\"code\", \"code id_token\"). Tinatanggihan ng authorization endpoint ang anumang iba (unauthorized_client), sa bawat mode; walang nililimitahan ang walang lamang listahan. Ang talagang hiningi ng client ay ang oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "Ang mga response_mode value na maaaring hingin ng client na ito — query, fragment, form_post at ang jwt, query.jwt, fragment.jwt at form_post.jwt ng JARM — isinulat ng isang administrator. Tinatanggihan ng authorization endpoint ang iba pa (unauthorized_client), at ang request na walang pinapangalanan ay pinanghahawakan sa default mode ng response type nito (query para sa code, fragment para sa iba), sa bawat mode; walang nililimitahan ang walang lamang listahan bukod sa response_modes_supported ng server. Walang RFC 7591 member na nagdadala nito, kaya hindi ito isinusulat ng isang registration."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "Ang mga response type na naglalabas ng access token mula sa authorization endpoint — token, code token, id_token token, code id_token token — na maaaring gamitin ng client na ito kung saan umiiral ang RFC 9700 mode (laging umiiral ito sa product mode). Iginagalang lang habang iniuurong ng realm ang RFC 9700 section 2.1.2 (oauth2.allowImplicitTokenResponses, hindi kailanman sa ilalim ng OAuth 2.1 o FAPI); kung gayon ay tinatanggihan ang type na hindi nakalista rito (unauthorized_client). WALANG LAMAN bilang default, at ang walang laman ay nangangahulugang wala. Isinusulat ng isang administrator o ng may-ari ng application habang pinapayagan ng realm ang mga type na ito, o ng isang dynamic registration sa loob ng oauth2.dynamicRegistrationTokenResponseTypes. Sinasabi ng RFC 9700 section 2.1.2 na HINDI DAPAT gamitin ng mga client ang mga ito."
@@ -576,8 +580,8 @@
     "text": "Mga scope na HININGI ng application na ito, naiipon habang humihingi ito. NAKITA, hindi kailanman idineklara: walang pinapayagan o tinatanggihan batay dito. Ang puwedeng i-issue sa application ay ang oauthAllowedScope."
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "ANG MGA SCOPE NA MAAARING I-ISSUE SA CLIENT NA ITO — ang `scope` ng RFC 7591 section 2, \"the list that the client can use when requesting access tokens\". Isang scope token bawat value. Tatlong uri ng scope ang magkakaiba ang pagbasa rito.\n\n**Ang mga sariling protektadong scope ng serbisyong ito** — admin:read at admin:write (/admin-api), report:use at report:admin (/report-api), ang mga SCIM scope (scim.scopeRead, scim.scopeWrite), ang mga Shared Signals scope (ssf.authScopeRead, ssf.authScopeWrite, at palaging ssf.read at ssf.manage) at ang debugger permission — ay ini-issue LAMANG sa client na naglilista ng mga ito, SA PAREHONG MODE. Para sa Shared Signals, kasama ng write ang read: ang paglilista ng write scope ay nag-aawtorisa rin sa read scope, at ang paglilista ng read scope lang ay hindi nag-aawtorisa ng write scope. Nagtatanong muli ang resource server sa likod ng bawat isa sa bawat tawag, kaya ang pag-alis ng value dito ay pumuputol sa mga token na na-issue na. Hindi maaaring ideklara ng isang RFC 7591 registration ang mga ito; ang administrator ang nagdedeklara, dito.\n\n**Bawat ibang scope**, sa product mode, ay ini-issue lamang kapag nakalista rito — o, kapag walang nakalista, kapag nasa default set: openid, profile, email, address, phone, offline_access at ang mga OpenID4VCI credential scope ng realm na ito. Sa development, anumang scope ay ini-issue.\n\n**Ang scope na pumapangalan sa isang application o isang delegated permission** ay may sarili nitong mga patakaran (ang audience, at oauthDelegatedPermission) at hindi kailangang ilista.\n\nAng scope na wala sa listahan ay tinatanggihan ng invalid_scope sa authorization at token endpoint (RFC 6749 section 3.3), at inaalis sa isang refresh o token exchange. Naiiba sa oauthScope, na kung ano lang ang hiniling ng client."
+    "en": "00c084c993d99663",
+    "text": "ANG MGA SCOPE NA MAAARING I-ISSUE SA CLIENT NA ITO — ang `scope` ng RFC 7591 section 2, \"the list that the client can use when requesting access tokens\". Isang scope token bawat value. Tatlong uri ng scope ang magkakaiba ang pagbasa rito.\n\n**Ang mga sariling protektadong scope ng serbisyong ito** — admin:read at admin:write (/admin-api), report:use at report:admin (/report-api), ang mga SCIM scope (scim.scopeRead, scim.scopeWrite), ang mga Shared Signals scope (ssf.authScopeRead, ssf.authScopeWrite, at palaging ssf.read at ssf.manage) at ang debugger permission — ay ini-issue LAMANG sa client na naglilista ng mga ito, SA PAREHONG MODE. Para sa Shared Signals, kasama ng write ang read: ang paglilista ng write scope ay nag-aawtorisa rin sa read scope, at ang paglilista ng read scope lang ay hindi nag-aawtorisa ng write scope. Nagtatanong muli ang resource server sa likod ng bawat isa sa bawat tawag, kaya ang pag-alis ng value dito ay pumuputol sa mga token na na-issue na. Hindi maaaring ideklara ng isang RFC 7591 registration ang mga ito; ang administrator ang nagdedeklara, dito.\n\n**Bawat ibang scope**, sa product mode, ay ini-issue lamang kapag nakalista rito — o, kapag walang nakalista, kapag nasa default set na pinipili ng oauth2.undeclaredClientScopes: openid lamang bilang default mula 1.2.0 (ASVS 5.0.0 10.4.11); dinadagdagan ito ng identity ng profile, email, address at phone; ang legacy, na iniingatan ng na-upgrade na store, ay nagdaragdag pa ng offline_access at ng mga OpenID4VCI credential scope ng realm na ito. Sa development, anumang scope ay ini-issue.\n\n**Ang scope na pumapangalan sa isang application o isang delegated permission** ay may sarili nitong mga patakaran (ang audience, at oauthDelegatedPermission) at hindi kailangang ilista.\n\nAng scope na wala sa listahan ay tinatanggihan ng invalid_scope sa authorization at token endpoint (RFC 6749 section 3.3), at inaalis sa isang refresh o token exchange. Naiiba sa oauthScope, na kung ano lang ang hiniling ng client."
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "CALLBACK NG AUTHZEN ACCESS REQUEST (#1180): isang https URL na maaaring ipangalan ng client na ito, bilang AuthZEN PEP, bilang callback.endpoint ng isang access request — isa bawat value, eksaktong tugma. Tinatanggihan ang request na may ibang pinangalanan; hindi kailanman nagda-dial ang serbisyong ito ng callback URL na galing lang sa isang request. Itinatakda ng administrator, hindi kailanman ng caller."
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "AUTHZEN CALLBACK RETRY (#1202): isang nakarehistrong callback URL at ang mga pagtatangka at backoff na pumapalit sa authzen.callbackAttempts at authzen.callbackBackoffS para rito. Ang value ay ang URL, tapos attempts=N (1 hanggang 20) at backoff=S (60 hanggang 86400), isa o pareho. Dapat value din ng appAuthzenCallbackUri ang URL. Kapag wala, ginagamit ng URL na iyon ang mga setting ng realm. Itinatakda ng administrator, hindi kailanman ng caller."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "ISANG XPATH EXPRESSION NA PUMIPILI SA ELEMENTO NG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG ISANG WS-TRUST RESPONSE: isang ds:X509Certificate o isang BinarySecurityToken na ang ValueType ay nagtatapos sa #X509v3. Kapareho ng subset ng mga element map. Kapag nakatakda ito at walang pinipili, o pumipili ito ng elementong hindi isa sa dalawang iyon, walang recipient at hindi sinusubukan ang susunod na pinagmulan. Ang napiling elemento ng certificate na ang teksto ay hindi certificate ay fault ng natapos na encryption, at hindi sinusubukan ang susunod na pinagmulan. Kapag hindi nakatakda, ang recipient ay ang unang elemento ng certificate ng signer na pinangalanan ng WS-Security signature ng request — ang BinarySecurityToken na tinutukoy ng reference ng signature na iyon, o isang ds:X509Certificate sa KeyInfo ng signature na iyon. Ang thumbprint, ang Subject Key Identifier o ang issuer at serial ay hindi elemento ng certificate."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE o FALSE: hingin na ang request na ang AppliesTo ay ang application na ito ay may dalang WS-Security message signature, na pumapalit sa wstrust.signRequest. Kapag naka-on, ang request na walang tinanggap na signature ay isang FailedCheck, at ang bawat elementong pinipili ng wstrustSignRequestElements ay dapat sakop ng signature na iyon. Pinaniniwalaan ng development mode ang isang signature, gaya ng dati, at sinusuri pa rin ang map laban sa nire-reference ng signature na iyon."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "ANG MGA ELEMENTO NG ISANG WS-TRUST REQUEST NA DAPAT NAKA-SIGN, isang XPath 1.0 expression bawat isa, sa subset ng wstrustEncryptRequestElements. Ang bawat expression ay dapat pumili ng kahit isang elemento, at ang bawat elementong pinipili nito ay dapat isang nire-reference ng tinanggap na WS-Security signature ng request, o nasa loob ng isa; kung hindi, ang request ay isang FailedCheck. Kapag walang laman, ang SOAP Body, na laging sakop ng signature. Binabasa lamang habang naka-on ang wstrustSignRequest (o wstrust.signRequest)."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE o FALSE: i-sign ang isang WS-Trust response para sa application na ito gamit ang WS-Security message signature, na nag-o-override sa wstrust.signResponse. May dalang wsu:Timestamp at ds:Signature ang response sa wsse:Security header nito, na ginawa gamit ang XML signing key ng realm na ito at nire-reference ang certificate nito sa pamamagitan ng isang BinarySecurityToken; sakop ng signature ang Timestamp at ang mga elemento ng wstrustSignResponseElements. Ang fault ay ipinapadala nang hindi naka-sign. Naka-on, at hindi magawa ang signature, ang request ay fault sa parehong mode."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "ANG MGA ELEMENTO NG ISANG WS-TRUST RESPONSE NA SAKOP NG SIGNATURE NITO bukod sa wsu:Timestamp, isang XPath 1.0 expression bawat isa, sa subset ng wstrustEncryptResponseElements. Kapag walang laman, ang SOAP Body. Ang elementong walang wsu:Id ay binibigyan ng isa. Ang expression na walang tinutugma, o isang pumipili sa mismong wsse:Security header, ay isang fault."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "Ang pagkakasunod kung paano sina-sign at ine-encrypt ang isang WS-Trust response para sa application na ito habang parehong naka-on, na nag-o-override sa wstrust.responseProtectionOrder: sign-then-encrypt (ang mga digest ng signature ay sa plaintext, ang default ng WS-SecurityPolicy) o encrypt-then-sign (sa ciphertext ang mga ito). Isinusulat ang wsse:Security header sa pagkakasunod kung paano ito pinoproseso ng receiver."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE o FALSE: i-encrypt din ang ds:Signature ng isang WS-Trust response para sa application na ito (ang sp:EncryptSignature ng WS-SecurityPolicy), na nag-o-override sa wstrust.encryptSignature. Binabasa lamang habang ang response ay parehong naka-sign at naka-encrypt, na naka-sign muna; ine-encrypt ang signature para sa recipient ng response."
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE o FALSE: i-encrypt ang mga WS-Trust na tugon ng application na ito sa recipient certificate nito anuman ang keyUsage nito, na ino-override ang wstrust.recipientIgnoresKeyUsage. digitalSignature lang ang pinapahintulutan ng mga message-signing certificate ng realm, kaya kung wala ito ay tinatanggihan ang tugong naka-encrypt sa signing certificate ng kahilingan. Ang pagsusuri ng keyUsage lang ang nilalaktawan: sinusuri pa rin ang bisa, path at revocation ng certificate kung saan sinusuri ito ng paranoid PKI mode."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "ANG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG WS-TRUST REQUEST PARA SA APPLICATION NA ITO, PEM. Habang nakatakda ito, dine-decrypt ang request para sa application na ito gamit ang private key nito at hindi ang sa realm, at FailedCheck ang request para rito na naka-encrypt sa key ng realm. Pampubliko: ibinibigay ito ng pahina ng application at ng GET /admin-api/applications."
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE kapag puwedeng mag-register ang UMA 2.0 resource server na ito ng mga resource na SARILI NITONG PAG-AARI, gamit ang protection API token na nakuha sa client_credentials. Kapag wala o FALSE, ang default, ang PAT ay dapat sa isang tao (ang code flow) at ang taong iyon ang may-ari ng nire-register nito."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE o FALSE: iniaalok ba ang mga dynamic na mapipiling tungkulin sa mga pag-sign in sa application na ito (#1072), kapalit ng roles.dynamicSelection. Ang FALSE ay walang kahong \"Pumili ng mga tungkulin para sa pag-sign in na ito\", walang iniaalok na tungkulin, at walang dinamikong napiling tungkulin ang token para sa application na ito."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, at ang standard na owner at description."
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Ang remote PEP at ruta, bilang pangalan ng PEP, isang slash at ang id ng ruta, kung para saan GINAWA ang policy na ito ng pagpili ng awtorisasyon ng ruta (simple o pampubliko) sa mga form ng ruta ng reverse proxy o ng aksyong generate-pep-route-policy (#1760). Ang ganitong policy ay isinusulat muli kapag sine-save ang ruta, pinapalitan ang pangalan kasama ng ruta at inaalis kasama nito; hindi ito kailanman ang root. Maaari itong i-edit sa policy editor, at isinusulat itong muli ng susunod na pag-save ng simple o pampublikong pagpili ng ruta — pumili ng umiiral na policy sa ruta para panatilihin ang isinulat nang mano-mano."
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Ang tungkulin (ayon sa pangalan nito sa ou=roles) na MAY-ARI ng patakarang ito bilang patakaran nito sa pagiging karapat-dapat (#1072): pinagpapasyahan ito ng PDP nang mag-isa, para sa isang tao, upang sabihin kung maaaring ialok sa kanila ang dynamic na tungkuling iyon sa pag-sign in. Ang ganitong patakaran ay hindi kailanman ang ugat, hindi naaabot ng PolicyIdReference mula sa ugat, at hindi ipinapadala sa isang remote PEP."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Isang remote Policy Enforcement Point na nag-register sa Policy Decision Point na ito. ANG ROW AY ISANG TALAAN AT HINDI PAHINTULOT — ang PEP na hindi kailanman nagre-register ay makakapag-pull pa rin ng repository at makapagpapatupad. Ang naibibigay ng row ay puwesto sa console at address para sa change nudge."
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "Ang huling iniulat ng remote PEP, sa isang heartbeat, tungkol sa bawat listener nito (#1760), ang apat ng environment nito at ang mga itinakda: isang JSON document na { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, kasama kung kailan ito dumating. Ang state ay isa sa listening, waiting, failed at off at ang reason ay isa sa isang saradong set, hindi kailanman ang teksto ng operating system; ang sertipiko ay ang subject, issuer, serial, subjectAltName, bisa at fingerprint ng sine-serve nito. Itinatapon ang anumang ibang member. Pinananatili ito ng isang heartbeat na wala nito, binubura ito ng isang may null, at inaalis ito ng isang registration. Wala ito sa isang PEP na mas luma kaysa sa mga listener, na ipinapakita ng console bilang hindi iniulat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Kung anong uri ng remote PEP ang nagparehistro (#2026, bahagi ng #1206): container, ang image na xacml-pep, o embedded, isang PEP sa loob ng authentication library sa pamamagitan ng iya-pep package. Ang pagpaparehistrong walang sinasabi ay container, kaya binabasa ang mas lumang PEP gaya ng dati. Walang reverse proxy, listener o AuthZEN edge ang naka-embed na PEP."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "Ang application na sinabi ng naka-embed na remote PEP na kinalalagyan nito nang magparehistro ito (#2026). Tinatanggap lang kung ito ang application na pinagbigkisan ng entry nito (stsPepApplication, itinakda ng administrator), kaya maaari lang itong maiba sa binding hanggang sa susunod na heartbeat ng PEP, na tinatanggihan kapag hindi na sila magkatugma. Walang laman para sa container."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "Ang mode ng naka-embed na remote PEP (#2026): central, kung saan itinatanong ang bawat desisyon sa AuthZEN evaluation endpoint ng serbisyong ito, o local, kung saan kinukuha nito ang mga patakaran ng application nito at nagpapasya sa loob ng proseso. Walang laman para sa container, na hindi maaaring magpadala nito."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "Ang bersyon ng protocol ng PEP na sinasalita ng package ng remote PEP, ayon sa pagpaparehistro o huling heartbeat nito (#2026). Sinusuportahan ng serbisyong ito ang bersyon 1 at tinatanggihan ang iba, kaya nakikita ang library na naiwan sa halip na tahimik na mali. Walang laman para sa PEP na walang ipinapadala (ang container)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Kung kaya ng stream ng application na kinalalagyan ng naka-embed na remote PEP na dalhin ang event na pep-policies-changed, ayon sa huling heartbeat ng PEP (#2026): none (walang signal stream ang host, kaya pana-panahong nagtatanong ang PEP), requested, excluded (hindi ito kasama sa ssfEvents ng application) o down. Walang laman hanggang maiulat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Ang huling kinuha ng remote PEP mula sa GET /xacml/pep/policies (#2027): repository, bawat naka-enable na patakaran maliban sa mga ipinagkait (ang pagkuha ng container), o bound-application, ang sa naka-embed na PEP sa local mode: ang sariling patakaran ng application nito, o ang root ng realm, at ang closure ng mga reference nito. Pinananatili sa muling pagpaparehistro; ang pagbabago ay naa-audit bilang xacml.pep.scope. Walang laman hanggang may makuha."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

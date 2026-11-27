@@ -577,6 +577,13 @@ const JOBS = [
   // stream holds session-revoked (initiated by admin) and account-purged.
   // `local: true`: this repository's directory, sessions and transmitter.
   { file: 'sts_account_delete_sessions.js', browser: false },
+  // AN APPLICATION'S STREAM IS ABOUT THE PEOPLE SIGNED IN TO IT (#2234):
+  // two applications, two people each signed in to one, Add Subject's 403,
+  // a sign-out's and a disable's ending events reaching only the
+  // application whose session they ended, `all` in its own realm, and an
+  // application's own credential change unfiltered. `local: true`: this
+  // repository's sessions and transmitter.
+  { file: 'sts_ssf_application_sessions.js', browser: false, local: true },
   // A PERSON'S PAGE SHOWS EVERY WAY THEY AUTHENTICATED (rcbj, 2026-11-16):
   // one fresh person per mechanism — the code flow and its refresh,
   // GET /tls/sign-in, the password grant, an RFC 7523 self-assertion,
@@ -696,6 +703,28 @@ const JOBS = [
   // profile a group names (#1239), not deleted while named. `local: true`: this repository's own /authn
   // and /admin-api.
   { file: 'sts_post_login_activity.js', browser: false },
+  // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): in a throwaway realm, a person
+  // whose mail is S/MIME to an RSA certificate (made here with openssl)
+  // held at /authn/post-login once the policy's mail block is on; the
+  // passkey act and an RSA certificate refused at that step, an OpenPGP
+  // challenge drawn on it, and an ML-KEM certificate finishing it, the code
+  // reaching the client and the next sign-in not asked. `local: true`: this
+  // repository's own /authn and /admin-api.
+  { file: 'sts_post_login_mail.js', browser: false, local: true },
+  // THE POST-LOGIN PIV RE-ISSUE (#2009 P3): the PIV block off then on, the
+  // sign-in held for a piv-auth certificate due for renewal, the step's
+  // refusals, a new 9a certificate enrolled with its import command, and
+  // Continue starting the held session. `local: true`: this repository's
+  // own /authn and /admin-api.
+  { file: 'sts_post_login_piv.js', browser: false, local: true },
+  // DYNAMIC SELECTABLE ROLES (#1072): a dynamic role made and given its
+  // ALFA eligibility policy over /admin-api, the administrator's test, the
+  // sign-in screen's box, the role step (a fabricated role refused, the
+  // offered one chosen), the ID Token's roles claim carrying it only when
+  // chosen, a person the policy does not permit offered nothing, and the
+  // box turned off by appDynamicRoleSelection. `local: true`: this
+  // repository's own /authn, /oauth2 and /admin-api.
+  { file: 'sts_dynamic_roles.js', browser: false, local: true },
   // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
   // uploaded through POST /admin-api/risk/upload with no terms to accept,
   // active with a row per REVOKED or SUSPENDED entry, named by
@@ -1186,6 +1215,29 @@ const JOBS = [
   // listeners in, every row passing, on the first local memory run.
   { file: 'sts_xacml_pep_proxy_cluster.js', browser: false, local: true,
     timeoutMs: 2400000 },
+  // #2026: an embedded remote PEP (#1206) on its own DPoP-bound tokens, as
+  // the iya-pep package sends them: registration refused unbound, bound
+  // elsewhere, with an unsupported protocol version and with mode on a
+  // container (each code on the audit log), then accepted with kind,
+  // application, mode and protocol version on /admin-api/xacml/peps; a
+  // heartbeat's policyEvents, and the next heartbeat refused once the
+  // binding moves; AuthZEN in central mode scoped to the bound application
+  // (xacml_pep_embedded in process). In a realm of its own.
+  { file: 'sts_xacml_pep_embedded.js', browser: false, local: true },
+  // #2027: the policy pull scoped to a bound application, pulled as the
+  // iya-pep package pulls it: an enforcing application's own policy to its
+  // local PEP and nobody else, the root and its closure for one that
+  // enforces nothing, the scope's own token (304, unmoved by a change
+  // outside it), the refusals with their codes, and the row's pullScope
+  // and audit (xacml_pep_scope in process). In a realm of its own.
+  { file: 'sts_xacml_pep_scope.js', browser: false, local: true },
+  // #2028: a policy change heard over Shared Signals. A deploy to the root
+  // an application is decided by puts one pep-policies-changed SET on the
+  // bound application's poll stream and none on another application's, and
+  // ssfAllowedEvents naming only caep withholds it and lists the PEP in the
+  // application's pepEventsExcluded (pep_policies_changed in process). In a
+  // realm of its own.
+  { file: 'sts_pep_policies_changed.js', browser: false, local: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
   // (2026-09-18): every one of these families was covered in process and by
   // nothing driven over the network, so a stack behind a load balancer said
@@ -1362,6 +1414,13 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false },
+  // THE ADMINISTRATIVE SURFACE NEEDS A COMPLIANT REGISTERED DEVICE (#2179):
+  // the one job that turns devices.requireCompliantDeviceForAdmin on (every
+  // suite stack runs with it off), in a throwaway realm it removes when it
+  // passes — unarmed admission, arming, the armed refusals, refresh,
+  // programs and a program's recovery, over the HTTP console helper.
+  // `local: true`: the policy, the console and the API are ours.
+  { file: 'sts_admin_device_requirement.js', browser: false, local: true },
   // MONITORING → TLS CONNECTION (#597, 2026-10-12): `/tls`,
   // `/tls/forwarded` and the two open truststore acts unrouted; the console
   // page and its operation, `GET /admin-api/tls-connection`, describing a
@@ -1396,6 +1455,125 @@ const JOBS = [
   // paused, resumed and ended. `local: true`: this repository's console and
   // management API.
   { file: 'sts_post_login_activities.js', browser: false },
+  // EVERY POST-LOGIN ACTIVITY STARTED OVER /admin-api (#2009 P4): in a
+  // realm of its own, the view offering all three, `pqc-mail-encryption`
+  // and `piv-reissue` started for a group made here, refused twice for the
+  // same people (0492), paused, resumed and ended; the passkey migration
+  // beside them for the same group; an activity outside the three refused
+  // by the schema. What each reminder says is in process
+  // (`tests/post_login_started_kinds.js`).
+  { file: 'sts_post_login_started_kinds.js', browser: false, local: true },
+  // DIRECTORY → HARDWARE TOKENS (#1955 P1): the console page's shell, the
+  // two operations in the document and the gate, the view's paging and
+  // filters, and the lost-key act's refusals. The register's behaviour
+  // with real tokens is tests/hardware_tokens.js, in process: nothing over
+  // HTTP can make a token, which is recorded only from attestation.
+  { file: 'sts_hardware_tokens.js', browser: false, local: true },
+  // IMPORTED OATH TOKENS OVER HTTP (#1955 P4): a PSKC seed file made in the
+  // run imported under its pre-shared key (the wrong key refused), listed,
+  // assigned to a person, refused twice, retired by the lost-key act and
+  // removed; no answer carries the secret, the key or an error code. What a
+  // code does at a sign-in is tests/hotp.js and tests/oath_tokens.js.
+  { file: 'sts_oath_tokens.js', browser: false, local: true },
+  // IMPORTED OATH TOKENS WITH oathtool (#2062, umbrella #2055): a PSKC
+  // file made in the run imported by the administrator, each token claimed
+  // on the portal and used at /authn with codes OATH Toolkit's oathtool
+  // computes from its seed — HOTP's counter moved and a reused code
+  // refused, TOTP's spent step refused and the next one accepted — the
+  // tokens on the entries (ldapsearch), and refused once reported lost.
+  // `clientLab: true`: skipped where there is no lab.
+  { file: 'sts_oath_oathtool.js', browser: false, local: true,
+    clientLab: true },
+  // YUBIKEY OTP AND YK-VAL 2.0 OVER HTTP (#1955 P5): a CSV and a client
+  // made in the run, the verify endpoint's statuses and HMAC, and the
+  // three settings put back on the realm this job created. The policy
+  // row is tests/yubiotp.js, in process.
+  { file: 'sts_yubiotp.js', browser: false, local: true },
+  // YUBIKEY OTP THROUGH pam_yubico (#2061, umbrella #2055): Yubico's PAM
+  // module in the client lab, driven by pamtester, asks /wsapi/2.0/verify
+  // about OTPs Yubico's reference generator (ykgenerate) makes for a token
+  // imported from a CSV made at run time: signed in, a replay, a forged
+  // OTP and a wrong client key refused, the token on the entry (ldapsearch)
+  // and, reported lost on the portal, refused and off it. `clientLab: true`.
+  { file: 'sts_yubiotp_pam.js', browser: false, local: true,
+    clientLab: true },
+  // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
+  // an attested request recorded as a hardware token, an attestation of
+  // another key and of another slot refused, enrol-piv on /admin-api, and
+  // escrow refused off, issued (or 503 without a key-encryption key) on,
+  // and not recovered without PIV_KEY_RECOVERY. Its Yubico-shaped chain is
+  // made at run time; the verifier's refusals in full are
+  // tests/piv_attestation.js, in process.
+  { file: 'sts_piv_attestation.js', browser: false, local: true },
+  // PIV ON A CARD WITH THE CLIENTS A PERSON USES (#2059): a key generated
+  // on the client lab's PIV card (PivApplet attesting as a YubiKey 5) and
+  // attested, enrolled through the portal and EST, signing in over mutual
+  // TLS (curl's PKCS#11 engine) and PKINIT (MIT kinit over OpenSC), the card
+  // reported lost and both refused, a stock PivApplet card refused.
+  // `clientLab: true`: skipped without CLIENT_LAB_URL (tests/CLAUDE.md,
+  // *THE CLIENT LAB*).
+  { file: 'sts_piv_card.js', browser: false, local: true, clientLab: true },
+  // S/MIME MAIL DECRYPTED WITH THE KEY ON A PIV CARD (#2058): a 9d key on
+  // the client lab's card, its attested certificate registered on the
+  // portal as the person's S/MIME certificate, the service's mail delivered
+  // to the lab's postfix over STARTTLS and opened by openssl cms through
+  // OpenSC; without the card's key it cannot be. `clientLab: true`.
+  { file: 'sts_piv_smime.js', browser: false, local: true, clientLab: true },
+  // CERTIFICATE SIGN-IN PROFILES AND RFC 9440 OVER REAL HANDSHAKES (#2012):
+  // an outside chain bound by issuer and serial through a realm's
+  // certSignIn.profiles, outside the profile, a name binding refused without
+  // lowAffinity, and a forwarded Client-Cert believed from the named proxy
+  // only. Posts two test Roots to the client truststore and removes them;
+  // every setting is the throwaway realm's. The logic in full is
+  // tests/certificate_binding.js, in process. Since #2081 also every
+  // stored binding method and email, each with the account disabled,
+  // renewal under the same key and a new one, and an expired leaf; the
+  // values worked out by openssl as docs/v1.2.0/configure-tls.md says.
+  // Since #2089 revocation end to end (a leaf its CA's CRL lists, one whose
+  // CRL is never published) in development and in a product-mode realm.
+  { file: 'sts_cert_sign_in_profiles.js', browser: false, local: true },
+  // THE CERTIFICATE SIGN-IN HANDOFF OVER A REAL SECOND LISTENER (#2081): a
+  // throwaway realm's own listener on STS_TEST_REALM_LISTENER_PORT asking
+  // for a certificate, certificate-sign-in mapped to it; the screen's link,
+  // the listener's 303 back, the act on the main port, and the refusals
+  // (used, another browser, a certificate bound to nobody, the option off);
+  // and (#2089) with tls.mainPortDisableOptionalClientCertificate on, no
+  // certificate arriving on the main port, a password sign-in completing
+  // and the card still signing in through the listener. Exclusive: that
+  // port is the one sts_realm_listener.js binds too, and section D changes
+  // the main port for every connection.
+  { file: 'sts_cert_handoff.js', browser: false, local: true,
+    exclusive: true },
+  // OpenPGP KEYS AND THE WEB KEY DIRECTORY OVER HTTP (#1955 P6): a key made
+  // here registered through /admin-api/openpgp on its proof, and the
+  // directory answering it on a domain only this job uses; the depth is
+  // tests/openpgp_keys.js, in process.
+  { file: 'sts_openpgp.js', browser: false, local: true },
+  // OpenPGP MAIL BETWEEN TWO PEOPLE, THE KEY ON THE CARD (#2057, umbrella
+  // #2055): the recipient's key generated on the client lab's OpenPGP card
+  // (gpg --card-edit), the portal's challenge clear-signed on it,
+  // registered and published; a sender finds it by name through the Web
+  // Key Directory (gpg --auto-key-locate wkd, openpgpkey.<domain> on a
+  // custom listener the job adds and takes away), encrypts and sends with
+  // sendmail to the lab's postfix; decrypted on the card, and not with the
+  // card out; this service's emailed code arriving PGP/MIME and decrypted
+  // on the card; withdrawn, 404. `clientLab: true`. Holds port 443.
+  { file: 'sts_openpgp_card_mail.js', browser: false, local: true,
+    clientLab: true },
+  // SSH USER CERTIFICATES OVER HTTP (#1955 P3): a key made here, issued
+  // and revoked through /account-api, checked as an OpenSSH certificate
+  // and a KRL without this service's own parser. The issuer's decisions
+  // are tests/ssh_user_ca.js, in process. This job is not opt-in.
+  { file: 'sts_ssh_user_ca.js', browser: false, local: true },
+  // SSH USER CERTIFICATES AGAINST A REAL sshd (#2060, umbrella #2055):
+  // OpenSSH in the client lab trusting the realm's CA and KRL, a key in
+  // ssh-agent and one on the virtual PIV card (ssh -I) certified through
+  // the device grant, the certificate on the person's entry read and
+  // REMOVED with a real ldapmodify over LDAPS (a revocation), a write-back
+  // taken off again, the person's own revoke, and ssh refused after each
+  // KRL refresh. `clientLab: true`: skipped where there is no lab.
+  { file: 'sts_ssh_client_lab.js', browser: false, local: true,
+    clientLab: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is
@@ -1697,6 +1875,30 @@ const JOBS = [
   // one to the realm's key refused (STS-WSTRUST-0083), a client-made pair
   // uploaded and used, and the pair removed. `local: true`: ours.
   { file: 'sts_wstrust_decryption_key.js', browser: false, local: true },
+  // THE WS-TRUST XPATH BUILDER (#2046). `local: true`: this repository's
+  // console, in Chrome — each of the five fields' builder, the exact
+  // expression it writes, the exact values in the field's card and its
+  // switch, and the application `/admin-api` answers after Save. Its own
+  // application and console user, removed in a `finally`.
+  { file: 'sts_wstrust_xpath_builder.js', browser: true, local: true },
+  // CERTIFICATE SIGN-IN'S SETTINGS EDITORS (#2096, rcbj 2026-11-24, for
+  // #2080's editors). `local: true`: this repository's console, in Chrome,
+  // in a throwaway realm reached through the switcher — `wire()` driven
+  // where `tests/cert_sign_in_editor.js` holds only the pure functions: a
+  // certSignIn.profiles profile written with the editor (an issuer picked
+  // from the client truststore, presets, the low-affinity lock), reordered,
+  // saved and read back exactly; a hand-written value saved byte for byte;
+  // piv.attestationAnchors' PEM list; listeners.applications; and a
+  // person's binding values derived from an uploaded certificate, added
+  // and removed. Its truststore Root is removed and every setting reset.
+  { file: 'sts_cert_sign_in_editors.js', browser: true, local: true },
+  // FORMS DRAWN AFTER THE PAGE, IN A TRUST REALM (#2098). `local: true`:
+  // this repository's console and portal, in Chrome, in a throwaway realm:
+  // the WS-Trust protection list redrawn by a ticked box posts its + and
+  // trash into the realm, the + is claimed and the save read back; the
+  // delegate search's Choose posts into the realm and names the delegate.
+  // Its default-realm console user is removed in a `finally`.
+  { file: 'sts_realm_late_forms.js', browser: true, local: true },
   // EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS
   // SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS (#188,
   // 2026-09-24): metadata, Responses on every binding, the ArtifactResponse,
@@ -2312,8 +2514,8 @@ const JOBS = [
   { file: 'sts_account_disable.js', browser: false, local: true,
     optIn: '444',
     testPeer: true },
-  // D12 (#444): /account-api's table, its gate's three codes and its body
-  // rules (account_api).
+  // D12 (#444): /account-api's table and body rules; SSH certificate
+  // issuance, ownership, revocation and RFC 8628 device-grant CLI use.
   { file: 'sts_account_api.js', browser: false, local: true,
     optIn: '444' },
   // D12 (#444): an application's allowed sign-in mechanisms and second
@@ -2449,6 +2651,11 @@ const JOBS = [
   // (passkey_policy, passkey_pin_length, passkey_require_usernameless).
   { file: 'sts_passkey_policy_profile.js', browser: false, local: true,
     optIn: '444' },
+  // #1955 P7: legacy U2F credentials imported and used with the appid
+  // extension (the AppID's hash only with appid true), appidExclude on a
+  // registration, and credProtect asked and enforced. Throwaway realms of
+  // its own; every key made when it runs.
+  { file: 'sts_webauthn_u2f_import.js', browser: false, local: true },
   // D12 (#444): appPasskeyPolicy and a group's stsPasskeyPolicy, their
   // refusals, which profile a sign-in gets by client_id and by group
   // precedence, the application read's card data, the delete refused while
@@ -2546,6 +2753,10 @@ const JOBS = [
   // signers (signer_truststore, pinned_signers).
   { file: 'sts_signer_trust.js', browser: false, local: true,
     optIn: '444' },
+  // #2118 phase 4: named truststores and their use cases through
+  // /admin-api/truststores, in throwaway realms; the default realm's
+  // service-wide half is tests/truststores_api.js's, in process.
+  { file: 'sts_truststores.js', browser: false, local: true },
   // D12 (#444): the main port's chain ends with the service Root, byte for
   // byte (tls_presented_root).
   { file: 'sts_tls_presented_root.js', browser: false, local: true,
@@ -2877,6 +3088,12 @@ const JOBS = [
   // refusals through the editor's API (xacml_pap).
   { file: 'sts_xacml_pap.js', browser: false, local: true,
     optIn: '444' },
+  // #2025: an embedded remote PEP bound to its application through
+  // /admin-api/xacml (set-pep-application, clear-pep-application,
+  // issue-pep-credential with an application), the application's page, the
+  // clean-up when the application is deleted, and the audit rows
+  // (xacml_pep_binding in process). In a realm of its own.
+  { file: 'sts_xacml_pep_binding.js', browser: false, local: true },
   // D12 (#444): the AuthZEN binding for OAuth 2.0 token exchange over
   // /access/v1/evaluation(s), in both modes (authzen_token_exchange).
   // Posts an outside test Root to the client truststore and removes it.
@@ -3231,6 +3448,10 @@ const LOCAL_HELPERS = [
   // A GET sent as a browser's top-level navigation (#1443), which Node's
   // fetch cannot send: sts_backchannel_logout.js, sts_multi_account.js.
   'navigation.js',
+  // Whether a page, an answer or a token names an address, by parsing
+  // every URL in it rather than searching for a substring (CodeQL
+  // js/incomplete-url-substring-sanitization, 2026-11-20).
+  'url_match.js',
   // The sign-in screen over `/authn-api` (#571): the shell, the view and
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.
@@ -3250,6 +3471,17 @@ const LOCAL_HELPERS = [
   // since; the static console (#446) made it a different helper from the
   // parent's, which signs in to a cookie-holding console.
   'console_signin.js',
+  // A person whose password is their own in every mode (#2160): a
+  // temporary password set by the job's administrator door, then the
+  // person's own change at the sign-in screen, since a typed password is
+  // temporary in product.
+  'own_password.js',
+  // What the static console asks for after a press, completed in the
+  // browser as an administrator would (#2196): the write scope's popup
+  // (#2189), its Continue, and a sign-in again (#2173), in the popup or on
+  // the page, never a refusal swallowed. The browser console jobs press
+  // their forms through it.
+  'console_steps.js',
   // The portal's sign-in and a client of the operations its pages are drawn
   // from (#568): the static portal signs in as the public client
   // `sts-user-portal` and draws every page from `/account-api`.
@@ -3300,6 +3532,9 @@ const LOCAL_HELPERS = [
   // certs-only, csrattrs and multipart parsers, and a KEM template CSR.
   // Node built-ins only; nothing from est/ or common/cert_enrollment.js.
   'est_client.js',
+  // The client lab's agent (#2056): its clients and virtual cards driven by
+  // a job, files in and out.
+  'client_lab.js',
   // SCEP's independent client (RFC 8894): node-forge for the PKCS#10, the
   // self-signed signer and the envelope, forge.asn1 and node's crypto for the
   // SignedData and the CertRep. Nothing from scep/ or cert_enrollment.js.

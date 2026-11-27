@@ -23,10 +23,12 @@
 //   set-scope         the applications a caller may ask about: a person's or
 //                     service account's `stsAuthzenApplication`, or an
 //                     application's `appAuthzenApplication`, replaced whole
-//   set-callbacks     the callback URLs registered for a caller (#1180):
-//                     `stsAuthzenCallbackUri` or `appAuthzenCallbackUri`,
-//                     replaced whole — the only URLs an access request's
-//                     callback may name
+//   set-callbacks     the callback URLs registered for a caller (#1180,
+//                     #1202): an application's `appAuthzenCallbackUri`,
+//                     replaced whole, and `appAuthzenCallbackConfig` where
+//                     a URL overrides the realm's retry bound; a person's
+//                     or service account's `stsAuthzenCallbackUri`, which
+//                     takes no override (`STS-AUTHZEN-0137`).
 //   approve-access-request, deny-access-request, revoke-access-request,
 //   cancel-access-request
 //                     an administrator's act on one access request (#1180,
@@ -67,9 +69,12 @@ const API_OBJECT = 'sts-authzen-api';
 const PERSON_SCOPE = 'stsAuthzenApplication';
 const APPLICATION_SCOPE = 'appAuthzenApplication';
 
-// And the two that hold the callback URLs registered for a caller (#1180).
+// The person's or service account's callback URLs (#1180). Written and
+// honoured as in 1.1.0: rcbj's decision 4 on #1180 registers a callback
+// for the requester, whoever that is (the review of #1202 restored it).
 const PERSON_CALLBACK = 'stsAuthzenCallbackUri';
 const APPLICATION_CALLBACK = 'appAuthzenCallbackUri';
+const APPLICATION_CALLBACK_CONFIG = 'appAuthzenCallbackConfig';
 
 // The most callback URLs one caller may have registered.
 const MAX_CALLBACKS = 8;
@@ -257,6 +262,8 @@ class AuthzenAdmin {
                  .fromEntry(full.fields || {}).authzenApplication),
                callbacks: AuthzenAdmin.listOf(Classes.Application
                  .fromEntry(full.fields || {}).authzenCallbackUri),
+               callbackConfigs: AuthzenAdmin.listOf(Classes.Application
+                 .fromEntry(full.fields || {}).authzenCallbackConfig),
                member: !!full.dn &&
                        members.indexOf(String(full.dn).toLowerCase()) >= 0 };
     }
@@ -272,6 +279,7 @@ class AuthzenAdmin {
                                                  PERSON_SCOPE),
              callbacks: AuthzenAdmin.valuesOf(entry.attributes,
                                               PERSON_CALLBACK),
+             callbackConfigs: [],
              member: members.indexOf(String(entry.dn).toLowerCase()) >= 0 ||
                      self.memberByName(members, entry) };
   }
@@ -312,7 +320,7 @@ class AuthzenAdmin {
     const callers = members.slice(0, MAX_MEMBERS).map(function (dn: string) {
       return self.callerOf(dn) ||
         { dn: dn, name: dn, kind: 'unknown', applications: [],
-          callbacks: [], member: true };
+          callbacks: [], callbackConfigs: [], member: true };
     });
     const asked = String((query || {}).caller || '').trim();
     const consoleModule = self.deps.loadConsole();
@@ -353,6 +361,7 @@ class AuthzenAdmin {
       looked: asked ? (self.callerOf(asked) || { name: asked, kind: 'none',
                                                   applications: [],
                                                   callbacks: [],
+                                                  callbackConfigs: [],
                                                   member: false })
                     : null,
       // THE ACCESS REQUESTS (#1180): every one of the realm's, newest
@@ -829,9 +838,25 @@ class AuthzenAdmin {
                           parsed.row.property + ' → ' +
                           parsed.row.attributeId + ' (via ' +
                           String(who.via || 'console') + ').' });
+    AuthzenAdmin.notePeps('an AuthZEN catalogue row was set');
     log.debug("Leaving AuthzenAdmin.setAttribute().");
     return { ok: true, changed: true, replaced: replaced.length > 0,
              row: Object.assign({ key: key }, parsed.row) };
+  }
+
+  // AN EMBEDDED PEP IS TOLD (#2028): this change can move what a PEP bound
+  // to an application pulls, so the XACML surface checks, after the commit,
+  // and sends `pep-policies-changed` where it did. Lazily, and never thrown
+  // into the change: the event is a hint.
+  private static notePeps(what: string): void {
+    log.debug("Entering AuthzenAdmin.notePeps().");
+    try {
+      require('../xacml/xacml').notePepPolicies(what);
+    } catch (e) {
+      log.debug("Caught in AuthzenAdmin.notePeps(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AuthzenAdmin.notePeps().");
   }
 
   private removeAttribute(body: any, who: any): any {
@@ -864,6 +889,7 @@ class AuthzenAdmin {
                   detail: 'Removed the catalogue row ' +
                           key.replace(':', '.') + ' (via ' +
                           String(who.via || 'console') + ').' });
+    AuthzenAdmin.notePeps('an AuthZEN catalogue row was removed');
     log.debug("Leaving AuthzenAdmin.removeAttribute().");
     return { ok: true, changed: true, removed: key };
   }
@@ -925,41 +951,131 @@ class AuthzenAdmin {
              caller: Object.assign({}, caller, { applications: list }) };
   }
 
-  // THE CALLBACK URLS A CALLER MAY NAME (#1180, rcbj's decision 4): an
-  // administrator's, replaced whole, https only — the access request's
-  // callback is held to these exactly, and a request can name no other.
+  // One callback specification: a URL, or that URL followed by
+  // attempts=N and backoff=S. An array element is one specification, so it
+  // may contain spaces. A string with a newline is one specification per
+  // line. A string that names an override and has no newline is one
+  // specification. Anything else is the old split on spaces and commas,
+  // which is how a list of bare URLs is still written.
+  private callbackItems(raw: unknown): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenAdmin.callbackItems().");
+    let items: string[];
+    if (Array.isArray(raw)) {
+      items = raw.map(function (one: unknown) {
+        return String(one).trim();
+      });
+    } else {
+      const text = String(raw == null ? '' : raw);
+      if (text.indexOf('\n') >= 0) {
+        items = text.split(/\r?\n/).map(function (one: string) {
+          return one.trim();
+        });
+      } else if (/attempts=|backoff=/.test(text)) {
+        items = [text.trim()];
+      } else {
+        items = text.split(/[\s,]+/);
+      }
+    }
+    log.debug("Leaving AuthzenAdmin.callbackItems().");
+    return items.filter(Boolean);
+  }
+
+  // The URL rules are STS-AUTHZEN-0094. A bad override is STS-AUTHZEN-0137.
+  // Both keys are optional; neither means the realm's settings.
+  private parseCallbackItem(item: string): any {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenAdmin.parseCallbackItem().");
+    const tokens = String(item).trim().split(/\s+/);
+    const urlText = tokens[0];
+    let url: URL | null = null;
+    try {
+      url = new URL(urlText);
+    } catch (e) {
+      log.debug("Caught in AuthzenAdmin.parseCallbackItem(): " +
+                ((e && e.message) || e));
+      url = null;
+    }
+    if (!url || url.protocol !== 'https:' || urlText.length > 2048 ||
+        !!url.username || !!url.password || !!url.hash) {
+      log.debug("Leaving AuthzenAdmin.parseCallbackItem(). Not a URL.");
+      return { problem: 'url', url: urlText };
+    }
+    let attempts: number | null = null;
+    let backoff: number | null = null;
+    for (let i = 1; i < tokens.length; i += 1) {
+      const attemptsMatch = /^attempts=(\d+)$/.exec(tokens[i]);
+      const backoffMatch = /^backoff=(\d+)$/.exec(tokens[i]);
+      if (attemptsMatch) {
+        if (attempts !== null) {
+          log.debug("Leaving AuthzenAdmin.parseCallbackItem(). Repeated.");
+          return { problem: 'override', url: urlText };
+        }
+        attempts = Number(attemptsMatch[1]);
+        if (attempts < 1 || attempts > 20) {
+          log.debug("Leaving AuthzenAdmin.parseCallbackItem(). Attempts.");
+          return { problem: 'override', url: urlText };
+        }
+      } else if (backoffMatch) {
+        if (backoff !== null) {
+          log.debug("Leaving AuthzenAdmin.parseCallbackItem(). Repeated.");
+          return { problem: 'override', url: urlText };
+        }
+        backoff = Number(backoffMatch[1]);
+        if (backoff < 60 || backoff > 86400) {
+          log.debug("Leaving AuthzenAdmin.parseCallbackItem(). Backoff.");
+          return { problem: 'override', url: urlText };
+        }
+      } else {
+        log.debug("Leaving AuthzenAdmin.parseCallbackItem(). Token.");
+        return { problem: 'override', url: urlText };
+      }
+    }
+    log.debug("Leaving AuthzenAdmin.parseCallbackItem().");
+    return { url: urlText, attempts: attempts, backoff: backoff };
+  }
+
+  // THE CALLBACK URLS A CALLER MAY NAME (#1180, #1202): an
+  // administrator's, replaced whole. An application's may carry a retry
+  // override per URL; a person's or service account's may not, since
+  // their entry has nowhere to keep one.
   private setCallbacks(body: any, who: any): any {
     const self = this;
     const { log, applications, audit } = this.deps;
     log.debug("Entering AuthzenAdmin.setCallbacks().");
-    const raw = body.callbacks;
-    const list = (Array.isArray(raw) ? raw
-      : String(raw == null ? '' : raw).split(/[\s,]+/))
-      .map(function (one: unknown) {
-        return String(one).trim();
-      }).filter(Boolean)
-      .filter(function (one: string, i: number, all: string[]) {
-        return all.indexOf(one) === i;
+    const parsed = self.callbackItems(body.callbacks).map(
+      function (one: string) {
+        return self.parseCallbackItem(one);
       });
-    const bad = list.filter(function (one: string) {
-      let url: URL | null = null;
-      try {
-        url = new URL(one);
-      } catch (e) {
-        log.debug("Caught in AuthzenAdmin.setCallbacks(): " +
-                  ((e && e.message) || e));
-        url = null;
+    const seen: string[] = [];
+    const specs = parsed.filter(function (one: any) {
+      if (!one.url || one.problem || seen.indexOf(one.url) >= 0) {
+        return false;
       }
-      return !url || url.protocol !== 'https:' || one.length > 2048 ||
-             !!url.username || !!url.password || !!url.hash;
+      seen.push(one.url);
+      return true;
     });
-    if (list.length > MAX_CALLBACKS || bad.length) {
+    const badUrl = parsed.filter(function (one: any) {
+      return one.problem === 'url';
+    })[0];
+    const badOverride = parsed.filter(function (one: any) {
+      return one.problem === 'override';
+    })[0];
+    if (specs.length > MAX_CALLBACKS || badUrl) {
       log.debug("Leaving AuthzenAdmin.setCallbacks(). Refused.");
-      return self.refused('STS-AUTHZEN-0094', 'A caller may have at most ' +
-                          MAX_CALLBACKS + ' callback URLs, each an https ' +
-                          'URL with no credentials and no fragment' +
-                          (bad.length ? '; "' + bad[0].slice(0, 120) +
-                                        '" is not one' : '') + '.');
+      return self.refused('STS-AUTHZEN-0094', 'An application may have at ' +
+                          'most ' + MAX_CALLBACKS + ' callback URLs, each ' +
+                          'an https URL with no credentials and no fragment' +
+                          (badUrl ? '; "' + String(badUrl.url).slice(0, 120) +
+                                    '" is not one' : '') + '.');
+    }
+    if (badOverride) {
+      log.debug("Leaving AuthzenAdmin.setCallbacks(). A bad override.");
+      return self.refused('STS-AUTHZEN-0137', 'A callback override is ' +
+                          'attempts=N (1 to 20) or backoff=S (60 to 86400), ' +
+                          'each at most once; "' +
+                          String(badOverride.url).slice(0, 120) +
+                          '" is not.');
     }
     const caller = self.callerOf(String(body.caller || ''));
     if (!caller) {
@@ -969,34 +1085,84 @@ class AuthzenAdmin {
                           String(body.caller || '').slice(0, 120) +
                           '" in this realm.');
     }
-    if (caller.kind === 'application') {
-      caller.callbacks.forEach(function (one: string) {
-        applications.updateApplication(caller.name, {
-          mode: 'remove', attribute: APPLICATION_CALLBACK, value: one });
-      });
-      for (let i = 0; i < list.length; i += 1) {
-        const added = applications.updateApplication(caller.name, {
-          mode: 'add', attribute: APPLICATION_CALLBACK, value: list[i] });
-        if (!added.ok) {
-          log.debug("Leaving AuthzenAdmin.setCallbacks(). Refused.");
-          return added;
-        }
+    const urls = specs.map(function (one: any) {
+      return one.url;
+    });
+    if (caller.kind !== 'application') {
+      if (specs.some(function (one: any) {
+        return one.attempts !== null || one.backoff !== null;
+      })) {
+        log.debug("Leaving AuthzenAdmin.setCallbacks(). An override for " +
+                  "a person.");
+        return self.refused('STS-AUTHZEN-0137', 'attempts=N and ' +
+                            'backoff=S are an application\'s; ' +
+                            caller.name + ' is a ' + caller.kind + ', ' +
+                            'whose callbacks take the realm\'s settings.');
       }
-    } else if (!directory ||
-               !directory.write(caller.dn, PERSON_CALLBACK, list)) {
-      log.debug("Leaving AuthzenAdmin.setCallbacks(). Not written.");
-      return self.refused('STS-AUTHZEN-0094', 'The callback URLs could not ' +
-                          'be written onto ' + caller.dn + '.');
+      if (!directory || !directory.write(caller.dn, PERSON_CALLBACK, urls)) {
+        log.debug("Leaving AuthzenAdmin.setCallbacks(). Not written.");
+        return self.refused('STS-AUTHZEN-0094', 'The callback URLs could ' +
+                            'not be written onto ' + caller.dn + '.');
+      }
+      audit.audit({ action: 'admin.authzen.callbacks.set',
+                    actor: String(who.actor || ''), protocol: 'AuthZEN',
+                    detail: 'Registered ' + urls.length + ' access request ' +
+                            'callback URL(s) for the AuthZEN caller ' +
+                            caller.name + ', via ' +
+                            String(who.via || 'console') + '.' });
+      log.debug("Leaving AuthzenAdmin.setCallbacks(). A " + caller.kind +
+                ".");
+      return { ok: true, changed: true,
+               caller: Object.assign({}, caller, { callbacks: urls }) };
+    }
+    const configs = specs.filter(function (one: any) {
+      return one.attempts !== null || one.backoff !== null;
+    }).map(function (one: any) {
+      let line = one.url;
+      if (one.attempts !== null) {
+        line += ' attempts=' + one.attempts;
+      }
+      if (one.backoff !== null) {
+        line += ' backoff=' + one.backoff;
+      }
+      return line;
+    });
+    (caller.callbacks || []).forEach(function (one: string) {
+      applications.updateApplication(caller.name, {
+        mode: 'remove', attribute: APPLICATION_CALLBACK, value: one });
+    });
+    (caller.callbackConfigs || []).forEach(function (one: string) {
+      applications.updateApplication(caller.name, {
+        mode: 'remove', attribute: APPLICATION_CALLBACK_CONFIG, value: one });
+    });
+    for (let i = 0; i < urls.length; i += 1) {
+      const added = applications.updateApplication(caller.name, {
+        mode: 'add', attribute: APPLICATION_CALLBACK, value: urls[i] });
+      if (!added.ok) {
+        log.debug("Leaving AuthzenAdmin.setCallbacks(). Refused.");
+        return added;
+      }
+    }
+    for (let i = 0; i < configs.length; i += 1) {
+      const added = applications.updateApplication(caller.name, {
+        mode: 'add', attribute: APPLICATION_CALLBACK_CONFIG,
+        value: configs[i] });
+      if (!added.ok) {
+        log.debug("Leaving AuthzenAdmin.setCallbacks(). Refused.");
+        return added;
+      }
     }
     audit.audit({ action: 'admin.authzen.callbacks.set',
                   actor: String(who.actor || ''), protocol: 'AuthZEN',
-                  detail: 'Registered ' + list.length + ' access request ' +
-                          'callback URL(s) for the AuthZEN caller ' +
-                          caller.name + ' (via ' +
-                          String(who.via || 'console') + ').' });
+                  detail: 'Registered ' + urls.length + ' access request ' +
+                          'callback URL(s) for the application ' +
+                          caller.name + ' (' + configs.length + ' with a ' +
+                          'retry override), via ' +
+                          String(who.via || 'console') + '.' });
     log.debug("Leaving AuthzenAdmin.setCallbacks().");
     return { ok: true, changed: true,
-             caller: Object.assign({}, caller, { callbacks: list }) };
+             caller: Object.assign({}, caller, { callbacks: urls,
+                                                 callbackConfigs: configs }) };
   }
 
   // AN ADMINISTRATOR'S ACT ON ONE ACCESS REQUEST (#1180): the portal's
@@ -1049,6 +1215,7 @@ export = {
   APPLICATION_SCOPE: APPLICATION_SCOPE,
   PERSON_CALLBACK: PERSON_CALLBACK,
   APPLICATION_CALLBACK: APPLICATION_CALLBACK,
+  APPLICATION_CALLBACK_CONFIG: APPLICATION_CALLBACK_CONFIG,
   MAX_CALLBACKS: MAX_CALLBACKS,
   /**
    * The directory's slot as it was filled (#1180): the access requests

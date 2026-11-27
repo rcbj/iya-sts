@@ -34,7 +34,7 @@
 #   openid-conformance, openid-conformance-oidcc
 #                  the OpenID Foundation plans, split by lane, --no-build.
 #   openapi-breaking  pull requests only: the published APIs did not break.
-#   dependency-windows  SECURITY.md's windows over the lockfile.
+#   dependency-windows  SECURITY.md's windows over both lockfiles (root, sdk/).
 #   coverage       ./run-coverage.sh --no-build, nightly and by hand only:
 #                  130-170 instrumented minutes is not a merge gate.
 #
@@ -68,6 +68,17 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+  # THE MERGE QUEUE ON DEVELOP (rcbj, 2026-11-23). Two agents merging at once
+  # landed pull requests before their reviews and cancelled every develop
+  # push run, so develop's ruleset sends every merge through GitHub's merge
+  # queue, one at a time. The queue needs its required checks to run on the
+  # merge group: mirror, dependency-windows and rust do, a few minutes each.
+  # build (and everything that needs it) and openapi-breaking do NOT run on a
+  # merge group: build alone is 30-50 minutes, and a queue that waits on it
+  # lands one pull request an hour. The pull request's own run and the push
+  # run after the merge still run them, and the whole suite is a dispatch.
+  merge_group:
+    types: [checks_requested]
   # THE LONG JOBS RUN ON A MANUAL DISPATCH ONLY (rcbj, 2026-11-14): the six
   # mode jobs and the two OpenID conformance jobs are hours of runner time
   # each, and the account has a finite number of them. A push or a pull
@@ -166,7 +177,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # THE ADVISORY WINDOWS OF SECURITY.md (#1458). No install: `npm audit` reads
-  # the lockfile. The published image's half is dependency-windows.yml's.
+  # the lockfiles, the root's and sdk/'s (#2159). The published image's half is dependency-windows.yml's.
   # ---------------------------------------------------------------------------
   dependency-windows:
     runs-on: ubuntu-latest
@@ -195,6 +206,8 @@ jobs:
   # and the upload of three to four compressed gigabytes about ten more.
   # ---------------------------------------------------------------------------
   build:
+    # Not on a merge group: see *THE MERGE QUEUE ON DEVELOP* above.
+    if: github.event_name != 'merge_group'
     needs: mirror
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -660,12 +673,17 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Format, then test the workspace
+      # `cargo check` before `cargo test` (rcbj, 2026-11-23): the test build
+      # links every dev-dependency, so a crate whose own code uses one it
+      # declares only under [dev-dependencies] compiles there and fails in
+      # the image build (#2000: xacml-pep's sts-model-pep). `cargo check`
+      # builds the workspace's libraries and binaries without them.
+      - name: Format, check without dev-dependencies, then test the workspace
         run: >-
           docker run --rm -v "${PWD}:/src" -w /src/rust
           -e CARGO_TERM_COLOR=always -e CARGO_INCREMENTAL=0
           ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
-          bash -c "rustup component add rustfmt && cargo fmt --check && cargo test --workspace --locked"
+          bash -c "rustup component add rustfmt && cargo fmt --check && cargo check --workspace --locked && cargo test --workspace --locked"
 
   openapi-breaking:
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')

@@ -24,8 +24,12 @@
 // OWNED HERE (local: true): this repository's own /authn and /admin-api.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -185,10 +189,10 @@ async function codeAfter(b, location) {
   log.debug("Entering codeAfter().");
   let r = await b.go(location);
   for (let hops = 0; hops < 5 && r.location &&
-       r.location.indexOf(REDIRECT) !== 0; hops += 1) {
+       !urls.isAt(r.location, REDIRECT); hops += 1) {
     r = await b.go(r.location);
   }
-  const code = r.location.indexOf(REDIRECT) === 0
+  const code = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   log.debug("Leaving codeAfter(). " + (code ? "A code." : "None."));
   return code || "";
@@ -215,9 +219,18 @@ async function test() {
     { profile: "default", requiredAttributes: ["givenName"] },
     "this realm's attribute policy requires no address");
   await ok(realmApi + "/users/create", { username: BOB, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Post " + BOB, givenName: "Post", sn: "Login" } },
     "created " + BOB);
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(realmBase, BOB, PASSWORD,
+    function (who, value) {
+      return send(realmApi + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
   const read = await send(realmApi + "/policies");
   check("the post-login activity policy is a kind, off by default",
     function () {

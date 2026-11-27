@@ -38,6 +38,12 @@
 //      granted scope (narrowed to the client's declaration in product,
 //      whole in development), nothing else; a subject token with no life
 //      left is a false subject gate (0114);
+//   D. AUTHORIZATION-DETAIL TUPLES (#1201): a declared type that does not
+//      enforce, beside the gates, is true; a cell naming somebody else is
+//      false (0128, and a batch false is audited); a declared type alone,
+//      carrying a binding member, is 0101 as one evaluation, and in a
+//      batch the item's context.error is 400. The bound, an FGA deny or
+//      failure, and shape() are tests/authzen_token_exchange.js.
 //   S. SCOPE TUPLES: declared and carried, true; undeclared (product false,
 //      0112); wider than the subject token (product false, 0111);
 //   J. ID-JAG and TXN-TOKEN, in product as in process: both ID-JAG gates
@@ -51,7 +57,8 @@
 // docs table, the reserved list) and L1 (the XACML request's attribute
 // list) and E9 (the question built) are functions and documents; their
 // outcomes are this job's decisions. N3 (`narrowOnly()` dropping a wider
-// value) is the function under N1.
+// value), the bound, an FGA deny or failure, and shape() are the
+// function under N1 and D.
 //
 // OWNED HERE (local: true): the AuthZEN API is ours.
 // ===========================================================================
@@ -60,6 +67,7 @@ const assert = require("assert");
 const https = require("https");
 const K = require("./oauth_wire_kit.js").kit("sts_authzen_token_exchange");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = K.log;
 const check = K.check;
@@ -123,7 +131,7 @@ function pep(method, path, payload) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: method,
-      rejectUnauthorized: false, cert: caller.certPem, key: caller.keyPem,
+      ca: serviceTrust.trustedCa(), cert: caller.certPem, key: caller.keyPem,
       headers: data ? { "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(data) } : {}
     }, function (response) {
@@ -254,7 +262,8 @@ async function setUp(mode) {
     ["azx-idp", { appAllowedToDelegateTo: ["azx-peer"],
                   oauthAllowedScope: ["files.read"] }],
     ["azx-wl", { appAllowedToDelegateTo: ["azx-back"],
-                 oauthAllowedScope: ["txn:read", "read:docs"] }]];
+                 oauthAllowedScope: ["txn:read", "read:docs"] }],
+    ["azx-pay", { oauthAuthorizationDetailsType: ["payment_initiation"] }]];
   for (const one of apps) {
     await K.app(id, one[0], Object.assign({ oauthClientId: [one[0]] },
                                           one[1]), { protocols: ["oauth2"] });
@@ -568,6 +577,60 @@ async function tokenTypes(r) {
   log.debug("Leaving tokenTypes().");
 }
 
+async function details(r) {
+  log.debug("Entering details().");
+  log.info("=== D. authorization-detail tuples, in " + r.mode + " ===");
+  const body = gates(user("azx-alice"), client("azx-front"), BACK,
+    { client_id: "azx-front", subject_token: { aud: "azx-front" } });
+  body.evaluations.push({
+    subject: user("azx-alice"),
+    action: { name: "read" },
+    resource: { type: "payment_initiation", id: "pay-1" }
+  });
+  const granted = await ask(r, body);
+  check(r.mode + ": D1. a declared type that does not enforce, beside " +
+        "the gates, is granted as asked", function () {
+    assert.deepStrictEqual(decisions(granted), [true, true, true],
+                           shown(granted));
+  });
+  const stranger = gates(user("azx-alice"), client("azx-front"), BACK,
+    { client_id: "azx-front", subject_token: { aud: "azx-front" } });
+  stranger.evaluations.push({
+    subject: user("azx-bob"),
+    action: { name: "read" },
+    resource: { type: "payment_initiation", id: "pay-1" }
+  });
+  await coded(r, "STS-AUTHZEN-0128", "D2. a detail tuple naming somebody " +
+              "other than the exchange subject is false", function () {
+    return ask(r, stranger);
+  }, function (one) {
+    assert.strictEqual(one.answers[2].decision, false, shown(one));
+  });
+  const alone = {
+    subject: user("azx-alice"),
+    action: { name: "read" },
+    resource: { type: "payment_initiation", id: "pay-1" },
+    context: { client_id: "azx-front" }
+  };
+  await coded(r, "STS-AUTHZEN-0101", "D3. a declared type with no gate, " +
+              "carrying a binding member, is not a detail tuple",
+              function () {
+    return askOne(r, alone);
+  }, function (one) {
+    assert.strictEqual(one.status, 400, shown(one));
+  });
+  const batched = await ask(r, { evaluations: [alone] });
+  check(r.mode + ": D3 in a batch: the item's context.error is 400 and " +
+        "its decision false", function () {
+    const one = batched.answers[0] || {};
+    assert.strictEqual(batched.status, 200, shown(batched));
+    assert.strictEqual(one.decision, false, shown(batched));
+    assert.strictEqual(((one.context || {}).error || {}).status, 400,
+                       shown(batched));
+  });
+  log.debug("Leaving details().");
+}
+
 async function metadata(r) {
   log.debug("Entering metadata().");
   log.info("=== M. the metadata, and off ===");
@@ -614,6 +677,7 @@ async function test() {
       if (mode === "product") {
         await tokenTypes(r);
       }
+      await details(r);
       await metadata(r);
     }
   } finally {
@@ -623,4 +687,4 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-K.main(test, 56);
+K.main(test, 64);

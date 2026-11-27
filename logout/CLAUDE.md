@@ -140,10 +140,22 @@ stand between a person and leaving. **`signOutAct()`, the page's door at `POST
 /authn-api/logout`, asks the same since #1577** — until then only the JSON door
 did, and the page, where the portal sends people to end their other sessions,
 never asked. It answers in that API's shape (`reauthenticationRefusal()`: 403,
-the same code, an English `errors`, and a `reauthenticate` view whose `signIn`
+the same code, an English `errors` with its `refusals.logout.*` `messages`
+beside it (#2006), and a `reauthenticate` view whose `signIn`
 is a `beginAuthentication()` path back to `/logout`), and `web_signout.ts`
 draws that view rather than leaving the refusal over the old page.
 `tests/logout_api.js` section 9 holds both doors.
+
+**The page's refusals are catalog sentences since #2006**: the subject's
+(`refusedNameMessage()`, `nobodyMessage()`), the account step's and the
+re-authentication's are `refusals.logout.*` `Sentence`s, which the page draws
+in its language and the JSON door's `error_description` sends as English. A
+result row's failure (`ok: false` from a family's `terminate()`, and the
+loop's own *no answer*, *ending this failed* and *cannot be ended*) is a
+`refusals.logout.row.*` sentence: `message` keeps its English everywhere —
+`/admin/logout`, the JSON door, the sealed result — and the page's result
+view carries the key beside it as `said`. A success row, and an inventory
+row's `why`, are still the model's English.
 
 **THIS SERVICE DOES NOT RECALL ANYTHING IT HAS ALREADY ISSUED** — a SAML
 assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED
@@ -911,3 +923,17 @@ ceremonies and the code grant, one removed at each door, its session's cookie
 and refresh token refused and the other key's still good; the app, the
 recovery codes and the emailed factor with the sessions each did and did not
 complete.
+
+## THE PARTIES OF A SESSION THIS ACT ENDS ARE KEPT FIRST (#2234, 2026-11-25)
+
+An application's Shared Signals stream carries events about a person only
+while they have an active session on it, read off this model's relying-party
+lists (`ssf/CLAUDE.md`, *An application's stream is about the people signed
+in to it*), and the event that ENDS a session must still reach those parties.
+`terminate()` therefore hands every session it is about to end to
+`ssf/application_sessions.ts`'s `noteEnded()` right after `endingSessions` is
+decided and before any family runs: the `wsfed-rp` and `saml2-sp` rows take
+their realm and service provider off the session even when the session ends
+in the same act (the `oidc-rp` row leaves the client on it), so by the time
+`dropSession()` announces the end those parties were gone. A lazy require of
+a library; no Shared Signals, nothing kept.

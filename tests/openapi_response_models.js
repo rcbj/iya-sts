@@ -25,6 +25,9 @@
 // to every model of them, because a member added there reached a stack first.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -666,7 +669,7 @@ async function codeFlow(port, client, who) {
       continue;
     }
     if (r.status >= 300 && r.status < 400 && to &&
-        to.indexOf(client.redirect) !== 0) {
+        !urls.isAt(to, client.redirect)) {
       r = await loopback(port, jar, 'GET', to);
       continue;
     }
@@ -674,7 +677,7 @@ async function codeFlow(port, client, who) {
   }
   const to = String((r.headers && r.headers.location) || '');
   const at = to.indexOf('?');
-  const code = to.indexOf(client.redirect) === 0 && at > 0
+  const code = urls.isAt(to, client.redirect) && at > 0
     ? new URLSearchParams(to.slice(at + 1)).get('code') : '';
   if (!code) {
     log.debug("Leaving codeFlow(). No code.");
@@ -1945,6 +1948,13 @@ function codesOnlyWhereDrawn(t, docs) {
   t.equal(JSON.stringify(Kit.stripCodes(body)),
           JSON.stringify({ ok: true, rows: [{ id: 1 }] }),
           'an act\'s answer loses a code at any depth');
+  // A refusal's Sentence is a String object (#2006): it reaches the answer
+  // as its English, never as an object of its characters (run 45236493306).
+  const Sentence = require('../common/sentence');
+  const refused = { ok: false,
+                    errors: [Sentence.say('refusals.passkey.upgradeOff')] };
+  t.equal(JSON.stringify(Kit.stripCodes(refused)), JSON.stringify(refused),
+          'a Sentence in an act\'s answer is its English, as sent');
   const found = {};
   ['admin', 'account', 'authn', 'report'].forEach(function (api) {
     const doc = docs[api];

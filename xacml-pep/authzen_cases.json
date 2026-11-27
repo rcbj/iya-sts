@@ -1,5 +1,5 @@
 {
-  "what": "THE AUTHZEN MAPPING CONTRACT AS A TABLE (#1179). authzen/authzen_catalogue.ts and authzen/authzen_map.ts in the service, and authzen_catalogue.rs and authzen_map.rs in the xacml-pep container, are held to these cases: tests/authzen_map.js section S runs the service's, and cargo test -p xacml-pep the container's. A case is a value or a request, and the code it is refused with ('' when it is accepted); a request case may also name the paths it supplies and the attributes it maps to. Edit it here, never in either test.",
+  "what": "THE AUTHZEN MAPPING CONTRACT AS A TABLE (#1179). authzen/authzen_catalogue.ts and authzen/authzen_map.ts in the service, and authzen_catalogue.rs and authzen_map.rs in the xacml-pep container, are held to these cases: tests/authzen_map.js section S runs the service's, and cargo test -p xacml-pep the container's. A case is a value or a request, and the code it is refused with ('' when it is accepted); a request case may also name the paths it supplies and the attributes it maps to. Edit it here, never in either test. Since #1205 it also holds the Obligations Profile's outcome (obligations: an XACML answer, the realm's profile switch and the PEP's declaration, and the decision, the types handed and the problems) and which tuples the OAuth token-exchange binding answers (binding: the settings a pulled catalogue carries, a request's items, and each item's kind — binding, which the service answers by the fixed rules and the edge answers 501; stray, a binding context member on another tuple, 400 STS-AUTHZEN-0101; or ordinary), run by tests/authzen_map.js S4 and S5 and by authzen_map.rs and authzen_binding.rs.",
   "rows": [
     {
       "object": "subject",
@@ -250,6 +250,33 @@
         "object": "context",
         "property": "subject_token.scope",
         "attributeId": "urn:example:scope"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C15d. context.supported_obligations is the Obligations Profile's declaration, not a catalogue property (#1177)",
+      "value": {
+        "object": "context",
+        "property": "supported_obligations",
+        "attributeId": "urn:example:obligations"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C15e. context.approval is an access request's approval, recognized and not a trusted fact (#1180)",
+      "value": {
+        "object": "context",
+        "property": "approval",
+        "attributeId": "urn:example:approval"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C15f. and so is a path under it, context.approval.id",
+      "value": {
+        "object": "context",
+        "property": "approval.id",
+        "attributeId": "urn:example:approval-id"
       },
       "code": "STS-AUTHZEN-0011"
     },
@@ -1528,6 +1555,1305 @@
         }
       },
       "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V31. context.supported_obligations is supplied and mapped to no attribute (#1177)",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "supported_obligations": [
+            "step-up"
+          ]
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id",
+        "context.supported_obligations"
+      ],
+      "attributes": []
+    },
+    {
+      "what": "V32. context.supported_obligations must be an array of type names",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "supported_obligations": "step-up"
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "V33. context.approval is supplied and mapped to no attribute; an extra member is ignored (#1180)",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "application": "portal",
+          "approval": {
+            "id": "t1",
+            "state": "signed"
+          }
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id",
+        "context.application",
+        "context.approval"
+      ],
+      "attributes": []
+    },
+    {
+      "what": "V34. context.approval without an id is the field's refusal",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "approval": {
+            "state": "signed"
+          }
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    }
+  ],
+  "obligations": [
+    {
+      "what": "O1. the profile on, a PEP that declared nothing: nothing handed, the Permit stays false",
+      "profile": true,
+      "supported": null,
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:step-up",
+            "assignments": [
+              {
+                "attributeId": "urn:sts:xacml:authzen:obligation:step-up:acr_value",
+                "value": "phr"
+              },
+              {
+                "attributeId": "amr_values",
+                "value": "hwk"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": false,
+        "handed": [],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O2. the profile on, a PEP that declared other types: nothing handed",
+      "profile": true,
+      "supported": [
+        "notification"
+      ],
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:step-up",
+            "assignments": [
+              {
+                "attributeId": "urn:sts:xacml:authzen:obligation:step-up:acr_value",
+                "value": "phr"
+              },
+              {
+                "attributeId": "amr_values",
+                "value": "hwk"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": false,
+        "handed": [],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O3. the profile on, every type declared: handed, and the Permit is true",
+      "profile": true,
+      "supported": [
+        "step-up"
+      ],
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:step-up",
+            "assignments": [
+              {
+                "attributeId": "urn:sts:xacml:authzen:obligation:step-up:acr_value",
+                "value": "phr"
+              },
+              {
+                "attributeId": "amr_values",
+                "value": "hwk"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": true,
+        "handed": [
+          "step-up"
+        ],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O4. the profile OFF, every type declared: nothing handed, false",
+      "profile": false,
+      "supported": [
+        "step-up"
+      ],
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:step-up",
+            "assignments": [
+              {
+                "attributeId": "urn:sts:xacml:authzen:obligation:step-up:acr_value",
+                "value": "phr"
+              },
+              {
+                "attributeId": "amr_values",
+                "value": "hwk"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": false,
+        "handed": [],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O5. a Deny's obligations are handed beside false",
+      "profile": true,
+      "supported": [
+        "notification"
+      ],
+      "answer": {
+        "decision": "Deny",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:notification",
+            "assignments": [
+              {
+                "attributeId": "to",
+                "value": "soc@example.com"
+              },
+              {
+                "attributeId": "body",
+                "value": "denied"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": false,
+        "handed": [
+          "notification"
+        ],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O6. a registered type missing a required property: a problem, nothing handed, false",
+      "profile": true,
+      "supported": [
+        "step-up"
+      ],
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:step-up",
+            "assignments": [
+              {
+                "attributeId": "amr_values",
+                "value": "hwk"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": false,
+        "handed": [],
+        "problems": 1
+      }
+    },
+    {
+      "what": "O7. an unregistered obligation is custom, handed when custom is declared",
+      "profile": true,
+      "supported": [
+        "custom"
+      ],
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:example:obligation:watermark",
+            "assignments": [
+              {
+                "attributeId": "urn:example:text",
+                "value": "secret"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": true,
+        "handed": [
+          "custom"
+        ],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O8. the log obligation is discharged here and never handed",
+      "profile": true,
+      "supported": [
+        "step-up"
+      ],
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:step-up",
+            "assignments": [
+              {
+                "attributeId": "urn:sts:xacml:authzen:obligation:step-up:acr_value",
+                "value": "phr"
+              },
+              {
+                "attributeId": "amr_values",
+                "value": "hwk"
+              }
+            ]
+          },
+          {
+            "id": "urn:sts:xacml:obligation:log",
+            "assignments": []
+          }
+        ]
+      },
+      "expect": {
+        "decision": true,
+        "handed": [
+          "step-up"
+        ],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O9. only the log obligation: true without the profile, nothing handed",
+      "profile": false,
+      "supported": null,
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:obligation:log",
+            "assignments": []
+          }
+        ]
+      },
+      "expect": {
+        "decision": true,
+        "handed": [],
+        "problems": 0
+      }
+    },
+    {
+      "what": "O10. two types, one undeclared: nothing handed, false",
+      "profile": true,
+      "supported": [
+        "step-up"
+      ],
+      "answer": {
+        "decision": "Permit",
+        "obligations": [
+          {
+            "id": "urn:sts:xacml:authzen:obligation:step-up",
+            "assignments": [
+              {
+                "attributeId": "urn:sts:xacml:authzen:obligation:step-up:acr_value",
+                "value": "phr"
+              },
+              {
+                "attributeId": "amr_values",
+                "value": "hwk"
+              }
+            ]
+          },
+          {
+            "id": "urn:sts:xacml:authzen:obligation:notification",
+            "assignments": [
+              {
+                "attributeId": "to",
+                "value": "soc@example.com"
+              },
+              {
+                "attributeId": "body",
+                "value": "denied"
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "decision": false,
+        "handed": [],
+        "problems": 0
+      }
+    }
+  ],
+  "binding": [
+    {
+      "what": "B1. on: a lone scope is the binding's (the service's fixed false, STS-AUTHZEN-0105)",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "documents.read"
+          },
+          "resource": {
+            "type": "protected_resource",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding"
+      ]
+    },
+    {
+      "what": "B2. off: a lone scope is ordinary",
+      "settings": {
+        "tokenExchange": false,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "documents.read"
+          },
+          "resource": {
+            "type": "protected_resource",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B3. on: a token-exchange gate is the binding's",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding"
+      ]
+    },
+    {
+      "what": "B4. off: the same gate is ordinary",
+      "settings": {
+        "tokenExchange": false,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B5. on: a gate of another grant is the binding's",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:client_credentials"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding"
+      ]
+    },
+    {
+      "what": "B6. on: a gate naming an unregistered token type is the binding's",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:made_up:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding"
+      ]
+    },
+    {
+      "what": "B7. on: a declared detail type beside a token-exchange gate is the binding's",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "initiate"
+          },
+          "resource": {
+            "type": "payment_initiation",
+            "id": "https://bank.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding",
+        "binding"
+      ]
+    },
+    {
+      "what": "B8. on: a lone declared detail type is ordinary",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "initiate"
+          },
+          "resource": {
+            "type": "payment_initiation",
+            "id": "https://bank.example"
+          }
+        }
+      ],
+      "kinds": [
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B9. on: a declared detail type beside only another grant's gate is ordinary",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:client_credentials"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "initiate"
+          },
+          "resource": {
+            "type": "payment_initiation",
+            "id": "https://bank.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding",
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B10. on: an undeclared type beside a token-exchange gate is ordinary",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "read"
+          },
+          "resource": {
+            "type": "document",
+            "id": "d1"
+          }
+        }
+      ],
+      "kinds": [
+        "binding",
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B11. on: a declared detail beside an unregistered token type's gate is ordinary",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:made_up:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "initiate"
+          },
+          "resource": {
+            "type": "payment_initiation",
+            "id": "https://bank.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding",
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B12. on: an audience whose action is not a gate is ordinary",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "read"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B13. on: a malformed gate action is no gate",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access-token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B14. on: a binding context member on another tuple is stray",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "read"
+          },
+          "resource": {
+            "type": "document",
+            "id": "d1"
+          },
+          "context": {
+            "act": {
+              "sub": "gateway"
+            }
+          }
+        }
+      ],
+      "kinds": [
+        "stray"
+      ]
+    },
+    {
+      "what": "B15. off: a binding context member is stray, even on a gate",
+      "settings": {
+        "tokenExchange": false,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          },
+          "context": {
+            "may_act": {
+              "sub": "g"
+            }
+          }
+        }
+      ],
+      "kinds": [
+        "stray"
+      ]
+    },
+    {
+      "what": "B16. on: a binding context member on a gate is the binding's",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          },
+          "context": {
+            "may_act": {
+              "sub": "g"
+            }
+          }
+        }
+      ],
+      "kinds": [
+        "binding"
+      ]
+    },
+    {
+      "what": "B17. on: a null binding member still names it",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "read"
+          },
+          "resource": {
+            "type": "document",
+            "id": "d1"
+          },
+          "context": {
+            "client_id": null
+          }
+        }
+      ],
+      "kinds": [
+        "stray"
+      ]
+    },
+    {
+      "what": "B18. on: a gate, a scope and a declared detail in one batch are all the binding's",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "documents.read"
+          },
+          "resource": {
+            "type": "protected_resource",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "initiate"
+          },
+          "resource": {
+            "type": "payment_initiation",
+            "id": "https://bank.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding",
+        "binding",
+        "binding"
+      ]
+    },
+    {
+      "what": "B19. off: the same batch is ordinary",
+      "settings": {
+        "tokenExchange": false,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:token_exchange"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "documents.read"
+          },
+          "resource": {
+            "type": "protected_resource",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "initiate"
+          },
+          "resource": {
+            "type": "payment_initiation",
+            "id": "https://bank.example"
+          }
+        }
+      ],
+      "kinds": [
+        "ordinary",
+        "ordinary",
+        "ordinary"
+      ]
+    },
+    {
+      "what": "B20. on: a scope beside a gate of another grant is still the binding's",
+      "settings": {
+        "tokenExchange": true,
+        "tokenExchangeDetailTypes": [
+          "payment_initiation"
+        ],
+        "tokenExchangeTokenTypes": [
+          "access_token",
+          "id_jag",
+          "id_token",
+          "jwt",
+          "refresh_token",
+          "saml1",
+          "saml2",
+          "txn_token"
+        ]
+      },
+      "items": [
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "issue:access_token:client_credentials"
+          },
+          "resource": {
+            "type": "audience",
+            "id": "https://api.example"
+          }
+        },
+        {
+          "subject": {
+            "type": "user",
+            "id": "alice"
+          },
+          "action": {
+            "name": "documents.read"
+          },
+          "resource": {
+            "type": "protected_resource",
+            "id": "https://api.example"
+          }
+        }
+      ],
+      "kinds": [
+        "binding",
+        "binding"
+      ]
     }
   ]
 }

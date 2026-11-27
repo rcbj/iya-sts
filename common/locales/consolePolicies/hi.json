@@ -1,6 +1,7 @@
 {
   "yes": "हाँ",
   "no": "नहीं",
+  "follows": "{row} के अनुसार",
   "configuration": "कॉन्फ़िगरेशन",
   "schema": "स्कीमा",
   "saveProfile": "प्रोफ़ाइल सहेजें",
@@ -230,5 +231,7 @@
   "transfer.view.trustedHeading": "अन्य विश्वास क्षेत्र जिन पर यह विश्वास क्षेत्र विश्वास करता है",
   "transfer.view.noneTrusted": "यह विश्वास क्षेत्र किसी अन्य विश्वास क्षेत्र के नीति निर्यातों पर विश्वास नहीं करता।",
   "transfer.view.kind": "प्रकार",
-  "transfer.view.addedBy": "जोड़ने वाला"
+  "transfer.view.addedBy": "जोड़ने वाला",
+  "newPolicy.button": "नई नीति",
+  "newPolicy.choose": "बनाने के लिए नीति का प्रकार चुनें।"
 }

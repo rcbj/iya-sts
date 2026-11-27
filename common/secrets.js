@@ -166,6 +166,179 @@ function setSdkLoader(fn) {
   log.debug("Leaving setSdkLoader().");
 }
 
+// ---------------------------------------------------------------------------
+// A TIMEOUT AND A BOUNDED RETRY FOR EVERY SECRET STORE (#2220, ASVS 5.0.0
+// 13.1.3). Until #2220 the Vault client was given no timeout at all, and the
+// AWS, Google Cloud and Azure clients ran on their SDKs' defaults, which
+// this service did not state. Each now gets its OWN SDK's options, from two
+// settings:
+//
+//   * `keys.storeTimeoutMs` (30 s) — how long one attempt may wait: AWS's
+//     `requestHandler` `requestTimeout` (and a connect timeout of at most
+//     10 s), Google Cloud's per-call `timeout`, Azure's per-try request
+//     `timeout` (a pipeline policy, `perRetry`), and node-vault's `timeout`
+//     (its axios instance's);
+//   * `keys.storeAttempts` (3) — how many attempts in all: AWS's
+//     `maxAttempts`, Google Cloud's `maxRetries` (attempts less one), Azure's
+//     `retryOptions.maxRetries`, and for node-vault, which retries nothing,
+//     `vaultLimits()` below: a call that got NO answer (a timeout, a lost
+//     connection) or a 5xx or 429 is made again, after 250 ms doubling, up
+//     to the bound. A 4xx is an answer and is never repeated.
+//
+// THE DEFAULTS CHANGE NOTHING A STORE THAT ANSWERS SEES: three attempts is
+// what the AWS and Azure SDKs already make, and thirty seconds is far longer
+// than a secret read takes. What changes is a store that does not answer:
+// the start that waits on it now fails, with its code, rather than hanging.
+// The pause between Vault attempts is a retry delay inside one operation,
+// which the scheduler directive leaves where it is (root CLAUDE.md).
+// ---------------------------------------------------------------------------
+function storeTimeoutMs() {
+  log.debug("Entering storeTimeoutMs().");
+  log.debug("Leaving storeTimeoutMs().");
+  return Math.max(1000, Number(config.value('keys.storeTimeoutMs')) || 30000);
+}
+
+function storeAttempts() {
+  log.debug("Entering storeAttempts().");
+  log.debug("Leaving storeAttempts().");
+  return Math.max(1, Math.min(10,
+    Number(config.value('keys.storeAttempts')) || 3));
+}
+
+/**
+ * An AWS SDK v3 client's configuration with this service's timeout and
+ * attempt bound.
+ *
+ * @param base - the client's own configuration
+ * @returns the configuration to construct it with
+ */
+function awsLimits(base) {
+  log.debug("Entering awsLimits().");
+  const ms = storeTimeoutMs();
+  log.debug("Leaving awsLimits().");
+  return Object.assign({}, base || {}, {
+    maxAttempts: storeAttempts(),
+    requestHandler: { requestTimeout: ms,
+                      connectionTimeout: Math.min(ms, 10000) }
+  });
+}
+
+/**
+ * A Google Cloud client whose every call carries this service's timeout and
+ * retry bound as its call options (a GAPIC method's second argument), unless
+ * the caller gave some. Only a call with one plain-object argument — a
+ * request — is given them; path helpers and `close()` are left alone.
+ *
+ * @param client - the SDK's client
+ * @returns the client, bounded
+ */
+function gcpLimits(client) {
+  log.debug("Entering gcpLimits().");
+  if (!client || typeof client !== 'object') {
+    log.debug("Leaving gcpLimits(). Not a client.");
+    return client;
+  }
+  log.debug("Leaving gcpLimits().");
+  return new Proxy(client, {
+    get: function (target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function' || typeof prop !== 'string' ||
+          prop.charAt(0) === '_') {
+        return value;
+      }
+      return function (...args) {
+        if (args.length === 1 && args[0] && typeof args[0] === 'object' &&
+            !Array.isArray(args[0])) {
+          args.push({ timeout: storeTimeoutMs(),
+                      maxRetries: storeAttempts() - 1 });
+        }
+        return value.apply(target, args);
+      };
+    }
+  });
+}
+
+/**
+ * An Azure SDK client's options with this service's per-try timeout and
+ * retry bound.
+ *
+ * @param [base] - the client's own options
+ * @returns the options to construct it with
+ */
+function azureLimits(base) {
+  log.debug("Entering azureLimits().");
+  const ms = storeTimeoutMs();
+  log.debug("Leaving azureLimits().");
+  return Object.assign({}, base || {}, {
+    retryOptions: { maxRetries: storeAttempts() - 1 },
+    additionalPolicies: [{
+      position: 'perRetry',
+      policy: {
+        name: 'stsStoreTimeout',
+        sendRequest: function (request, next) {
+          request.timeout = ms;
+          return next(request);
+        }
+      }
+    }]
+  });
+}
+
+// Whether a node-vault failure is worth another attempt: no answer at all,
+// or a 5xx or 429. No Entering/Leaving pair: a predicate per failure.
+function vaultRetryable(err) {
+  const status = Number(err && err.response &&
+                        (err.response.statusCode || err.response.status)) ||
+    0;
+  if (!status) {
+    return true;
+  }
+  return status >= 500 || status === 429;
+}
+
+/**
+ * A node-vault client whose `request()` — which every one of its methods
+ * goes through — is attempted up to `keys.storeAttempts` times (see above).
+ *
+ * @param client - node-vault's client
+ * @returns the same client
+ */
+function vaultLimits(client) {
+  log.debug("Entering vaultLimits().");
+  if (!client || typeof client.request !== 'function' ||
+      client.stsBounded) {
+    log.debug("Leaving vaultLimits(). Nothing to bound.");
+    return client;
+  }
+  const original = client.request.bind(client);
+  client.request = async function (options) {
+    const attempts = storeAttempts();
+    for (let n = 1; ; n++) {
+      try {
+        return await original(Object.assign({}, options));
+      } catch (err) {
+        log.debug("Caught in a Vault request: " +
+                  ((err && err.message) || err));
+        if (n >= attempts || !vaultRetryable(err)) {
+          if (n > 1) {
+            log.warn(errorCodes.tag('STS-KEYS-0214') + 'secrets: a call ' +
+                     'to the secret store failed ' + n + ' time(s) ' +
+                     '(keys.storeAttempts): ' + ((err && err.message) || err));
+          }
+          throw err;
+        }
+        const pause = 250 * Math.pow(2, n - 1);
+        await new Promise(function (resolve) {
+          setTimeout(resolve, pause);
+        });
+      }
+    }
+  };
+  client.stsBounded = true;
+  log.debug("Leaving vaultLimits().");
+  return client;
+}
+
 // One sentence for a missing SDK, so all four say the same thing the same way.
 function missingModule(pkg, provider, err) {
   log.debug("Entering missingModule().");
@@ -306,6 +479,31 @@ const CELL_KEK = {
 };
 
 // ---------------------------------------------------------------------------
+// THE PREVIOUS CELL KEY (#2220): the cell key rotated the way the service key
+// is — the new key in `keys.cellKek*`, the old one here, one start, and every
+// data key of this cell's scope that unwraps only under the old key is
+// re-wrapped under the new one. No fallback, for the cell key's reason: a
+// fallback would read some other key under this one's name.
+// ---------------------------------------------------------------------------
+/**
+ * The previous cell key-encryption key's descriptor (#2220): its own
+ * provider, location, field, region and vault, and no fallback.
+ */
+const PREVIOUS_CELL_KEK = {
+  id: 'previous-cell-kek',
+  label: 'the previous cell key-encryption key',
+  provider: 'keys.previousCellKekProvider',
+  file: 'keys.previousCellKekRef',
+  ref: 'keys.previousCellKekRef',
+  field: 'keys.previousCellKekField',
+  defaultField: '',
+  fallbackRef: null,
+  vault: 'keys.previousCellKekVault',
+  region: 'keys.previousCellKekRegion',
+  token: null
+};
+
+// ---------------------------------------------------------------------------
 // THE PREVIOUS KEY-ENCRYPTION KEY (#391 P2). Rotating the key-encryption key
 // re-wraps the data encryption keys rather than re-encrypting the store, and a
 // DEK can only be re-wrapped by a process that can unwrap it — so for one
@@ -377,6 +575,19 @@ const MAIL_SMTP_PASSWORD = mailSecret('mail-smtp-password',
  */
 const MAIL_DKIM_KEY = mailSecret('mail-dkim-key',
   'the DKIM private key', 'mail.dkimKey', 'dkimKey');
+/**
+ * The NEXT DKIM private key's descriptor (#2220): the same secret as the DKIM
+ * key — its provider and location — under a field of its own, so one secret
+ * holds both while a selector is switched. Not a separate row of the store
+ * report, which is about where secrets are, and this one is where the DKIM
+ * key is.
+ */
+const MAIL_DKIM_NEXT_KEY = Object.assign({}, MAIL_DKIM_KEY, {
+  id: 'mail-dkim-next-key',
+  label: 'the next DKIM private key',
+  field: 'mail.dkimNextKeyField',
+  defaultField: 'dkimNextKey'
+});
 /**
  * The Azure Communication Services connection string's descriptor (#63).
  */
@@ -663,8 +874,8 @@ const awsProvider = {
                             'STS-KEYS-0046');
     }
     const region = reachOf(secret, 'region');
-    const client = new sdk.SecretsManagerClient(region ? { region: region } :
-                                                {});
+    const client = new sdk.SecretsManagerClient(awsLimits(region
+      ? { region: region } : {}));
     const answer = await client.send(
       new sdk.GetSecretValueCommand({ SecretId: secretId }));
     // A secret may be a string or binary, and both are legitimate here: a
@@ -721,7 +932,7 @@ const gcpProvider = {
     if (name.indexOf('/versions/') < 0) {
       name = name.replace(/\/+$/, '') + '/versions/latest';
     }
-    const client = new sdk.SecretManagerServiceClient();
+    const client = gcpLimits(new sdk.SecretManagerServiceClient());
     const [answer] = await client.accessSecretVersion({ name: name });
     const payload = answer && answer.payload && answer.payload.data;
     // noBytes(), not `!payload`: the payload is a Buffer and an empty one is
@@ -786,7 +997,7 @@ const azureProvider = {
                       secret.ref + ' (the secret name).'), 'STS-KEYS-0046');
     }
     const client = new secretsSdk.SecretClient(
-      vault, new identitySdk.DefaultAzureCredential());
+      vault, new identitySdk.DefaultAzureCredential(), azureLimits());
     const answer = await client.getSecret(name);
     if (!answer || !answer.value) {
       throw errorCodes.mark(new Error('the secret "' + name + '" in ' + vault +
@@ -868,6 +1079,27 @@ function vaultTls() {
            where: { cert: certPath, key: keyPath, ca: caPath } };
 }
 
+// A push destination's TLS options: `outbound-secret-push`'s truststores where
+// it is assigned (#2118), the destination's own CAs beside them; unassigned,
+// node's store and those CAs as before. The registry is required lazily: this
+// module is loaded long before it.
+function secretPushTls(OutboundTls, target) {
+  log.debug("Entering secretPushTls().");
+  const truststores = require('./truststores');
+  if (truststores.namesFor('outbound-secret-push').assigned) {
+    const own = String(target.caCertificates || '').match(
+      /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+    const assigned = OutboundTls.optionsFor('outbound-secret-push',
+                                            { extraPems: own });
+    if (!assigned.problem) {
+      log.debug("Leaving secretPushTls(). Assigned.");
+      return assigned;
+    }
+  }
+  log.debug("Leaving secretPushTls().");
+  return OutboundTls.verifiedOptions(target.caCertificates || null);
+}
+
 // Where the `cert` auth method is mounted, as a path segment. Leading and
 // trailing slashes are forgiven because `-path=cert/` is how the CLI prints
 // one; anything outside a path's own alphabet — `..`, a query, a space — is
@@ -933,7 +1165,11 @@ async function vaultConnect(spec) {
     // A certificate identity needs none of it and overrides it below.
     token ? { token: token } : {},
     Object.keys(tls.options).length
-      ? { requestOptions: tls.options, rpDefaults: tls.options } : {}));
+      ? { requestOptions: tls.options } : {},
+    // node-vault's own timeout (its axios instance's), #2220.
+    { rpDefaults: Object.assign({}, tls.options,
+                                { timeout: storeTimeoutMs() }) }));
+  vaultLimits(client);
   const role = String(config.value('keys.vaultCertRole') || '').trim();
   if (!tls.authenticates) {
     log.debug('Leaving vaultConnect(). No client certificate; a token, or ' +
@@ -1350,7 +1586,8 @@ const awsKmsProvider = {
       throw missingModule('@aws-sdk/client-kms', 'aws-kms', e);
     }
     const region = reachOf(secret, 'region');
-    const client = new sdk.KMSClient(region ? { region: region } : {});
+    const client = new sdk.KMSClient(awsLimits(region ? { region: region }
+      : {}));
     const described = await client.send(new sdk.DescribeKeyCommand(
       { KeyId: keyId }));
     const meta = (described && described.KeyMetadata) || {};
@@ -1489,7 +1726,7 @@ const gcpKmsProvider = {
     } catch (e) {
       throw missingModule('@google-cloud/kms', 'gcp-kms', e);
     }
-    const client = new sdk.KeyManagementServiceClient();
+    const client = gcpLimits(new sdk.KeyManagementServiceClient());
     const [key] = await client.getCryptoKey({ name: name });
     const algorithm = key && key.versionTemplate &&
                       key.versionTemplate.algorithm;
@@ -1656,7 +1893,8 @@ const azureKeysProvider = {
       throw missingModule('@azure/identity', 'azure-keys', e);
     }
     const credential = new identitySdk.DefaultAzureCredential();
-    const keyClient = new keysSdk.KeyClient(vault, credential);
+    const keyClient = new keysSdk.KeyClient(vault, credential,
+                                            azureLimits());
     const key = await keyClient.getKey(name);
     const props = (key && key.properties) || {};
     const ops = (key && key.keyOperations) || [];
@@ -1699,7 +1937,7 @@ const azureKeysProvider = {
       let one = clients.get(version);
       if (!one) {
         one = new keysSdk.CryptographyClient(keyRef + '/' + version,
-                                             credential);
+                                             credential, azureLimits());
         clients.set(version, one);
       }
       log.debug('Leaving azureKeysProvider.cryptoFor().');
@@ -1842,15 +2080,530 @@ const azureKeysProvider = {
   }
 };
 
+// ---------------------------------------------------------------------------
+// pkcs11 — A KEY-ENCRYPTION KEY IN A HARDWARE SECURITY MODULE (#1955 P8,
+// 2026-11-20): a YubiHSM 2 through `yubihsm_pkcs11.so` and
+// `yubihsm-connector`, SoftHSM2, or any PKCS#11 v2.40 module, through the
+// `pkcs11js` binding (an optional peer, loaded lazily like the cloud SDKs).
+//
+// It is a key management service in every sense the four above are: the key
+// is a NON-EXTRACTABLE AES-256 object inside the token, it wraps and unwraps
+// each data key there, and `read()` answers a HANDLE, never bytes. The
+// wrapped form is `$dekkms$1$pkcs11$<b64url key reference>$<tag>.<…>`, the
+// tag naming the mechanism and its own version (`common/crypto_impl/
+// pkcs11.js`): `g1` CKM_AES_GCM with the data key's AAD, `k1`
+// CKM_AES_KEY_WRAP_PAD, `y1` the YubiHSM's CKM_YUBICO_AES_CCM_WRAP — the two
+// that take no AAD carry SHA-256 of it inside what they wrap, the Azure RSA
+// rule.
+//
+// WHERE IT IS. The location row of the position (`keys.kekRef`,
+// `keys.cellKekRef`, `keys.previousKekRef`) is an RFC 7512 PKCS#11 URI naming
+// the token and the key: `pkcs11:token=sts;object=sts-kek`, or with
+// `id=%01%02`, `serial=`, `slot-id=`. Its `module-path` query attribute
+// overrides `keys.pkcs11Module` for that position alone — which is what
+// moving a key-encryption key from one HSM to another needs, the previous key
+// on the old module and the new on the new. `pin-value` and `pin-source` are
+// REFUSED: a PIN in a URI is a PIN in a configuration value.
+//
+// THE PIN is a secret like any other here: `keys.pkcs11PinProvider` (file,
+// vault, aws, gcp or azure) and `keys.pkcs11PinRef`, never a setting's value.
+// What is stored is the PIN — for a YubiHSM 2 the authentication key's id in
+// four hex digits followed by its password, `0001password` — or a JSON object
+// of PINs by token label (`{"sts": "1234", "old-hsm": "…"}`) when the
+// positions are on different tokens. `none` logs in to nothing, for a module
+// that needs no login.
+//
+// THE KEY IS FOUND, AND MADE ONLY WHEN ASKED. A key that is not there is
+// refused (STS-KEYS-0203) unless `keys.pkcs11GenerateKey` is on, and then
+// only by the FRONT process (a request worker never makes one: two threads
+// starting at once would make two keys under one name, and a second node at
+// once the same — which is why the setting is for a first start and the
+// documentation says to make the key with the HSM's own tool for a cluster).
+// A key that is extractable, or not AES-256, is refused as well.
+//
+// SESSIONS ARE PER THREAD (the engine's header): every process and worker
+// that unwraps opens its own, and a connector restart is met by the next
+// operation, which reconnects once. Nothing here starts a timer.
+//
+// NO ROTATE(). A PKCS#11 key has no versions; a new key-encryption key is a
+// new object, and moving to it is `keys.previousKek*` with the old one there
+// (`keystore.rotateKek()` says so). `isStale()` is therefore always false.
+// ---------------------------------------------------------------------------
+/**
+ * The PKCS#11 token PIN's descriptor (#1955): its own provider, location and
+ * field, and the key-encryption key's way of reaching a store.
+ */
+const PKCS11_PIN = {
+  id: 'pkcs11-pin',
+  label: 'the PKCS#11 token PIN',
+  provider: 'keys.pkcs11PinProvider',
+  file: 'keys.pkcs11PinRef',
+  ref: 'keys.pkcs11PinRef',
+  field: 'keys.pkcs11PinField',
+  defaultField: '',
+  // NO FALLBACK LOCATION: a PIN borrowed from the key-encryption key's place
+  // would be the key itself, or nothing.
+  fallbackRef: null,
+  vault: 'keys.kekVault',
+  region: 'keys.kekRegion',
+  token: 'keys.kekToken',
+  failureCode: 'STS-KEYS-0205',
+  emptyCode: 'STS-KEYS-0205'
+};
+
+// THE ATTRIBUTES OF A PKCS#11 URI THIS SERVICE READS (RFC 7512 section 2.3).
+// Anything else in the path is ignored, as the RFC asks of an attribute a
+// consumer does not know; the two PIN attributes are refused.
+const PKCS11_PATH_ATTRS = ['token', 'object', 'id', 'serial', 'slot-id',
+                           'type', 'manufacturer', 'model',
+                           'library-manufacturer', 'library-description',
+                           'library-version', 'slot-description',
+                           'slot-manufacturer'];
+
+/**
+ * Reads an RFC 7512 PKCS#11 URI naming a token and an object.
+ *
+ * @param text - the URI
+ * @param tokenOnly - true where the URI names a token and no object (the
+ *   signing keys' token, keys.signingKeyToken)
+ * @returns `{ token, object, id (Buffer|null), serial, slotId, modulePath }`
+ * @throws STS-KEYS-0205 when it is not one, or names a PIN
+ */
+function parsePkcs11Uri(text, tokenOnly) {
+  log.debug('Entering parsePkcs11Uri().');
+  const raw = String(text || '').trim();
+  if (raw.toLowerCase().indexOf('pkcs11:') !== 0) {
+    throw errorCodes.mark(new Error('"' + raw.slice(0, 80) + '" is not a ' +
+      'PKCS#11 URI (RFC 7512). Name the key as ' +
+      'pkcs11:token=<token label>;object=<key label>.'), 'STS-KEYS-0205');
+  }
+  const rest = raw.slice('pkcs11:'.length);
+  const q = rest.indexOf('?');
+  const pathPart = q < 0 ? rest : rest.slice(0, q);
+  const queryPart = q < 0 ? '' : rest.slice(q + 1);
+  const decode = function (v) {
+    try {
+      return decodeURIComponent(v);
+    } catch (e) {
+      throw errorCodes.mark(new Error('a PKCS#11 URI value is not ' +
+        'percent-encoded properly: ' + ((e && e.message) || e)),
+        'STS-KEYS-0205');
+    }
+  };
+  const out = { token: '', object: '', id: null, serial: '', slotId: '',
+                modulePath: '' };
+  pathPart.split(';').filter(Boolean).forEach(function (pair) {
+    const eq = pair.indexOf('=');
+    const name = (eq < 0 ? pair : pair.slice(0, eq)).toLowerCase();
+    const value = eq < 0 ? '' : pair.slice(eq + 1);
+    if (name === 'pin-value' || name === 'pin-source') {
+      throw errorCodes.mark(new Error('a PKCS#11 URI here may not carry ' +
+        name + ': a PIN in a URI is a PIN in a setting. Deliver it with ' +
+        'keys.pkcs11PinProvider.'), 'STS-KEYS-0205');
+    }
+    if (PKCS11_PATH_ATTRS.indexOf(name) < 0) {
+      return;
+    }
+    if (name === 'id') {
+      // The id is bytes: every octet percent-encoded (`%01%02`), which is
+      // how RFC 7512 writes it, so the percent-encoding is decoded as bytes.
+      const bytes = [];
+      for (let i = 0; i < value.length; i++) {
+        if (value[i] === '%' && /^[0-9a-fA-F]{2}$/.test(value.substr(i + 1,
+                                                                    2))) {
+          bytes.push(parseInt(value.substr(i + 1, 2), 16));
+          i += 2;
+        } else {
+          bytes.push(value.charCodeAt(i) & 0xff);
+        }
+      }
+      out.id = Buffer.from(bytes);
+    } else if (name === 'slot-id') {
+      out.slotId = decode(value);
+    } else if (name === 'token' || name === 'object' || name === 'serial') {
+      out[name] = decode(value);
+    }
+  });
+  queryPart.split('&').filter(Boolean).forEach(function (pair) {
+    const eq = pair.indexOf('=');
+    const name = (eq < 0 ? pair : pair.slice(0, eq)).toLowerCase();
+    const value = eq < 0 ? '' : decode(pair.slice(eq + 1));
+    if (name === 'pin-value' || name === 'pin-source') {
+      throw errorCodes.mark(new Error('a PKCS#11 URI here may not carry ' +
+        name + ': a PIN in a URI is a PIN in a setting. Deliver it with ' +
+        'keys.pkcs11PinProvider.'), 'STS-KEYS-0205');
+    }
+    if (name === 'module-path') {
+      out.modulePath = value;
+    }
+  });
+  if (!tokenOnly && !out.object && !out.id) {
+    throw errorCodes.mark(new Error('the PKCS#11 URI "' + raw.slice(0, 80) +
+      '" names no object: give object=<key label> or id=<%xx bytes>.'),
+      'STS-KEYS-0205');
+  }
+  log.debug('Leaving parsePkcs11Uri().');
+  return out;
+}
+
+// The PIN for a token: the stored value, or its member for the token label
+// where what is stored is a JSON object of PINs. Read once per call (the
+// tokens it opens are held, so that is once per token per thread).
+async function pkcs11PinFor(tokenLabel) {
+  log.debug('Entering pkcs11PinFor().');
+  if (!configuredFor(PKCS11_PIN)) {
+    log.debug('Leaving pkcs11PinFor(). No PIN configured.');
+    return null;
+  }
+  const raw = await read(PKCS11_PIN);
+  const text = (Buffer.isBuffer(raw) ? raw.toString('utf8') :
+                String(raw == null ? '' : raw)).trim();
+  let parsed = null;
+  try {
+    parsed = text.charAt(0) === '{' ? JSON.parse(text) : null;
+  } catch (e) {
+    // Not JSON: the whole text is the PIN, which is the ordinary case.
+    log.debug('Caught in pkcs11PinFor(): ' + ((e && e.message) || e));
+    parsed = null;
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const pin = parsed[tokenLabel] !== undefined ? parsed[tokenLabel]
+                                                 : parsed['*'];
+    if (pin === undefined || pin === null || String(pin) === '') {
+      throw errorCodes.mark(new Error('the PKCS#11 PIN secret is a JSON ' +
+        'object with no PIN for the token "' + tokenLabel + '" (and no ' +
+        '"*"). It holds PINs for: ' + Object.keys(parsed).join(', ') + '.'),
+        'STS-KEYS-0205');
+    }
+    log.debug('Leaving pkcs11PinFor(). By token label.');
+    return String(pin);
+  }
+  if (!text) {
+    throw errorCodes.mark(new Error('the PKCS#11 PIN secret is empty.'),
+                          'STS-KEYS-0205');
+  }
+  log.debug('Leaving pkcs11PinFor().');
+  return text;
+}
+
+// THE TOKENS THIS THREAD HAS OPENED, by module, token, serial and slot: the
+// key-encryption key, the previous one, the cell key and the realms' signing
+// keys share one token's sessions where they are on one token.
+const pkcs11Tokens = new Map();
+
+// The binding, or the package to install. Loaded through `loadSdk()` so a
+// test hands in a fake.
+function pkcs11Binding() {
+  log.debug('Entering pkcs11Binding().');
+  try {
+    const binding = loadSdk('pkcs11js');
+    log.debug('Leaving pkcs11Binding().');
+    return binding;
+  } catch (e) {
+    throw missingModule('pkcs11js', 'pkcs11', e);
+  }
+}
+
+// Which open token a URI names: its module, label, serial and slot.
+function tokenKeyOf(uri) {
+  log.debug('Entering tokenKeyOf().');
+  const modulePath = String(uri.modulePath ||
+                            config.value('keys.pkcs11Module') || '').trim();
+  log.debug('Leaving tokenKeyOf().');
+  return [modulePath, uri.token, uri.serial, uri.slotId].join('|');
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGNING KEYS' TOKEN (#1955 P8, D6: "both"). `keys.signingKeyToken` is
+// the PKCS#11 URI of the token a realm with `keys.signingKeyStore=pkcs11`
+// makes its classical signing keys on. It is opened in EVERY process and
+// request worker at `keystore.start()`, before a key set is read, because a
+// key set is read synchronously (a property read) and a key's reference is
+// resolved through a token already held — `crypto.js`'s resolver, filled
+// below. Only where the keystore persists: a key that is not written down
+// would be a new object in the token at every start.
+// ---------------------------------------------------------------------------
+/**
+ * Opens the signing keys' token in this thread, where keys.signingKeyToken
+ * names one.
+ *
+ * @returns a promise of the token, or null where none is configured
+ */
+async function openSigningToken() {
+  log.debug('Entering openSigningToken().');
+  const text = String(config.value('keys.signingKeyToken') || '').trim();
+  if (!text) {
+    log.debug('Leaving openSigningToken(). None configured.');
+    return null;
+  }
+  const token = await openHsmToken(parsePkcs11Uri(text, true));
+  log.info('secrets: the signing keys\' PKCS#11 token is open: ' +
+           token.describe() + '.');
+  if (frontThread()) {
+    threadPoolCheck();
+  }
+  log.debug('Leaving openSigningToken().');
+  return token;
+}
+
+// ---------------------------------------------------------------------------
+// THE HSM'S CALLS AND LIBUV'S THREAD POOL (#1955 P8 follow-up, 2026-11-23).
+// Every signature, decryption and agreement with a realm key in the HSM is
+// an asynchronous pkcs11js call, which runs on LIBUV'S THREAD POOL — one pool
+// per PROCESS, shared by the front thread and every request worker, and by
+// scrypt (password hashing), post-quantum signing (`pq_native.js`), node's
+// asynchronous crypto, file and DNS work. A call holds its pool thread for as
+// long as the token takes, and a session for as long as the call: so at most
+// `keys.pkcs11Sessions` of them run per thread, and
+// `keys.pkcs11Sessions` × (1 + workers.requestCount + workers.surfaceCount)
+// per process. Where that reaches `UV_THREADPOOL_SIZE` (node's default 4,
+// the compose stack's 32) a slow token — a YubiHSM 2's RSA signature is
+// hundreds of milliseconds — can hold every pool thread, and a sign-in's
+// scrypt waits behind it. Nothing blocks the event loop either way; this is
+// a warning at start (STS-KEYS-0210), in the front process only, with the
+// size that leaves room.
+// ---------------------------------------------------------------------------
+function threadPoolCheck() {
+  log.debug('Entering threadPoolCheck().');
+  const threads = 1 + (Number(config.value('workers.requestCount')) || 0) +
+                  (Number(config.value('workers.surfaceCount')) || 0);
+  const sessions = Number(config.value('keys.pkcs11Sessions')) || 4;
+  const pool = Number(process.env.UV_THREADPOOL_SIZE) || 4;
+  const busy = sessions * threads;
+  if (busy >= pool) {
+    log.warn(errorCodes.tag('STS-KEYS-0210') + 'secrets: up to ' + busy +
+             ' PKCS#11 calls (keys.pkcs11Sessions ' + sessions + ' x ' +
+             threads + ' threads) can run at once on libuv\'s thread ' +
+             'pool, which has ' + pool + ' threads (UV_THREADPOOL_SIZE); ' +
+             'a slow token could hold all of them while password hashing ' +
+             'and post-quantum signing wait. Set UV_THREADPOOL_SIZE to at ' +
+             'least ' + (busy + 8) + ', or lower keys.pkcs11Sessions.');
+  }
+  log.debug('Leaving threadPoolCheck(). ' + busy + ' of ' + pool + '.');
+}
+
+/**
+ * The signing keys' token this thread holds, and its URI.
+ *
+ * @returns `{ token, uri }`, or null where it is not configured or not open
+ */
+function heldSigningToken() {
+  log.debug('Entering heldSigningToken().');
+  const text = String(config.value('keys.signingKeyToken') || '').trim();
+  if (!text) {
+    log.debug('Leaving heldSigningToken(). None configured.');
+    return null;
+  }
+  let uri;
+  try {
+    uri = parsePkcs11Uri(text, true);
+  } catch (e) {
+    log.debug('Caught in heldSigningToken(): ' + ((e && e.message) || e));
+    log.debug('Leaving heldSigningToken(). Malformed.');
+    return null;
+  }
+  const token = pkcs11Tokens.get(tokenKeyOf(uri)) || null;
+  log.debug('Leaving heldSigningToken(). ' + (token ? 'Held.' : 'Not open.'));
+  return token ? { token: token, uri: text.split('?')[0] } : null;
+}
+
+// THE RESOLVER `crypto.js` ASKS for a signing key's reference: the token the
+// reference names, held by this thread, and the key on it by CKA_ID.
+crypto.setPkcs11KeyResolver(function (ref, how) {
+  log.debug('Entering the PKCS#11 key resolver.');
+  const uri = parsePkcs11Uri(String(ref.token || ''), true);
+  const token = pkcs11Tokens.get(tokenKeyOf(uri));
+  if (!token) {
+    throw errorCodes.mark(new Error('the signing key ' + String(ref.id) +
+      ' is on the PKCS#11 token "' + String(ref.token).split('?')[0] +
+      '", which this process has not opened. keys.signingKeyToken must name ' +
+      'it (and the keystore persist) in every process.'), 'STS-KEYS-0206');
+  }
+  log.debug('Leaving the PKCS#11 key resolver.');
+  // Off the event loop where the caller can wait (#1955 P8 follow-up,
+  // `crypto.resolveHsmKeysAsync()`).
+  return how && how.async ? crypto.findPkcs11KeyPairAsync(token, ref)
+                          : crypto.findPkcs11KeyPair(token, ref);
+});
+
+/**
+ * Opens (or finds open) the token a PKCS#11 URI names, logged in with its
+ * PIN, for this thread.
+ *
+ * @param uri - what `parsePkcs11Uri()` answered
+ * @returns a promise of the engine's token (`crypto.openPkcs11Token()`)
+ */
+async function openHsmToken(uri) {
+  log.debug('Entering openHsmToken().');
+  const modulePath = String(uri.modulePath ||
+                            config.value('keys.pkcs11Module') || '').trim();
+  if (!modulePath) {
+    throw errorCodes.mark(new Error('no PKCS#11 module is configured: set ' +
+      'keys.pkcs11Module to the module\'s path (yubihsm_pkcs11.so, ' +
+      'libsofthsm2.so), or name it in the URI\'s module-path.'),
+      'STS-KEYS-0202');
+  }
+  const key = tokenKeyOf(uri);
+  const held = pkcs11Tokens.get(key);
+  if (held) {
+    log.debug('Leaving openHsmToken(). Held.');
+    return held;
+  }
+  const binding = pkcs11Binding();
+  const pin = await pkcs11PinFor(uri.token);
+  // Another caller may have opened it while the PIN was read.
+  if (pkcs11Tokens.has(key)) {
+    log.debug('Leaving openHsmToken(). Opened meanwhile.');
+    return pkcs11Tokens.get(key);
+  }
+  const token = crypto.openPkcs11Token(binding, {
+    modulePath: modulePath, tokenLabel: uri.token, serial: uri.serial,
+    slotId: uri.slotId, pin: pin,
+    maxSessions: Number(config.value('keys.pkcs11Sessions')) || 4,
+    // #2220: the wait for, and on, an HSM operation, and the queue for a
+    // session.
+    timeoutMs: Number(config.value('keys.pkcs11TimeoutMs')),
+    queueLimit: Number(config.value('keys.pkcs11QueueLimit')) });
+  pkcs11Tokens.set(key, token);
+  log.debug('Leaving openHsmToken(). Opened.');
+  return token;
+}
+
+/**
+ * Forgets this thread's open tokens, for a test. Nothing in the service
+ * calls it.
+ */
+function forgetHsmTokens() {
+  log.debug('Entering forgetHsmTokens().');
+  pkcs11Tokens.forEach(function (token) {
+    token.close();
+  });
+  pkcs11Tokens.clear();
+  crypto.forgetPkcs11Libraries();
+  log.debug('Leaving forgetHsmTokens().');
+}
+
+// Whether this is the front process: a request worker never makes a key.
+function frontThread() {
+  log.debug('Entering frontThread().');
+  log.debug('Leaving frontThread().');
+  return require('worker_threads').isMainThread;
+}
+
+const pkcs11Provider = {
+  id: 'pkcs11',
+  label: 'A PKCS#11 hardware security module (the key never leaves it)',
+  remote: true,
+  // The one key management service that also serves the CELL key: a cell's
+  // HSM is in the cell, so the residency the cell key exists for holds.
+  servesCellKek: true,
+  describe: function (spec) {
+    log.debug('Entering pkcs11Provider.describe().');
+    const at = locationOf(spec || KEK, 'ref');
+    let module = String(config.value('keys.pkcs11Module') || '');
+    let from = at.where || SOURCE_PROSE.noKey;
+    try {
+      if (at.where) {
+        const uri = parsePkcs11Uri(at.where);
+        module = uri.modulePath || module;
+        // The URI without its query: the module is its own member.
+        from = at.where.split('?')[0];
+      }
+    } catch (e) {
+      // A malformed URI is reported by the read; a description still
+      // draws what is configured.
+      log.debug('Caught in pkcs11Provider.describe(): ' +
+                ((e && e.message) || e));
+    }
+    log.debug('Leaving pkcs11Provider.describe().');
+    return { from: from, module: module || SOURCE_PROSE.notConfigured,
+             wraps: SOURCE_PROSE.wrapsInKms };
+  },
+  read: async function (spec) {
+    log.debug('Entering pkcs11Provider.read().');
+    const secret = spec || KEK;
+    const where = locationOf(secret, 'ref').where;
+    if (!where) {
+      throw errorCodes.mark(new Error(secret.provider + ' is "pkcs11" and ' +
+        secret.ref + ' names no key. Set it to a PKCS#11 URI, ' +
+        'pkcs11:token=<token label>;object=<key label>.'), 'STS-KEYS-0046');
+    }
+    const uri = parsePkcs11Uri(where);
+    const token = await openHsmToken(uri);
+    const generate = !!config.value('keys.pkcs11GenerateKey') &&
+                     frontThread();
+    const found = token.secretKey({ label: uri.object, id: uri.id,
+                                    generate: generate });
+    const tag = token.wrapMechanism(
+      String(config.value('keys.pkcs11Mechanism') || 'auto'), found.keyType);
+    // THE REFERENCE IN EVERY WRAPPED KEY: the token and the key, never the
+    // module path (which differs between nodes and images) and never the
+    // PIN. `owns()` compares it, so every node must name the key alike.
+    const keyRef = 'token=' + uri.token + ';' +
+      (uri.object ? 'object=' + uri.object : '') +
+      (uri.id ? (uri.object ? ';' : '') + 'id=' +
+                uri.id.toString('hex') : '');
+    const handle = {
+      remote: true, provider: 'pkcs11', keyRef: keyRef,
+      label: 'PKCS#11 key ' + keyRef,
+      mechanism: tag,
+      wrap: async function (dek, aad) {
+        log.debug('Entering pkcs11 wrap().');
+        const text = await token.wrapData(found.key, tag, dek, aad);
+        if (!text || text.indexOf('$') >= 0) {
+          throw errorCodes.mark(new Error('the HSM answered no wrapped key'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving pkcs11 wrap().');
+        return kmsText('pkcs11', keyRef, text);
+      },
+      unwrap: async function (text, aad) {
+        log.debug('Entering pkcs11 unwrap().');
+        const parts = kmsParts(text);
+        if (!parts || parts.provider !== 'pkcs11' || parts.keyRef !== keyRef) {
+          throw errorCodes.mark(new Error('the wrapped data key is not ' +
+            'under the PKCS#11 key "' + keyRef + '"'), 'STS-KEYS-0103');
+        }
+        const key = await token.unwrapData(found.key, parts.ciphertext, aad);
+        if (noBytes(key)) {
+          throw errorCodes.mark(new Error('the HSM unwrapped nothing'),
+                                'STS-KEYS-0103');
+        }
+        log.debug('Leaving pkcs11 unwrap().');
+        return key;
+      },
+      owns: function (text) {
+        log.debug('Entering pkcs11 owns().');
+        const parts = kmsParts(text);
+        log.debug('Leaving pkcs11 owns().');
+        return !!parts && parts.provider === 'pkcs11' &&
+               parts.keyRef === keyRef;
+      },
+      isStale: function () {
+        log.debug('Entering pkcs11 isStale().');
+        log.debug('Leaving pkcs11 isStale(). Never: a key has no versions.');
+        return false;
+      }
+    };
+    log.info('secrets: ' + secret.label + ' is the PKCS#11 key "' + keyRef +
+             '" on ' + token.describe() + (found.generated ? ', generated ' +
+             'now' : '') + '; it never leaves the HSM, which wraps each data ' +
+             'key (' + tag + ').');
+    log.debug('Leaving pkcs11Provider.read().');
+    return handle;
+  }
+};
+
 const PROVIDERS = [fileProvider, awsProvider, gcpProvider, azureProvider,
                    vaultProvider, transitProvider, awsKmsProvider,
-                   gcpKmsProvider, azureKeysProvider];
+                   gcpKmsProvider, azureKeysProvider, pkcs11Provider];
 // THE TWO SECRETS A KMS PROVIDER MAY SERVE: a handle is a key-encryption key
 // and nothing else.
 const KMS_CAPABLE = ['kek', 'previous-kek'];
 /**
- * The ids of the nine providers: file, aws, gcp, azure, vault, and the four
- * key management services vault-transit, aws-kms, gcp-kms and azure-keys.
+ * The ids of the ten providers: file, aws, gcp, azure, vault, and the five
+ * key management services vault-transit, aws-kms, gcp-kms, azure-keys and
+ * pkcs11.
  */
 const PROVIDER_IDS = PROVIDERS.map(function (one) { return one.id; });
 
@@ -1919,11 +2672,18 @@ async function read(spec) {
     recordRead(spec, null, 0, bad);
     throw tagReadFailure(spec, bad);
   }
-  if (provider.remote && KMS_CAPABLE.indexOf(spec.id) < 0) {
+  // THE CELL KEY MAY BE A HANDLE TOO, where the provider says it serves one
+  // (#1955: `pkcs11`, whose HSM is in the cell). The four cloud KMS keys
+  // still may not: nothing has asked for one and `keystore.js`'s cell path
+  // was held to bytes until then.
+  if (provider.remote && KMS_CAPABLE.indexOf(spec.id) < 0 &&
+      !((spec.id === 'cell-kek' || spec.id === 'previous-cell-kek') &&
+        provider.servesCellKek)) {
     const bad = errorCodes.mark(new Error(spec.provider + ' is "' +
       provider.id + '", a key management service that wraps keys and holds ' +
       'no secret to read; only keys.kekProvider and ' +
-      'keys.previousKekProvider may name it.'), 'STS-KEYS-0101');
+      'keys.previousKekProvider may name it (and keys.cellKekProvider ' +
+      'pkcs11).'), 'STS-KEYS-0101');
     recordRead(spec, provider, 0, bad);
     throw tagReadFailure(spec, bad);
   }
@@ -1991,7 +2751,8 @@ function refuseFileKek(setting) {
                     '"file", and product mode takes a key-encryption key ' +
                     'from a secret store or a key management service ' +
                     '(vault, vault-transit, aws, aws-kms, gcp, gcp-kms, ' +
-                    'azure or azure-keys). Configure one, or turn on ' +
+                    'azure, azure-keys or pkcs11). Configure one, or turn ' +
+                    'on ' +
                     'secrets.allowLocalSecrets to accept the file.');
   }
   log.debug('Leaving refuseFileKek().');
@@ -2163,6 +2924,41 @@ async function readPreviousKek() {
 }
 
 // ---------------------------------------------------------------------------
+// THE PREVIOUS CELL KEY (#2220): null where it is not configured, refused
+// when its location is empty (it has no fallback), and read as the cell key
+// is otherwise — a handle where the provider serves one (`pkcs11`).
+// ---------------------------------------------------------------------------
+/**
+ * Reads the previous cell key-encryption key, for re-wrapping this cell's
+ * data encryption keys after the cell key was rotated.
+ *
+ * @returns the key as the provider returned it, or null when
+ *   `keys.previousCellKekProvider` is `none`
+ * @throws an Error (STS-CELL-0213) when its location is empty, or the
+ *   provider's error when the read fails
+ */
+async function readPreviousCellKek() {
+  log.debug('Entering readPreviousCellKek().');
+  if (!configuredFor(PREVIOUS_CELL_KEK)) {
+    log.debug('Leaving readPreviousCellKek(). Not configured.');
+    return null;
+  }
+  refuseFileKek(PREVIOUS_CELL_KEK.provider);
+  const provider = String(config.value(PREVIOUS_CELL_KEK.provider) || '');
+  const own = locationOf(PREVIOUS_CELL_KEK,
+                         provider === 'file' ? 'file' : 'ref');
+  if (!own.where) {
+    throw new Error(errorCodes.tag('STS-CELL-0213') +
+                    PREVIOUS_CELL_KEK.provider + ' is "' + provider +
+                    '" and keys.previousCellKekRef is empty. The previous ' +
+                    'cell key has no fallback location.');
+  }
+  const value = await read(PREVIOUS_CELL_KEK);
+  log.debug('Leaving readPreviousCellKek().');
+  return value;
+}
+
+// ---------------------------------------------------------------------------
 // ONE OF THE MAIL SECRETS AS TEXT (#63): `null` when its provider is `none`,
 // and otherwise what is stored, decoded and trimmed — the database
 // password's rule, and for its reason. A read that finds nothing is refused
@@ -2180,7 +2976,7 @@ async function readPreviousKek() {
  */
 async function readSecretText(spec) {
   log.debug('Entering readSecretText(). secret=' + (spec && spec.id));
-  if (MAIL_SECRETS.indexOf(spec) < 0) {
+  if (MAIL_SECRETS.indexOf(spec) < 0 && spec !== MAIL_DKIM_NEXT_KEY) {
     log.debug('Leaving readSecretText(). Not a mail secret.');
     throw new Error('readSecretText() reads the mail secrets only');
   }
@@ -2718,6 +3514,9 @@ const PROBE_WHAT = Object.freeze({
   'azure-keys/vault-key':
     'What the vault says about the key that wraps the data keys: its type, ' +
     'size, operations, version and rotation.',
+  'pkcs11/hsm-key':
+    'What the HSM token says about the key that wraps the data keys: ' +
+    'whether it is there, its type, and whether it may ever leave the HSM.',
   'gcp/secret':
     'The secret\'s own metadata: replication, labels, rotation and expiry.',
   'gcp/version':
@@ -3299,7 +4098,10 @@ async function vaultConnectUnauthenticated(spec) {
     { apiVersion: 'v1' },
     endpoint ? { endpoint: endpoint } : {},
     Object.keys(tls.options).length
-      ? { requestOptions: tls.options, rpDefaults: tls.options } : {}));
+      ? { requestOptions: tls.options } : {},
+    { rpDefaults: Object.assign({}, tls.options,
+                                { timeout: storeTimeoutMs() }) }));
+  vaultLimits(client);
   log.debug('Leaving vaultConnectUnauthenticated().');
   return { client: client };
 }
@@ -3345,7 +4147,7 @@ PROBES.aws = {
         }
         const region = reachOf(spec, 'region');
         const client = new sdk.SecretsManagerClient(
-          region ? { region: region } : {});
+          awsLimits(region ? { region: region } : {}));
         const answer = await client.send(
           new sdk.DescribeSecretCommand({ SecretId: at.where }));
         return {
@@ -3450,7 +4252,8 @@ PROBES['aws-kms'] = {
           throw new Error('no KMS key is configured');
         }
         const region = reachOf(spec, 'region');
-        const client = new sdk.KMSClient(region ? { region: region } : {});
+        const client = new sdk.KMSClient(awsLimits(region
+          ? { region: region } : {}));
         const described = await client.send(
           new sdk.DescribeKeyCommand({ KeyId: keyId }));
         const m = (described && described.KeyMetadata) || {};
@@ -3470,6 +4273,69 @@ PROBES['aws-kms'] = {
                  usage: m.KeyUsage, spec: m.KeySpec, origin: m.Origin,
                  manager: m.KeyManager, multiRegion: !!m.MultiRegion,
                  created: m.CreationDate, rotation: rotation };
+      })
+    ];
+  }
+};
+
+// ---------------------------------------------------------------------------
+// pkcs11 (#1955 P8) — asked of a token THIS PROCESS ALREADY HOLDS, never by
+// opening one: opening needs the PIN, and no probe here reads a secret's
+// value. A key-encryption key read at start left its token open, so the row
+// is there whenever the key is in use.
+// ---------------------------------------------------------------------------
+PROBES.pkcs11 = {
+  scope: function (spec) {
+    log.debug("Entering scope().");
+    log.debug("Leaving scope().");
+    return locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    log.debug("Entering store().");
+    log.debug("Leaving store().");
+    return [];
+  },
+  secret: function (spec) {
+    log.debug("Entering secret().");
+    const where = locationOf(spec, 'ref').where;
+    log.debug("Leaving secret().");
+    return [
+      runProbe('hsm-key', PROBE_WHAT['pkcs11/hsm-key'], async function () {
+        if (!where) {
+          throw new Error('no PKCS#11 URI is configured');
+        }
+        const uri = parsePkcs11Uri(where);
+        const token = pkcs11Tokens.get(tokenKeyOf(uri));
+        if (!token) {
+          return { open: false, token: uri.token, object: uri.object };
+        }
+        // A probe that ANSWERS: an absent key is a finding, not a failure.
+        /** @type {Array<{ type: number, value: any }>} */
+        const template = [{ type: 0x0, value: 4 }];
+        if (uri.object) {
+          template.push({ type: 0x3, value: uri.object });
+        }
+        if (uri.id) {
+          template.push({ type: 0x102, value: uri.id });
+        }
+        // Off the event loop (#1955 P8 follow-up): the search and the
+        // attribute reads are the token's control thread's.
+        const found = await token.findAsync(template);
+        const facts = found.length === 1
+          ? await token.attributesAsync(found[0],
+                                        [0x100, 0x161, 0x162, 0x103])
+          : new Map();
+        const flag = function (t) {
+          return facts.has(t) ? facts.get(t)[0] !== 0 : null;
+        };
+        return { open: true, token: token.describe(),
+                 module: token.modulePath, matches: found.length,
+                 keyType: facts.has(0x100) ? facts.get(0x100)
+                   .readUInt32LE(0) : null,
+                 valueLen: facts.has(0x161) ? facts.get(0x161)
+                   .readUInt32LE(0) : null,
+                 extractable: flag(0x162), sensitive: flag(0x103),
+                 sessionsOpen: token.open, reconnects: token.reconnects };
       })
     ];
   }
@@ -3501,7 +4367,7 @@ PROBES['gcp-kms'] = {
         if (!name) {
           throw new Error('no Cloud KMS key is configured');
         }
-        const client = new sdk.KeyManagementServiceClient();
+        const client = gcpLimits(new sdk.KeyManagementServiceClient());
         const [k] = await client.getCryptoKey({ name: name });
         const primary = (k && k.primary) || {};
         return { name: k && k.name, purpose: k && k.purpose,
@@ -3550,7 +4416,7 @@ PROBES['azure-keys'] = {
           throw new Error('no Key Vault key is configured');
         }
         const client = new keysSdk.KeyClient(
-          vault, new identitySdk.DefaultAzureCredential());
+          vault, new identitySdk.DefaultAzureCredential(), azureLimits());
         const k = await client.getKey(name);
         const p = (k && k.properties) || {};
         let rotation = null;
@@ -3656,7 +4522,7 @@ function gcpClient() {
     throw missingModule('@google-cloud/secret-manager', 'gcp', e);
   }
   log.debug("Leaving gcpClient().");
-  return new sdk.SecretManagerServiceClient();
+  return gcpLimits(new sdk.SecretManagerServiceClient());
 }
 
 // ---------------------------------------------------------------------------
@@ -3708,7 +4574,7 @@ PROBES.azure = {
                           'secret name');
         }
         const client = new secretsSdk.SecretClient(
-          vault, new identitySdk.DefaultAzureCredential());
+          vault, new identitySdk.DefaultAzureCredential(), azureLimits());
         const versions = [];
         for await (const one of
                    client.listPropertiesOfSecretVersions(at.where)) {
@@ -3756,7 +4622,7 @@ const MAIL_SECRETS = [MAIL_SMTP_PASSWORD, MAIL_DKIM_KEY,
  * password and the four mail secrets.
  */
 const SECRETS = [KEK, DATABASE_PASSWORD, GLOBAL_DATABASE_PASSWORD, CELL_KEK,
-                 PREVIOUS_KEK].concat(MAIL_SECRETS);
+                 PREVIOUS_KEK, PREVIOUS_CELL_KEK].concat(MAIL_SECRETS);
 
 // Which store a secret lives in, as a key that is equal for two secrets in the
 // same place. The location is part of it for `file` — two mounted files are
@@ -4102,13 +4968,13 @@ async function pushAws(target) {
   } catch (e) {
     throw missingDestinationSdk('@aws-sdk/client-secrets-manager', 'aws', e);
   }
-  const client = new sdk.SecretsManagerClient({
+  const client = new sdk.SecretsManagerClient(awsLimits({
     region: target.region,
     credentials: { accessKeyId: String(credential.accessKeyId),
                    secretAccessKey: String(credential.secretAccessKey),
                    sessionToken: credential.sessionToken
                      ? String(credential.sessionToken) : undefined }
-  });
+  }));
   let answer;
   try {
     answer = await client.send(new sdk.PutSecretValueCommand({
@@ -4154,10 +5020,10 @@ async function pushGcp(target) {
   } catch (e) {
     throw missingDestinationSdk('@google-cloud/secret-manager', 'gcp', e);
   }
-  const client = new sdk.SecretManagerServiceClient({
+  const client = gcpLimits(new sdk.SecretManagerServiceClient({
     credentials: { client_email: String(credential.client_email),
                    private_key: String(credential.private_key) },
-    projectId: target.project || credential.project_id || undefined });
+    projectId: target.project || credential.project_id || undefined }));
   let answer;
   try {
     [answer] = await client.addSecretVersion({
@@ -4203,7 +5069,8 @@ async function pushAzure(target) {
   const client = new secretsSdk.SecretClient(target.endpoint,
     new identitySdk.ClientSecretCredential(String(credential.tenantId),
                                            String(credential.clientId),
-                                           String(credential.clientSecret)));
+                                           String(credential.clientSecret)),
+    azureLimits());
   let exists = false;
   try {
     const versions = client.listPropertiesOfSecretVersions(target.secretName);
@@ -4273,7 +5140,7 @@ function vaultRequest(target, method, path, body) {
       text ? { 'Content-Type': 'application/json',
                'Content-Length': Buffer.byteLength(text) } : {}),
     timeout: 10000
-  }, OutboundTls.verifiedOptions(target.caCertificates || null));
+  }, secretPushTls(OutboundTls, target));
   log.debug("Leaving vaultRequest(). Sent.");
   return new Promise(function (resolve, reject) {
     const req = https.request(url, options, function (res) {
@@ -4517,7 +5384,19 @@ module.exports = {
   describe: describe,
   // #391 P3: the stored form of a KMS-wrapped data key, and the test seam.
   kmsParts: kmsParts,
+  // #1955 P8: the PKCS#11 provider's URI, PIN and tokens — read by
+  // `common/helpers.js` for a realm's signing keys in the HSM, and by
+  // `tests/pkcs11_kek.js`.
+  PKCS11_PIN: PKCS11_PIN,
+  parsePkcs11Uri: parsePkcs11Uri,
+  openHsmToken: openHsmToken,
+  forgetHsmTokens: forgetHsmTokens,
+  openSigningToken: openSigningToken,
+  heldSigningToken: heldSigningToken,
   setSdkLoader: setSdkLoader,
+  // Each SDK's timeout and attempt bound (#2220), for a test.
+  sdkLimits: { aws: awsLimits, gcp: gcpLimits, azure: azureLimits,
+               vault: vaultLimits },
   // The second secret (2026-09-12). The descriptors are exported for
   // `tests/database_password.js`, which asserts the fallback and the field
   // rules directly — they are the part of this file with no other way in.
@@ -4527,9 +5406,12 @@ module.exports = {
   GLOBAL_DATABASE_PASSWORD: GLOBAL_DATABASE_PASSWORD,
   CELL_KEK: CELL_KEK,
   PREVIOUS_KEK: PREVIOUS_KEK,
+  PREVIOUS_CELL_KEK: PREVIOUS_CELL_KEK,
+  MAIL_DKIM_NEXT_KEY: MAIL_DKIM_NEXT_KEY,
   readPreviousKek: readPreviousKek,
   readGlobalDatabasePassword: readGlobalDatabasePassword,
   readCellKek: readCellKek,
+  readPreviousCellKek: readPreviousCellKek,
   // The mail channel's four (#63), and the one reader they share.
   MAIL_SMTP_PASSWORD: MAIL_SMTP_PASSWORD,
   MAIL_DKIM_KEY: MAIL_DKIM_KEY,

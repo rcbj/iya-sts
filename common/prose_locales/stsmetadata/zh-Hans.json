@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial：每张票据都携带已签名的 PAC——登录信息（KERB_VALIDATION_INFO，NDR）、客户端信息、UPN/DNS 信息、属性以及请求方 SID。按第 2.8.2/2.8.3 节，TGT 有两个签名，服务票据有四个。客户端声明（PAC_CLIENT_CLAIMS_INFO，2.11）在 krb5.pacClaims 开启时生成（#493），从不压缩；在另一领域的 PAC 中到达的声明缓冲区会被解码（包括 XPRESS Huffman）并携带。不生成设备信息和设备声明。跨信任到达的 PAC 在重新签名前按第 4.1.2.2 节针对该信任边界的规定进行 SID 筛选——丢弃设备信息，除非信任允许，否则丢弃声明集——引荐的 PAC 以领域间密钥签名。"
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial：上下文建立。InitialContextToken 封装（Kerberos 机制 OID 和两字节令牌 ID）可读可写；AP-REQ 的 0x8003 认证器校验和由接受方读取（其标志、相互认证和委派），并由客户端一方写入；在请求相互认证时返回 AP-REP。MIC 令牌（第 4.2.6.1 节）对 SPNEGO 的 mechListMIC 进行签名和验证，存在接受方子密钥时使用该子密钥。缺失：通道绑定仅被报告，不与 TLS 通道进行比较；上下文建立后，没有任何接口交换 Wrap 令牌。"
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full：覆盖一种机制：NegTokenInit（带乐观 mechToken）和全部四种 negState 下的 NegTokenResp，双向的 mechListMIC 以及第 5 节关于何时必须使用它的规则，并能解码 [MS-SPNG] 的 NegTokenInit2。实际只提供 Kerberos——NTLM 在客户端的 mechTypes 列表中能被识别但从不被选择，因为提供本服务无法执行的机制将是客户端会据以行动的谎言。验证不通过的 mechListMIC 是 REJECT，而不是警告：它就是降级防御的全部。"
@@ -100,16 +104,32 @@
     "text": "partial：访问评估 API（第 6 节），由 XACML 引擎依据领域根策略、通过每个领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；访问批量评估 API（第 7 节）及其三种语义；PDP 元数据（第 9 节）的两种形式，包括 signed_metadata；面向声明了类型的 PEP 的 Obligations Profile 草案；以及针对本服务自有的人员、应用程序、API、委托关系和策略操作的三个搜索 API（第 8 节），分页且不具传递性。缺失：搜索中逐结果的 obligations，以及仍为草案的 OAuth 配置文件。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial：可请求的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略以 access-request advice 标记的 Deny，按值绑定，使用本领域签署的 binding_token（内联声明）；带 Idempotency-Key 的提交，201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式，approval.id 在可信状态中解析，批准作为可信事实到达策略；next_action 及五种 reason；每种 problem 类型；元数据成员、jwks_uri 和能力。缺失：以引用方式绑定的 evaluation_id、approval.state、哈希绑定形式、机器可读形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 和 CATALOG 配套规范。"
+    "en": "196f261782bb4038",
+    "text": "partial：可申请的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略用 access-request 建议标记的 Deny，通过本领域签名的 binding_token 按值绑定（内联声明和 binding_hash），并通过拒绝记录按引用绑定；带 Idempotency-Key 的提交、201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式、在可信状态中解析的 approval.id、签发并验证的 approval.state（仍需查找），以及以可信事实到达策略的批准；next_action 和五种原因；每种问题类型；元数据成员、jwks_uri 和能力；可申请拒绝上的 request_schema_url，即同源的提交可选补充内容的 JSON Schema；在 authzen.accessRequestDisplay 开启时，可申请拒绝和 Task Handle 上的 display，使用 advice 自己的措辞或服务以所请求语言给出的措辞。在 authzen.accessRequestForm 开启时，提供 form_url（拒绝的主体在其中提交申请的门户托管表单）和 links.ticket。缺少：基础配置文件无缺；各配套规范自己的说明写明其所缺。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial：提交的回调（endpoint、state、events），endpoint 限于管理员为请求方 PEP 注册的 URL，为每个请求的终态事件发送仅通知的回调，由本领域签署的短 JWT 认证，并受出站策略约束。缺失：partial 事件（BULK）和部署级事件订阅；投递失败不会重试。"
+    "en": "ca5109eae0e95b17",
+    "text": "partial：提交的回调（endpoint、state、events），endpoint 限于管理员为请求方 PEP 注册的 URL，为每个请求的终态事件发送仅通知的回调，由本领域签署的短 JWT 认证，并受出站策略约束。网络错误、超时或 HTTP 5xx 会重试至尝试上限；HTTP 4xx 或出站策略拒绝的 URL 不会重试。缺失：partial 事件（BULK）和部署级事件订阅。"
+  },
+  "stsmetadata.specs.authzen-arap-catalog.coverage": {
+    "en": "10acf494ad5f24ef",
+    "text": "partial：在 authzen.accessRequestCatalogs 开启时，策略 advice 列出权限的已记录可申请拒绝上的 request_catalogs_url；只有一个字段 requested_access.entitlement 的 Catalogs Document；带 q、cursor 和 limit 的 Catalog Endpoint，只答复该拒绝所答复的调用方；在提交时校验、并作为批准的可信事实带给策略的值。缺少：scope_params（单个目录没有可据以限定的内容）、granted、risk_level 和 owner，以及通过代理协议提供的目录。"
+  },
+  "stsmetadata.specs.authzen-arap-actor.coverage": {
+    "en": "3b5295559cb3ed65",
+    "text": "partial：在 authzen.accessRequestActor 开启时，client.actor（其 id、issuer、type 及嵌套的 act 链）依据调用方自己的凭据校验（调用方本身这一环，或其自身访问令牌的 act 链，逐环比对），否则拒绝；client.source 作为审计元数据记录；两者都展示给审批人，且从不作为策略事实。缺少：按链中某个代理方路由审批，以及以签名断言或部署策略证明链。"
+  },
+  "stsmetadata.specs.authzen-arap-bulk.coverage": {
+    "en": "928b93533d6878b2",
+    "text": "partial：在 authzen.accessRequestBulk 开启时，items（每一项都带自己的拒绝，像单个提交一样检查，来自同一调用方、关于同一应用程序）；Task Handle 的 items，每项有自己的状态和结果，汇总状态含 partial，没有顶层结果；取消待处理的项，所有项都结束后返回 409；每一项单独审批、单独重新评估；Idempotency-Key 覆盖整个请求体。缺少：捆绑拒绝和批量 binding_hash（本服务只签发逐项拒绝）、逐项回调和 partial 事件。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full：覆盖请求和响应：简写类别名称、短数据类型名称、根据 JSON 类型推断数据类型（包括整数/双精度的区分，这是从源文本读取的，因为 JSON.parse 已经丢弃了它）、数组作为包、义务、建议以及 PolicyIdentifierList。该配置文件不定义策略语法，因此策略仍为 XML。"
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial：策略集、策略和规则，连同其目标、条件、义务和建议，基于与 XACML XML 相同的模型进行读写，因此无论策略以何种形式传入，其决策结果都相同。其他数据类型的字面量写为类型转换（cast），属性在使用前声明，mustbepresent 和 issuer 按每次使用分别给出，高阶函数通过短名称接收函数。可在 /admin/xacml 导入，也可通过 /admin-api/xacml 上的 import-alfa 导入，且每个策略都可以以 ALFA 形式显示。生成器写出的内容，解析器均可读取并作出相同的决策。缺失：宏、命名空间作用域的建议以及跨文件导入会被按名称拒绝。ALFA 没有一致性测试套件。"
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -428,8 +448,12 @@
     "text": "full：每个授权响应（包括错误响应）都携带 iss，两份发现文档都公布 authorization_response_iss_parameter_supported，以便客户端知道它可以要求这一点。"
   },
   "stsmetadata.specs.rfc8705.coverage": {
-    "en": "924a15881d40c04d",
-    "text": "full——第 2 节到第 5 节。第 5 节（#139）：在主端口请求客户端证书的情况下，每个读取证书的端点都是其自己的别名，因此 mtls_endpoint_aliases 在各自的地址上指明令牌、吊销、内省、PAR 和 UserInfo 端点。第 2 节：tls_client_auth 对证书链已验证通过的证书进行身份验证，该证书须由本领域签发给该应用（urn:sts:application:），或携带五个已注册主体参数之一（subject_dn 按名称比较、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 匹配 jwks 中的 x5c 或指纹；已声明的方法在每种模式下、在令牌端点和 PAR 端点都会被坚持执行。第 3 节：对任何携带证书的请求，访问令牌和刷新令牌上都有 cnf[\"x5t#S256\"]，在每个受保护端点和 /admin-api 上检查，并在内省中报告；注册了 tls_client_certificate_bound_access_tokens 的客户端在没有证书时会被拒绝。第 4 节和第 7.1 节：公共客户端的刷新令牌绑定到证书，以证书进行身份验证的客户端可以用新证书刷新。未经验证的证书仍然会进行绑定，这是第 3 节所允许的。仅当主端口为 TLS 时适用（global.https），也只有在那时才公布 tls_client_certificate_bound_access_tokens。从不从代理标头读取证书。"
+    "en": "b53effdbb54d526a",
+    "text": "full——第 2 节到第 5 节。第 5 节（#139）：在主端口请求客户端证书的情况下，每个读取证书的端点都是其自己的别名，因此 mtls_endpoint_aliases 在各自的地址上指明令牌、吊销、内省、PAR 和 UserInfo 端点。第 2 节：tls_client_auth 对证书链已验证通过的证书进行身份验证，该证书须由本领域签发给该应用（urn:sts:application:），或携带五个已注册主体参数之一（subject_dn 按名称比较、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 匹配 jwks 中的 x5c 或指纹；已声明的方法在每种模式下、在令牌端点和 PAR 端点都会被坚持执行。第 3 节：对任何携带证书的请求，访问令牌和刷新令牌上都有 cnf[\"x5t#S256\"]，在每个受保护端点和 /admin-api 上检查，并在内省中报告；注册了 tls_client_certificate_bound_access_tokens 的客户端在没有证书时会被拒绝。第 4 节和第 7.1 节：公共客户端的刷新令牌绑定到证书，以证书进行身份验证的客户端可以用新证书刷新。未经验证的证书仍然会进行绑定，这是第 3 节所允许的。仅当主端口为 TLS 时适用（global.https），也只有在那时才公布 tls_client_certificate_bound_access_tokens。只有作为 RFC 9440 的证书时，才会从标头读取证书，且只来自按其证书和地址指明的终止 TLS 的代理（#2012）。"
+  },
+  "stsmetadata.specs.rfc9440.coverage": {
+    "en": "b761bd646855719e",
+    "text": "partial: 源服务器的那一半，默认关闭（#2012）。Client-Cert 和 Client-Cert-Chain 只从管理员同时按其连接所用的客户端证书和其地址指明的终止 TLS 的代理读取（tls.trustedProxyCertificates、tls.trustedProxyAddresses）；转发的证书链在此处验证到客户端信任库，然后在每道门上代替握手中的证书。来自任何其他发送方时，这两个标头会被移除并记录。本服务从不充当代理。"
   },
   "stsmetadata.specs.rfc8707.coverage": {
     "en": "bc07e530c0abe862",
@@ -480,12 +504,12 @@
     "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=1-advanced（按领域设置，或命名授权服务器的 fapi 成员），即 Baseline 再加更多要求（#139）：按值或按引用传递的 JWS 签名请求对象（第 1 项），exp 和 nbf 在 60 分钟内，aud 为颁发者（第 13、15、17 项）；response_type 为 code id_token，或 code 配 JARM（第 2 项）；ID 令牌作为带 s_hash 的分离签名（5.2.2.1）；仅限受发送方约束的访问令牌——mTLS，或 DPoP（除非设置了 oauth2.fapiRequireMtls）——并公布 mtls_endpoint_aliases（第 5、6 项）；tls_client_auth、self_signed_tls_client_auth 或 private_key_jwt，且不允许公共客户端（第 14、16 项）；推送的请求需 PKCE S256（第 18 项，并按该节所述放宽 Baseline 第 7 项）；双向的每个签名都使用 PS256 或 ES256，绝不使用 RSA1_5（8.6），本服务器默认以 PS256 签名。控制台、门户和调试器均符合要求：推送到 PAR 的签名请求对象、JARM 以及绑定令牌。未覆盖：一致性测试套件（#176）。"
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-security（按领域设置，或命名授权服务器的 fapi 成员），一个独立的配置文件（#140）：开启 RFC 9700 模式；仅限机密客户端，通过 mTLS 或 private_key_jwt，断言的 aud 为字符串形式的颁发者（5.3.2.1 第 3、6、8 项）；仅限受发送方约束的令牌，通过 mTLS 或 DPoP（第 4-5 项）；除非 oauth2.refreshTokenRotation 强制，否则不轮换刷新令牌（第 9 项）；授权码有效期 60 秒（第 11 项）；iat 或 nbf 超前 60 秒以上会被拒绝（第 13 项）；仅限 code，需要 PAR 并对客户端进行身份验证，PKCE S256，推送 redirect_uri，request_uri 短于 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 位和 EC 224 位（5.4.1）。TLS（5.2）：BCP 195 的套件是每个监听器的默认值，优先 TLS 1.3。DPoP nonce 仍为可选，同意遵循普通规则。攻击者模型没有规范性要求；docs/v1.1.0/oauth-security.md 将每类攻击者对应到阻止它的措施。控制台、门户和调试器均符合要求。未覆盖：一致性测试套件（#176）。"
+    "en": "01028f08fd980cb6",
+    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-security（按领域设置，或命名授权服务器的 fapi 成员），一个独立的配置文件（#140）：开启 RFC 9700 模式；仅限机密客户端，通过 mTLS 或 private_key_jwt，断言的 aud 为字符串形式的颁发者（5.3.2.1 第 3、6、8 项）；仅限受发送方约束的令牌，通过 mTLS 或 DPoP（第 4-5 项）；除非 oauth2.refreshTokenRotation 强制，否则不轮换刷新令牌（第 9 项）；授权码有效期 60 秒（第 11 项）；iat 或 nbf 超前 60 秒以上会被拒绝（第 13 项）；仅限 code，需要 PAR 并对客户端进行身份验证，PKCE S256，推送 redirect_uri，request_uri 短于 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 位和 EC 224 位（5.4.1）。TLS（5.2）：BCP 195 的套件是每个监听器的默认值，优先 TLS 1.3。DPoP nonce 仍为可选，同意遵循普通规则。攻击者模型没有规范性要求；docs/v1.2.0/oauth-security.md 将每类攻击者对应到阻止它的措施。控制台、门户和调试器均符合要求。未覆盖：一致性测试套件（#176）。"
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-message-signing，即安全配置文件加上全部三个组件（#141，rcbj 的决定）：PAR 上必须提供 JAR 签名的请求对象，aud 为颁发者，exp 和 nbf 在 60 分钟内（5.3）；必须使用 JARM，iss 位于 JWT 内（5.4）；RFC 9701 内省响应需签名（5.5）。第 5.2 节的不可否认性是指导性内容，在 docs/v1.1.0/oauth-security.md 中作答。控制台、门户和调试器均符合要求。RFC 9421 HTTP 签名不属于最终规范：它们是 FAPI 2.0 Http Signatures，即下一条（#178）。"
+    "en": "8aff442a2af8fd53",
+    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-message-signing，即安全配置文件加上全部三个组件（#141，rcbj 的决定）：PAR 上必须提供 JAR 签名的请求对象，aud 为颁发者，exp 和 nbf 在 60 分钟内（5.3）；必须使用 JARM，iss 位于 JWT 内（5.4）；RFC 9701 内省响应需签名（5.5）。第 5.2 节的不可否认性是指导性内容，在 docs/v1.2.0/oauth-security.md 中作答。控制台、门户和调试器均符合要求。RFC 9421 HTTP 签名不属于最终规范：它们是 FAPI 2.0 Http Signatures，即下一条（#178）。"
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -520,16 +544,36 @@
     "text": "full：在每种模式下（#143，在 #139 中构建）：response_mode query.jwt、fragment.jwt、form_post.jwt 和 jwt（code 用 query，其他用 fragment）；带 iss、aud 和 exp（oauth2.jarmResponseLifetimeS）的响应参数，使用客户端的 authorization_signed_response_alg 签名（RS256，或在 FAPI 1.0 Advanced 下为 PS256），并在其注册了 authorization_encrypted_response_alg 时加密；错误以同样方式应答；明文带令牌的 query.jwt 会被拒绝（2.3.1）；第 3 节和第 4 节的元数据和注册成员。"
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "84ea7cdfbe803962",
-    "text": "partial：依赖方一侧：注册（第 7.1 节）和断言（第 7.2 节）都会被验证——质询、源、RP ID 哈希、用户在场和用户验证标志、BE/BS、凭据的 alg 与 pubKeyCredParams 的对照、1023 字节的凭据 id、签名计数器，以及对 authenticatorData || SHA-256(clientDataJSON) 的签名，支持 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 和 ML-DSA-44/65/87（RFC 9964）密钥。自 #105 起，证明声明会按 webauthn.attestationPolicy 在第 8 节的全部八种格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）下验证——by-mode 在产品模式下为存在即验证，在开发模式下为关闭——其证书链针对已配置的信任锚和 FIDO Metadata Service 的根证书验证，查询其吊销状态，MDS 报告为已泄露的型号会被拒绝。自 #643 起，可以同时持有经典通行密钥和后量子（ML-DSA）通行密钥（webauthn.pqcAlongsideClassical）：每个通道都有自己的用户句柄（第 5.4.3 节）、算法列表和 excludeCredentials，Signal API（第 5.1.10 节）按通道各发送一次。缺失：企业证明（第 5.4.7 节）没有 RP ID 允许列表，身份验证扩展不做处理。它独立于调试器自己的解码器编写，以便两者相互核对（tests/webauthn_cross_impl.js）。"
+    "en": "e293d58d8fdd5cd1",
+    "text": "partial：依赖方一侧：注册（第 7.1 节）和断言（第 7.2 节）都会被验证——质询、源、RP ID 哈希、用户在场和用户验证标志、BE/BS、凭据的 alg 与 pubKeyCredParams 的对照、1023 字节的凭据 id、签名计数器，以及对 authenticatorData || SHA-256(clientDataJSON) 的签名，支持 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 和 ML-DSA-44/65/87（RFC 9964）密钥。自 #105 起，证明声明会按 webauthn.attestationPolicy 在第 8 节的全部八种格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）下验证——by-mode 在产品模式下为存在即验证，在开发模式下为关闭——其证书链针对已配置的信任锚和 FIDO Metadata Service 的根证书验证，查询其吊销状态，MDS 报告为已泄露的型号会被拒绝。自 #643 起，可以同时持有经典通行密钥和后量子（ML-DSA）通行密钥（webauthn.pqcAlongsideClassical）：每个通道都有自己的用户句柄（第 5.4.3 节）、算法列表和 excludeCredentials，Signal API（第 5.1.10 节）按通道各发送一次。企业证明（第 5.4.7 节）只针对 webauthn.attestationEnterpriseRpIds 列出的 RP ID 请求。hints 成员（第 5.4.8 节）按通行密钥策略发送。扩展（第 10 节）：请求 credProps（10.1.3）并记录其 rk；按通行密钥策略请求 CTAP 2.1 的 credProtect 和 minPinLength，并从身份验证器数据中读取其输出（见 CTAP 2.1）；appid（10.1.1）和 appidExclude（10.1.2）服务于管理员导入到某人条目上的旧版 FIDO U2F 凭据，在 webauthn.u2fAppIds 列出其 AppID 之前处于关闭状态：只有当客户端返回 appid true 时，断言的 rpIdHash 才以 AppID 的 SHA-256 为准，这样的密钥只能用于第二因素步骤，注册时会请求 appidExclude，以免同一密钥被注册两次。缺失：其他已注册的扩展（largeBlob、prf 等）既不请求也不处理；AppID 只在其主机相同或互为后缀的 RP ID 上使用——这里既不获取也不提供 FIDO AppID and Facet Specification 的 TrustedFacets 列表。它独立于调试器自己的解码器编写，以便两者相互核对（tests/webauthn_cross_impl.js）。"
+  },
+  "stsmetadata.specs.ctap21.coverage": {
+    "en": "4cc6ee6c2a81e46e",
+    "text": "minimal：两个扩展中依赖方的那一半，因为本服务既不是客户端也不是身份验证器：credProtect（第 12.1 节）——通行密钥策略的 credProtect 以 credentialProtectionPolicy 请求一个级别，enforceCredProtect 发送 enforceCredentialProtectionPolicy，并拒绝身份验证器数据报告较低级别的注册（未报告即级别 1），该级别记录在通行密钥上；以及 minPinLength（第 12.4 节），在通行密钥策略强制 PIN 长度时请求，并在注册和登录时以其最小值约束。CTAP 的其余部分一概不涉及：身份验证器 API、PIN 协议、大型 blob 和凭据管理都属于平台。"
+  },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial，通过 WebAuthn 实现，而非作为独立协议：在注册时验证 fido-u2f 证明格式（WebAuthn 第 8.6 节）；由管理员导入到某人条目中的旧版 U2F 凭据（其密钥句柄、P-256 公钥和计数器），在 webauthn.u2fAppIds 指定该 AppID 之后，通过 appid 扩展在其 AppID 下使用，且仅用于第二因素步骤。缺失：U2F JavaScript API 以及原始 U2F 注册和认证消息（这些由浏览器与密钥交互，而非本服务），以及 AppID 与 Facet 的可信 facet 列表。"
   },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial，每次单点登录一个限定于源的会话的服务器端：Secure-Session-Registration 提供 ES256 和 RS256，注册时的 dbsc+jwt 证明（检查其 jwk、typ、alg 和 jti 并验证签名）和刷新时的证明（用绑定密钥验证），带有一个绑定 cookie 的 JSON 会话指令，403 与 Secure-Session-Challenge 的交换，以及 Sec-Secure-Session-Id。每个质询在整个集群中只消耗一次。缺少：联合会话（provider_key、well-known 文档）、限定于站点的会话和范围规则、authorization 参数，以及读取 Secure-Session-Skipped。默认关闭（authn.deviceBoundSessions）。"
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full：覆盖 RFC 6238 对它的需求：第 5.3 节基于 HMAC-SHA-1、SHA-256 或 SHA-512 的动态截断，六到八位数字，计数器为八字节大端值。按规范自己附录 D 的测试向量进行断言（tests/totp.js），这正是自行实现而不使用库的意义所在：该截断的四个步骤中每一步都曾有人做错，而已公布的测试向量是唯一能发现这些错误的检查。未覆盖：作为身份验证机制的基于计数器的 HOTP——此处没有任何组件持有一个随使用而递增的计数器，因为唯一的调用方是下面基于时间的构造。"
+    "en": "5ab7b9d048e74e7e",
+    "text": "full：验证方一侧，仅作为第二因素（#1955 P4）：第 5.3 节基于 HMAC-SHA-1、SHA-256 或 SHA-512 的动态截断，六到八位数字，计数器为八字节大端值，已对照附录 D 自身的测试向量验证（tests/totp.js、tests/hotp.js）；每个凭据一个计数器，带第 7.4 节的前瞻（hotp.window，默认 10，0 合法）以及通过两个连续验证码重新同步（hotp.resyncWindow）；第 7.2 节的重放拒绝，计数器在存储中以 compare-and-set 推进，因此两个节点或 worker 绝不会接受同一个验证码；通过登录的验证码预算实现第 7.3 节的限流。YubiKey OTP 插槽通过门户的 otpauth://hotp 码或 ykman 命令编程；供应商的令牌通过导入（RFC 6030）。它获得 amr otp，仅导入的令牌获得 hwk。未涵盖：第 7.3 节的延迟方案本身（改由预算拒绝），以及 OCRA（RFC 6287）。"
+  },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial，验证方（#1955 P5）：已发布的 OTP，一段 modhex 公开身份后接一个无填充的 AES-128-ECB 块，CRC-16 余数 0xf0b8，使用计数器与会话计数器通过 compare-and-set 推进，使一个 OTP 只被接受一次。不检查时间戳。登记默认关闭（yubiotp.offered）。amr otp，从不为 hwk，因为本服务持有 AES 密钥。未覆盖：YubiCloud，以及对时间戳的任何检查。"
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial，作为验证服务器（#1955 P5）：带有 id、otp、nonce 和 h 的 GET 与 POST /wsapi/2.0/verify，对排序后的参数做 HMAC-SHA1，以及状态 OK、BAD_OTP、BAD_SIGNATURE、MISSING_PARAMETER、NO_SUCH_CLIENT、OPERATION_NOT_ALLOWED、BACKEND_ERROR、REPLAYED_OTP 和 REPLAYED_REQUEST。默认关闭（yubiotp.ykval）。开启后，在每种模式下核验客户端 id 与 HMAC。应答携带 sl=100。未覆盖：YubiCloud 客户端，以及不是 100 的同步百分比。"
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial：作为接收方（#1955 P4）：版本 1.0 的 KeyContainer，包含 HOTP 和 TOTP 密钥，DeviceInfo 的 Manufacturer、SerialNo 和 Model，ResponseFormat（6 到 8 位十进制数字），普通 Counter、Time（仅 0）和 TimeInterval；明文（产品模式下拒绝，除非启用 pskc.allowPlaintextImport）、预共享密钥（第 6.1 节：AES-128/192/256-CBC 和 KW-AES）和口令（第 6.2 节：PBKDF2），并先校验第 6.1.1 节的 ValueMAC（HMAC-SHA1 和 SHA-2 MAC）。已对照 RFC 自身的 Figures 2 到 7 验证（tests/pskc.js）。未涵盖：为证书加密（6.3）、按引用提供的 MAC 密钥、Triple DES 和 Camellia、加密的计数器或时间、PIN 密钥和策略（跳过）、容器上的签名（第 7 节），以及生成此类文件。"
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -696,8 +740,16 @@
     "text": "minimal：只有 permanent-identifier 标识符类型，它在此处指代账户自己的目录条目，并成为其 urn:sts: subjectAltName。未实现 device-attest-01 质询和 WebAuthn 证明声明。"
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial：PKCS#10 请求的 id-aa-attestation 属性（最多一个，恰好一个 AttestationBundle，仅限证书及其他选项），用于 EST 和 SCEP 上的设备配置文件；唯一被验证的声明类型是 TCG 的 tcg-attest-tpm-certify，采用第 20 修订版附录 A.2.3 的语法，后续修订版或 TCG 文档均未取代它（#257）。不读取 CRMF 扩展（此处没有 CMP），其他声明类型只记录、不验证。新鲜度（第 6.2 节）通过 EST 上的 draft-ietf-lamps-attestation-freshness 实现。"
+    "en": "59b1734815ece664",
+    "text": "partial：PKCS#10 请求的 id-aa-attestation 属性（最多一个，恰好一个 AttestationBundle，仅限 certificate 及其他选项），通过 EST、SCEP 和 ACME 提供。验证两种声明类型：TCG 的 tcg-attest-tpm-certify（采用修订版 20 附录 A.2.3 的语法），用于设备配置文件（#257）；以及适用于每个配置文件的 YubiKey PIV 证明（#1955），位于 1.3.6.1.4.1.41482.3.2 之下，以插槽证书为 stmt、f9 证书放在 certs 中——这是本服务选定的类型，因为草案未定义任何类型。不读取 CRMF 扩展（此处没有 CMP），其他声明类型只记录、不验证。新鲜度（第 6.2 节）通过 EST 上的 draft-ietf-lamps-attestation-freshness 实现，仅适用于 TPM 声明：PIV 证明不携带 nonce。"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial：插槽证明证书通过 f9 证明证书验证至 Yubico 的 PIV 根证书（Serial 263751，以及适用于固件 5.7.4 及更高版本、带有其 PIV 中间证书的 Attestation Root 1，均随附并固定）或某个领域自己的根证书；其密钥与请求中的密钥比对；读取固件、序列号、PIN 和触摸策略以及外形规格扩展，并将这些策略与领域的策略比对。卡本身从不受管理：不写入 PIN、PUK 或插槽。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "d223f1239342ae1c",
+    "text": "partial: 四个密钥槽作为证书配置文件（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，后者默认不让任何人登录）；外部 PIV 或 CAC 卡在声明 PIV Authentication 策略时按其 urn:uuid subjectAltName 中的卡 UUID 映射（默认关闭）；第 6.2.3.1 节的 PKI-AUTH 作为证书登录配置文件（#2012）：颁发者、keyUsage、extendedKeyUsage 以及 RFC 5280 策略处理沿路径带过的策略（包括映射），以及按颁发者和序列号、颁发者和 SKI、密钥、证书或卡 UUID 绑定到一个账户，在领域要求时附带经验证的吊销状态，如有需要可位于独立的监听器上。不支持 FASC-N、CHUID、卡管理或生物识别。"
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +794,54 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial：签名，relaxed/relaxed，使用至少 2048 位密钥的 rsa-sha256（RFC 8301），在 common/crypto.js 中实现，作用于配置了域时 SMTP 传输发送的内容。缺失：simple 规范化、l= 以及对他人所发邮件的验证——本服务不接收任何邮件。DKIM 尚未注册任何后量子算法。"
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "a2930bdb8ffe747d",
+    "text": "partial：读取 v6 和（RFC 4880）v4 可传输公钥，验证由其签名密钥作出的明文签名，并将消息加密至其加密密钥，经典算法通过 openpgp.js 完成。RFC 9980 复合密钥在此读取（见 rfc9980）。接受 Ed25519、Ed448、NIST 曲线上的 ECDSA 和 ECDH、X25519、X448 以及长度为 openpgp.minRsaBits 的 RSA；拒绝 DSA、ElGamal 和 Brainpool。缺少：签名、解密、密钥环、密钥服务器。"
+  },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial，适用于 v4 密钥（RFC 9580 已将其废止，v6 密钥遵循 rfc9580）：通过 openpgp.js 读取带自签名的可传输公钥，验证由其签名密钥生成的明文签名，并将消息加密给其加密密钥。签名密钥可以是 Ed25519 上的 EdDSA，P-256、P-384 和 P-521 上的 ECDSA，或位数达到 openpgp.minRsaBits 的 RSA；加密密钥可以是 Curve25519 和 NIST 曲线上的 ECDH，或 RSA。DSA、ElGamal 和 Brainpool 被拒绝。缺失：签名、解密、密钥环、密钥服务器。"
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial：登记时以及使用已存储密钥时的 ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 签名，以及 ML-KEM-768+X25519 与 ML-KEM-1024+X448 加密。复合算法计为后量子。openpgp.pqcOnly 只收窄登记。签名的两部分由 common/crypto_impl/openpgp_pqc.js 核验。缺少：SLH-DSA（算法标识 32-34），且本服务不生成 RFC 9980 密钥。openpgp.js 不解析这些密钥。"
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial：multipart/encrypted，包含 application/pgp-encrypted 版本部分和封装后的消息，真实邮件头受保护地置于其中。缺少：multipart/signed——本服务用 DKIM 而非 OpenPGP 为邮件签名。"
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial：application/pkcs7-mime enveloped-data，即采用 AES-256-CBC 内容加密的 CMS EnvelopedData。经典证书使用 RSAES-OAEP（SHA-256）或 ECDH。ML-KEM 证书（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：HKDF-SHA-256 与 AES-Wrap。无法封装的运行时不会改用经典算法发送该消息。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
+  },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial，仅限发送：发往 ML-KEM 证书（rfc9935）的 S/MIME 消息在 KEMRecipientInfo（id-ori-kem 其他接收者信息）中携带其内容加密密钥：ML-KEM-512、ML-KEM-768 或 ML-KEM-1024，基于 CMSORIforKEMOtherInfo、使用 SHA-256 且不加盐的 HKDF，以及 AES-128 或 AES-256 密钥封装，置于 AuthEnvelopedData（默认）或 EnvelopedData 中。缺失：解密 KEMRecipientInfo（本服务从不接收加密邮件）、ukm，以及任何其他 KEM 或密钥派生函数。"
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial：通过 id-alg-ml-kem 标识符从 SubjectPublicKeyInfo 或证书中读取 ML-KEM-512、ML-KEM-768 或 ML-KEM-1024 公钥，并要求参数缺省、密钥长度符合 FIPS 203 的规定。个人的密钥由域（realm）的 EST Issuing CA 认证，keyEncipherment 为其唯一的密钥用途，认证前须通过封装完成只有私钥才能应答的持有证明；该证书用作 S/MIME 接收者证书（rfc9629）。缺失：私钥格式（本服务从不持有 ML-KEM 私钥），以及用于本服务自身密钥的 ML-KEM 证书。"
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial：高级和直接两种查找方式（对小写化本地部分计算 SHA-1 并以 z-base-32 编码，l 参数）以及策略文件，仅为选择发布的人员响应，按领域设置且默认关闭。缺少：Web Key Service（submission-address、提交协议）；CORS 使用本服务的允许列表，而非草案中的 *。"
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial，作为调用模块的应用程序（任何 PKCS #11 v2.40 或更高版本；已试用 YubiHSM 2 和 SoftHSM2）：一个不可导出的 AES-256 密钥加密密钥，在令牌内部封装和解封每个数据密钥（CKM_AES_GCM、CKM_AES_KEY_WRAP_PAD 或 CKM_YUBICO_AES_CCM_WRAP）；以及在令牌中生成并使用的域签名密钥：RSA PKCS #1 v1.5 和 PSS，P-256、P-384、P-521 和 secp256k1 上的 ECDSA，以及 EdDSA，同一组密钥还用于 RSA-OAEP 解密和 ECDH 派生。3.2 版的 CKM_ML_DSA 和 CKM_SLH_DSA 仅在令牌列出它们时使用；否则这些签名仍在软件中完成。会话按线程划分，模块在中断后会重新初始化一次。缺失：本服务本身不是模块，不向令牌导入任何密钥，也不从令牌导出任何密钥。"
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial：URI 指定令牌和密钥加密密钥，或签名密钥所在的令牌。支持 token、object、id（百分号编码的字节）、serial 和 slot-id 路径属性，第 2.3 节的其他属性被接受但忽略，module-path 查询属性仅为该密钥选择模块。pin-value 和 pin-source 被拒绝：PIN 由 keys.pkcs11PinProvider 提供，绝不放在 URI 中。缺失：type、manufacturer、model 及库属性不会缩小匹配范围，且不读取 module-name。"
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial：每个域的用户 CA 为 ssh-ed25519、ECDSA、RSA 以及两种 sk- 安全密钥类型签发 -cert-v01@openssh.com 用户证书，按 pki.sshUserCaAlgorithms 给定的顺序使用 ssh-ed25519、ecdsa-sha2-nistp256/384/521 或 rsa-sha2-256/512 签名，主体名（principals）取自个人自己的条目，附带域的扩展且不含关键选项，仅在硬件证据经过验证时才给予更长的有效期。CA 密钥发布在 /pki/ssh-user-ca/{scope}。主机证书仅被读取和检查，不予签发。ssh-mldsa-65 是本服务定义的密钥类型，因为 OpenSSH 没有此类类型，标准 OpenSSH 无法验证它。缺失：主机证书，以及 DSA 密钥的证书。"
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial：每个域位于 /pki/ssh-user-krl/{scope} 的 KRL 在证书被吊销或硬件令牌被报告丢失时由调度任务重建，其中为每个 CA 密钥包含一个带序列号列表的证书段，以及已吊销密钥的 SHA-256 指纹。它既会被写入，也会被读回。缺失：签名段（KRL 未签名，因此仅在主端口上提供），以及 key-id 列表、序列号范围和位图、显式密钥和 SHA-1 指纹。"
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -846,6 +946,18 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "提交一个被拒绝的评估的主体、资源、操作和上下文，并附上其收到的拒绝（其 binding_token 和 expires_at，原样回传）；得到 202 和 Task Handle，或在立即作出决定时（策略允许的紧急访问）得到 201 及结果。只有被领域策略以 advice urn:sts:xacml:advice:access-request 标记的 Deny 才可请求。与评估相同的调用方入口和 AUTHZEN_PEPS；按调用方遵守 Idempotency-Key；回调仅发往为该调用方注册的 URL。每次拒绝都是 problem+json。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "fb06abe45104accd",
+    "text": "GET 提交可添加的补充内容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，后者要求提供理由。公开，与 access_request_endpoint 同源；可申请拒绝的 request_schema_url 指向它。在 authzen.accessRequestForm 开启时，拒绝还会指明 form_url，即一个门户页面。API 或该配置文件关闭时返回 501。在任务状态路径之前注册，否则后者会把“schema”当作 id。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation.what": {
+    "en": "85bf86a2b7ad419f",
+    "text": "GET 可申请拒绝以 request_catalogs_url 指明的 Catalogs Document：唯一由目录支撑的字段 requested_access.entitlement 及其 Catalog Endpoint。仅针对策略 advice 列出权限的已记录拒绝，并且只答复该拒绝所答复、仍限定于该应用程序的调用方。与提交相同的门和 AUTHZEN_PEPS。authzen.accessRequestCatalogs 关闭时返回 501。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation/entitlements.what": {
+    "en": "307d85d64e66c5d4",
+    "text": "GET 拒绝的策略 advice 所列的权限，作为 Catalog Item（value 和 label）：q 匹配其中任一，cursor 继续同一搜索，limit 上限为 50。与 Catalogs Document 相同的调用方。提交的 requested_access.entitlement 必须是其中之一。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1043,6 +1155,14 @@
     "en": "6e82cd30ac736775",
     "text": "非规范，但仍刻意放在这里：把客户端指向这些端点的人需要知道这些地址是什么，而用 `openssl x509 -text` 从证书中读出它们是一个糟糕的起点。每个颁发机构一行，包括其主题、已吊销的证书数量，以及两种方案（http、ldap）的 CRL 和旁边的 OCSP 与 caIssuers 地址。其中没有序列号——已吊销内容的列表就是 CRL，在旁边放一份 JSON 副本将是对同一问题的第二个答案：一个会过时、且没有人签名的答案。它明确说明本服务发布吊销信息，但无法强制任何人去查询，这对每个证书颁发机构都成立，也是客户端开发者会把自己的软件栈指向这里的原因。不设关卡，因为其中的一切本来就在本服务分发的每张证书里。"
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH 用户 CA 密钥，以 authorized-key 行发布，供 SSH 服务器信任。带 `?algorithm=ssh-mldsa-65` 时改为返回该领域的 ML-DSA 颁发机构，标准 OpenSSH 目前尚无法验证它。无门控且 `no-store`，仅在主端口提供：明文 HTTP 吊销监听器拒绝它，因为该密钥是信任锚。对应的 CA 私钥从不离开本服务。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH KRL，在调用者吊销证书或报告硬件令牌丢失时更新。无门控且 `no-store`，仅在主端口提供：KRL 未签名，因此明文 HTTP 吊销监听器拒绝它。SSH 服务器必须配置为查阅它，因为本服务无法让依赖方这样做。"
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "GET /admin/xacml 所绘制的内容，以数据形式提供。与 /admin-api 的其余部分一样不设关卡。"
@@ -1207,13 +1327,33 @@
     "en": "8899a7fad6b6b50c",
     "text": "第 3.11 节为请求所认证的主体提供的别名。GET、PUT、PATCH 和 DELETE 将凭据解析为目录条目，并委托给 /Users/{id} 使用的同一组 User 处理程序，因此不存在需要保持同步的第二条读写路径。它过去对每种方法都应答 501，因为这里没有任何身份验证，而其中两个 501 仍然是正确的，因此予以保留：匿名调用方没有可作别名的主体（别名不可用，这与资源不存在并不相同），而 POST 将创建一个按定义已经存在的主体。指向没有条目者的凭据——client_credentials 令牌、客户端证书——则改为得到 404。"
   },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service 第 3.1 节，高级方式，向 openpgpkey.<domain> 请求：返回地址哈希为 :hash（小写化本地部分 SHA-1 的 z-base-32 编码，l= 为本地部分）的人员的二进制 OpenPGP 公钥，类型为 application/octet-stream，并带 Cache-Control: no-store。只为在 /portal/openpgp 上选择发布的人员响应，且仅当领域已开启 openpgp.wkd 并服务 :domain 时；其他情况均为 404。不含领域段的路径由服务该域的领域响应。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "高级方式的策略文件：内容为空，text/plain，领域服务 :domain 时返回 200，否则返回 404。它的存在即告诉客户端该目录存在；不提供 Web Key Service，因此没有 submission-address。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "直接方式：与高级方式相同，域为请求所发往的主机。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "直接方式的策略文件，针对请求所发往的主机。"
+  },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
     "text": "RFC 7486 第 7 节。表单编码的 POST，携带 pub=<PEM public key> 和（本服务自己的参数）username=<who it is for>，以 201 和 Hobareg: regok 头部应答。刻意不经身份验证：这是调用方获得凭据的方式，因此要求凭据才能访问它，将使任何尚未拥有其他凭据的人都无法使用该方案。任何人都可以为任何名称注册任何密钥——随后签名会被真正验证，这才是使该方案值得实现的那一半。该密钥以 hobaPublicKey 的形式落在此人自己位于 ou=users 下的条目上，因此 ldapsearch 和 /admin/users 都会显示它。GET 描述该端点，因为对浏览器返回 404 的 well-known 路径与无人实现的路径无法区分。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "b9f18166e17e9c9d",
-    "text": "经过验证的客户端证书成为会话（2026-09-05），自 2026-09-16 起位于此端口——它曾是访问任一已删除 TLS 监听器的副作用，这意味着加载一个诊断页面就会让你登录。它应答收到了什么、是否通过验证、令牌端点会将令牌绑定到的指纹、吊销检查发现了什么，以及是否启动了会话。它在握手时不拒绝任何人，也无法拒绝：无法验证的证书、本服务签发但不是 TLS 客户端身份的证书、未逐字节存储在本领域恰好一个条目的 userCertificate 中的外部证书颁发机构证书（从不按通用名称匹配），以及应用的证书（RFC 8705 凭据，而不是人）都会以 200 应答，不建立会话，并说明原因。"
+    "en": "86c9267a55ef2564",
+    "text": "经过验证的客户端证书成为会话（2026-09-05），自 2026-09-16 起位于此端口——它曾是访问任一已删除 TLS 监听器的副作用，这意味着加载一个诊断页面就会让你登录。它应答收到了什么、是否通过验证、令牌端点会将令牌绑定到的指纹、吊销检查发现了什么，以及是否启动了会话。它在握手时不拒绝任何人，也无法拒绝：无法验证的证书、本服务签发但不是 TLS 客户端身份的证书、未逐字节存储在本领域恰好一个条目的 userCertificate 中的外部证书颁发机构证书（从不按通用名称匹配），以及应用的证书（RFC 8705 凭据，而不是人）都会以 200 应答，不建立会话，并说明原因。在管理员指定的 TLS 终止代理之后（tls.trustedProxyCertificates 和 tls.trustedProxyAddresses，默认关闭），证书是 RFC 9440 的 Client-Cert 和 Client-Cert-Chain，在此处按握手时的方式进行验证；来自其他任何来源的这些标头都会被移除。"
+  },
+  "stsmetadata.endpoints./authn/certificate/continue.what": {
+    "en": "7a42e6050c748fd8",
+    "text": "证书登录交接（#2012，默认关闭：certSignIn.handoff）。登录屏幕链接到此处，位于 certificate-sign-in 应用所映射的监听器上——其 clientAuth 会请求证书——因此只在这一个请求上要求智能卡及其 PIN。证书按屏幕自身的证书入口的要求检查，绑定到待处理的登录和浏览器的登录会话（两个请求都携带它），然后浏览器被送回屏幕，屏幕以其持有者的身份继续。未知、已使用或已过期的交接以 400 应答，未携带发起浏览器的会话而到达的交接以 403 应答。"
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -1251,6 +1391,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC。浏览器在每个页面上自行请求的图标：徽标的方形标记（common/favicon.ico）。在每个侦听器上提供；缓存一天。"
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). 接收 CSP Level 3 和 Reporting API 规定浏览器发送的内容:每个页面的策略在 report-uri 和 report-to 中指向它,并附带 Reporting-Endpoints 标头。仅限 POST,无需凭据,每个地址每分钟最多 60 份报告、每份最多 16 KiB;它记录指令、不含查询的页面路径和被阻止的来源,记录 STS-HTTP-0027 日志,并以无正文的 204 应答。由前端进程应答(common/csp_reports.ts)。"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登录屏幕卡片和语言选择器的规则，合为一个样式表，供静态公共界面的外壳链接（common/web_card_css.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
@@ -1258,6 +1402,10 @@
   "stsmetadata.endpoints./web/footer.css.what": {
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC（2026-11-14）。每个静态界面的外壳所绘制的页脚规则——文档、联系和关于链接、社交媒体图标、版权和版本（common/web_footer.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
+  },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220)。一个 ECMAScript 5 脚本，在静态界面的 bundle 之前运行，检查浏览器是否具备 fetch、TextEncoder、URL 和 ECMAScript 2022；若不具备，则以读者的语言显示外壳隐藏绘制的提示（common/web_browser_check.ts）。在每个监听器上应答，no-cache。"
   },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
@@ -1603,6 +1751,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "非规范。控制台自己的操作（#454）：apply-profile、generate-keys、generate-alt-keys 和 use-key 分别根据配置文件、新生成的密钥对或已存储的密钥对填写证书表单，不写入任何内容。它们最终引向的签发操作是 POST /admin-api/pki/issue-certificate。"
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "非规范。控制台自己的操作（#2080）：inspect 读取提交的 PEM 证书——主题、SHA-256、SubjectPublicKeyInfo 的 SHA-256——供证书登录配置文件编辑器、PIV 的 PEM 列表和人员的绑定编辑器使用；带 bindings 时还给出用来找到第一个证书的 stsCertificateBinding 值。它不写入也不保留任何内容；它最终引向的是 POST /admin-api/config/set 或 /admin-api/users/add-attribute。"
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "非规范。控制台自己的操作（#454）：generate-secret 为即将提交的表单生成客户端密钥，不写入任何内容。创建操作是 POST /admin-api/applications/create。"
@@ -1638,6 +1790,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row——/admin/pki/trust 上的控件。add 接受 `certificates`（一个或多个 PEM 块，每个都经过准入规则，每次拒绝都会指明），并可用 `purposes` 加以限制；remove 接受一个 `fingerprint`；recheck 立即运行审计；set-row 接受一个 `pki.paranoid*` `setting` 及其 `value`，经由普通的设置写入。需要 admin:write。写入 ou=signerTrustAnchors，因此更改在重启后依然存在。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "以 JSON 形式提供的 /admin/pki/trust 的“信任库”“用例”和“系统信任库”选项卡（#2118）：此领域可以指名的每个信任库（内置、视图、设置、SPIFFE 包或命名），附带其内容计数和信任它的用例；每个用例当前信任的内容及其默认值；各项限制；以及逐个证书描述（不含 PEM）的 node 默认存储。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign——/admin/pki/trust 的“信任库”和“用例”选项卡上的控件（#2118）。show 接受一个 `name`（及 `withPem`），不写入任何内容；create 接受一个 `name` 和一个 `description`；只要有用例信任该信任库，delete 就会被拒绝；add 接受 `certificates`，每个都经过准入规则，每次拒绝都会指明；remove 接受一个 `fingerprint`；assign 接受一个 `useCase` 及其有序的 `truststores`，unassign 将用例恢复为默认值。作用于整个服务的用例只能从默认领域分配。需要 admin:write。写入 ou=truststores，因此更改在重启后依然存在。"
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -1723,6 +1883,18 @@
     "en": "bcf806336009d1f4",
     "text": "将测试邮件加入队列，或保存或重置某个领域的措辞"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC（#1955）。“目录 → OpenPGP 密钥”页面所显示的内容：带 ?user= 时，返回该人员的 OpenPGP 密钥、其未完成的注册质询、其 Web 密钥目录发布情况、其 S/MIME 证书以及其邮件的加密方式；以及领域的 Web 密钥目录开关和域。对应 GET /admin/openpgp。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC（#1955）。challenge、register（publicKey、signed：本人用 gpg --clearsign 签署的质询）、remove、publish、withdraw、mail-encryption（choice）和 smime（certificate），每项都带 { user }：即 /portal/openpgp 为本人提供的功能，由管理员代为操作。密钥只有在本人提供证明后才会注册。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "发出质询、注册或删除 OpenPGP 密钥、发布密钥，或设置某人的邮件加密方式或 S/MIME 证书"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "非规范（#63）。GET /admin/mail/outbox 所绘制的内容：本领域排队的每封邮件、收件人是谁以及其结果如何，分页并可按状态和搜索过滤——从不包含正文，但通过 ?message= 可获取被捕获邮件的正文（开发模式）。对应 GET /admin/mail/outbox。"
@@ -1803,6 +1975,30 @@
     "en": "b48aa4041763958e",
     "text": "非规范。各项 `webauthn.*` 设置，分为四类——仪式（RP 名称、RP ID 覆盖、算法、用户验证、证明传递方式、超时）、CTAP2（身份验证器连接方式、credProps）和策略（密钥是否可以作为主要因素、是否可以作为第二因素、每人可有多少个）——以及旁边的 COSE 算法表，从检查签名的模块 authn/webauthn.js 中读取。**只有一项是强制执行的，其余都是请求**：userVerification 会依照身份验证器所签名字节中的 UV 标志进行检查。证明策略（#105）和当前生效的 FIDO 元数据在旁边报告。旁边没有 POST：各表单将 set-many 提交到 /admin/config。对应 GET /admin/webauthn。"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "非规范（#2049）。Hardware tokens 组：hardwareTokens.hardwareClaims，它决定 PKINIT 推断和没有可信证明的通行密钥是否仍获得 hwk，旁边说明令牌登记册是什么，以及丢失的令牌会撤销什么。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/hardware-tokens-settings。"
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "非规范（#2049）。每个 piv.* 设置：证明根、PIV 配置文件是否要求证明、PIN 和触摸策略、卡认证登录、密钥托管，以及按卡 UUID 映射的外部签发者。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/piv。"
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "非规范（#2049）。每个 yubiotp.* 设置：注册、YK-VAL 2.0 验证端点和明文导入。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/yubiotp。"
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "非规范（#2049）。hotp.* 设置和 pskc.allowPlaintextImport：代码长度、两个窗口，以及产品模式是否接受明文 PSKC 种子文件。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/oath-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "非规范（#2049）。领域 OpenSSH 用户 CA 的每个 pki.ssh* 设置：其算法、后量子规则、有和没有硬件证据时最长的证书、扩展和主体。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/ssh-user-ca。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "非规范（#2049）。每个 openpgp.* 设置：Web Key Directory、接受的算法、最小的 RSA 密钥、后量子规则、质询的有效期和签名的时钟偏差。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/openpgp-settings。"
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "非规范。每人一行：密码、`mfa` 角色中的安全密钥、是否注册了身份验证器应用，以及会要求其提供两者中的哪一个。需要留意的是 `totpUsable: false` 的行——本进程无法读取的注册，其持有者会在验证码步骤被拒绝，而不是凭单一因素放行。**它曾对应的控制台页面已不存在**：/admin/mfa 只存在了几个小时，就拆分为机制页面 /admin/totp 和 /admin/webauthn，以及一个如今成为 /admin/users 上若干列的名册。此资源被保留，并从那个视图中应答，因此只有一份统计，而不是两次扫描。对应 GET /admin/users，而 GET /admin-api/users 在每一行的 `factors` 中携带相同的事实。"
@@ -1826,6 +2022,18 @@
   "stsmetadata.endpoints./admin-api/rbac/:action.effect": {
     "en": "d4fe53d89f2efabd",
     "text": "授予或撤销对管理控制台的访问权限"
+  },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5)。GET /admin/approvals 绘制的内容：此领域中双人审批（admin.dualControl，默认关闭）是否开启并生效、它暂缓的操作表，以及每项为第二位管理员而暂缓的管理员操作，待决的在前；?id= 指定其中一项。对应 GET /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166)。approve、refuse 和 withdraw，带 { id, reason }。批准和拒绝由另一位持有该操作所需权限的不同人员进行；批准要求近期登录，并通过该操作自身的处理程序以提出者的操作身份运行所存储的操作。撤回由提出者进行。对应 POST /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "运行、拒绝或撤回一项被暂缓的管理员操作"
   },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
@@ -1942,6 +2150,30 @@
   "stsmetadata.endpoints./admin-api/users/new.what": {
     "en": "ee45e233f511ee47",
     "text": "非规范。创建操作接受的封闭属性目录，以 JSON 形式提供：本目录中可以赋予一个人的每个属性，每个属性都指明它在签发的令牌或凭证中对应的声明，以及其名称来源的文档——这很重要，因为本目录没有模式，在任何地方都不会拒绝其中任何属性——此外还有新人员将落入的 ou=users 容器（本领域的容器，因为目录按领域划分），以及可以为其提供进入方式的四种途径。uid 不在列表中，因为它就是用户名；userPassword 也不在，因为密码通过凭据选项设置，以便被哈希而不是直接写下。它不创建任何人：创建操作是 POST /admin-api/users/create，而这是该调用据以校验的列表——不在列表中的属性名称会被拒绝，整个创建都会失败，因此先读取此列表的调用方不会在事后被告知其发送的内容有一半被忽略了。对应 GET /admin/users/new。"
+  },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "非规范。以 JSON 说明创建组可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——cn 为必填，描述、地址和成员不是——以及新组将落入的 ou=groups 容器，即本领域的容器。它不创建任何内容：创建是 POST /admin-api/groups/create。对应 GET /admin/groups/new。"
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "非规范。以 JSON 说明创建角色可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——名称为必填，其余不是——以及存储角色的容器和角色可以适用的应用。它不创建任何内容：创建是 POST /admin-api/roles/create-role。对应 GET /admin/roles/new。"
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "非规范。以 JSON 说明注册设备可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——所有者为必填，其余不是——以及其选项所来自的封闭集合。它不注册任何内容：创建是 POST /admin-api/devices/create。对应 GET /admin/devices/new。"
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "非规范。以 JSON 说明添加属性来源可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——id、主机、数据库、用户、表、其键列以及至少一个列映射为必填，其余有默认值——以及其选项所来自的封闭集合。它不添加任何内容：创建是 POST /admin-api/attribute-sources/add-source。对应 GET /admin/attribute-sources/new。"
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "非规范。以 JSON 说明添加密钥推送目标可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——标识符和提供方始终必填，有些仅对某些提供方必填（requiredWhen）：除 file 外均需写入凭据，aws 需区域，azure 和 vault 需端点，file 需目录。它不添加任何内容：创建是 POST /admin-api/secret-destinations/add-destination。对应 GET /admin/secret-destinations/new。"
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "76e1013ae3d82e5b",
+    "text": "非规范。可以创建命名策略的类型，以及对于所请求的类型，其保存的每个字段以及缺少它时保存是否会被拒绝——名称始终必填，因为没有名称的保存会更改默认策略；以及保存时不接受空值的每个字段。它不保存任何内容：命名策略是该类型在本领域尚未使用的名称下的保存操作。对应 GET /admin/policies/new。"
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
@@ -2127,6 +2359,34 @@
     "en": "0550e836ba364102",
     "text": "启动、暂停、继续或结束登录后活动"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955)。目录 → 硬件令牌所显示的内容：本领域记录的实体安全密钥和智能卡，每个都根据其自身证明记录，可分页并按序列号或人员搜索，并列出每个令牌上的通行密钥和证书。对应 GET /admin/hardware-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4)。管理员从供应商 PSKC 种子文件导入的 HOTP 和 TOTP 令牌，包括未分配、已分配或已停用的，可分页并按序列号或人员搜索。绝不包含密钥。对应 GET /admin/hardware-tokens（其 OATH 标签页）。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071)。管理员从 CSV 导入的 YubiKey OTP，未分配、已分配或已停用，分页并可按序列号或人员搜索；某人的令牌从其条目（主副本）读取。从不包含密钥。对应 GET /admin/hardware-tokens（其 YubiKey OTP 选项卡）。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC（#1955）。lost，带 { key }：令牌被标记为丢失，其上的每个通行密钥被移除，其上的每张证书因 keyCompromise 被吊销，为每项发送 CAEP credential-change，并结束它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人托管的 piv-key-management 密钥，访问控制策略只允许 PIV_KEY_RECOVERY 在近期登录后取得。revoke-ssh，带 { username, serial }：吊销此人的 SSH 用户证书并将其列入领域的 KRL。issue-ssh，带 { username, publicKey, principals?, lifetimeS? }：为此人签发 SSH 用户证书，先写入其条目（#2071）。该页面上控制台的五个操作。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "38d7254e0ab72a00",
+    "text": "报告硬件令牌丢失并撤销其凭据、签发 PIV 槽证书、交出托管密钥，或签发或吊销某人的 SSH 证书"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC（#1955 审查）。签发给某人且尚未到期的 OpenSSH 用户证书，已吊销的有标记：序列号、密钥类型与指纹、主体、有效期以及是否有硬件证据覆盖该密钥。从不包含密钥。对应 GET /admin/hardware-tokens（其 SSH 证书选项卡）。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)。某人的托管 piv-key-management 证书（piv.keyEscrow）：序列号、主体、有效期以及每个证书是否已被吊销。绝不包含密钥。与 GET /admin/hardware-tokens 对应。"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非规范（#552）。协议 → SCIM → 客户端所绘制的内容：声明用于 scim-client 的应用条目——本领域向其推送人员和组的服务提供方——每个附带其队列计数和退避暂停，带 ?client= 时为某个客户端的重试队列、死信队列和发现信息。从不包含凭据。"
@@ -2142,6 +2402,10 @@
   "stsmetadata.endpoints./admin-api/roles/preview.what": {
     "en": "efc872210c98747b",
     "text": "非规范。作出一次签发决策然后丢弃：不签发任何东西，也不记录任何东西。它经过与九个签发点相同的调用——issuance_gate.check()、嵌入式 PEP 以及依照 xacml.issuancePolicy 所指策略的 PDP——因此预览与执行结果只是碰巧一致的情况是不可能的，这正是它存在的唯一理由。它不是 POST /xacml/pdp，后者就存储库根策略询问同一个引擎：那份文档回答的是关于他人边界的问题，而这里回答的是关于本服务的问题。`application` 和 `subject` 都是必需的，因为两者都未指定的签发按定义就是允许的，而不是由策略允许的。`kind` 成为 XACML action-id，因此策略可以允许访问令牌而拒绝刷新令牌。`available: false` 表示此处未加载引擎。对应 /admin/roles 上的试运行。"
+  },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "非规范（#1072）。一个可动态选择角色自身的 XACML 资格策略，由 PDP 针对一个人按照登录 `application` 时的方式判定，而无需登录：是否具备资格、不具备时的代码、决定和状态（缺少的属性会在其中注明）。只有 Permit 才具备资格。除 roles.eligibility 审计行外不写入任何内容，也从不显示策略或此人的属性。`role` 和 `user` 都是必需的；缺少任一项时返回 `answered: false`。对应动态角色在 /admin/roles 页面上的测试。"
   },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
@@ -2176,8 +2440,8 @@
     "text": "基于规范行为的非规范接口。以 JSON 形式提供的已用断言历史：本领域接受过且尚未过期的每个 RFC 7523 和 RFC 7522 断言，以及该历史保存在哪里（持久化，跨进程原子操作）、相对于 oauth2.assertionReplayCacheSize 的实时计数，可按文本、格式、用途和状态过滤，并通过 ?page= 和 ?per= 分页。任何行中都不包含断言或凭据。只读。对应 GET /admin/used-assertions。"
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "非规范。本服务可能产生的每种失败情况的中央表，STS-<SUBSYSTEM>-<NNNN>，以 JSON 形式提供：每个代码及其子系统、什么失败了、以客户端自身协议的词汇告诉客户端什么，以及本领域保存的审计日志中有多少行带有该代码——可按子系统、文本和 ?seen=1 过滤，并通过 ?page= 和 ?per= 分页。代码从不发送给客户端：它只出现在审计记录和日志行中。只读——该表就是源代码。对应 GET /admin/error-codes；同一张表即 docs/v1.1.0/error-codes.md。"
+    "en": "d4977def3313bbf1",
+    "text": "非规范。本服务可能产生的每种失败情况的中央表，STS-<SUBSYSTEM>-<NNNN>，以 JSON 形式提供：每个代码及其子系统、什么失败了、以客户端自身协议的词汇告诉客户端什么，以及本领域保存的审计日志中有多少行带有该代码——可按子系统、文本和 ?seen=1 过滤，并通过 ?page= 和 ?per= 分页。代码从不发送给客户端：它只出现在审计记录和日志行中。只读——该表就是源代码。对应 GET /admin/error-codes；同一张表即 docs/v1.2.0/error-codes.md。"
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -2230,6 +2494,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "非规范（#98 D11）。另一个单元的居民的一页，仅在该单元的发布策略允许时由该单元应答。"
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). 以 JSON 形式提供 GET /admin/csp-reports:浏览器为本领域报告的内容安全策略违规,由本节点的前端进程按指令计数,以及转发设置。不做任何更改。"
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",
@@ -2342,6 +2610,10 @@
   "stsmetadata.endpoints./admin-api/tls.what": {
     "en": "019419feb342ad45",
     "text": "以 JSON 形式提供的 GET /admin/tls：tls.* 设置，全部仅在重启时生效，因为证书在任何东西开始监听之前就已签发、套接字也已绑定。主端口是否为 HTTPS 由 global.https 决定，它与进程自身的设置一起位于 /admin-api/config。只读。"
+  },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220)。自本节点前端进程启动以来，其监听器上每次完成的 TLS 握手协商出的密钥交换组，按监听器和组计数，以及其中有多少是后量子的（ML-KEM 组）。显示在 /admin/crypto-metadata 上。它不改变任何内容。"
   },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
@@ -3027,6 +3299,22 @@
     "en": "9547cda6898c37a6",
     "text": "在登录后要求一个后量子通行密钥，然后建立其暂扣的单点登录会话"
   },
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "YUBICO 验证协议 2.0（#1955 P5）。id、otp、nonce 和 h 的 GET 或 POST。默认关闭：路由应答 OPERATION_NOT_ALLOWED 且不签名。开启后，在包括开发模式在内的每种模式下核验客户端 id 与 HMAC-SHA1；nonce 保留五分钟；匹配的 OTP 被消耗。Cache-Control: no-store。不向 YubiCloud 发送任何内容。"
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "为签署了请求的客户端核验 YubiKey OTP，或在 yubiotp.ykval 关闭时应答 OPERATION_NOT_ALLOWED"
+  },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "可动态选择的角色（#1072）。完成所有认证因素后，对于其领域定义了动态角色的应用程序（除非 roles.dynamicSelection 或应用程序的 appDynamicRoleSelection 将其关闭），登录会被暂停，同时为此人判定每个动态角色自身的 XACML 资格策略；只有 Permit 才会提供角色。如果此人勾选了“为此次登录选择角色”，或者提供了必选角色，此页面会列出可选的角色；“继续”（/authn-api/mfa/{id}/roles）会将选择与该步骤的提供内容以及策略再次核对，然后启动会话，并将选择记录在会话记录中，绝不写入目录。之后该应用程序的令牌会携带所选角色，每次签发时都会再次按其策略判定。需要由被暂停的登录生成的 ?mfa= 标识；直接访问会返回 400。"
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "询问此次登录要使用哪些可动态选择的角色，然后以该选择启动被暂停的会话"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "第二种第二因素（2026-09-10）。对于已注册身份验证器应用的人，密码步骤成功后会来到这里，此端点会索要其应用上显示的六位数字。成功时会话记录 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其注册表条目引用 RFC 4226 和 RFC 6238——以及 acr \"mfa\"，这是本服务能够诚实地说出两个因素的唯一情形。**代码在两种模式下都会真正检查**，这与其前面的密码不同：接受任意六位数字的一次性密码验证器不是宽松，而是坏了，这正是把 SPNEGO 的论证再读一遍。按身份和地址两者进行速率限制，因为六位数字只有一百万个取值，这是本服务中最小的搜索空间。GET 是安全密钥界面上的“改用代码”链接，不创建任何东西——它只为已存在的步骤绘制页面，并拒绝为没有注册的人绘制。**它不为任何人注册**，这就是它与旁边的 /authn/webauthn 的全部区别：注册意味着要被展示一个共享密钥，因此它在 /portal/mfa 上或使用激活链接时进行，绝不在登录界面上进行。自 #572 起是登录界面的一个页面：代码发送到 /authn-api/mfa/{id}/totp。"
@@ -3207,6 +3495,18 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC（#1096）。按配置文件的 snoozeDays 推迟；给定期限已过则被拒绝。被暂扣的会话随即开始。"
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC（#2009 P2）。pqc-mail-encryption 活动：一个 OpenPGP 质询与密钥，或一个 S/MIME 证书，其加密密钥为 ML-KEM；注册后被暂扣的会话随即开始。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC（#2009 P3）。piv-reissue 活动：某个插槽的证书请求及其证明，以重新签发的证书作答；写入后被暂扣的会话随即开始。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "非规范（#1072）。角色步骤的选择，按该步骤的提供内容和每个角色的资格策略核对；被暂停的会话随之启动。"
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
     "text": "NON-SPEC（#573）。仅发往已验证地址；重新发送会取代上一次。"
@@ -3326,6 +3626,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "不带参数访问时以 WWW-Authenticate 质询应答 401——它是受保护资源，需要来自 OIDC 流程的访问令牌"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "超出上限的 groups 声明的分布式来源（#2247）。groups 声明会超过 groups.claimMaxBytes 的访问令牌或 ID Token 改为携带 OpenID Connect Core 第 5.6.2 节的 _claim_names 和 _claim_sources，指向这里，此端点针对所出示访问令牌的主体以签名的 application/jwt（iss、sub、aud、iat、exp 和该声明）返回列表，正如该节对分布式来源的要求。令牌的检查方式与 UserInfo 相同 —— 签名、签发者、发送方约束、typ、撤销 —— 但不检查其受众和 openid 范围，因为资源服务器的令牌正是其声明指向这里的那个。只有自身携带该引用的令牌才能兑现它，得到的正是它在上限以下本会携带的内容，经过其自身客户端的组设置和发布过滤，仅此而已。client_credentials 令牌背后没有人，会被拒绝。"
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "直接访问时以 401 和 WWW-Authenticate 质询应答 —— 它需要本服务签发的访问令牌"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
@@ -3883,6 +4191,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "“它不是协议”，之所以有一张卡片，是因为此页面会报告没有任何卡片认领的端点组——这条规则让新的协议族无法悄无声息地出现，在这里付出这个代价，比让规则附带条件更值得。“这是本服务中第一个属于正在查看它的那个人的界面”：此处其他所有浏览器页面都是为别人准备的——登录界面是另一个协议流程中的一步，同意界面问一个问题就离开，/admin 是给运营人员用的，并受两个角色的关卡保护。这里是一个人查看本身份提供方了解其哪些信息、并更改其认证方式的地方：其密码、其安全密钥，以及每个安全密钥是主凭据还是第二因素。它是“独立于管理控制台的应用”，除本服务授权服务器上的单点登录会话外与之不共享任何东西：两者都是公共 OAuth 客户端（此处为 sts-user-portal），各自在内存中持有自己绑定 DPoP 的令牌。/portal/activate 是其无需认证的那一半，通过 /admin-api 或 SCIM 预配的人在那里使用一次性、有时限的激活链接来设置凭据——静态存储时像密码一样哈希、有速率限制、在设置完成时而非打开链接时用掉，并且绝不会让任何人登录。“自 #568 起，它是基于 /account-api 的静态应用”（即下面的 Account API 组）：每个页面和每个表单对应一个操作，此人始终是令牌的主体，由其自己的 OpenAPI 文档描述。"
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "个人的 OpenPGP 密钥（#1955），在门户上或由管理员凭持有证明注册——本人用 gpg --clearsign 签署质询，在 YubiKey 的 OpenPGP 卡上由卡签名——并保存在其条目上；若本人选择且领域已开启，则在 Web 密钥目录中发布；它也是其邮件加密所用的密钥（PGP/MIME），或按本人选择使用其 S/MIME 证书（S/MIME）。领域可以要求对选定邮件加密（mail.encryptionRequired），这些邮件从不以明文发送。不会将任何密钥记录为绑定硬件：服务器无法看到卡。不支持使用 OpenPGP 登录。"
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "不是协议。报表应用程序（#956）：位于 /report 的静态页面，建立在 /report-api 之上，使用公共客户端 sts-report，以及本领域自身记录的目录。它在浏览器中登录，持有绑定 DPoP 的令牌，并且从不接受 SQL 字符串。已保存的定义属于其所有者；与目录组共享授予运行和读取权限，不授予编辑权限。"
@@ -4012,8 +4324,12 @@
     "text": "此处每个协议都会将人送往的登录界面上的第二因素：针对真实安全密钥的注册和断言仪式，证明和身份验证器数据都会被检查，而不仅仅是解析。"
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "此处每个协议都会将人送往的登录界面上的另一种第二因素，也是本服务中除 Kerberos 票据外唯一真正检查的凭据：代码根据共享密钥和时钟计算并比较，在两种模式下都是如此，并强制执行 RFC 6238 section 5.2 的只接受一次规则。注册方式是本服务器绘制的二维码，在 /portal/mfa 上或使用激活链接时进行；运营人员在 /admin/users 上此人自己的行中清除它，/admin/totp 是配置该机制的地方。"
+    "en": "54893544268bf168",
+    "text": "此处每个协议都会把用户送往的登录界面上的另一种第二因素，也是除 Kerberos 票据外本服务唯一真正检查的凭据：验证码由共享密钥和时钟计算并比较，两种模式下都执行 RFC 6238 第 5.2 节的一次性接受规则。注册是本服务器绘制的二维码，在 /portal/mfa 或使用激活链接时完成；操作员在 /admin/users 上此人自己的那一行中清除它，/admin/totp 则是配置该机制的地方。自 #1955 P4 起还包括其基于计数器的同类：RFC 4226 HOTP 令牌（YubiKey OTP 插槽，在 /portal/mfa 注册；或供应商的令牌，在 目录 → 硬件令牌 从其 RFC 6030 种子文件导入，并按序列号分配或认领），其计数器以 compare-and-set 推进，在每个接受验证码的入口都被接受。"
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "在本服务上核验的 YubiKey OTP 槽位（#1955 P5）。AES-128 密钥留在这里，因此登录为 amr otp，从不为 hwk。在 yubiotp.offered 开启之前，登记、分配和认领保持关闭；已持有的凭据仍会在一次性验证码步骤被核验。GET 与 POST /wsapi/2.0/verify 是 YK-VAL 2.0，在 yubiotp.ykval 开启之前保持 OPERATION_NOT_ALLOWED。不向 YubiCloud 发送任何请求。"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

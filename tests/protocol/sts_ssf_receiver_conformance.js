@@ -55,6 +55,9 @@
 // OWNED HERE (local: true): this repository's SSF receiver.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -373,7 +376,7 @@ async function effectOf(prepared, plan, liveBefore, findings, before) {
     ended = (await arrivals(prepared)).filter(function (row) {
       return !earlier.has(keyOf(row));
     }).some(function (row) {
-      return (row.events || []).indexOf(CAEP + "session-revoked") >= 0 &&
+      return urls.holds(row.events, CAEP + "session-revoked") &&
              row.person === prepared.person && row.verified === true &&
              (row.reactions || []).some(function (x) {
                return x.reaction === "signal-end-person-sessions" && x.done;

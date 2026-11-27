@@ -1,0 +1,14 @@
+{
+  "intro": "Les navigateurs signalent ici chaque fois qu'une page de ce domaine a enfreint sa Content Security Policy : la politique a empêché un script, un cadre, un style ou une autre ressource de se charger ou de s'exécuter. Un rapport dit ce qu'un navigateur affirme et n'importe qui peut en envoyer un ; lisez-les donc comme des signaux : une série de rapports pour une directive après une modification est une page que la modification a cassée, et une origine bloquée que personne n'utilise ici peut être une injection qu'un navigateur a arrêtée.",
+  "tileTotal": "Rapports",
+  "tileDirectives": "Directives",
+  "since": "Comptés par le processus frontal de ce nœud depuis {since} ; les comptes ne sont pas conservés après un redémarrage.",
+  "none": "Aucun navigateur n'a signalé de violation depuis.",
+  "colDirective": "Directive",
+  "colCount": "Rapports",
+  "colLast": "Dernier rapport",
+  "limits": "Les pages signalent à <code>{path}</code>. Il lit un corps d'au plus {bytes} octets et {perMinute} rapports par minute d'une même adresse, enregistre la directive, le chemin de la page sans sa requête et l'origine bloquée, et écrit chaque rapport dans le journal du service.",
+  "forwardOn": "Chaque rapport accepté est aussi transféré au collecteur défini ci-dessous.",
+  "forwardOff": "Les rapports ne sont pas transférés. Définissez le collecteur ci-dessous pour les transférer.",
+  "notForwarded": "{count} rapports n'ont pas été transférés car trop de transferts étaient en cours."
+}

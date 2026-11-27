@@ -90,6 +90,11 @@ export interface AccountOperationRow {
   // spends a single-use secret it carries (an activation or reset link);
   // `public`: nobody, nothing spent (the forgot-password form, the index).
   access: 'person' | 'link' | 'public';
+  // A scope a token may carry INSTEAD of `account:manage` for this one
+  // operation (the #1955 review: `ssh:certificate`, for an SSH command
+  // line on the device grant). Each is protected and declared like
+  // `account:manage`; a token holding only one is refused everywhere else.
+  scopes?: string[];
   // The portal page or form this operation is the door of — rule 7's twin:
   // `GET /portal/keys`, `POST /portal/keys`. The runtime sends a form to the
   // operation that mirrors it.
@@ -180,4 +185,13 @@ export interface PortalPage {
   // `operation`. The view `render()` is then handed is
   // `{ owned: { status, answer, canWrite, query } }`.
   admin?(query: any): string | null;
+  // A PAGE OF TABS OVER OTHER PAGES' OPERATIONS (#2053): member → the GET
+  // operation whose answer (its `view`, else the whole answer) the runtime
+  // adds to the page's view under that member.
+  compose?: Record<string, string>;
+  // Where a form on such a page posts → the member its answer replaces:
+  // '' is the page's own view (its composed members kept), and a member
+  // whose post answers no view keeps the answer as `<member>Answer` while
+  // the page is asked again.
+  members?: Record<string, string>;
 }

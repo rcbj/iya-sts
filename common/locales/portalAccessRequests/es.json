@@ -8,8 +8,14 @@
   "resource": "Sobre",
   "application": "Aplicación",
   "requester": "Solicitado por",
+  "entitlement": "Acceso solicitado",
+  "actor": "Actuado por",
   "waits": "Espera hasta el {when}.",
   "approve": "Aprobar",
   "deny": "Denegar",
-  "done": "{status, select, approved {La solicitud de acceso está aprobada. La aplicación puede volver a preguntar ahora.} denied {La solicitud de acceso está denegada.} other {La solicitud de acceso está {status}.}}"
+  "done": "{status, select, approved {La solicitud de acceso está aprobada. La aplicación puede volver a preguntar ahora.} denied {La solicitud de acceso está denegada.} other {La solicitud de acceso está {status}.}}",
+  "yours": "Aprobaciones que usted dio y que siguen en vigor. Revocar una significa que una evaluación posterior que la lleve no queda aprobada.",
+  "until": "Esta aprobación dura hasta {when}.",
+  "revoke": "Revocar",
+  "revoked": "La aprobación queda revocada. Una evaluación posterior que la lleve no queda aprobada."
 }

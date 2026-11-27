@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-sshd
+#
+# ---------------------------------------------------------------------------
+# AN OpenSSH SERVER THAT TRUSTS A REALM'S SSH USER CA (#2060). The lab's
+# sshd is installed and not started (lab-start.sh); a job that needs one
+# configures it here, the way an operator configures a server that accepts
+# this service's certificates (docs/v1.2.0/pki.md, *OpenSSH user
+# certificates*):
+#
+#   lab-sshd start <dir> <port> <user>...
+#       <dir> (under the work directory when relative) must already hold
+#       `trusted_user_ca.pub` (GET /pki/ssh-user-ca/{scope}) and
+#       `revoked.krl` (GET /pki/ssh-user-krl/{scope}): sshd refuses every
+#       key while its RevokedKeys file cannot be read, so the job fetches
+#       the KRL first, as a deployment would. Makes a host key in <dir>,
+#       a local account for each <user> (no password, no authorized_keys:
+#       a CERTIFICATE is the only way in), checks the configuration with
+#       `sshd -t` and starts sshd on 127.0.0.1:<port>. Prints the pid.
+#   lab-sshd stop <dir>
+#       stops the sshd started for <dir>.
+#
+# **NOTHING BUT TrustedUserCAKeys LETS ANYBODY IN**: no AuthorizedKeysFile,
+# no password, no keyboard-interactive, and no AuthorizedPrincipalsFile, so
+# sshd's own default applies — a certificate is accepted for an account
+# only when the account's name is one of its principals. **RevokedKeys is
+# read again at every authentication**, so replacing the file is the whole
+# of a KRL refresh; nothing is restarted.
+#
+# The log is <dir>/sshd.log (`-E`), at VERBOSE, which names the certificate
+# (its key id and serial) on every accept and every refusal.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+action="${1:?start or stop}"
+dir="${2:?a directory}"
+case "${dir}" in
+  /*) ;;
+  *) dir="/run/client-lab/work/${dir}" ;;
+esac
+
+if [ "${action}" = "stop" ]; then
+  if [ -f "${dir}/sshd.pid" ]; then
+    kill "$(cat "${dir}/sshd.pid")" 2>/dev/null || true
+    rm -f "${dir}/sshd.pid"
+  fi
+  echo "stopped"
+  exit 0
+fi
+
+if [ "${action}" != "start" ]; then
+  echo "lab-sshd: start or stop, not ${action}" >&2
+  exit 2
+fi
+
+port="${3:?a port}"
+shift 3
+for need in trusted_user_ca.pub revoked.krl; do
+  if [ ! -s "${dir}/${need}" ]; then
+    echo "lab-sshd: ${dir}/${need} is missing or empty" >&2
+    exit 2
+  fi
+done
+
+mkdir -p /run/sshd
+chmod 0755 /run/sshd
+if [ ! -f "${dir}/host_ed25519" ]; then
+  ssh-keygen -q -t ed25519 -N '' -f "${dir}/host_ed25519"
+fi
+
+for user in "$@"; do
+  if ! id -u "${user}" > /dev/null 2>&1; then
+    # `*` is no password and not a LOCKED account (OpenSSH refuses a `!`
+    # one even with a certificate while UsePAM is off).
+    useradd -m -s /bin/bash -p '*' "${user}"
+  fi
+done
+
+cat > "${dir}/sshd_config" <<CONF
+Port ${port}
+ListenAddress 127.0.0.1
+HostKey ${dir}/host_ed25519
+PidFile ${dir}/sshd.pid
+LogLevel VERBOSE
+UsePAM no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile none
+TrustedUserCAKeys ${dir}/trusted_user_ca.pub
+RevokedKeys ${dir}/revoked.krl
+StrictModes no
+PermitRootLogin no
+CONF
+
+/usr/sbin/sshd -t -f "${dir}/sshd_config"
+/usr/sbin/sshd -f "${dir}/sshd_config" -E "${dir}/sshd.log"
+for i in $(seq 1 40); do
+  if [ -s "${dir}/sshd.pid" ]; then
+    break
+  fi
+  sleep 0.25
+done
+cat "${dir}/sshd.pid"

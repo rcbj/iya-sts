@@ -157,8 +157,29 @@ async function run(t) {
     fuzzer.notApplicable('debugger').forEach(function (entry) {
       t.log.info('  [not applicable] ' + entry.script + ': ' + entry.reason);
     });
+    // Whether the listener staples (#2265), worked out as the stack job
+    // does (tlsfuzzer_kit.js staplesOcsp(), which tests/tlsfuzzer_plan.js
+    // holds to OcspStapling.enabled()). A process with no certificate
+    // authority, as here, presents a self-signed certificate, and that is
+    // never stapled.
+    const config = require('../common/config');
+    const serviceMode = require('../common/mode');
+    const tlsServer = require('../tls/tls_server');
+    // The listener's first certificate (an array when it presents two).
+    const own = String([].concat(tlsServer.clientTruststoreOptions(
+      tlsServer.policyFor('debugger')).cert || '')[0]);
+    const x509 = new (require('crypto').X509Certificate)(own);
+    const staples = fuzzer.staplesOcsp({
+      setting: config.value('tls.ocspStapling'),
+      product: serviceMode.isProduct(),
+      certificateFile: config.value('tls.certificateFile'),
+      selfSigned: x509.issuer === x509.subject
+    });
+    t.log.info('an OCSP staple is ' + (staples ? '' : 'not ') +
+               'expected (' + (x509.issuer === x509.subject ?
+                               'self-signed' : 'issued') + ')');
     const results = await fuzzer.runPlan(
-      { host: '127.0.0.1', port: bound,
+      { host: '127.0.0.1', port: bound, staples: staples,
         certificates: certificates(scratch) }, 'debugger',
       { concurrency: Number(process.env.STS_TLSFUZZER_CONCURRENCY || 6),
         onResult: function (r) {

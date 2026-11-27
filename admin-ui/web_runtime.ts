@@ -74,18 +74,34 @@ import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
 import WebFooter = require('../common/web_footer');
+import WebWsTrustProtection = require('./web_wstrust_protection');
+import WebCertSignIn = require('./web_cert_sign_in');
+import WebClipboard = require('../common/web_clipboard');
+import WebPageState = require('../common/web_page_state');
 
 type Json = any;
 
 // The console's client: public, DPoP-bound (`sender_constraints.ts`,
 // `DPOP_BOUND_PUBLIC_CLIENTS`).
 const CLIENT_ID = 'sts-admin-console';
-// What it asks for: an ID Token for who signed in, the three scopes the
-// management API takes (admin:security since #645), narrowed at issuance to
-// the roles the person holds, and the console's own (#454), which every
-// person signing in here is issued through the ADMIN_CONSOLE role this
-// client confers.
-const SCOPE = 'openid admin:read admin:write admin:security admin:console';
+// What it signs in with: an ID Token for who signed in, `admin:read`,
+// narrowed at issuance to the roles the person holds, and the console's own
+// (#454), which every person signing in here is issued through the
+// ADMIN_CONSOLE role this client confers. READ SCOPES ONLY SINCE #2168
+// (ASVS 5.0.0 10.2.3, rcbj's decision): a person who only browses holds no
+// write scope. The first write the management API refuses for want of
+// `admin:write` or `admin:security` asks for it by a second authorization
+// (`SpaClient.stepUp()`), silently while the sign-on session holds and with
+// a fresh sign-in for `admin:security`; reads keep the read token.
+const SCOPE = 'openid admin:read admin:console';
+// What a second authorization may add, and which of it needs a fresh
+// sign-in (#2168).
+const WRITE_SCOPES = ['admin:write', 'admin:security'];
+const FRESH_SCOPES = ['admin:security'];
+// What `sendOnce()` answers when the write token it sent met RFC 9470's
+// `insufficient_user_authentication` (#1538): the write is stepped up again
+// with a fresh sign-in rather than the read token's session signed in again.
+const NEEDS_FRESH_STEP = { needsFreshStep: true };
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-console-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
@@ -178,7 +194,8 @@ class ConsoleRuntime extends SpaClient {
       clientId: CLIENT_ID, scope: SCOPE,
       elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
                    '/logout': 'data-sts-authn' },
-      accountKey: ACCOUNT_KEY });
+      accountKey: ACCOUNT_KEY,
+      writeScopes: WRITE_SCOPES, freshScopes: FRESH_SCOPES });
     this.shell = null;
     this.t = kit.context().t;
     this.shellPrefix = '';
@@ -243,14 +260,17 @@ class ConsoleRuntime extends SpaClient {
 
   // The resource this console's tokens are for: the management API of the
   // realm it signed in at (`AdminApi.wantedAudiences()` and
-  // `realmAudienceAccepted()` say which audiences it accepts).
+  // `realmAudienceAccepted()` say which audiences it accepts) — THAT realm's
+  // after the realm switcher has moved the pages (#2200), so a second
+  // authorization's write token is for the same audience as the read token
+  // it sits beside, and is kept under the same key.
   /**
    * The management API this console's tokens are audienced to.
    *
    * @returns the resource indicator
    */
   resource(): string {
-    return this.url('/admin-api');
+    return this.issuerUrl('/admin-api');
   }
 
   /**
@@ -291,6 +311,11 @@ class ConsoleRuntime extends SpaClient {
     // A JARM answer is opened and checked first (#568, `SpaClient`).
     const query = await this.openAuthorizationResponse(
       this.callbackParameters());
+    // A SECOND AUTHORIZATION'S WINDOW (#2168) hands its answer back the same
+    // way, to the page whose write is waiting on it.
+    if (this.handBackStepUp(query, this.prefix + '/admin/callback')) {
+      return;
+    }
     // A POPUP'S SIGN-IN (#508) is the opener's to redeem: it holds the
     // verifier and the key, and this window hands the answer back.
     if (String(query.state || '').indexOf(POPUP_STATE_PREFIX) === 0) {
@@ -363,6 +388,9 @@ class ConsoleRuntime extends SpaClient {
     }
     const before = this.storedAccount();
     this.keepTokens(answer.json);
+    // THE REALM THAT ISSUED THEM (#2200), which the realm switcher keeps:
+    // every later token request asks it, whatever realm is on screen.
+    this.issuerPrefix = this.prefix;
     const to = String(saved.returnTo || '/admin');
     this.env.history.replaceState(null, '', this.prefix + to);
     await this.route();
@@ -527,7 +555,11 @@ class ConsoleRuntime extends SpaClient {
                      extra?: Json): Promise<string> {
     const params: Json = {
       response_type: 'code', client_id: CLIENT_ID,
-      redirect_uri: this.url('/admin/callback'), scope: SCOPE,
+      // THE SIGNING-IN REALM'S CALLBACK (#2200), the one its client
+      // registers, whatever realm the switcher has moved the page to.
+      redirect_uri: this.issuerUrl('/admin/callback'),
+      // The read scopes, or a second authorization's (#2168).
+      scope: (extra && extra.scope) || SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
       code_challenge_method: 'S256', resource: this.resource(),
       // OpenID Connect's nonce, which FAPI 1.0 requires (`SpaClient`).
@@ -544,9 +576,56 @@ class ConsoleRuntime extends SpaClient {
     if (extra && extra.prompt) {
       params.prompt = String(extra.prompt);
     }
+    // A fresh sign-in for `admin:security` (#2168, OpenID Connect Core
+    // section 3.1.2.1's `max_age=0`), beside `prompt=login`.
+    if (extra && extra.max_age !== undefined && extra.max_age !== '') {
+      params.max_age = String(extra.max_age);
+    }
     // Pushed first where the realm requires it (RFC 9126, #568's
     // `SpaClient.authorizationRequestUrl()`).
     return this.authorizationRequestUrl(params);
+  }
+
+  // THE CONSOLE'S HALF OF A SECOND AUTHORIZATION (#2168, `SpaClient`'s
+  // `stepUp()`): its callback, where it goes when no window can be opened —
+  // keeping what the page holds as #508 does, because the write waiting is
+  // lost — and the bar's words in the reader's language.
+  /**
+   * The console's callback, a second authorization's `redirect_uri`.
+   *
+   * @returns the URL
+   */
+  callbackUrl(): string {
+    return this.issuerUrl('/admin/callback');
+  }
+
+  /**
+   * Signs in on this page for a write scope, keeping what the page holds.
+   *
+   * @param scope - the scope to sign in with
+   * @param prompt - `login`, or '' for none
+   * @returns nothing
+   */
+  async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    this.savePageState();
+    await this.beginSignIn(this.hereWithFragment(), prompt
+      ? { scope: scope, prompt: prompt, max_age: '0' } : { scope: scope });
+  }
+
+  /**
+   * The step's bar's words, from the console's catalog where it has them.
+   *
+   * @returns `SpaClient.stepWords()`'s shape
+   */
+  stepWords(): Json {
+    const english = super.stepWords();
+    const t = this.t;
+    const out: Json = {};
+    Object.keys(english).forEach(function (name: string) {
+      const key = 'consoleRuntime.step.' + name;
+      out[name] = t && t.has(key) ? t.text(key) : english[name];
+    });
+    return out;
   }
 
   /**
@@ -635,8 +714,12 @@ class ConsoleRuntime extends SpaClient {
     const popup = this.env.window.open(r.url, POPUP_CHANNEL,
                                        'popup,width=560,height=760');
     if (!popup) {
-      this.drawReauthBar('The sign-in window was blocked. Allow pop-ups ' +
-                         'for this site, or sign in on this page.');
+      // In English where no catalog has it yet (drawReauthBar()).
+      const said = this.t;
+      this.drawReauthBar(said.has('consoleRuntime.reauth.popupBlocked')
+        ? said.text('consoleRuntime.reauth.popupBlocked')
+        : 'The sign-in window was blocked. Allow pop-ups for this site, or ' +
+          'sign in on this page.');
       return;
     }
     r.popup = popup;
@@ -669,7 +752,7 @@ class ConsoleRuntime extends SpaClient {
     }
     const answer = await this.tokenRequest({
       grant_type: 'authorization_code', code: String(data.code || ''),
-      redirect_uri: this.url('/admin/callback'), client_id: CLIENT_ID,
+      redirect_uri: this.issuerUrl('/admin/callback'), client_id: CLIENT_ID,
       code_verifier: r.verifier, resource: this.resource()
     });
     if (answer.status !== 200 || !answer.json.access_token) {
@@ -705,6 +788,8 @@ class ConsoleRuntime extends SpaClient {
       return;
     }
     this.keepTokens(answer.json);
+    // A WRITE TOKEN BELONGED TO THE SESSION THAT ENDED (#2168).
+    this.dropWriteToken();
     this.reauth = null;
     if (r.channel) {
       r.channel.close();
@@ -785,39 +870,18 @@ class ConsoleRuntime extends SpaClient {
 
   // --- what the page held, across a redirect (#508) ------------------------
 
+  // THE THREE BELOW ARE `common/web_page_state.ts`'s SINCE #2220, shared
+  // with the portal and the reports application, which keep their page's
+  // choices across a sign-in that leaves the page too; kept here by name,
+  // as the console's tests call them.
   /**
-   * Whether a form control's value may be kept across a sign-in: never a
-   * password, a file, a hidden field, a button, or a control named or
-   * marked for a secret.
+   * Whether a form control's value may be kept across a sign-in.
    *
    * @param el - the control
    * @returns true when it is kept
    */
   static keepsField(el: Json): boolean {
-    const name = String((el && el.name) || '');
-    const type = String((el && el.type) || '').toLowerCase();
-    if (!name || el.disabled) {
-      return false;
-    }
-    if (['password', 'file', 'hidden', 'submit', 'button', 'reset',
-         'image'].indexOf(type) >= 0) {
-      return false;
-    }
-    // WHAT PEOPLE TYPE STAYS OUT OF STORAGE (ASVS 5.0.0 14.3.3): names and mail
-    // are personal data, and this survives until the page returns. Choices
-    // carry none of it.
-    if (['checkbox', 'radio', 'select-one', 'select-multiple']
-      .indexOf(type) < 0) {
-      return false;
-    }
-    const auto = el.getAttribute
-      ? String(el.getAttribute('autocomplete') || '') : '';
-    if (/new-password|current-password|one-time-code/.test(auto) ||
-        (el.getAttribute && el.getAttribute('data-sensitive') !== null &&
-         el.getAttribute('data-sensitive') !== undefined)) {
-      return false;
-    }
-    return !/secret|passw|private|credential|token|otp/i.test(name);
+    return WebPageState.keepsField(el);
   }
 
   /**
@@ -828,94 +892,18 @@ class ConsoleRuntime extends SpaClient {
    * @returns `{ action, pending, fields }`
    */
   static formSnapshot(form: Json, pending: boolean): Json {
-    const fields: Json[] = [];
-    const els = (form && form.elements) || [];
-    for (let i = 0; i < els.length; i++) {
-      const el = els[i];
-      if (!ConsoleRuntime.keepsField(el)) {
-        continue;
-      }
-      const type = String(el.type || '').toLowerCase();
-      if (type === 'checkbox' || type === 'radio') {
-        fields.push({ name: el.name, value: String(el.value),
-                      checked: !!el.checked });
-      } else if (el.multiple && el.options) {
-        const values: string[] = [];
-        for (let j = 0; j < el.options.length; j++) {
-          if (el.options[j].selected) {
-            values.push(String(el.options[j].value));
-          }
-        }
-        fields.push({ name: el.name, values: values });
-      } else {
-        fields.push({ name: el.name, value: String(el.value || '') });
-      }
-    }
-    return { action: String((form.getAttribute &&
-                             form.getAttribute('action')) || ''),
-             pending: !!pending, fields: fields };
+    return WebPageState.formSnapshot(form, pending);
   }
 
   /**
-   * Puts kept values back into the forms drawn: the same form by its place
-   * and its address, the same control by its name and order.
+   * Puts kept values back into the forms drawn.
    *
    * @param forms - the forms drawn, in document order
    * @param saved - `formSnapshot()`'s answers, in the same order
    * @returns `{ restored, unplaced }`, counts of values
    */
   static restoreForms(forms: Json[], saved: Json[]): Json {
-    let restored = 0;
-    let unplaced = 0;
-    (saved || []).forEach(function (kept, i) {
-      const form = forms[i];
-      const action = form && form.getAttribute
-        ? String(form.getAttribute('action') || '') : '';
-      if (!form || action !== String(kept.action || '')) {
-        unplaced += (kept.fields || []).length;
-        return;
-      }
-      const byName: Json = {};
-      const els = form.elements || [];
-      for (let j = 0; j < els.length; j++) {
-        if (ConsoleRuntime.keepsField(els[j])) {
-          (byName[els[j].name] = byName[els[j].name] || []).push(els[j]);
-        }
-      }
-      const used: Json = {};
-      (kept.fields || []).forEach(function (field) {
-        const named = byName[field.name] || [];
-        if (field.checked !== undefined) {
-          const box = named.filter(function (el) {
-            return String(el.value) === String(field.value);
-          })[0];
-          if (!box) {
-            unplaced++;
-            return;
-          }
-          box.checked = !!field.checked;
-          restored++;
-          return;
-        }
-        const at = used[field.name] || 0;
-        used[field.name] = at + 1;
-        const el = named[at];
-        if (!el) {
-          unplaced++;
-          return;
-        }
-        if (field.values && el.options) {
-          for (let k = 0; k < el.options.length; k++) {
-            el.options[k].selected =
-              field.values.indexOf(String(el.options[k].value)) >= 0;
-          }
-        } else {
-          el.value = String(field.value || '');
-        }
-        restored++;
-      });
-    });
-    return { restored: restored, unplaced: unplaced };
+    return WebPageState.restoreForms(forms, saved);
   }
 
   /**
@@ -1039,7 +1027,8 @@ class ConsoleRuntime extends SpaClient {
     // once: the sign-in again (`signInAgain()`) leaves the page as it is,
     // and the act the reader pressed completes when they are back. A false
     // answer is a sign-in that left the page, or a different person.
-    const first = await this.sendOnce(method, target, body);
+    const first = await this.writeStep(method, target, body,
+      await this.sendOnce(method, target, body));
     if (first === ABORTED) {
       return null;
     }
@@ -1049,7 +1038,8 @@ class ConsoleRuntime extends SpaClient {
     if (!await this.signInAgain()) {
       return null;
     }
-    const second = await this.sendOnce(method, target, body);
+    const second = await this.writeStep(method, target, body,
+      await this.sendOnce(method, target, body));
     if (second === ABORTED) {
       return null;
     }
@@ -1061,6 +1051,52 @@ class ConsoleRuntime extends SpaClient {
     return null;
   }
 
+  // ---------------------------------------------------------------------------
+  // A WRITE THE READ TOKEN CANNOT MAKE (#2168). The API's refusal names the
+  // scope (`insufficient_scope`, which `/admin-api` sends since #2168), the
+  // second authorization gets a write token carrying it, and the write is
+  // sent once more with that token — the same closure, so what was pressed
+  // never leaves memory. A step that does not end with the scope in hand
+  // answers the refusal itself, drawn as it always was. A write token that
+  // met RFC 9470 (#1538) is stepped again with a fresh sign-in.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers what `sendOnce()` answered, after the second authorization a
+   * refused write asked for.
+   *
+   * @param method - the method
+   * @param target - the absolute URL
+   * @param body - as `send()` takes it
+   * @param answered - `sendOnce()`'s answer
+   * @returns the answer to use
+   */
+  async writeStep(method: string, target: string, body: Json,
+                  answered: Json): Promise<Json> {
+    if (answered === NEEDS_FRESH_STEP) {
+      const held = this.writeScopesHeld(this.resource())
+        .filter(function (one: string): boolean {
+          return WRITE_SCOPES.indexOf(one) >= 0;
+        });
+      this.dropWriteToken(this.resource());
+      if (!await this.stepUp(this.resource(),
+                             held.length ? held : ['admin:write'], true)) {
+        return ABORTED;
+      }
+      return this.sendOnce(method, target, body);
+    }
+    const named = ConsoleRuntime.insufficientScopeOf(answered);
+    if (!named.length || answered === ABORTED ||
+        answered === NEEDS_SIGN_IN) {
+      return answered;
+    }
+    if (!await this.stepUp(this.resource(), named)) {
+      return answered;
+    }
+    const again = await this.sendOnce(method, target, body);
+    return again === NEEDS_FRESH_STEP
+      ? this.writeStep(method, target, body, again) : again;
+  }
+
   /**
    * Sends one request with the tokens in hand, refreshing them where they
    * have run out.
@@ -1068,7 +1104,8 @@ class ConsoleRuntime extends SpaClient {
    * @param method - the method
    * @param target - the absolute URL
    * @param body - as `send()` takes it
-   * @returns the response, or NEEDS_SIGN_IN when no token will do
+   * @returns the response, NEEDS_SIGN_IN when no token will do, or
+   *   NEEDS_FRESH_STEP when the write token needs a fresh sign-in
    */
   async sendOnce(method: string, target: string, body?: Json): Promise<Json> {
     // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and whatever
@@ -1085,9 +1122,13 @@ class ConsoleRuntime extends SpaClient {
       return NEEDS_SIGN_IN;
     }
     for (let attempt = 0; attempt < 3; attempt++) {
+      // THE READ TOKEN FOR A GET, AND A WRITE TOKEN FOR ANYTHING ELSE WHILE
+      // ONE IS HELD (#2168).
+      const token = this.tokenFor(method, this.resource());
+      const writing = token !== this.accessToken;
       const headers: Json = {
-        'Authorization': 'DPoP ' + this.accessToken,
-        'DPoP': await this.proof(method, target, this.accessToken),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json'
       };
       // THE LANGUAGE THE CONSOLE NEGOTIATED, NAMED TO THE API (#543), which
@@ -1137,6 +1178,17 @@ class ConsoleRuntime extends SpaClient {
       const challenge = String((res.headers && res.headers.get &&
                                 res.headers.get('WWW-Authenticate')) || '');
       if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
+        continue;
+      }
+      // A WRITE TOKEN IS NEVER REFRESHED (#2168): one refused is dropped,
+      // and the write goes again on the read token — whose refusal for the
+      // scope then asks for a new one — or, for RFC 9470's answer, the
+      // write token is asked for again with a fresh sign-in.
+      if (writing) {
+        this.dropWriteToken(this.resource());
+        if (/insufficient_user_authentication/.test(challenge)) {
+          return NEEDS_FRESH_STEP;
+        }
         continue;
       }
       if (/invalid_token/.test(challenge) && await this.refresh()) {
@@ -1395,8 +1447,11 @@ class ConsoleRuntime extends SpaClient {
     this.env.document.title = title + ' — IYA STS admin';
     // THE PAGE FOOTER the shell drew (`common/web_footer.ts`), below the
     // frame and so below the runtime facts at the foot of the card: one
-    // footer element, in the console's language.
-    const footer = WebFooter.drawnIn(this.env.document, this.t);
+    // footer element, in the console's language. With the version the shell
+    // ANSWER gave (#2142): in product the shell document, which anybody can
+    // fetch, carries none, and an administrator still sees the build.
+    const footer = WebFooter.drawnIn(this.env.document, this.t,
+                                     shell.version);
     // THE TRAIL NAMES THE OPEN TAB (rcbj 2026-11-15): the body's tab tree,
     // read from the string drawn, and the tabs the fragment opens in it.
     this.trailOf = { title: title, active: active, up: up,
@@ -1429,6 +1484,24 @@ class ConsoleRuntime extends SpaClient {
     this.wireOrderedChoices();
     this.wireCheckAll();
     this.wireChoicePanels();
+    this.wireConditionalRequirements();
+    this.wirePolicyNames();
+    // THE WS-TRUST MESSAGE PROTECTION BOXES AND XPATH BUILDER (#1917), on an
+    // application's WS-Trust sub-tab: a change they make to the form is a
+    // change typed, for the unsaved-changes question (#561).
+    const self = this;
+    WebWsTrustProtection.wire(this.env, this.t, function () {
+      self.dirty = true;
+    });
+    // CERTIFICATE SIGN-IN'S EDITORS (#2080): the structured settings drawn
+    // as form fields over the box that carries each value, and a person's
+    // certificate binding editor. What a certificate says is read by the
+    // console's inspection helper, through this runtime's own API calls.
+    WebCertSignIn.wire(this.env, this.t, function () {
+      self.dirty = true;
+    }, function (method: string, path: string, body?: Json) {
+      return self.apiJson(method, path, body);
+    }, this.prefix);
     this.loadPageScripts();
     this.revealActiveNav();
   }
@@ -1648,9 +1721,11 @@ class ConsoleRuntime extends SpaClient {
    *
    * @param title - what went wrong
    * @param detail - the detail
+   * @param more - optional; markup drawn after the detail (#2220: the link
+   *   to what this service needs from a browser)
    * @returns nothing
    */
-  drawProblem(title: string, detail: string): void {
+  drawProblem(title: string, detail: string, more?: string): void {
     // No tabbed page is drawn, so a fragment change has no trail to redraw.
     this.trailOf = null;
     this.env.document.title = title + ' — IYA STS admin';
@@ -1658,7 +1733,7 @@ class ConsoleRuntime extends SpaClient {
     WebSafeDom.render(this.env.document.body,
       '<div class="shell"><div ' +
       'class="main"><div class="card"><h1>' + kit.esc(title) + '</h1>' +
-      kit.note(kit.esc(detail)) + '<p><a href="' +
+      kit.note(kit.esc(detail)) + (more || '') + '<p><a href="' +
       kit.esc(this.prefix + '/admin') + '">' +
       // In English where no catalog has it yet (drawReauthBar()).
       (this.t.has('consoleRuntime.openConsole')
@@ -1795,7 +1870,7 @@ class ConsoleRuntime extends SpaClient {
         return;
       }
       const failed = answers.filter(function (one) {
-        return !one.answer || one.answer.status !== 200 || !one.answer.json;
+        return !WebPages.composeKept(page, one.member, one.answer);
       })[0];
       if (failed) {
         const status = failed.answer ? failed.answer.status : 'unavailable';
@@ -1883,9 +1958,17 @@ class ConsoleRuntime extends SpaClient {
     const json = state
       ? Object.assign({}, this.view.json, { state: state })
       : this.view.json;
-    const write = !!(this.me && this.me.write);
+    // WHAT THE READER MAY DO, NOT WHAT THIS TOKEN CARRIES (#2168): the
+    // console signs in with read scopes, so a form is drawn for whoever
+    // holds the role (`holds`, `GET /admin-api/me`) and its write is the
+    // first to ask for the write scope.
+    const holds = (this.me && Array.isArray(this.me.holds))
+      ? this.me.holds : [];
+    const write = !!(this.me && this.me.write) ||
+      holds.indexOf('ADMIN_WRITE') >= 0;
     // #645: the Security Administrator's role, which a policy page asks.
-    const security = !!(this.me && this.me.security);
+    const security = !!(this.me && this.me.security) ||
+      holds.indexOf('SECURITY_ADMIN') >= 0;
     const ctx = kit.context(query, write, this.t, security);
     const drilled = page.drill && query[page.drill.param];
     // A drill-down whose list is a tab of another page (`upTo`, #1760)
@@ -2566,6 +2649,13 @@ class ConsoleRuntime extends SpaClient {
       await this.go(base + (base.indexOf('?') < 0 ? '?' : '&') + kind + '=' +
                     encodeURIComponent(message));
     };
+    // NO WEBAUTHN HERE (#2220): both ceremonies need it, so it is asked
+    // before anything is begun, and said in the reader's language rather
+    // than as the `TypeError` of a missing `navigator.credentials`.
+    if (WebWebAuthn.missing(this.env.navigator, this.env.window)) {
+      await report('error', WebWebAuthn.missingText(this.t));
+      return;
+    }
     let upgradeId = '';
     try {
       const begun = await this.apiJson('POST',
@@ -2583,7 +2673,9 @@ class ConsoleRuntime extends SpaClient {
         allowCredentials: [{ type: 'public-key',
           id: WebWebAuthn.bytes(proof.allow) }],
         userVerification: (proof.options && proof.options.userVerification) ||
-                          'preferred' } });
+                          'preferred',
+        // The legacy U2F appid (#1955 P7), where the server asks it.
+        extensions: WebWebAuthn.requestExtensions(proof.options) } });
       if (!asserted) { throw new Error('The passkey did not answer.'); }
       const proved = await this.apiJson('POST',
         '/admin-api/users/prove-passkey-upgrade', {
@@ -2606,12 +2698,9 @@ class ConsoleRuntime extends SpaClient {
       options.excludeCredentials = (registration.exclude || []).map(
         function (id) { return { type: 'public-key',
           id: WebWebAuthn.bytes(id) }; });
-      options.extensions = (options.credProps || options.minPinLength)
-        ? Object.assign(options.credProps ? { credProps: true } : {},
-                        options.minPinLength ? { minPinLength: true } : {})
-        : undefined;
-      delete options.credProps;
-      delete options.minPinLength;
+      // The extensions the server asks for (#1955 P7: one copy).
+      options.extensions = WebWebAuthn.creationExtensions(options);
+      WebWebAuthn.dropFlatExtensions(options);
       const made = await this.env.navigator.credentials.create({
         publicKey: options });
       if (!made) { throw new Error('The authenticator refused registration.'); }
@@ -2683,12 +2772,9 @@ class ConsoleRuntime extends SpaClient {
       publicKey.excludeCredentials = (ceremony.exclude || []).map(function (id) {
         return { type: 'public-key', id: WebWebAuthn.bytes(id) };
       });
-      publicKey.extensions = (publicKey.credProps || publicKey.minPinLength)
-        ? Object.assign(publicKey.credProps ? { credProps: true } : {},
-                        publicKey.minPinLength ? { minPinLength: true } : {})
-        : undefined;
-      delete publicKey.credProps;
-      delete publicKey.minPinLength;
+      // The extensions the server asks for (#1955 P7: one copy).
+      publicKey.extensions = WebWebAuthn.creationExtensions(publicKey);
+      WebWebAuthn.dropFlatExtensions(publicKey);
       const made = await this.env.navigator.credentials.create({
         publicKey: publicKey });
       if (!made) {
@@ -3450,6 +3536,196 @@ class ConsoleRuntime extends SpaClient {
     }
   }
 
+  // A NEW POLICY'S NAME (#1132 notes). The box is `required`, so the
+  // browser blocks the submit before ConsoleRuntime.onSubmit and the
+  // bubble would otherwise be the browser's own fill-in prompt. The
+  // sentence the save returns is what the bubble says. Only a form that
+  // posts `newProfile` (the create); a stored editor posts a hidden
+  // profile and is left alone. Blank after trim is empty, so a pattern
+  // mismatch keeps the pattern's own message.
+  /**
+   * Sets the new-policy name box's validity to "A name is required."
+   *
+   * @returns nothing
+   */
+  wirePolicyNames(): void {
+    const doc = this.env.document;
+    const forms = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('form') : [];
+    // In the reader's language (#539), from the console's catalog; the
+    // English is the save's own sentence, for a translator not loaded yet.
+    const t = this.t;
+    const sentence = t && t.has('consoleRuntime.policyName.required')
+      ? t.text('consoleRuntime.policyName.required') : 'A name is required.';
+    for (let i = 0; i < forms.length; i++) {
+      const form = forms[i];
+      if (!form.elements || !form.elements.namedItem ||
+          !form.elements.namedItem('newProfile')) {
+        continue;
+      }
+      const inputs = form.querySelectorAll
+        ? form.querySelectorAll('input') : [];
+      for (let j = 0; j < inputs.length; j++) {
+        const input = inputs[j];
+        const field = String(input.name || '');
+        const type = String(input.type || '').toLowerCase();
+        if ((field !== 'profile' && field !== 'name') ||
+            type === 'hidden') {
+          continue;
+        }
+        const sync = function (): void {
+          const value = String(input.value || '').trim();
+          input.setCustomValidity(value === '' ? sentence : '');
+        };
+        input.addEventListener('input', sync);
+        input.addEventListener('invalid', sync);
+        sync();
+      }
+    }
+  }
+
+  /**
+   * Marks fields required only for a selected choice, the way an always
+   * required field is marked: the outline, the word "required", the
+   * browser's `required`, and the note above the form. While the choice
+   * does not need the field, the cell says which choices do.
+   *
+   * @returns nothing
+   */
+  wireConditionalRequirements(): void {
+    const doc = this.env.document;
+    const forms = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('form') : [];
+    // An empty select shows its first option. The mark follows that
+    // option, which is what the page drew, rather than treating "nothing
+    // chosen" as a choice that requires nothing.
+    const choiceOf = function (controller: Json): string {
+      // A SINGLE CHECKBOX holds its value only while it is ticked (#1132's
+      // follow-ups: New user's service-account box); unticked it holds
+      // nothing, as a form posts it.
+      if (controller && String(controller.type || '').toLowerCase() ===
+          'checkbox') {
+        return controller.checked ? String(controller.value || 'on') : '';
+      }
+      const value = controller ? String(controller.value || '') : '';
+      const options = controller && controller.options;
+      if (!options || !options.length) {
+        return value;
+      }
+      let known = false;
+      for (let n = 0; n < options.length; n++) {
+        if (String(options[n].value) === value) {
+          known = true;
+          break;
+        }
+      }
+      if (value !== '' && known) {
+        return value;
+      }
+      const first = String(options[0].value || '');
+      return first !== '' ? first : value;
+    };
+    const markSpan = function (node: Json, word: boolean,
+                               required: boolean): void {
+      if (!node || !node.classList ||
+          typeof node.classList.contains !== 'function') {
+        return;
+      }
+      const want = word ? 'fg-req-word' : 'fg-req-when';
+      if (node.classList.contains(want)) {
+        node.hidden = word ? !required : required;
+      }
+    };
+    for (let i = 0; i < forms.length; i++) {
+      const form = forms[i];
+      const cells = form.querySelectorAll(
+        '[data-required-when-field]');
+      if (!cells.length) {
+        continue;
+      }
+      const controllers: Json[] = [];
+      const refresh = function (): void {
+        for (let j = 0; j < cells.length; j++) {
+          const cell = cells[j];
+          const name = String(cell.getAttribute(
+            'data-required-when-field') || '');
+          const controller = form.elements.namedItem(name);
+          const value = choiceOf(controller);
+          const values = String(cell.getAttribute(
+            'data-required-when-values') || '').split(/\s+/);
+          const controls = cell.querySelectorAll('input,select,textarea');
+          const checkboxesOnly = controls.length > 0 &&
+            Array.prototype.every.call(controls, function (control) {
+              return String(control.type || '').toLowerCase() === 'checkbox';
+            });
+          // `*` is any value at all: two fields that go together.
+          const met = values.indexOf('*') >= 0 ? value.trim() !== ''
+                                               : values.indexOf(value) >= 0;
+          const required = met && !checkboxesOnly;
+          if (required) {
+            cell.classList.add('fg-required');
+          } else {
+            cell.classList.remove('fg-required');
+          }
+          const words = cell.querySelectorAll('.fg-req-word');
+          for (let w = 0; w < words.length; w++) {
+            markSpan(words[w], true, required);
+          }
+          const whens = cell.querySelectorAll('.fg-req-when');
+          for (let w = 0; w < whens.length; w++) {
+            markSpan(whens[w], false, required);
+          }
+          for (let k = 0; k < controls.length; k++) {
+            if (String(controls[k].type || '').toLowerCase() ===
+                'checkbox') {
+              continue;
+            }
+            controls[k].required = required;
+            if (typeof controls[k].setAttribute !== 'function') {
+              continue;
+            }
+            if (required) {
+              controls[k].setAttribute('aria-required', 'true');
+            } else if (typeof controls[k].removeAttribute === 'function') {
+              controls[k].removeAttribute('aria-required');
+            }
+          }
+        }
+        if (typeof form.querySelector !== 'function') {
+          return;
+        }
+        const list = form.querySelector('[data-required-list]');
+        if (!list || typeof form.querySelectorAll !== 'function') {
+          return;
+        }
+        const marked = form.querySelectorAll('.fg-cell.fg-required');
+        const labels: string[] = [];
+        for (let n = 0; n < marked.length; n++) {
+          const label = marked[n].getAttribute
+            ? marked[n].getAttribute('data-label') : '';
+          if (label) {
+            labels.push(String(label));
+          }
+        }
+        list.textContent = labels.join(', ');
+      };
+      for (let j = 0; j < cells.length; j++) {
+        const name = String(cells[j].getAttribute(
+          'data-required-when-field') || '');
+        const controller = form.elements.namedItem(name);
+        if (controller && controllers.indexOf(controller) < 0 &&
+            typeof controller.addEventListener === 'function') {
+          controllers.push(controller);
+          controller.addEventListener('change', refresh);
+          // A text box that another names with `*` moves the mark as it
+          // is typed in, not only when it loses focus.
+          controller.addEventListener('input', refresh);
+        }
+      }
+      refresh();
+    }
+  }
+
   // A SELECT THAT SHOWS ONE PANEL OF ITS FORM (#1760, the route forms'
   // Authorization choice): `select[data-panels="<group>"]`, and in the same
   // form every `[data-panel-of="<group>"]` is shown when its `data-panel`
@@ -3776,58 +4052,22 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   wireCopyButtons(): void {
-    const t = this.t;
+    const self = this;
     const doc = this.env.document;
     const buttons = doc.querySelectorAll('button.copybtn[data-copy]');
     const nav = this.env.navigator;
     // OUTSIDE A SECURE CONTEXT `navigator.clipboard` is undefined — a console
     // reached over plain http — so a selected, hidden text area and
     // `execCommand('copy')` stand in, as the parent project's `copyField()`
-    // and the deleted `/admin/copy.js` did.
-    const fallback = function (text: string): boolean {
-      const area = doc.createElement('textarea');
-      area.value = text;
-      area.setAttribute('readonly', '');
-      area.style.position = 'fixed';
-      area.style.opacity = '0';
-      doc.body.appendChild(area);
-      area.focus();
-      area.select();
-      let ok = false;
-      try {
-        ok = doc.execCommand('copy');
-      } catch (e) {
-        // A browser that has dropped execCommand: the button says it failed.
-        ok = false;
-      }
-      doc.body.removeChild(area);
-      return ok;
-    };
-    const copied = function (button: Json, ok: boolean): void {
-      const label = button.textContent;
-      // "Copy failed" is a failure, and failures stay English (#539).
-      button.textContent = ok
-        ? (t.has('consoleRuntime.copied') ? t.text('consoleRuntime.copied')
-                                          : 'Copied')
-        : 'Copy failed';
-      setTimeout(function () {
-        button.textContent = label;
-      }, 1500);
-    };
+    // and the deleted `/admin/copy.js` did. ONE COPY OF IT SINCE #2220,
+    // `common/web_clipboard.ts`, shared with the portal, and "Copy failed"
+    // is said in the reader's language with what to do instead.
     for (let i = 0; i < buttons.length; i++) {
       const button = buttons[i];
       button.hidden = false;
       button.addEventListener('click', function () {
-        const text = button.getAttribute('data-copy') || '';
-        if (nav && nav.clipboard && nav.clipboard.writeText) {
-          nav.clipboard.writeText(text).then(function () {
-            copied(button, true);
-          }, function () {
-            copied(button, fallback(text));
-          });
-          return;
-        }
-        copied(button, fallback(text));
+        WebClipboard.copyFrom(doc, nav, self.t, button,
+                              button.getAttribute('data-copy') || '');
       });
     }
   }
@@ -3838,6 +4078,22 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   async start(): Promise<void> {
+    // NO WEBCRYPTO, NO SIGN-IN (#2143): one sentence, and nothing else.
+    if (SpaClient.webCryptoMissing(this.env)) {
+      const words = await this.noWebCryptoWords('consoleRuntime');
+      this.t = words.t;
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
+      return;
+    }
+    // NO SESSION STORAGE, NO SIGN-IN (#2220): the same, in its words.
+    if (SpaClient.sessionStorageMissing(this.env)) {
+      const words = await this.noStorageWords('consoleRuntime');
+      this.t = words.t;
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
+      return;
+    }
     const self = this;
     this.env.document.addEventListener('click', function (event) {
       self.onClick(event);

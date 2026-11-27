@@ -29,6 +29,42 @@ type Json = any;
  * Base64url and a credential's JSON form. A static utility class.
  */
 class WebWebAuthn {
+  // A BROWSER WITHOUT WEBAUTHN IS ASKED FOR BEFORE A CEREMONY (#2220,
+  // ASVS 5.0.0 3.1.1): a page that would call `navigator.credentials`
+  // first asks this, and says in its language that this browser cannot use
+  // passkeys (`browser.noPasskeys`) instead of throwing a `TypeError`
+  // nobody reads, or leaving a pending ceremony with nothing said.
+  /**
+   * Whether this browser lacks what a WebAuthn ceremony needs:
+   * `PublicKeyCredential`, and `navigator.credentials` with the call asked.
+   *
+   * @param navigator - the browser's navigator
+   * @param window - the browser's window, for `PublicKeyCredential`
+   * @param call - optional; `create` or `get`, both where left out
+   * @returns true when the ceremony cannot run
+   */
+  static missing(navigator: Json, window: Json, call?: string): boolean {
+    const c = navigator && navigator.credentials;
+    const calls = call ? [call] : ['create', 'get'];
+    return !window || !window.PublicKeyCredential || !c ||
+      calls.some(function (name: string): boolean {
+        return typeof c[name] !== 'function';
+      });
+  }
+
+  /**
+   * The sentence a page without WebAuthn draws, in its language.
+   *
+   * @param t - the page's translator, or null
+   * @returns the text
+   */
+  static missingText(t: Json): string {
+    return t && t.has && t.has('browser.noPasskeys')
+      ? t.text('browser.noPasskeys')
+      : 'This browser cannot use passkeys: WebAuthn is unavailable. Use a ' +
+        'current browser, or another device.';
+  }
+
   /**
    * Base64url of bytes, no padding.
    *
@@ -62,6 +98,74 @@ class WebWebAuthn {
       out[i] = bin.charCodeAt(i);
     }
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE EXTENSIONS, FROM THE SERVER'S FLAT OPTIONS — ONE COPY (#1955 P7).
+  //
+  // The server sends each extension it asks for as a flat member of its
+  // options (`credProps`, `minPinLength`, `credProtect`, `appidExclude`;
+  // `appid` on a request), and every surface that runs a ceremony made the
+  // `extensions` dictionary from them by hand — four copies of the same two
+  // lines until credProtect and the U2F AppID made them six. Here instead,
+  // and each runtime calls it. A member the server did not send adds
+  // nothing, and with none the answer is `undefined`, so the options a
+  // browser receives are what they were.
+  // ---------------------------------------------------------------------------
+  /**
+   * The `extensions` of a registration, from the server's options.
+   *
+   * @param o - the server's creation options
+   * @returns the extensions, or undefined where none is asked
+   */
+  static creationExtensions(o: Json): Json {
+    const given = o || {};
+    const out: Json = {};
+    if (given.credProps) {
+      out.credProps = true;
+    }
+    if (given.minPinLength) {
+      out.minPinLength = true;
+    }
+    // CTAP 2.1 section 12.1's client extension inputs.
+    if (given.credProtect && given.credProtect.credentialProtectionPolicy) {
+      out.credentialProtectionPolicy =
+        String(given.credProtect.credentialProtectionPolicy);
+      if (given.credProtect.enforceCredentialProtectionPolicy === true) {
+        out.enforceCredentialProtectionPolicy = true;
+      }
+    }
+    // WebAuthn Level 3 section 10.1.2.
+    if (given.appidExclude) {
+      out.appidExclude = String(given.appidExclude);
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+
+  /**
+   * The `extensions` of an assertion, from the server's options: the
+   * legacy U2F `appid` (WebAuthn Level 3 section 10.1.1).
+   *
+   * @param o - the server's request options
+   * @returns the extensions, or undefined where none is asked
+   */
+  static requestExtensions(o: Json): Json {
+    const given = o || {};
+    return given.appid ? { appid: String(given.appid) } : undefined;
+  }
+
+  /**
+   * Removes the flat extension members from a copy of the server's options
+   * a runtime hands the browser whole.
+   *
+   * @param options - the copy
+   * @returns nothing
+   */
+  static dropFlatExtensions(options: Json): void {
+    ['credProps', 'minPinLength', 'credProtect', 'appidExclude', 'appid']
+      .forEach(function (name: string): void {
+        delete options[name];
+      });
   }
 
   /**
@@ -98,8 +202,19 @@ class WebWebAuthn {
    * @returns the JSON form
    */
   static asserted(a: Json): Json {
+    // THE EXTENSION OUTPUTS (#1955 P7): `appid: true` is how the server
+    // learns the rpIdHash is the AppID's (WebAuthn Level 3 section 10.1.1).
+    let ext = {};
+    try {
+      ext = a.getClientExtensionResults ? a.getClientExtensionResults() : {};
+    } catch (e) {
+      // `created()`'s reason: the assertion is still posted, and the server
+      // holds it to the RP ID, which is all it would know.
+      ext = {};
+    }
     return { id: a.id, rawId: WebWebAuthn.b64u(a.rawId), type: a.type,
       authenticatorAttachment: a.authenticatorAttachment || null,
+      clientExtensionResults: ext,
       response: {
         clientDataJSON: WebWebAuthn.b64u(a.response.clientDataJSON),
         authenticatorData: WebWebAuthn.b64u(a.response.authenticatorData),

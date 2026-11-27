@@ -258,6 +258,14 @@ class ProtocolStack {
     this.build('common/public_assets', require('./public_assets'),
                'PublicAssets');
     this.register(app, require('./public_assets'), 'common/public_assets');
+    // 6a-csp. THE CSP REPORT ENDPOINT (#2164): `POST /web/csp-report`, where
+    // every page's policy reports a violation. Beside the other `/web` paths,
+    // whose reason it shares: a library (its forward reaches
+    // `federation_http` lazily) whose one path collides with nothing. Its
+    // body is read by `app.js`'s intake, above the parsers, so where it is
+    // registered decides nothing else.
+    this.build('common/csp_reports', require('./csp_reports'), 'CspReports');
+    this.register(app, require('./csp_reports'), 'common/csp_reports');
     // A REALM'S SIGN-IN APPEARANCE (#717): `/web/theme.css`,
     // `/web/branding/logo` and `/web/branding/preview`, beside the card
     // they style.
@@ -276,6 +284,13 @@ class ProtocolStack {
     // protocols that lean on it.
     require('../authn/authn');
     this.build('common/totp', require('./totp'), 'Totp');
+    // #1955 P4: counter-based codes (RFC 4226), `totp`'s sibling: a library
+    // over `totp`'s base32 and the authentication policy's `hotp` row.
+    this.build('common/hotp', require('./hotp'), 'Hotp');
+    // #1955 P5: YubiKey OTP, a library over crypto.js. The inventory and
+    // the YK-VAL route are registered later, once the hardware-token
+    // register and the scheduler exist.
+    this.build('common/yubiotp', require('./yubiotp'), 'YubiOtp');
     this.build('common/backup_codes', require('./backup_codes'), 'BackupCodes');
     // #101: app passwords, which `credentials.ts` keeps on the entry.
     this.build('common/app_passwords', require('./app_passwords'),
@@ -332,6 +347,65 @@ class ProtocolStack {
     // #130: the device register (ou=devices), a library over the directory
     // hooks `credentials.ts` carries; Native SSO mints its devices.
     this.build('common/devices', require('./devices'), 'Devices');
+    // #1955 P1: the hardware token register, the device register's sibling
+    // (its header says why it is not one of its entries). A library (rule
+    // 3) over a store of its own; `credentials.addKey()` reaches it at the
+    // write, so it is built beside the credential store, and everything it
+    // calls back (credentials, enrolment, SSF, logout) is reached at the
+    // moment of use.
+    // #2051: a person's hardware, OATH and YubiKey OTP tokens on their
+    // entry, the master the register and the inventories index. A library
+    // over the directory's slot (`ldap_server.js` fills it at 21), which
+    // the three token modules reach at the moment of use.
+    this.build('common/token_entries', require('./token_entries'),
+               'TokenEntries');
+    this.build('common/hardware_tokens', require('./hardware_tokens'),
+               'HardwareTokens');
+    // #1955 P3: the per-realm SSH user CA's policy and hardware-token
+    // retirer. Its periodic KRL job is installed with the other scheduler
+    // jobs, after the scheduler itself is available below.
+    // The register of the certificates it issued (the #1955 review), a
+    // library over a store of its own, reached by `pki.js` at the moment of
+    // use.
+    this.build('common/ssh_issued', require('./ssh_issued'), 'SshIssued');
+    this.build('common/ssh_user_ca', require('./ssh_user_ca'), 'SshUserCa');
+    // #1955 P2: YubiKey PIV key attestation, the PIV slot profiles' rules
+    // and the outside PIV card mapping. A library (rule 3) of libraries; the
+    // register and enrolment it calls back are reached at the moment of use.
+    this.build('common/piv_attestation', require('./piv_attestation'),
+               'PivAttestation');
+    this.build('common/piv_enrolment', require('./piv_enrolment'),
+               'PivEnrolment');
+    // #2012: certificate sign-in profiles and their bindings. A library
+    // (rule 3) whose require adds the write rule `certSignIn.profiles` is
+    // held to; the directory is reached through certificate enrollment's
+    // slot at the moment of use.
+    this.build('common/certificate_binding',
+               require('./certificate_binding'), 'CertificateBinding');
+    // #2012: RFC 9440's forwarded client certificate, believed from a named
+    // TLS-terminating proxy only. A library; `app.js`'s middleware reaches
+    // it at the first request, and the client truststore it verifies to at
+    // the request.
+    this.build('common/forwarded_client_certificate',
+               require('./forwarded_client_certificate'),
+               'ForwardedClientCertificate');
+    // #1955 P4: a PSKC seed file's reader, and the OATH token inventory it
+    // fills. Two libraries (rule 3); the inventory installs the register's
+    // `hotp` and `totp` retirers when it is installed, so after it.
+    this.build('common/pskc', require('./pskc'), 'Pskc');
+    this.build('common/oath_tokens', require('./oath_tokens'), 'OathTokens');
+    // #1955 P5: the YubiKey OTP inventory. After the hardware-token
+    // register, whose retirer it installs, and after yubiotp above.
+    this.build('common/yubiotp_store', require('./yubiotp_store'),
+               'YubiOtpStore');
+
+    // #1955 P6: a person's OpenPGP key, its Web Key Directory publication
+    // and their mail encryption choice. Built beside the token register,
+    // whose `openpgp` retirer it installs when it is installed (so after
+    // it); `common/mail.ts` (8a-mail) reaches it lazily, and the directory
+    // fills its slot at 21. Its routes register after the directory, below.
+    this.build('common/openpgp_keys', require('./openpgp_keys'),
+               'OpenPgpKeys');
     // #164 phase 2: what a device key's attestation proves
     // (`device_attestation`), which device a request came from
     // (`device_recognition`, asked by `authn` and `oauth2` below), and a
@@ -372,6 +446,10 @@ class ProtocolStack {
     this.build('common/websecurity', require('./websecurity'), 'WebSecurity');
     this.build('authn/authn', require('../authn/authn'), 'Authn');
     this.register(app, require('../authn/authn'), 'authn/authn');
+    // #1955 P5: YK-VAL 2.0, beside the sign-in. The path collides with
+    // nothing. The route answers OPERATION_NOT_ALLOWED until yubiotp.ykval
+    // is on.
+    this.register(app, require('../authn/ykval'), 'authn/ykval');
     // THE SIGN-IN SCREEN'S API (#571): `/authn-api`, at authn's place. The
     // screen is a static surface whose shells `authn` registers above; the
     // views and acts are that module's, reached through its exports, and
@@ -525,6 +603,11 @@ class ProtocolStack {
     this.build('portal/portal_access_requests',
                require('../portal/portal_access_requests'),
                'PortalAccessRequests');
+    // #1204: /portal/access-request, an AuthZEN denial's hosted form and a
+    // request's ticket. The same lazy reach as the approvers' page.
+    this.build('portal/portal_access_request',
+               require('../portal/portal_access_request'),
+               'PortalAccessRequest');
     // #150: /portal/device, where a person enters a device's user code.
     this.build('portal/portal_device', require('../portal/portal_device'),
                'PortalDevice');
@@ -570,6 +653,18 @@ class ProtocolStack {
                'AccountPassword');
     this.build('portal/account_keys', require('../portal/account_keys'),
                'AccountKeys');
+    // #1955 P1: /portal/tokens' operations, over the token register (built
+    // with the credential store above).
+    this.build('portal/account_tokens', require('../portal/account_tokens'),
+               'AccountTokens');
+    // #1955 P3: SSH user certificates are managed through the Account API,
+    // not through a portal page.
+    this.build('account-api/ssh_user_ca',
+               require('../account-api/ssh_user_ca'), 'AccountSshUserCa');
+    // #1955 P6: /portal/openpgp's operations, over `common/openpgp_keys`
+    // (built beside the token register above).
+    this.build('portal/account_openpgp', require('../portal/account_openpgp'),
+               'AccountOpenPgp');
     this.build('portal/account_mfa', require('../portal/account_mfa'),
                'AccountMfa');
     this.build('portal/account_signing_key', require('../portal/account_signing_key'),
@@ -1309,6 +1404,13 @@ class ProtocolStack {
                require('../admin-ui/scheduler_admin'), 'SchedulerAdmin');
     this.register(app, require('../admin-ui/scheduler_admin'),
                   'admin-ui/scheduler_admin');
+    // 18i-ii. TWO-PERSON APPROVAL (#2166): a library, no route, whose
+    // expiry job is registered when it is built — so after the scheduler —
+    // and which `mgmt-api/admin_api` (19) requires in the ordinary
+    // direction. The administrator roster and the role permissions it reads
+    // are reached lazily, at a request.
+    this.build('admin-core/dual_control',
+               require('../admin-core/dual_control'), 'DualControl');
     // AND THE TWO CLUSTER JOBS THAT WERE REGISTERED ONLY ON FIRST USE
     // (2026-09-28): the tracked-token purge (`common/admin_stats.js`) and the
     // tombstone sweep (`persistence/persistence_minted.js`). Both owners
@@ -1319,6 +1421,17 @@ class ProtocolStack {
     // same for its three sweeps at its own load; these two are called from
     // here because requiring them from there could close a load cycle.
     const jobScheduler = require('../cluster/scheduler');
+    // #1955 P5: the YK-VAL nonce sweep. The store is built above and does
+    // not require the scheduler; this is where the scheduler is in hand.
+    require('./yubiotp_store').installScheduler(jobScheduler);
+    require('./ssh_user_ca').installScheduler(jobScheduler);
+    // #2050: the SSH user certificates on their holders' entries, kept in
+    // step with the register (`ssh-user-ca.entries`), for the same reason.
+    require('./ssh_issued').installScheduler(jobScheduler);
+    // #2051: the tokens on their holders' entries (`hardware-tokens.entries`)
+    // and the manual rebuild of their indexes from them, for the same
+    // reason.
+    require('./token_entries').installScheduler(jobScheduler);
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);
@@ -1393,6 +1506,29 @@ class ProtocolStack {
     // routes forward.
     this.build('common/post_login_activities',
                require('./post_login_activities'), 'PostLoginActivities');
+    // 18j-vi-b. THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): a library that
+    // registers its scheduler job (the kept classical OpenPGP keys
+    // removed) when built, and no route — here with the scheduler in hand,
+    // for the reason above. It requires `openpgp_keys`, built long before;
+    // `post_login.ts` reaches it lazily from the activities' table, so
+    // building it here moves nothing.
+    this.build('common/post_login_mail', require('./post_login_mail'),
+               'PostLoginMail');
+    // 18j-vi-c. THE PIV CERTIFICATE RE-ISSUE (#2009 P3): a library and no
+    // route or job, whose `piv.supersedes` store has to be declared before
+    // the minted rows are restored. Everything it reads is reached at the
+    // moment of use; `post_login.ts` and `authn.ts` reach it lazily.
+    this.build('common/post_login_piv', require('./post_login_piv'),
+               'PostLoginPiv');
+    // 18j-vi-d. CREDENTIAL EXPIRY REMINDERS (#2247): a library that
+    // registers its scheduler job and its entry-observer watcher when
+    // built, and no route — here with the scheduler in hand, for the
+    // reason above, and before `ldap/ldap_server` (21), whose writes the
+    // watcher is told of. It reaches the directory and the mail uses
+    // LAZILY, at run time; its `credential_expiry.due` store is declared at
+    // load, before the minted rows are restored.
+    this.build('common/credential_expiry', require('./credential_expiry'),
+               'CredentialExpiry');
     // 18j-vii. AUDIT EXPORT (#641): a library that registers its per-process
     // job when built, and no route. Here, with the scheduler in hand, and
     // before the management API spreads its operations. Requiring
@@ -1631,6 +1767,15 @@ class ProtocolStack {
     this.build('mgmt-api/post_login_activities_api',
                require('../mgmt-api/post_login_activities_api'),
                'PostLoginActivitiesApi');
+    // #1955 P1: the hardware token operations, spread the same way; the
+    // register (built beside the credential store) is reached lazily.
+    this.build('mgmt-api/hardware_tokens_api',
+               require('../mgmt-api/hardware_tokens_api'),
+               'HardwareTokensApi');
+    // #1955 P6: the OpenPGP operations, spread the same way; the module
+    // (built beside the token register) is reached lazily.
+    this.build('mgmt-api/openpgp_api', require('../mgmt-api/openpgp_api'),
+               'OpenPgpApi');
     // #641: the audit export operations, spread by `mgmt-api/admin_api`.
     // The register is built at 18j-vii and reached from the handlers lazily.
     this.build('mgmt-api/audit_export_api',
@@ -1749,6 +1894,14 @@ class ProtocolStack {
     // checked rather than agreed by hand.
     // -------------------------------------------------------------------------
     require('../admin-ui/crypto_metadata');
+    // #2012: the certificate sign-in handoff, `GET /authn/certificate/
+    // continue`. After `tls/tls_server` (20), whose screen door it asks, and
+    // `authn/authn` (8), whose session it reads — both at the request, so the
+    // order is for a reader; its one path collides with nothing.
+    const certificateHandoff = require('../tls/certificate_handoff');
+    this.build('tls/certificate_handoff', certificateHandoff,
+               'CertificateHandoff');
+    this.register(app, certificateHandoff, 'tls/certificate_handoff');
     this.build('ldap/ldap_cluster_connections',
                require('../ldap/ldap_cluster_connections'),
                'LdapClusterConnections');
@@ -1811,6 +1964,11 @@ class ProtocolStack {
     // `mgmt-api/admin_api` reaches it through `scim_clients_api` lazily.
     this.build('scim/scim_client', require('../scim/scim_client'),
                'ScimClients');
+    // #1955 P6: the Web Key Directory (`/.well-known/openpgpkey/*`), after
+    // the directory (21) whose slot it reads people through. Its paths
+    // collide with nothing, so this place is for a reader: beside the other
+    // surface that publishes what a person's entry holds.
+    this.register(app, require('./openpgp_keys'), 'common/openpgp_keys');
     // SPIFFE — the sixteenth family, and the third family here (after Kerberos
     // and the directory) whose own listeners are started from `server.js`'s
     // listen() rather than at require time.
@@ -1885,6 +2043,12 @@ class ProtocolStack {
                require('../ssf/ssf_dead_letter_report'),
                'DeadLetterReport');
     this.build('ssf/ssf_cluster', require('../ssf/ssf_cluster'), 'SsfCluster');
+    // An application's stream is about the people signed in to it (#2234):
+    // a library, no route, built before `ssf/ssf`, whose hooks register it
+    // as a subject scope. Everything it reads is reached lazily.
+    this.build('ssf/application_sessions',
+               require('../ssf/application_sessions'),
+               'ApplicationSessions');
     this.build('ssf/ssf', require('../ssf/ssf'), 'SharedSignals');
     this.register(app, require('../ssf/ssf'), 'ssf/ssf');
     // 23b-v. FOREIGN TRANSMITTERS (#153): this realm as the receiver of
@@ -1927,6 +2091,14 @@ class ProtocolStack {
     // keystore, the scheduler, the audit log — it reaches lazily.
     this.build('common/data_key_rotation', require('./data_key_rotation'),
                'DataKeyRotation');
+    // 23b-ii-c. THE RENEWALS NOTHING DID ON ITS OWN (#2220): a library that
+    // registers three scheduler jobs when built and no route — the CA
+    // certificates over the same key, the credential signers' next
+    // generation, the request-decryption keys. Beside the two rotations
+    // above, whose shape it follows; the PKI, the key set, the credential
+    // signers and the audit log are reached lazily, so the order is for a
+    // reader.
+    this.build('common/key_renewal', require('./key_renewal'), 'KeyRenewal');
     // 23b-ii-b. SERVICE-ACCOUNT PASSWORD ROTATION (#221 P4): a library that
     // registers its three scheduler jobs when built and no route, beside the
     // two rotations above. After `ssf/ssf`, whose credential-change it sends,
@@ -2035,6 +2207,18 @@ class ProtocolStack {
     // `common/fga_gate.ts`'s decider slot (rule 3e): this line is what arms
     // fine-grained authorization at issuance.
     this.build('xacml/fga_pep', require('../xacml/fga_pep'), 'FgaPep');
+    // #1072: dynamic selectable roles' eligibility, each role's own policy
+    // decided alone — fga_pep.ts's arrangement, over the store and the
+    // engine built above (the surface read lazily, inside a decision). It
+    // fills no slot: the role step and the issuance re-check reach it.
+    this.build('xacml/role_eligibility', require('../xacml/role_eligibility'),
+               'RoleEligibility');
+    // #1072: what a sign-in chose, read at every issuance. Its wire step
+    // fills `roles.setSelectionReader()` (rule 3e): this line is what lets
+    // a token carry a dynamic role at all. It reaches `authn` and the
+    // eligibility module above lazily, inside a call.
+    this.build('authn/role_selection', require('../authn/role_selection'),
+               'RoleSelection');
     this.build('xacml/xacml', require('../xacml/xacml'), 'XacmlSurface');
     this.register(app, require('../xacml/xacml_admin'), 'xacml/xacml_admin');
     this.register(app, require('../xacml/xacml'), 'xacml/xacml');

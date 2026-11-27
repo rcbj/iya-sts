@@ -31,8 +31,12 @@
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -194,7 +198,7 @@ async function follow(b, path, stopAt) {
   log.debug("Entering follow(). " + path);
   let r = await b.go("GET", path);
   for (let n = 0; n < 16; n += 1) {
-    if (stopAt && r.location.indexOf(stopAt) === 0) {
+    if (stopAt && urls.isAt(r.location, stopAt)) {
       break;
     }
     // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
@@ -234,7 +238,7 @@ async function idTokenOf(b) {
       .digest("base64url"), code_challenge_method: "S256" };
   const r = await follow(b, R + "/oauth2/authorize?" + form(params),
                          REDIRECT);
-  const code = r.location.indexOf(REDIRECT) === 0
+  const code = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   assert.ok(code, "the code flow reaches the client: " + r.status + " " +
             r.location + " " + r.text.slice(0, 300));
@@ -293,9 +297,17 @@ async function test() {
   log.info("=== 1. " + HOLDER + " signs in, then makes the offer on " +
            "/portal/wallet ===");
   await ok(api + "/users/create", { username: HOLDER, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "VCI " + HOLDER, givenName: "VCI", sn: "Holder",
                   mail: HOLDER + "@vci158.test" } }, "created " + HOLDER);
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so the holder chooses PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, HOLDER, PASSWORD,
+    function (who, value) {
+      return postJson(api + "/users/set-password",
+                      { user: who, password: value });
+    });
   let idToken = await idTokenOf(b);
   const offer = await portalOffer();
 

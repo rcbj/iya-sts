@@ -55,7 +55,9 @@ const CONSOLE_OPERATIONS = [
   'getDelegationChain', 'getFederationMap', 'getConsoleNewApplicationForm',
   'getConsoleDelegationUser', 'getConsoleDelegationApplication',
   'applyPkiProfile', 'generatePkiKeyPair', 'generatePkiAltKeyPair',
-  'usePkiStoredKey', 'generateClientSecret', 'setConsoleLanguage'
+  'usePkiStoredKey', 'generateClientSecret', 'setConsoleLanguage',
+  // #2080: certificate sign-in's editors read a certificate handed in.
+  'inspectCertificates'
 ];
 
 // THE CONSOLE WRITES THAT ARE ARGUED, by operationId, each with the

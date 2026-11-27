@@ -30,6 +30,11 @@
       "text": "Das Passwort des Kontos {{username}} wurde um {{when}} geändert ({{how}}).\n\nWenn Sie das nicht waren, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
       "html": "<p>Das Passwort des Kontos <strong>{{username}}</strong> wurde um {{when}} geändert ({{how}}).</p><p>Wenn Sie das nicht waren, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
     },
+    "credential-changed": {
+      "subject": "Die Anmeldedaten Ihres {{service}}-Kontos wurden geändert",
+      "text": "Die Anmeldedaten des Kontos {{username}} wurden am {{when}} geändert, {{by}}: {{what}}.\n\nWenn Sie das nicht waren und es nicht veranlasst haben, melden Sie sich jetzt an, prüfen Sie Ihre Sicherheitseinstellungen und beenden Sie Ihre anderen Sitzungen, oder wenden Sie sich an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>Die Anmeldedaten des Kontos <strong>{{username}}</strong> wurden am {{when}} geändert, {{by}}: {{what}}.</p><p>Wenn Sie das nicht waren und es nicht veranlasst haben, melden Sie sich jetzt an, prüfen Sie Ihre Sicherheitseinstellungen und beenden Sie Ihre anderen Sitzungen, oder wenden Sie sich an die Person, die Ihr Konto verwaltet.</p>"
+    },
     "account-disabled": {
       "subject": "Ihr Konto für {{service}} wurde deaktiviert",
       "text": "Das Konto {{username}} wurde um {{when}} deaktiviert. {{why}}\n\nNiemand kann sich mit diesem Konto anmelden, bis es wieder aktiviert wird, und jede Sitzung, die es hielt, wurde beendet.\n",
@@ -49,6 +54,16 @@
       "subject": "Die Wiederherstellung Ihres Kontos für {{service}} wurde gestartet",
       "text": "Die Wiederherstellung des Kontos {{username}} wurde um {{when}} von {{by}} gestartet.\n\nWenn das weder Sie waren noch jemand, den Sie darum gebeten haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
       "html": "<p>Die Wiederherstellung des Kontos <strong>{{username}}</strong> wurde um {{when}} von {{by}} gestartet.</p><p>Wenn das weder Sie waren noch jemand, den Sie darum gebeten haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "sign-in-alert": {
+      "subject": "Eine ungewöhnliche Anmeldung bei Ihrem {{service}}-Konto",
+      "text": "Jemand hat sich am {{when}} beim Konto {{username}} angemeldet, und es wirkte ungewöhnlich: {{what}}.\n\nWo, ungefähr: {{place}}\nWomit: {{device}}\nWie: {{method}}\n\nWenn Sie das waren, ist nichts zu tun. Andernfalls öffnen Sie Ihre letzten Anmeldungen und sagen Sie es dort – damit werden alle Ihre Sitzungen beendet – und ändern Sie dann Ihr Passwort:\n\n{{link}}\n",
+      "html": "<p>Jemand hat sich am {{when}} beim Konto <strong>{{username}}</strong> angemeldet, und es wirkte ungewöhnlich: {{what}}.</p><p>Wo, ungefähr: {{place}}</p><p>Womit: {{device}}</p><p>Wie: {{method}}</p><p>Wenn Sie das waren, ist nichts zu tun. Andernfalls <a href=\"{{link}}\">öffnen Sie Ihre letzten Anmeldungen</a> und sagen Sie es dort – damit werden alle Ihre Sitzungen beendet – und ändern Sie dann Ihr Passwort.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Abgelehnte Anmeldeversuche bei Ihrem {{service}}-Konto",
+      "text": "{{count}} Versuche, sich mit einem falschen Passwort beim Konto {{username}} anzumelden, wurden in den {{minutes}} Minute(n) vor {{when}} abgelehnt.\n\nWenn Sie das waren, ist nichts zu tun. Andernfalls versucht vielleicht jemand, Ihr Passwort zu erraten: Melden Sie sich an, prüfen Sie Ihre letzten Anmeldungen und ändern Sie Ihr Passwort, falls es bekannt sein könnte.\n\n{{link}}\n",
+      "html": "<p>{{count}} Versuche, sich mit einem falschen Passwort beim Konto <strong>{{username}}</strong> anzumelden, wurden in den {{minutes}} Minute(n) vor {{when}} abgelehnt.</p><p>Wenn Sie das waren, ist nichts zu tun. Andernfalls versucht vielleicht jemand, Ihr Passwort zu erraten: Melden Sie sich an, <a href=\"{{link}}\">prüfen Sie Ihre letzten Anmeldungen</a> und ändern Sie Ihr Passwort, falls es bekannt sein könnte.</p>"
     },
     "address-changed": {
       "subject": "Die E-Mail-Adresse Ihres Kontos für {{service}} wurde geändert",
@@ -74,6 +89,11 @@
       "subject": "{{service}}: Notfallzugriff wurde gewährt und muss geprüft werden",
       "text": "Notfallzugriff wurde sofort gewährt, ohne genehmigende Person, für eine Anfrage, die Sie, {{username}}, als eine ihrer genehmigenden Personen nennt: {{subject}} darf {{action}} {{resource}} in der Anwendung {{application}}, über {{requester}}, für kurze Zeit.\n\nDie angegebene Begründung: {{justification}}\n\nDie Richtlinie erlaubt hierfür Notfallzugriff. Prüfen Sie ihn und widerrufen Sie ihn, wenn er nicht gerechtfertigt war:\n\n{{link}}\n",
       "html": "<p>Notfallzugriff wurde sofort gewährt, ohne genehmigende Person, für eine Anfrage, die Sie, <strong>{{username}}</strong>, als eine ihrer genehmigenden Personen nennt: <strong>{{subject}}</strong> darf <strong>{{action}}</strong> <strong>{{resource}}</strong> in der Anwendung <strong>{{application}}</strong>, über {{requester}}, für kurze Zeit.</p><p>Die angegebene Begründung: {{justification}}</p><p>Die Richtlinie erlaubt hierfür Notfallzugriff. <a href=\"{{link}}\">Prüfen</a>, und widerrufen Sie ihn, wenn er nicht gerechtfertigt war.</p>"
+    },
+    "authzen-access-revoked": {
+      "subject": "{{service}}: eine Genehmigung einer von Ihnen eingereichten Zugriffsanfrage wurde widerrufen",
+      "text": "Eine Genehmigung einer von Ihnen eingereichten Zugriffsanfrage, {{username}}, wurde von {{approver}} widerrufen.\n\n{{subject}} wollte {{action}} {{resource}} in der Anwendung {{application}}. Diese Genehmigung gilt nicht mehr. Eine spätere Auswertung, die sie mitführt, ist nicht genehmigt. Reichen Sie eine neue Zugriffsanfrage ein, wenn der Zugriff noch benötigt wird.\n",
+      "html": "<p>Eine Genehmigung einer von Ihnen eingereichten Zugriffsanfrage, <strong>{{username}}</strong>, wurde von <strong>{{approver}}</strong> widerrufen.</p><p><strong>{{subject}}</strong> wollte <strong>{{action}}</strong> <strong>{{resource}}</strong> in der Anwendung <strong>{{application}}</strong>. Diese Genehmigung gilt nicht mehr. Eine spätere Auswertung, die sie mitführt, ist nicht genehmigt. Reichen Sie eine neue Zugriffsanfrage ein, wenn der Zugriff noch benötigt wird.</p>"
     },
     "pki-pin-status": {
       "subject": "{{service}}: ein Zertifikat, auf das sich dieser Vertrauensbereich verlässt, hat den Status geändert",
@@ -114,6 +134,21 @@
       "subject": "Testnachricht von {{service}}",
       "text": "Dies ist eine Testnachricht, gesendet um {{when}} über den Transport {{transport}} auf Anfrage von {{username}}.\n",
       "html": "<p>Dies ist eine Testnachricht, gesendet um {{when}} über den Transport {{transport}} auf Anfrage von <strong>{{username}}</strong>.</p>"
+    },
+    "post-login-reminder-mail-encryption": {
+      "subject": "Registrieren Sie einen Post-Quanten-Schlüssel zur E-Mail-Verschlüsselung für {{service}}",
+      "text": "{{service}} bittet {{username}}, einen neuen Schlüssel zur Verschlüsselung von E-Mails zu registrieren, der Post-Quanten-Kryptografie (ML-KEM) verwendet: einen OpenPGP-Schlüssel oder ein S/MIME-Zertifikat. E-Mails, die heute an einen klassischen Schlüssel verschlüsselt werden, sind lesbar, sobald dieser Schlüssel gebrochen ist.\n\nMelden Sie sich hier an; direkt nach der Anmeldung werden Sie gebeten, ihn zu registrieren:\n\n{{signin}}\n\nDer Link öffnet nur die Anmeldeseite. Er meldet Sie nicht an und enthält nichts über Ihr Konto. Wenn Sie diese Nachricht nicht erwartet haben, ignorieren Sie sie oder wenden Sie sich an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>{{service}} bittet <strong>{{username}}</strong>, einen neuen Schlüssel zur Verschlüsselung von E-Mails zu registrieren, der Post-Quanten-Kryptografie (ML-KEM) verwendet: einen OpenPGP-Schlüssel oder ein S/MIME-Zertifikat. E-Mails, die heute an einen klassischen Schlüssel verschlüsselt werden, sind lesbar, sobald dieser Schlüssel gebrochen ist.</p><p><a href=\"{{signin}}\">Melden Sie sich an</a>; direkt nach der Anmeldung werden Sie gebeten, ihn zu registrieren.</p><p>Der Link öffnet nur die Anmeldeseite. Er meldet Sie nicht an und enthält nichts über Ihr Konto. Wenn Sie diese Nachricht nicht erwartet haben, ignorieren Sie sie oder wenden Sie sich an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "post-login-reminder-piv-reissue": {
+      "subject": "Erneuern Sie Ihr PIV-Zertifikat für {{service}}",
+      "text": "{{service}} bittet {{username}}, ein neues Zertifikat für die PIV-Smartcard oder den Sicherheitsschlüssel zu beantragen, mit dem die Anmeldung erfolgt: Das vorhandene wurde mit einem klassischen Algorithmus signiert oder läuft bald ab. Halten Sie die Karte bereit und ein Werkzeug, das damit einen Zertifikatsantrag erzeugt, etwa ykman.\n\nMelden Sie sich hier an; direkt nach der Anmeldung werden Sie gebeten, es zu beantragen:\n\n{{signin}}\n\nDer Link öffnet nur die Anmeldeseite. Er meldet Sie nicht an und enthält nichts über Ihr Konto. Wenn Sie diese Nachricht nicht erwartet haben, ignorieren Sie sie oder wenden Sie sich an die Person, die Ihr Konto verwaltet.\n",
+      "html": "<p>{{service}} bittet <strong>{{username}}</strong>, ein neues Zertifikat für die PIV-Smartcard oder den Sicherheitsschlüssel zu beantragen, mit dem die Anmeldung erfolgt: Das vorhandene wurde mit einem klassischen Algorithmus signiert oder läuft bald ab. Halten Sie die Karte bereit und ein Werkzeug, das damit einen Zertifikatsantrag erzeugt, etwa ykman.</p><p><a href=\"{{signin}}\">Melden Sie sich an</a>; direkt nach der Anmeldung werden Sie gebeten, es zu beantragen.</p><p>Der Link öffnet nur die Anmeldeseite. Er meldet Sie nicht an und enthält nichts über Ihr Konto. Wenn Sie diese Nachricht nicht erwartet haben, ignorieren Sie sie oder wenden Sie sich an die Person, die Ihr Konto verwaltet.</p>"
+    },
+    "credential-expiring": {
+      "subject": "Anmeldedaten Ihres {{service}}-Kontos laufen bald ab",
+      "text": "Diese Anmeldedaten des Kontos {{username}} laufen bald ab: {{what}}.\n\nErneuern Sie jede davon, bevor sie abläuft, sonst funktioniert sie nicht mehr. Wo eine Zeile eine Seite Ihres Portals nennt, melden Sie sich hier an:\n\n{{link}}\n\nWo sie Sie bittet, Ihren Administrator zu fragen, wenden Sie sich an die Person, die Ihr Konto verwaltet. Wenn Sie eine davon nicht mehr verwenden, können Sie ihre Zeile ignorieren.\n",
+      "html": "<p>Diese Anmeldedaten des Kontos <strong>{{username}}</strong> laufen bald ab: {{what}}.</p><p>Erneuern Sie jede davon, bevor sie abläuft, sonst funktioniert sie nicht mehr. Wo eine Zeile eine Seite Ihres Portals nennt, <a href=\"{{link}}\">melden Sie sich bei Ihrem Portal an</a>.</p><p>Wo sie Sie bittet, Ihren Administrator zu fragen, wenden Sie sich an die Person, die Ihr Konto verwaltet. Wenn Sie eine davon nicht mehr verwenden, können Sie ihre Zeile ignorieren.</p>"
     }
   },
   "layout": {
@@ -123,13 +158,16 @@
   },
   "categories": {
     "security": {
-      "reason": "ein Sicherheitshinweis zu Ihrem Konto, der nicht deaktiviert werden kann"
+      "reason": "ein Sicherheitshinweis zu Ihrem Konto, der nicht deaktiviert werden kann",
+      "encryptedSubject": "Ein Sicherheitshinweis von {{service}}"
     },
     "account": {
-      "reason": "etwas, worum Sie oder ein Administrator gebeten haben"
+      "reason": "etwas, worum Sie oder ein Administrator gebeten haben",
+      "encryptedSubject": "Eine Nachricht von {{service}}"
     },
     "notification": {
-      "reason": "eine Benachrichtigung, die Sie in Ihrem Portal deaktivieren können"
+      "reason": "eine Benachrichtigung, die Sie in Ihrem Portal deaktivieren können",
+      "encryptedSubject": "Eine Benachrichtigung von {{service}}"
     }
   }
 }

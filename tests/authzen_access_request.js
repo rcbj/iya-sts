@@ -17,12 +17,18 @@
 // holds:
 //
 //   R. THE REQUESTABLE DENIAL: a read is false with context.access_request
-//      (expires_at, endpoint, a binding_token that verifies as the realm's)
-//      and evaluation_id; a delete, denied without the advice, is a plain
-//      false; the metadata names the endpoint, jwks_uri and the capability.
-//   S. THE SUBMISSION: no denial (not_requestable), a changed tuple and
+//      (expires_at, endpoint, request_schema_url, a binding_token that
+//      verifies as the realm's, its inline tuple and binding_hash) and
+//      evaluation_id, and no form_url; the schema is public JSON Schema
+//      of the optional augmentations; a delete, denied without the
+//      advice, is a plain false; the metadata names the endpoint,
+//      jwks_uri and the capability.
+//   S. THE SUBMISSION: a body not sent as application/json is 415
+//      problem+json (STS-AUTHZEN-0122, #936) and makes no task, one sent
+//      with a charset is read; no denial (not_requestable), a changed tuple and
 //      another caller (invalid_denial_binding), a callback nobody
-//      registered, then 202 with a Task Handle and Location; the same
+//      registered for an application (a person is refused), then 202
+//      with a Task Handle and Location; the same
 //      Idempotency-Key and body is the same task, another body 409.
 //   T. THE STATUS: pending with Retry-After for its caller, unknown_task
 //      for another.
@@ -31,24 +37,74 @@
 //      group), an approver approving through the portal's door; the task
 //      approved with its result; a re-evaluation carrying the approval
 //      true, another tuple out_of_scope with a fresh denial, another
-//      caller approval_unverifiable; a revocation and approval_expired.
+//      caller approval_unverifiable; approval.state verifies, and a
+//      tampered state or a forged id carrying that state does not; a
+//      revocation and approval_expired.
+//      The portal lists and revokes an approval the approver gave, mails
+//      the requester, and draws Revoke only on that card (#1203); another
+//      permitted approver is refused it there (0141), and the built-in
+//      policy permits revoke-access-request.
+//   H. THE DENIAL BY REFERENCE (#1204): an evaluation_id with expires_at
+//      echoed, and no binding_token, is 202; an id this realm did not issue
+//      is 0073; a real id with expires_at omitted or changed, or not the
+//      token's, is 0074 and is not consumed; another caller is 0074; a
+//      token whose binding_hash was changed does not submit, and one that
+//      carries only the hash does.
 //   C. CANCELLATION, and a finished task 409.
 //   X. AN ADMINISTRATOR'S DENIAL through the console's door, as one the
 //      advice did not name, holding ADMIN_WRITE.
 //   E. EXPIRY by the scheduler job's sweep, and the audit row.
 //   M. EMERGENCY ACCESS: refused without a justification, granted at once
 //      (201) with one.
-//   B. A REGISTERED CALLBACK accepted, and its delivery recorded.
+//   B. A REGISTERED CALLBACK, an application's or a person's (a person's
+//      override refused), retried on the scheduler job, and recorded as
+//      callbackDelivery (#1202).
+//   G. THE BACKOFF DOUBLES, each attempt carries its code, and a finished
+//      task is kept while its callback is still tried, then dropped with
+//      the final STS-AUTHZEN-0135 row (#1202's review).
+//   L. NO LOST REVOCATION: the delivery's write re-reads the row.
+//   F. FAILED: an approval that cannot be stored (0142), and approvers who
+//      resolve to nobody (0143); a computed role is never nobody.
+//   K. THE DENIAL STORE'S CAP (0144): no record, the token still submits.
 //   D. A DELETED SUBJECT (2026-11-16): the person's approval is revoked
 //      and their pending request cancelled, so a person made again under
 //      the name inherits neither; a task from before the subject index is
 //      noted by the sweep job's backfill.
-//   O. OFF: authzen.accessRequests off answers 501 and no denial is
-//      requestable.
+//   Y. DISPLAY (#1204): none by default; on, the denial's display is the
+//      service's own words in the asked language, or the advice's
+//      display-title and display-description verbatim, and a Task Handle's
+//      follows its status; a handle built for a callback carries none.
+//   W. THE HOSTED FORM (#1204): no form_url by default; on, a recorded
+//      denial names the portal page, only its subject may use it, it is
+//      refused emergency access without a justification, the PEP gets the
+//      form's task back for the same denial (409 for other augmentations),
+//      a Task Handle names links.ticket, the ticket shows only the subject,
+//      the page lists their requests and draws a real submit button, and
+//      off it is refused 0148.
+//   V. THE CATALOGS (#1204): none by default (403); on, a denial whose
+//      advice lists entitlements names request_catalogs_url, the Catalogs
+//      Document and the Catalog Endpoint answer only its caller, search,
+//      page and refuse a foreign cursor, the schema describes the member,
+//      a submission must choose a listed entitlement, and the approved one
+//      reaches the policy as a fact.
+//   U. THE ACTOR (#1204): client.actor ignored by default; on, a chain an
+//      mTLS caller cannot prove is 0153, a malformed one 0154, the caller
+//      itself is verified and recorded with client.source, and a bearer
+//      caller's token act chain authorizes exactly that chain.
+//   Q. BULK (#1204): items refused by default; on, each bundle refusal has
+//      its code, two items make one pending bundle (idempotent), one item
+//      approved and one denied is partial with a result only on the
+//      approved one, whose approval permits only its own tuple, and
+//      cancellation is 409 once all finished, else cancels the pending.
+//   O. OFF: authzen.accessRequests off answers 403, the schema too, and
+//      no denial is requestable.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const https = require('https');
 const nodeCrypto = require('crypto');
@@ -78,6 +134,9 @@ const POLICY = [
   '        id = "urn:sts:xacml:protocol" type = string }',
   '    attribute approval { category = environmentCat',
   '        id = "urn:sts:xacml:authzen:approval-id" type = string }',
+  '    attribute entitled { category = environmentCat',
+  '        id = "urn:sts:xacml:authzen:approved-entitlement"',
+  '        type = string }',
   '    policy azarqRoot {',
   '        id = "urn:test:azarq-root"',
   '        apply firstApplicable',
@@ -95,6 +154,35 @@ const POLICY = [
   '                    "' + ADVICE + ':approver-group" = "azapprovers"',
   '                    "' + ADVICE + ':max-approval-seconds" = "3600"',
   '                    "' + ADVICE + ':emergency" = "true"',
+  '                }',
+  '            }',
+  '        }',
+  '        rule entitledShare {',
+  '            permit',
+  '            target clause act == "share"',
+  '            condition integerGreaterThan(stringBagSize(entitled), 0)',
+  '        }',
+  '        rule catalogedShare {',
+  '            deny',
+  '            target clause act == "share"',
+  '            on deny {',
+  '                advice "' + ADVICE + '" {',
+  '                    "' + ADVICE + ':approver-group" = "azapprovers"',
+  '                    "' + ADVICE + ':entitlement" = "read-only|Read only"',
+  '                    "' + ADVICE + ':entitlement" = ' +
+  '"read-write|Read and write"',
+  '                }',
+  '            }',
+  '        }',
+  '        rule displayedWrite {',
+  '            deny',
+  '            target clause act == "write"',
+  '            on deny {',
+  '                advice "' + ADVICE + '" {',
+  '                    "' + ADVICE + ':approver-group" = "azapprovers"',
+  '                    "' + ADVICE + ':display-title" = "Ask your manager"',
+  '                    "' + ADVICE + ':display-description" = ' +
+  '"Writing doc-1 needs your manager\'s approval."',
   '                }',
   '            }',
   '        }',
@@ -205,11 +293,17 @@ async function childBody() {
   const tls = require(ROOT + '/tls/tls_server');
   const ldap = require(ROOT + '/ldap/ldap_server');
   const adminActions = require(ROOT + '/admin-core/admin_actions');
+  const applications = require(ROOT + '/common/applications');
+  const fedHttp = require(ROOT + '/federation/federation_http');
   const store = require(ROOT + '/xacml/xacml_store');
   const xml = require(ROOT + '/xacml/xacml_xml');
   const alfa = require(ROOT + '/xacml/xacml_alfa');
   const requests = require(ROOT + '/authzen/authzen_access_request');
+  const oauth2 = require(ROOT + '/oauth-oidc/oauth2');
   const authzenAdmin = require(ROOT + '/authzen/authzen_admin');
+  const mail = require(ROOT + '/common/mail');
+  const ModelZod = require(ROOT + '/common/model_zod');
+  const accessPages = require(ROOT + '/portal/web_access_requests');
   const testCa = require('./protocol/outbound_test_ca');
   const outsideCa = require('./tools/pep-credential.js');
 
@@ -248,7 +342,9 @@ async function childBody() {
 
   // THE PEOPLE: azalice is the subject (and, to test self-approval, in the
   // approvers' group too); azbob an approver; azcarol nobody; azpep and
-  // azpep2 two PEPs, both in authzen-peps and scoped to todo-app.
+  // azpep2 two PEPs, both in authzen-peps and scoped to todo-app. azapp
+  // is an application in that group, the only kind that may register a
+  // callback (#1202). An mTLS caller is kind 'entry' named by DN.
   const mint = function (subject) {
     log.debug("Entering mint().");
     log.debug("Leaving mint().");
@@ -256,10 +352,12 @@ async function childBody() {
   };
   const pepCred = await mint('CN=azarqpep,O=Outside');
   const pep2Cred = await mint('CN=azarqpep2,O=Outside');
-  const added = tls.addAnchors([pepCred, pep2Cred].map(function (one) {
-    return one.anchorPem;
-  }).join(''));
-  t.check(added && added.added === 2,
+  const appCred = await mint('CN=azarqapp,O=Outside');
+  const added = tls.addAnchors([pepCred, pep2Cred, appCred].map(
+    function (one) {
+      return one.anchorPem;
+    }).join(''));
+  t.check(added && added.added === 3,
           'setup: the outside Root CAs are in the client truststore',
           JSON.stringify(added));
   const derOf = function (minted) {
@@ -269,7 +367,7 @@ async function childBody() {
   };
   const pepGroup = String(config.value('roles.authzenPepGroup'));
   inRealm(function () {
-    ['azalice', 'azbob', 'azcarol', 'azpep', 'azpep2'].forEach(
+    ['azalice', 'azbob', 'azcarol', 'azerin', 'azpep', 'azpep2'].forEach(
       function (name) {
         ldap.createUser(name, { invent: false });
       });
@@ -282,11 +380,37 @@ async function childBody() {
       ldap.locateEntry(name).stored.attributes.stsauthzenapplication =
         ['todo-app'];
     });
+    const made = applications.createApplication({
+      identifier: 'azapp', protocols: ['oauth2'],
+      fields: { oauthClientId: 'azapp' } });
+    if (!made.ok) {
+      throw new Error('azapp was not created: ' + JSON.stringify(made));
+    }
+    const stored = ldap.changeStoredCertificate('application', 'azapp',
+                                                 { add: derOf(appCred) });
+    if (!stored.ok) {
+      throw new Error('azapp\'s certificate was not stored');
+    }
+    const appDn = applications.get('azapp').dn;
+    const joined = adminActions.groupsAction({
+      action: 'add-member', group: pepGroup, member: appDn });
+    if (!joined.ok) {
+      throw new Error('azapp was not added to ' + pepGroup + ': ' +
+                      JSON.stringify(joined));
+    }
+    const scoped = authzenAdmin.act({ action: 'set-scope', caller: 'azapp',
+                                      applications: ['todo-app'] },
+                                    { actor: 'azcarol', via: 'api' });
+    if (!scoped.ok) {
+      throw new Error('azapp was not scoped: ' + JSON.stringify(scoped));
+    }
     ldap.createGroup('azapprovers', { members: [] });
-    ['azbob', 'azalice'].forEach(function (name) {
+    ['azbob', 'azalice', 'azerin'].forEach(function (name) {
       adminActions.groupsAction({ action: 'add-member', group: 'azapprovers',
                                   member: name });
     });
+    // A group nobody is in, for F2's approvers who resolve to nobody.
+    ldap.createGroup('azempty', { members: [] });
     store.write('azarq-root', xml.writePolicy(alfa.parse(POLICY)),
                 { enabled: true, isRoot: true });
   });
@@ -296,9 +420,8 @@ async function childBody() {
   CA_PEM.value = serverCa.certPem;
   const listener = https.createServer(Object.assign({
     cert: serverLeaf.cert, key: serverLeaf.key,
-    ca: tls.clientTruststoreOptions().ca,
-    requestCert: true, rejectUnauthorized: false
-  }, tls.protocolOptions()), app);
+    ca: tls.clientTruststoreOptions().ca
+  }, tls.clientAuthOptions('optional'), tls.protocolOptions()), app);
   tls.trustClientCertificatesOn(listener,
     'the authzen_access_request listener', function () {
       log.debug("Entering the listener's certificateOf().");
@@ -351,12 +474,16 @@ async function childBody() {
     log.debug("Caught in childBody(): " + ((e && e.message) || e));
     claims = null;
   }
+  const hashed = claims ? requests.bindingHash(claims.subject,
+    claims.resource, claims.action, claims.context || {}) : '';
   t.check(!!claims && claims.iss === own &&
-          [].concat(claims.aud).indexOf(ar.endpoint) >= 0 &&
+          urls.holds(claims.aud, ar.endpoint) &&
           claims.resource && claims.resource.id === 'doc-1' &&
-          claims.denial_expires_at === ar.expires_at,
+          claims.denial_expires_at === ar.expires_at &&
+          claims.binding_hash === hashed,
           'R2. the binding_token is the realm\'s JWS over the denied tuple, ' +
-          'audienced to the access request endpoint', JSON.stringify(claims));
+          'audienced to the access request endpoint, with binding_hash',
+          JSON.stringify(claims));
   r = await request(port, 'POST', EVAL, pepCred,
                     evaluation({ action: { name: 'delete' } }));
   t.check(r.status === 200 && r.json && r.json.decision === false &&
@@ -373,11 +500,69 @@ async function childBody() {
           /\/oauth2\/jwks$/.test(String(doc.jwks_uri || '')),
           'R4. the metadata names access_request_endpoint, jwks_uri and the ' +
           'capability', brief(r));
+  const schemaUrl = own + '/access/v1/access-requests/schema';
+  t.check(ar.request_schema_url === schemaUrl && !ar.form_url,
+          'R5. a requestable denial names request_schema_url on the ' +
+          'access request endpoint\'s origin, and hosts no form',
+          JSON.stringify({ url: ar.request_schema_url, form: ar.form_url }));
+  r = await request(port, 'GET',
+                    PREFIX + '/access/v1/access-requests/schema', null);
+  const schema = r.json || {};
+  const props = schema.properties || {};
+  const schemaAsked = (props.requested_access || {}).properties || {};
+  const schemaCtx = (props.context || {}).properties || {};
+  const rule = (schema.allOf || [])[0] || {};
+  const emergency = ((((rule.if || {}).properties || {}).requested_access ||
+                      {}).properties || {}).emergency || {};
+  const thenCtx = (((rule.then || {}).properties || {}).context || {});
+  t.check(r.status === 200 &&
+          String(r.headers['cache-control'] || '') === 'no-store' &&
+          /application\/json/.test(String(r.headers['content-type'] || '')) &&
+          schema.$schema === 'https://json-schema.org/draft/2020-12/schema' &&
+          schema.$id === schemaUrl &&
+          schema.additionalProperties !== false &&
+          !schema.required && !(props.context || {}).required &&
+          !(props.requested_access || {}).required &&
+          schemaCtx.business_justification &&
+          schemaCtx.business_justification.maxLength === 1024 &&
+          schemaAsked.requested_until && schemaAsked.requested_until.format ===
+            'date-time' &&
+          schemaAsked.emergency && schemaAsked.emergency.type === 'boolean' &&
+          emergency.const === true &&
+          Array.isArray(thenCtx.required) &&
+          thenCtx.required.indexOf('business_justification') >= 0 &&
+          Array.isArray((rule.then || {}).required) &&
+          (rule.then || {}).required.indexOf('context') >= 0 &&
+          !/form_url/.test(JSON.stringify(schema)),
+          'R6. the schema is public JSON Schema of the optional ' +
+          'augmentations, and emergency requires a justification',
+          brief(r));
 
   // -------------------------------------------------------------------------
   // S. THE SUBMISSION
   // -------------------------------------------------------------------------
   let since = marks.length;
+  // S0 (#936): section 10.1's media type, held here as at the evaluation.
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(denied),
+                    { 'content-type': 'text/plain' });
+  t.check(r.status === 415 &&
+          /^application\/problem\+json/.test(
+            String(r.headers['content-type'] || '')) &&
+          r.json && r.json.status === 415 &&
+          r.json.title === 'Unsupported media type' && !r.json.task &&
+          markedSince(since, 'STS-AUTHZEN-0122'),
+          'S0. a submission sent as text/plain is 415 problem+json ' +
+          '(STS-AUTHZEN-0122) and makes no task', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    { subject: { type: 'user', id: 'azalice' },
+                      action: { name: 'read' },
+                      resource: { type: 'document', id: 'doc-1' } },
+                    { 'content-type': 'application/json; charset=utf-8' });
+  t.check(r.status === 400 && /not_requestable$/.test(problemOf(r)),
+          'S0. one sent as application/json with a charset is read',
+          brief(r));
+  since = marks.length;
   r = await request(port, 'POST', SUBMIT, pepCred,
                     { subject: { type: 'user', id: 'azalice' },
                       action: { name: 'read' },
@@ -402,9 +587,23 @@ async function childBody() {
   since = marks.length;
   r = await request(port, 'POST', SUBMIT, pepCred, submission(denied,
     { callback: { endpoint: 'https://pep.example.com/cb' } }));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0079') &&
+          !markedSince(since, 'STS-AUTHZEN-0136'),
+          'S4. a callback nobody registered for the person is refused ' +
+          '(STS-AUTHZEN-0079); a person may register one, as in 1.1.0',
+          brief(r));
+  const appEval = await request(port, 'POST', EVAL, appCred, evaluation());
+  const appDenied = appEval.json || {};
+  t.check(appEval.status === 200 && appDenied.decision === false &&
+          appDenied.context && appDenied.context.access_request,
+          'setup: the application certificate is an AuthZEN caller ' +
+          'scoped to todo-app', brief(appEval));
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, appCred, submission(appDenied,
+    { callback: { endpoint: 'https://pep.example.com/cb' } }));
   t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0079'),
-          'S4. a callback nobody registered for the caller is refused ' +
-          '(STS-AUTHZEN-0079)', brief(r));
+          'S4b. a callback nobody registered for the application is ' +
+          'refused (STS-AUTHZEN-0079)', brief(r));
   r = await request(port, 'POST', SUBMIT, pepCred, submission(denied),
                     { 'idempotency-key': 'azarq-key-1' });
   const task = (r.json || {}).task || {};
@@ -514,13 +713,25 @@ async function childBody() {
           'root policy, which read the trusted approval-id', brief(r));
   r = await request(port, 'POST', EVAL, pepCred, evaluation({
     resource: { type: 'document', id: 'doc-9' },
+    context: { application: 'todo-app', approval: {
+      id: approval.id, approved_until: approval.approved_until } } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          r.json.context.reason === 'out_of_scope' &&
+          r.json.context.next_action === 'request' &&
+          r.json.context.access_request,
+          'A8. another resource, the approval named by id, is ' +
+          'out_of_scope, next_action request with a fresh access_request',
+          brief(r));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    resource: { type: 'document', id: 'doc-9' },
     context: { application: 'todo-app', approval: approval } }));
   t.check(r.status === 200 && r.json && r.json.decision === false &&
           r.json.context.reason === 'out_of_scope' &&
           r.json.context.next_action === 'request' &&
           r.json.context.access_request,
-          'A8. another resource is out_of_scope, next_action request with ' +
-          'a fresh access_request', brief(r));
+          'A8b. echoing a verified approval.state against another resource ' +
+          'is out_of_scope with next_action request, as the id alone is',
+          brief(r));
   r = await request(port, 'POST', EVAL, pep2Cred, evaluation({
     context: { application: 'todo-app', approval: approval } }));
   t.check(r.status === 200 && r.json && r.json.decision === false &&
@@ -535,6 +746,35 @@ async function childBody() {
   t.check(r.status === 200 && r.json && r.json.decision === false &&
           r.json.context.reason === 'approval_unverifiable',
           'A10. a forged approval id is never believed', brief(r));
+  let stateClaims = null;
+  try {
+    stateClaims = inRealm(function () {
+      return helpers.verifyOwnJws(String(approval.state || ''),
+                                  { ignoreExpiration: true });
+    });
+  } catch (e) {
+    log.debug("Caught in childBody(): " + ((e && e.message) || e));
+    stateClaims = null;
+  }
+  t.check(!!stateClaims &&
+          stateClaims.typ === 'authzen-access-request-approval' &&
+          stateClaims.id === approval.id,
+          'A6b. the approved task\'s result carries approval.state, this ' +
+          'realm\'s JWS of that approval', JSON.stringify(stateClaims));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: {
+      id: approval.id, state: String(approval.state || '') + 'x' } } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_unverifiable',
+          'A6c. a tampered approval.state is approval_unverifiable even ' +
+          'though the row is live', brief(r));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: {
+      id: 'apr_forged', state: approval.state } } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_unverifiable',
+          'A6d. a forged id carrying a real approval.state is ' +
+          'approval_unverifiable', brief(r));
   decided = inRealm(function () {
     return authzenAdmin.act({ action: 'revoke-access-request',
                               request: task.id },
@@ -555,6 +795,293 @@ async function childBody() {
     log.debug("Leaving fresh().");
     return got.json;
   };
+  const freshApp = async function () {
+    log.debug("Entering freshApp().");
+    const got = await request(port, 'POST', EVAL, appCred, evaluation());
+    log.debug("Leaving freshApp().");
+    return got.json;
+  };
+
+  // A submission that replaces the denial, so an evaluation_id-only body
+  // does not also send the token.
+  const byId = async function (one, denial, cred) {
+    log.debug("Entering byId().");
+    const got = await request(port, 'POST', SUBMIT, cred || pepCred,
+                              submission(one, { denial: denial }));
+    log.debug("Leaving byId().");
+    return got;
+  };
+  // Re-signs a denial with its inline tuple removed, so binding_hash is
+  // the binding. `mutate` changes the claims first.
+  const resign = function (token, mutate) {
+    log.debug("Entering resign().");
+    const signed = inRealm(function () {
+      const held = helpers.verifyOwnJws(String(token || ''));
+      const exp = Number(held.exp) || 0;
+      const copy = Object.assign({}, held);
+      ['subject', 'resource', 'action', 'context', 'iss', 'iat', 'exp']
+        .forEach(function (name) {
+          delete copy[name];
+        });
+      if (mutate) {
+        mutate(copy);
+      }
+      const now = Math.floor(Date.now() / 1000);
+      return oauth2.signPublishedDocument(copy, own,
+        Math.max(1, exp - now), 'oauth-signed-metadata');
+    });
+    log.debug("Leaving resign().");
+    return signed;
+  };
+
+  // -------------------------------------------------------------------------
+  // H. THE DENIAL BY REFERENCE, AND THE HASHED BINDING (#1204)
+  // -------------------------------------------------------------------------
+  const ref = await fresh();
+  const refAr = ref.context.access_request;
+  since = marks.length;
+  r = await byId(ref, { evaluation_id: ref.context.evaluation_id,
+                        expires_at: refAr.expires_at });
+  t.check(r.status === 202 && r.json && r.json.task &&
+          /^arq_/.test(r.json.task.id),
+          'H1. an evaluation_id with expires_at echoed, and no ' +
+          'binding_token, is 202', brief(r));
+  since = marks.length;
+  r = await byId(ref, { evaluation_id: 'eval_never',
+                        expires_at: refAr.expires_at });
+  t.check(r.status === 400 &&
+          /invalid_denial_binding$/.test(problemOf(r)) &&
+          markedSince(since, 'STS-AUTHZEN-0073'),
+          'H2. an evaluation_id this realm did not issue is ' +
+          'invalid_denial_binding (STS-AUTHZEN-0073)', brief(r));
+  const echo = await fresh();
+  const echoAr = echo.context.access_request;
+  since = marks.length;
+  r = await byId(echo, { evaluation_id: echo.context.evaluation_id });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H3. a real evaluation_id with expires_at omitted is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  since = marks.length;
+  r = await byId(echo, { evaluation_id: echo.context.evaluation_id,
+                         expires_at: '2099-01-01T00:00:00Z' });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H4. a real evaluation_id with expires_at changed is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(echo));
+  t.check(r.status === 202 && r.json && r.json.task,
+          'H5. that denial\'s binding_token still submits', brief(r));
+  const otherId = await fresh();
+  const otherAr = otherId.context.access_request;
+  since = marks.length;
+  r = await byId(otherId, { binding_token: otherAr.binding_token,
+                            expires_at: otherAr.expires_at,
+                            evaluation_id: 'eval_other' });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H6. an evaluation_id that is not the binding_token\'s is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(otherId));
+  t.check(r.status === 202,
+          'H7. the matching submission of that denial is still 202',
+          brief(r));
+  const whose = await fresh();
+  const whoseAr = whose.context.access_request;
+  since = marks.length;
+  r = await byId(whose, { evaluation_id: whose.context.evaluation_id,
+                          expires_at: whoseAr.expires_at }, pep2Cred);
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H8. another caller submitting the evaluation_id is ' +
+          'invalid_denial_binding', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(whose));
+  t.check(r.status === 202,
+          'H9. the caller the denial was issued to still submits it',
+          brief(r));
+  const hashedDenial = await fresh();
+  const hashedAr = hashedDenial.context.access_request;
+  since = marks.length;
+  const badHash = resign(hashedAr.binding_token, function (copy) {
+    copy.binding_hash = 'not-the-hash';
+  });
+  r = await byId(hashedDenial, {
+    binding_token: badHash,
+    expires_at: hashedAr.expires_at,
+    evaluation_id: hashedDenial.context.evaluation_id });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H10. a binding_hash that does not match is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  const hashOnly = resign(hashedAr.binding_token);
+  r = await byId(hashedDenial, {
+    binding_token: hashOnly,
+    expires_at: hashedAr.expires_at,
+    evaluation_id: hashedDenial.context.evaluation_id });
+  t.check(r.status === 202 && r.json && r.json.task,
+          'H11. a token that carries binding_hash and no inline tuple ' +
+          'submits', brief(r));
+
+  // -------------------------------------------------------------------------
+  // A12. THE PORTAL REVOKES AN APPROVAL THE PERSON GAVE (#1203)
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    submission(await fresh()));
+  const portalTask = ((r.json || {}).task || {});
+  const approved = inRealm(function () {
+    return requests.decide(portalTask.id, 'approve',
+                           { username: 'azbob', door: 'portal' });
+  });
+  const portalListed = inRealm(function () {
+    const ids = function (rows) {
+      log.debug("Entering ids().");
+      log.debug("Leaving ids().");
+      return rows.map(function (row) {
+        return row.id;
+      });
+    };
+    return {
+      bob: ids(requests.grantedBy('azbob')),
+      carol: ids(requests.grantedBy('azcarol')),
+      alice: ids(requests.grantedBy('azalice')),
+      waiting: ids(requests.awaiting('azbob'))
+    };
+  });
+  t.check(approved.ok && portalListed.bob.indexOf(portalTask.id) >= 0 &&
+          portalListed.carol.indexOf(portalTask.id) < 0 &&
+          portalListed.alice.indexOf(portalTask.id) < 0 &&
+          portalListed.waiting.indexOf(portalTask.id) < 0,
+          'A12. the portal lists a live approval for the person who gave it',
+          JSON.stringify(portalListed));
+  since = marks.length;
+  const carolRefused = inRealm(function () {
+    return requests.decide(portalTask.id, 'revoke',
+                           { username: 'azcarol', door: 'portal' });
+  });
+  t.check(!carolRefused.ok && markedSince(since, 'STS-AUTHZEN-0088'),
+          'A13. somebody the policy does not let decide cannot revoke',
+          JSON.stringify(carolRefused));
+  // A13b (#1203's review): azerin is an approver the policy permits, and
+  // the approval is azbob's. The portal refuses; the policy alone would
+  // not have.
+  since = marks.length;
+  const erinRefused = inRealm(function () {
+    return {
+      decided: requests.decide(portalTask.id, 'revoke',
+                               { username: 'azerin', door: 'portal' }),
+      gate: gate.check({ resource: 'authzen-access-request',
+        action: 'revoke-access-request',
+        subject: { name: 'azerin', kind: 'user', authenticated: true,
+                   roles: [] },
+        context: { door: 'portal' },
+        accessRequestObject: { id: portalTask.id, requester: 'azpep',
+          subject: 'azalice', subjectType: 'user', action: 'read',
+          resource: 'doc-1', resourceType: 'document',
+          application: 'todo-app', eligible: true, door: 'portal',
+          approverIdentity: ['azerin'] } }),
+      still: requests.task(portalTask.id).approval.revokedAt
+    };
+  });
+  t.check(!erinRefused.decided.ok &&
+          errorCodes.codeOf(erinRefused.decided) === 'STS-AUTHZEN-0141' &&
+          erinRefused.gate.allowed === true &&
+          erinRefused.gate.decision === 'Permit' && !erinRefused.still,
+          'A13b. on the portal another permitted approver cannot revoke ' +
+          'an approval they did not give (STS-AUTHZEN-0141); the built-in ' +
+          'policy permits revoke-access-request where it permits approval',
+          JSON.stringify(erinRefused));
+  inRealm(function () {
+    ldap.locateEntry('azpep').stored.attributes.mail =
+      ['azpep@example.com'];
+  });
+  const revoked = inRealm(function () {
+    return requests.decide(portalTask.id, 'revoke',
+                           { username: 'azbob', door: 'portal' });
+  });
+  const auditHit = inRealm(function () {
+    return audit.list().filter(function (row) {
+      return row.action === 'authzen.access-request.revoked' &&
+        String(row.summary || '').indexOf('via the portal') >= 0 &&
+        String(row.summary || '').indexOf(portalTask.id) >= 0;
+    }).length;
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app',
+               approval: { id: approved.task.approval.id } } }));
+  const gone = inRealm(function () {
+    return requests.grantedBy('azbob').map(function (row) {
+      return row.id;
+    });
+  });
+  const mailed = inRealm(function () {
+    return mail.list({ username: 'azpep' }).filter(function (row) {
+      return row.template === 'authzen-access-revoked';
+    }).length;
+  });
+  t.check(revoked.ok && revoked.task.status === 'approved' &&
+          revoked.task.approval && revoked.task.approval.revoked === true &&
+          auditHit >= 1 && gone.indexOf(portalTask.id) < 0 && mailed >= 1 &&
+          r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_expired',
+          'A14. the approver revokes through the portal, the requester is ' +
+          'mailed, and a re-evaluation is approval_expired',
+          JSON.stringify(revoked) + ' / ' + brief(r) + ' mail ' + mailed);
+  const sample = {
+    id: 'tsk_portalrevoke01', application: 'todo-app', requester: 'azpep',
+    subject: { type: 'user', id: 'azalice' },
+    action: { name: 'read' },
+    resource: { type: 'document', id: 'doc-1' },
+    expiresAt: 1, approval: { approvedUntil: 2 }
+  };
+  const fakeT = {
+    html: function (key, params) {
+      log.debug("Entering html().");
+      log.debug("Leaving html().");
+      return key + (params && params.when ? ':' + params.when : '');
+    },
+    date: function (ms) {
+      log.debug("Entering date().");
+      log.debug("Leaving date().");
+      return String(ms);
+    }
+  };
+  const pendingHtml = accessPages.card(sample, fakeT, 'pending');
+  const grantedHtml = accessPages.card(sample, fakeT, 'granted');
+  t.check(pendingHtml.indexOf('access-request-approve-') >= 0 &&
+          pendingHtml.indexOf('access-request-deny-') >= 0 &&
+          pendingHtml.indexOf('access-request-revoke-') < 0 &&
+          grantedHtml.indexOf('access-request-revoke-') >= 0 &&
+          grantedHtml.indexOf('access-request-approve-') < 0 &&
+          grantedHtml.indexOf('portalAccessRequests.until') >= 0,
+          'A15. the portal draws Revoke only for an approval the person ' +
+          'gave', pendingHtml + ' / ' + grantedHtml);
+  const parsed = ModelZod.body('account', 'decideAccessRequest').safeParse({
+    request: 'tsk_portalrevoke01', action: 'revoke' });
+  t.check(parsed.success === true,
+          'A16. the account operation accepts revoke',
+          JSON.stringify(parsed.error || null));
+  const beforeApp = inRealm(function () {
+    return mail.list().filter(function (row) {
+      return row.template === 'authzen-access-revoked';
+    }).length;
+  });
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp()));
+  const appTask = ((r.json || {}).task || {});
+  const appRevoked = inRealm(function () {
+    const done = requests.decide(appTask.id, 'approve',
+                                 { username: 'azbob', door: 'portal' });
+    if (!done.ok) {
+      return done;
+    }
+    return requests.decide(appTask.id, 'revoke',
+                           { username: 'azbob', door: 'portal' });
+  });
+  const afterApp = inRealm(function () {
+    return mail.list().filter(function (row) {
+      return row.template === 'authzen-access-revoked';
+    }).length;
+  });
+  t.check(appRevoked.ok && appRevoked.task.approval.revoked === true &&
+          afterApp === beforeApp,
+          'A17. an application requester is not mailed',
+          JSON.stringify(appRevoked) + ' mail ' + beforeApp + '->' +
+          afterApp);
 
   // -------------------------------------------------------------------------
   // C. CANCELLATION
@@ -631,33 +1158,460 @@ async function childBody() {
           '(201), for the shortest lifetime', brief(r));
 
   // -------------------------------------------------------------------------
-  // B. A REGISTERED CALLBACK
+  // B. A REGISTERED CALLBACK (#1202): an application only, retried by the
+  // access-request job. A network failure or a 5xx schedules another
+  // attempt. A delivery that will not succeed sets
+  // callbackDelivery.state to failed. The task status stays what finish()
+  // wrote. Development dials 127.0.0.1, so a closed port is a retry.
+  // A string detail is stored as the audit row's summary.
   // -------------------------------------------------------------------------
   const CALLBACK = 'https://127.0.0.1:9/azarq-callback';
-  const set = inRealm(function () {
+  const PUBLIC = 'https://pep.example.com/callbacks/access-requests';
+  const callbackAudits = function (id) {
+    log.debug("Entering callbackAudits().");
+    const rows = audit.list().filter(function (row) {
+      const text = String(row.summary || '') + ' ' +
+                   (typeof row.detail === 'string' ? row.detail
+                     : JSON.stringify(row.detail || {}));
+      return row.action === 'authzen.access-request.callback' &&
+             text.indexOf(id) >= 0;
+    });
+    log.debug("Leaving callbackAudits().");
+    return rows;
+  };
+  const codesOf = function (rows) {
+    log.debug("Entering codesOf().");
+    log.debug("Leaving codesOf().");
+    return rows.map(function (row) {
+      return row.errorCode || '';
+    });
+  };
+  // B0 (the review of #1202): a person's callback is registered and
+  // honoured, as in 1.1.0; a retry override is an application's only.
+  since = marks.length;
+  const personSet = inRealm(function () {
     return authzenAdmin.act({ action: 'set-callbacks', caller: 'azpep',
+      callbacks: 'https://pep.example.com/cb' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  const personOverride = inRealm(function () {
+    return authzenAdmin.act({ action: 'set-callbacks', caller: 'azpep',
+      callbacks: 'https://pep.example.com/cb attempts=2' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  const personStored = inRealm(function () {
+    return authzenAdmin.callerOf('azpep');
+  });
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(await fresh(),
+    { callback: { endpoint: 'https://pep.example.com/cb',
+                  events: ['cancelled'] } }));
+  const personTask = ((r.json || {}).task || {});
+  t.check(personSet.ok && !personOverride.ok &&
+          errorCodes.codeOf(personOverride) === 'STS-AUTHZEN-0137' &&
+          personStored.callbacks.indexOf('https://pep.example.com/cb') >= 0 &&
+          r.status === 202 && personTask.id &&
+          !markedSince(since, 'STS-AUTHZEN-0136'),
+          'B0. set-callbacks registers a person\'s callback, refuses a ' +
+          'person\'s override (STS-AUTHZEN-0137), and a submission naming ' +
+          'it is accepted',
+          JSON.stringify({ set: personSet, override: personOverride,
+                           stored: personStored }) + ' / ' + brief(r));
+  if (personTask.id) {
+    inRealm(function () {
+      const row = requests.task(personTask.id);
+      if (row) {
+        row.callback = null;
+      }
+      requests.cancelByAdministrator(personTask.id, 'azcarol');
+    });
+  }
+  const set = inRealm(function () {
+    return authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
                               callbacks: CALLBACK },
                             { actor: 'azcarol', via: 'api' });
   });
-  r = await request(port, 'POST', SUBMIT, pepCred, submission(await fresh(),
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp(),
     { callback: { endpoint: CALLBACK, state: 's-1',
                   events: ['cancelled'] } }));
   const fifth = ((r.json || {}).task || {});
   t.check(set.ok && r.status === 202 && fifth.id,
-          'B1. a callback registered for the caller is accepted',
+          'B1. a callback registered for the application is accepted',
           JSON.stringify(set) + ' / ' + brief(r));
   const sent = await inRealm(function () {
     requests.cancelByAdministrator(fifth.id, 'azcarol');
     return requests.notify(requests.task(fifth.id));
   });
   const callbackRows = inRealm(function () {
-    return audit.list().filter(function (row) {
-      return row.action === 'authzen.access-request.callback';
+    return callbackAudits(fifth.id);
+  });
+  const fifthTask = inRealm(function () {
+    return requests.task(fifth.id);
+  });
+  const refused = (fifthTask.callbackDelivery &&
+                   fifthTask.callbackDelivery.attempts[0]) || {};
+  t.check(sent === false && fifthTask.status === 'cancelled' &&
+          fifthTask.callbackDelivery &&
+          fifthTask.callbackDelivery.state === 'pending' &&
+          fifthTask.callbackDelivery.attempts.length === 1 &&
+          refused.status === 0 &&
+          /ECONNREFUSED/.test(String(refused.why)) &&
+          fifthTask.callbackDelivery.nextAt > Date.now() / 1000 &&
+          fifthTask.callbackDelivery.inflightUntil === 0 &&
+          fifthTask.callbackDelivery.bound === 5 &&
+          codesOf(callbackRows).indexOf('STS-AUTHZEN-0091') >= 0 &&
+          codesOf(callbackRows).indexOf('STS-AUTHZEN-0135') < 0,
+          'B2. a refused connection is retried, the task stays ' +
+          'cancelled, and the give-up is not audited yet',
+          JSON.stringify({ status: fifthTask.status,
+                           delivery: fifthTask.callbackDelivery,
+                           codes: codesOf(callbackRows) }));
+  const overridden = inRealm(function () {
+    return authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
+      callbacks: PUBLIC + ' attempts=2' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  t.check(overridden.ok && overridden.caller &&
+          overridden.caller.callbacks.indexOf(PUBLIC) >= 0 &&
+          overridden.caller.callbackConfigs.length === 1,
+          'B3. a per-callback attempts override is stored for that URL',
+          JSON.stringify(overridden));
+  const realDeliver = fedHttp.deliverJson;
+  fedHttp.deliverJson = function () {
+    return Promise.resolve({ ok: false, status: 503, kind: '',
+                             why: 'unavailable' });
+  };
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp(),
+    { callback: { endpoint: PUBLIC, events: ['cancelled'] } }));
+  const retryTask = ((r.json || {}).task || {});
+  const firstTry = await inRealm(function () {
+    requests.cancelByAdministrator(retryTask.id, 'azcarol');
+    return requests.notify(requests.task(retryTask.id));
+  });
+  const pendingDelivery = inRealm(function () {
+    const row = requests.task(retryTask.id);
+    return { status: row.status, delivery: row.callbackDelivery };
+  });
+  t.check(r.status === 202 && firstTry === false &&
+          pendingDelivery.status === 'cancelled' &&
+          pendingDelivery.delivery.state === 'pending' &&
+          pendingDelivery.delivery.attempts.length === 1 &&
+          pendingDelivery.delivery.bound === 2 &&
+          pendingDelivery.delivery.nextAt > Date.now() / 1000,
+          'B4. an HTTP 503 is retried: one attempt, the next not yet due, ' +
+          'the task still cancelled',
+          JSON.stringify(pendingDelivery));
+  // sweep() starts notify() and does not await it. The second notify()
+  // has to join that same flight before the stub's microtask settles it,
+  // so both calls stay in this one turn.
+  const retried = await inRealm(function () {
+    const row = requests.task(retryTask.id);
+    row.callbackDelivery.nextAt = 1;
+    row.callbackDelivery.inflightUntil = 0;
+    const swept = requests.sweep();
+    return requests.notify(row).then(function () {
+      const after = requests.task(retryTask.id);
+      return { swept: swept, status: after.status,
+               delivery: after.callbackDelivery,
+               view: requests.viewOf(after) };
     });
   });
-  t.check(sent === false && callbackRows.length >= 1,
-          'B2. the callback is attempted under the outbound policy and an ' +
-          'undelivered one is recorded', JSON.stringify(callbackRows[0]));
+  const retryAudits = inRealm(function () {
+    return codesOf(callbackAudits(retryTask.id));
+  });
+  t.check(retried.delivery.state === 'failed' &&
+          retried.delivery.attempts.length === 2 &&
+          retried.status === 'cancelled' &&
+          /1 callback\(s\) retried\./.test(String(retried.swept.summary)) &&
+          retryAudits.indexOf('STS-AUTHZEN-0091') >= 0 &&
+          retryAudits.indexOf('STS-AUTHZEN-0135') >= 0 &&
+          retried.view.callbackDelivery.state === 'failed' &&
+          retried.view.callbackDelivery.attempts.length === 2 &&
+          retried.view.status === 'cancelled' &&
+          !Object.prototype.hasOwnProperty.call(retried.view.callbackDelivery,
+                                                 'inflightUntil'),
+          'B5. the job retries once the backoff is due, then gives up ' +
+          'without failing the task',
+          JSON.stringify(retried) + ' / ' + JSON.stringify(retryAudits));
+  since = marks.length;
+  const badOverride = inRealm(function () {
+    return authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
+      callbacks: PUBLIC + ' attempts=0' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  const still = inRealm(function () {
+    return authzenAdmin.callerOf('azapp');
+  });
+  t.check(!badOverride.ok &&
+          errorCodes.codeOf(badOverride) === 'STS-AUTHZEN-0137' &&
+          markedSince(since, 'STS-AUTHZEN-0137') &&
+          still.callbacks.indexOf(PUBLIC) >= 0,
+          'B6. a bad override is refused and the registration stays',
+          JSON.stringify(badOverride) + ' / ' + JSON.stringify(still));
+  inRealm(function () {
+    authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
+      callbacks: PUBLIC + ' attempts=5' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  fedHttp.deliverJson = function () {
+    return Promise.resolve({ ok: false, status: 400, kind: '',
+                             why: 'bad request' });
+  };
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp(),
+    { callback: { endpoint: PUBLIC, events: ['cancelled'] } }));
+  const terminal = ((r.json || {}).task || {});
+  const gaveUp = await inRealm(function () {
+    requests.cancelByAdministrator(terminal.id, 'azcarol');
+    return requests.notify(requests.task(terminal.id));
+  });
+  const terminalRow = inRealm(function () {
+    const row = requests.task(terminal.id);
+    return { sent: gaveUp, status: row.status,
+             delivery: row.callbackDelivery,
+             codes: codesOf(callbackAudits(terminal.id)) };
+  });
+  fedHttp.deliverJson = realDeliver;
+  t.check(terminalRow.sent === false &&
+          terminalRow.delivery.state === 'failed' &&
+          terminalRow.delivery.attempts.length === 1 &&
+          terminalRow.delivery.bound === 5 &&
+          terminalRow.status === 'cancelled' &&
+          terminalRow.codes.indexOf('STS-AUTHZEN-0091') >= 0 &&
+          terminalRow.codes.indexOf('STS-AUTHZEN-0135') >= 0,
+          'B7. an HTTP 400 is not retried, even with attempts left',
+          JSON.stringify(terminalRow));
+
+  // -------------------------------------------------------------------------
+  // G. THE BACKOFF GROWS, AND A FINISHED TASK IS KEPT WHILE ITS CALLBACK IS
+  // STILL BEING TRIED (#1202's review). Each attempt carries its code.
+  // -------------------------------------------------------------------------
+  fedHttp.deliverJson = function () {
+    return Promise.resolve({ ok: false, status: 503, kind: '',
+                             why: 'unavailable' });
+  };
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp(),
+    { callback: { endpoint: PUBLIC, events: ['cancelled'] } }));
+  const heldTask = ((r.json || {}).task || {});
+  const firstWait = await inRealm(function () {
+    requests.cancelByAdministrator(heldTask.id, 'azcarol');
+    return requests.notify(requests.task(heldTask.id)).then(function () {
+      const row = requests.task(heldTask.id);
+      return Number(row.callbackDelivery.nextAt) -
+             Number(row.callbackDelivery.attempts[0].at);
+    });
+  });
+  const secondWait = await inRealm(function () {
+    const row = requests.task(heldTask.id);
+    row.callbackDelivery.nextAt = 1;
+    return requests.notify(row).then(function () {
+      const after = requests.task(heldTask.id);
+      const last = after.callbackDelivery.attempts[1];
+      return { wait: Number(after.callbackDelivery.nextAt) - Number(last.at),
+               view: requests.viewOf(after).callbackDelivery };
+    });
+  });
+  t.check(firstWait === 60 && secondWait.wait === 120 &&
+          secondWait.view.attempts.length === 2 &&
+          secondWait.view.attempts.every(function (one) {
+            return one.code === 'STS-AUTHZEN-0091' && one.ok === false &&
+                   one.status === 503;
+          }),
+          'G1. the wait doubles from authzen.callbackBackoffS, and each ' +
+          'attempt is drawn with its time, status and code',
+          JSON.stringify({ first: firstWait, second: secondWait }));
+  const heldNow = inRealm(function () {
+    const row = requests.task(heldTask.id);
+    row.keepUntil = Math.floor(Date.now() / 1000) - 5;
+    row.callbackDelivery.nextAt = Math.floor(Date.now() / 1000) + 3600;
+    const swept = requests.sweep();
+    return { swept: swept, still: !!requests.task(heldTask.id) };
+  });
+  t.check(heldNow.still &&
+          /kept for a callback still being tried/.test(
+            String(heldNow.swept.summary)),
+          'G2. a finished task past its retention is kept while its ' +
+          'callback has attempts left', JSON.stringify(heldNow));
+  const droppedNow = inRealm(function () {
+    const row = requests.task(heldTask.id);
+    row.keepUntil = Math.floor(Date.now() / 1000) - 10 * 86400;
+    requests.sweep();
+    return { gone: !requests.task(heldTask.id),
+             codes: codesOf(callbackAudits(heldTask.id)),
+             last: callbackAudits(heldTask.id).filter(function (one) {
+               return /before the task was removed/.test(
+                 String(one.summary || ''));
+             }).length };
+  });
+  fedHttp.deliverJson = realDeliver;
+  t.check(droppedNow.gone && droppedNow.last === 1 &&
+          droppedNow.codes.indexOf('STS-AUTHZEN-0135') >= 0,
+          'G3. past the last attempt the bound allows, the row goes and ' +
+          'the final STS-AUTHZEN-0135 row is written first',
+          JSON.stringify(droppedNow));
+
+  // -------------------------------------------------------------------------
+  // L. NO LOST REVOCATION (#1202's review): a revocation written while the
+  // callback POST is in flight survives the delivery's own write. A store
+  // of this file's own stands in for another process's view of the row.
+  // -------------------------------------------------------------------------
+  const lostSetup = await request(port, 'POST', SUBMIT, appCred,
+    submission(await freshApp(), { callback: { endpoint: PUBLIC,
+                                               events: ['approved'] } }));
+  const lostId = ((lostSetup.json || {}).task || {}).id;
+  let release = null;
+  // THE POST STARTS LATER THAN notify() RETURNS (#1993): the callback is
+  // signed off the event loop first, so the test waits for the POST to be
+  // in flight before the other process writes, rather than assuming it
+  // already is.
+  let inFlight = null;
+  const posted = new Promise(function (resolve) {
+    inFlight = resolve;
+  });
+  fedHttp.deliverJson = function () {
+    return new Promise(function (resolve) {
+      release = resolve;
+      inFlight();
+    });
+  };
+  const lost = await inRealm(async function () {
+    // The real store's row sends nothing: only the stand-in's POST flies.
+    const live = requests.task(lostId);
+    const callback = JSON.parse(JSON.stringify(live.callback));
+    live.callback = null;
+    const decided = requests.decide(lostId, 'approve',
+                                    { username: 'azbob', door: 'portal' });
+    const own = {
+      tasks: new Map(), index: new Map(), denials: new Map()
+    };
+    const deps = Object.assign(requests.AccessRequests.defaultDeps(), own);
+    const other = new requests.AccessRequests(deps);
+    const stored = JSON.parse(JSON.stringify(requests.task(lostId)));
+    delete stored.callbackDelivery;
+    stored.callback = callback;
+    own.tasks.set(lostId, stored);
+    const flying = other.notify(own.tasks.get(lostId));
+    await posted;
+    // Another process revokes, writing its own copy of the row.
+    const theirs = JSON.parse(JSON.stringify(own.tasks.get(lostId)));
+    theirs.approval.revokedAt = Math.floor(Date.now() / 1000);
+    own.tasks.set(lostId, theirs);
+    if (release) {
+      release({ ok: true, status: 204, kind: '', why: '' });
+    }
+    const sent = await flying;
+    const after = own.tasks.get(lostId);
+    return { decided: decided.ok, sent: sent,
+             revokedAt: after.approval.revokedAt,
+             state: after.callbackDelivery && after.callbackDelivery.state };
+  });
+  fedHttp.deliverJson = realDeliver;
+  t.check(lost.decided && lost.sent === true && lost.revokedAt > 0 &&
+          lost.state === 'delivered',
+          'L1. the delivery writes only its record onto the row as it is ' +
+          'now: a revocation made during the POST is not lost',
+          JSON.stringify(lost));
+
+  // -------------------------------------------------------------------------
+  // F. FAILED (#1202): an approval that cannot be stored, and approvers who
+  // resolve to nobody, each move the task to failed with its audit row.
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(await fresh()));
+  const unstorable = ((r.json || {}).task || {});
+  const failedAudits = function (id, code) {
+    log.debug("Entering failedAudits().");
+    log.debug("Leaving failedAudits().");
+    return audit.list().filter(function (row) {
+      return row.action === 'authzen.access-request.failed' &&
+        row.errorCode === code &&
+        String(row.summary || '').indexOf(id) >= 0;
+    }).length;
+  };
+  const f1 = inRealm(function () {
+    const deps = requests.AccessRequests.defaultDeps();
+    const real = deps.index;
+    deps.index = {
+      get: function (key) {
+        return real.get(key);
+      },
+      set: function (key, value) {
+        if (String(key).indexOf('approval:') === 0) {
+          throw new Error('the store refused the write');
+        }
+        return real.set(key, value);
+      },
+      delete: function (key) {
+        return real.delete(key);
+      },
+      forEach: function (fn) {
+        return real.forEach(fn);
+      }
+    };
+    const other = new requests.AccessRequests(deps);
+    const out = other.decide(unstorable.id, 'approve',
+                             { username: 'azbob', door: 'portal' });
+    return { out: out, row: requests.task(unstorable.id),
+             audited: failedAudits(unstorable.id, 'STS-AUTHZEN-0142') };
+  });
+  t.check(!f1.out.ok && errorCodes.codeOf(f1.out) === 'STS-AUTHZEN-0142' &&
+          f1.row.status === 'failed' && !f1.row.approval &&
+          f1.audited === 1,
+          'F1. an approval that cannot be stored fails the task ' +
+          '(STS-AUTHZEN-0142), with one audit row',
+          JSON.stringify({ out: f1.out, status: f1.row.status,
+                           audited: f1.audited }));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(await fresh()));
+  const nobody = ((r.json || {}).task || {});
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(await fresh()));
+  const computed = ((r.json || {}).task || {});
+  const f2 = inRealm(function () {
+    const a = requests.task(nobody.id);
+    a.terms = Object.assign({}, a.terms, { roles: [], groups: ['azempty'],
+                                           owners: false });
+    const b = requests.task(computed.id);
+    b.terms = Object.assign({}, b.terms, { roles: ['EVERYBODY'],
+                                           groups: [], owners: false });
+    const swept = requests.sweep();
+    return { swept: swept, a: requests.task(nobody.id).status,
+             b: requests.task(computed.id).status,
+             audited: failedAudits(nobody.id, 'STS-AUTHZEN-0143') };
+  });
+  t.check(f2.a === 'failed' && f2.b === 'pending' && f2.audited === 1 &&
+          /access request\(s\) failed/.test(String(f2.swept.summary)),
+          'F2. the job fails a request whose approvers resolve to nobody ' +
+          '(STS-AUTHZEN-0143); a computed role is never taken for nobody',
+          JSON.stringify(f2));
+  inRealm(function () {
+    requests.cancelByAdministrator(computed.id, 'azcarol');
+  });
+
+  // -------------------------------------------------------------------------
+  // K. THE DENIAL STORE'S CAP (#1204's review), at the insert.
+  // -------------------------------------------------------------------------
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestMaxDenials', 1);
+  });
+  const capped = await fresh();
+  since = marks.length;
+  r = await byId(capped, { evaluation_id: capped.context.evaluation_id,
+                           expires_at: capped.context.access_request
+                             .expires_at });
+  const fullRows = inRealm(function () {
+    config.clearOverride('authzen.accessRequestMaxDenials');
+    return audit.list().filter(function (row) {
+      return row.action === 'authzen.access-request.denials-full' &&
+             row.errorCode === 'STS-AUTHZEN-0144';
+    }).length;
+  });
+  const tokenStill = await request(port, 'POST', SUBMIT, pepCred,
+                                   submission(capped));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0073') &&
+          fullRows === 1 && tokenStill.status === 202,
+          'K1. a full denial store records no new denial (audited once, ' +
+          'STS-AUTHZEN-0144); its binding_token still submits',
+          brief(r) + ' rows ' + fullRows + ' / ' + brief(tokenStill));
 
   // -------------------------------------------------------------------------
   // D. A DELETED SUBJECT (2026-11-16, #1612's rule: a person deleted and
@@ -723,6 +1677,578 @@ async function childBody() {
           JSON.stringify({ backfilled: backfilled, remade: remade }));
 
   // -------------------------------------------------------------------------
+  // Y. DISPLAY (#1204): off by default; on, the denial's hints are the
+  // advice's own words or the service's in the asked language, and the
+  // task's follow its status. A callback's handle carries none.
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const plainAr = ((r.json || {}).context || {}).access_request || {};
+  t.check(r.status === 200 && plainAr.binding_token && !plainAr.display,
+          'Y1. by default a requestable denial carries no display',
+          brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    submission(r.json || { context: { access_request: {} } }));
+  const plainTask = (r.json || {}).task || {};
+  t.check((r.status === 202 || r.status === 201) && plainTask.id &&
+          !plainTask.display,
+          'Y2. and its Task Handle none', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestDisplay', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const shownDenied = r.json || {};
+  const shown = ((shownDenied.context || {}).access_request || {}).display ||
+    {};
+  t.check(r.status === 200 && shown.title === 'Request access' &&
+          /can be requested/.test(String(shown.description || '')) &&
+          Object.keys(shown).sort().join(',') === 'description,title',
+          'Y3. on, the denial carries the service\'s own display in English',
+          brief(r));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation(), {
+    'accept-language': 'fr-CA, en;q=0.5' });
+  const french = (((r.json || {}).context || {}).access_request || {})
+    .display || {};
+  t.check(r.status === 200 && french.title === 'Demander l\u2019accès',
+          'Y4. in the language Accept-Language asks for', brief(r));
+  r = await request(port, 'POST', EVAL, pepCred,
+                    evaluation({ action: { name: 'write' } }),
+                    { 'accept-language': 'fr' });
+  const advised = (((r.json || {}).context || {}).access_request || {})
+    .display || {};
+  t.check(r.status === 200 && advised.title === 'Ask your manager' &&
+          advised.description ===
+            'Writing doc-1 needs your manager\'s approval.',
+          'Y5. the advice\'s display-title and display-description are ' +
+          'sent verbatim, never translated', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(shownDenied),
+                    { 'accept-language': 'de' });
+  const shownTask = (r.json || {}).task || {};
+  t.check(r.status === 202 && shownTask.display &&
+          shownTask.display.title === 'Zugriffsanfrage gesendet' &&
+          !/azbob|azapprovers|azarq-root/.test(JSON.stringify(
+            shownTask.display)),
+          'Y6. a pending Task Handle\'s display is its status\'s, in the ' +
+          'caller\'s language, naming no approver, group or policy',
+          brief(r));
+  r = await request(port, 'POST', PREFIX + '/access/v1/access-requests/' +
+                    shownTask.id + '/cancel', pepCred, {});
+  const cancelledTask = (r.json || {}).task || {};
+  t.check(r.status === 200 && cancelledTask.status === 'cancelled' &&
+          (cancelledTask.display || {}).title === 'Access request cancelled',
+          'Y7. and follows the status once it finishes', brief(r));
+  const callbackHandle = inRealm(function () {
+    return requests.handleOf(requests.task(String(shownTask.id)));
+  });
+  t.check(callbackHandle && callbackHandle.id === shownTask.id &&
+          !callbackHandle.display,
+          'Y8. a handle built for nobody\'s language, as a callback\'s is, ' +
+          'carries no display', JSON.stringify(callbackHandle));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestDisplay');
+  });
+
+  // -------------------------------------------------------------------------
+  // W. THE HOSTED FORM AND THE TICKET (#1204): off by default; on, a
+  // recorded denial names form_url on the portal, its subject (and only
+  // its subject) submits it there, the PEP gets that task back for the same
+  // denial, and a Task Handle names links.ticket.
+  // -------------------------------------------------------------------------
+  const formPages = require(ROOT + '/portal/web_access_request');
+  const portalForm = require(ROOT + '/portal/portal_access_request');
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  t.check(r.status === 200 &&
+          !(((r.json || {}).context || {}).access_request || {}).form_url,
+          'W1. by default a requestable denial carries no form_url',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestForm', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const formDenied = r.json || {};
+  const formEval = String((formDenied.context || {}).evaluation_id || '');
+  const formAr = (formDenied.context || {}).access_request || {};
+  t.check(r.status === 200 && formEval &&
+          formAr.form_url === own + '/portal/access-request?evaluation_id=' +
+            encodeURIComponent(formEval),
+          'W2. on, a recorded denial names form_url, the portal page on the ' +
+          'access request endpoint\'s origin', brief(r));
+  const formAs = function (who, asked) {
+    log.debug("Entering formAs().");
+    log.debug("Leaving formAs().");
+    return inRealm(function () {
+      return requests.formView(who, asked);
+    });
+  };
+  const submitAs = function (who, given) {
+    log.debug("Entering submitAs().");
+    log.debug("Leaving submitAs().");
+    return inRealm(function () {
+      return requests.submitByForm(who, given);
+    });
+  };
+  let fv = formAs('azcarol', { evaluationId: formEval });
+  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0147' &&
+          fv.refusal.status === 404 && !fv.view.request,
+          'W3. somebody who is not the denial\'s subject is refused 0146 ' +
+          'and shown nothing of it', JSON.stringify(fv));
+  fv = formAs('azalice', { evaluationId: 'eval_nosuchdenial' });
+  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0146',
+          'W4. an evaluation_id this realm did not record is 0145',
+          JSON.stringify(fv));
+  fv = formAs('azalice', { evaluationId: formEval });
+  const formReq = (fv.view || {}).request || {};
+  t.check(!fv.refusal && fv.view.mode === 'denial' &&
+          formReq.application === 'todo-app' && formReq.emergency === true &&
+          (formReq.resource || {}).id === 'doc-1' && formReq.expiresAt > 0 &&
+          !/azapprovers|azbob/.test(JSON.stringify(fv)),
+          'W5. the subject is shown what the denial asks, never who ' +
+          'approves', JSON.stringify(fv));
+  let sub = submitAs('azalice', { evaluationId: formEval,
+                                  justification: '', emergency: true });
+  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0083',
+          'W6. emergency access without a justification is refused, as on ' +
+          'a PEP\'s submission', JSON.stringify(sub));
+  sub = submitAs('azalice', { evaluationId: formEval,
+                              justification: 'Quarterly report',
+                              durationS: 3600, emergency: false });
+  const formTask = (sub.task || {});
+  t.check(sub.ok && formTask.status === 'pending' &&
+          formTask.origin === 'form' &&
+          formTask.formSubmittedBy === 'azalice' &&
+          formTask.justification === 'Quarterly report' &&
+          formTask.evaluationId === formEval,
+          'W7. the subject submits the denial\'s access request on the form',
+          JSON.stringify(sub && { ok: sub.ok, code: sub.code,
+                                  error: sub.error,
+                                  status: formTask.status }));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(formDenied));
+  const pepGot = (r.json || {}).task || {};
+  t.check(r.status === 202 && pepGot.id === formTask.id &&
+          formTask.requester && inRealm(function () {
+            return requests.task(formTask.id).requester;
+          }) === formTask.requester,
+          'W8. the PEP that was denied gets the form\'s task back when it ' +
+          'submits the same denial', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(formDenied, {
+    context: { application: 'todo-app',
+               business_justification: 'Something else' } }));
+  t.check(r.status === 409 && problemOf(r) ===
+            'urn:openid:authzen:access-request:error:duplicate_request',
+          'W9. and duplicate_request when it asks for something else',
+          brief(r));
+  r = await request(port, 'GET', SUBMIT + '/' + formTask.id, pepCred);
+  const ticketed = ((r.json || {}).task || {}).links || {};
+  t.check(r.status === 200 && ticketed.ticket === own +
+            '/portal/access-request?request=' + formTask.id &&
+          ticketed.cancel,
+          'W10. a Task Handle names links.ticket while the form is on',
+          brief(r));
+  fv = formAs('azalice', { request: formTask.id });
+  const fvOther = formAs('azcarol', { request: formTask.id });
+  t.check(!fv.refusal && fv.view.mode === 'task' &&
+          fv.view.task.id === formTask.id && fv.view.task.origin === 'form' &&
+          fvOther.refusal && fvOther.refusal.code === 'STS-AUTHZEN-0147',
+          'W11. the ticket shows the subject the request, and nobody else',
+          JSON.stringify(fv) + ' / ' + JSON.stringify(fvOther));
+  fv = formAs('azalice', {});
+  const again2 = formAs('azalice', { evaluationId: formEval });
+  t.check(!fv.refusal && fv.view.mode === 'mine' &&
+          (fv.view.mine || []).some(function (row) {
+            return row.id === formTask.id;
+          }) && again2.view && again2.view.mode === 'task' &&
+          again2.view.task.id === formTask.id,
+          'W12. the page lists the requests about the person, and a denial ' +
+          'already requested shows its request', JSON.stringify(fv));
+  sub = submitAs('azalice', { evaluationId: formEval, justification: 'x' });
+  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0076',
+          'W13. a denial already requested cannot be requested again',
+          JSON.stringify(sub));
+  const formHtml = formPages.render({ enabled: true, mode: 'denial',
+    request: Object.assign({}, formReq,
+                           { display: { title: 'Ask your <manager>' } }) },
+    { t: fakeT });
+  const ticketHtml = formPages.render(Object.assign({}, fv.view,
+    { mode: 'task', task: fv.view.mine[0] }), { t: fakeT });
+  t.check(formHtml.indexOf('access-request-submit') >= 0 &&
+          formHtml.indexOf('name="evaluation_id"') >= 0 &&
+          formHtml.indexOf('access-request-emergency') >= 0 &&
+          formHtml.indexOf('Ask your &lt;manager&gt;') >= 0 &&
+          ticketHtml.indexOf('access-request-status') >= 0 &&
+          ticketHtml.indexOf('access-request-submit') < 0,
+          'W14. the page draws the form with a real submit button, the ' +
+          'policy\'s words escaped, and the ticket without one',
+          formHtml.slice(0, 300));
+  const formBody = ModelZod.body('account', 'submitAccessRequestForm')
+    .safeParse({ evaluation_id: formEval, business_justification: 'why',
+                 duration: '3600', emergency: 'true' });
+  const formQuery = ModelZod.query('account', 'getAccessRequestForm')
+    .safeParse({ evaluation_id: 'eval_<script>' });
+  t.check(formBody.success && !formQuery.success &&
+          typeof portalForm.accountOperations === 'function',
+          'W15. the account API reads the form\'s fields and refuses a ' +
+          'query that is not an id', JSON.stringify(formQuery.error || ''));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestForm', false);
+  });
+  sub = submitAs('azalice', { evaluationId: formEval, justification: 'x' });
+  fv = formAs('azalice', {});
+  r = await request(port, 'GET', SUBMIT + '/' + formTask.id, pepCred);
+  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0149' &&
+          fv.view.enabled === false &&
+          !(((r.json || {}).task || {}).links || {}).ticket,
+          'W16. off, the form is refused 0148 and no handle names a ticket',
+          JSON.stringify(sub) + ' / ' + brief(r));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestForm');
+  });
+
+  // -------------------------------------------------------------------------
+  // V. THE CATALOG COMPANION (#1204): off by default; on, a denial whose
+  // advice lists entitlements names request_catalogs_url, the Catalogs
+  // Document and the Catalog Endpoint answer only its own caller, a
+  // submission must choose a listed entitlement, and the approval carries
+  // it to the policy.
+  // -------------------------------------------------------------------------
+  const share = function () {
+    log.debug("Entering share().");
+    log.debug("Leaving share().");
+    return evaluation({ action: { name: 'share' } });
+  };
+  r = await request(port, 'POST', EVAL, pepCred, share());
+  const plainShare = r.json || {};
+  const offCat = await request(port, 'GET', SUBMIT + '/catalogs/' +
+    String((plainShare.context || {}).evaluation_id || 'x'), pepCred);
+  t.check(r.status === 200 && plainShare.decision === false &&
+          !((plainShare.context || {}).access_request || {})
+            .request_catalogs_url &&
+          offCat.status === 403 && problemOf(offCat) === 'about:blank' &&
+          offCat.json && offCat.json.title === 'Forbidden',
+          'V1. by default no denial names request_catalogs_url and the ' +
+          'catalogs answer 403', brief(r) + ' / ' + brief(offCat));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestCatalogs', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, share());
+  const catDenied = r.json || {};
+  const catEval = String((catDenied.context || {}).evaluation_id || '');
+  const catAr = (catDenied.context || {}).access_request || {};
+  const readAr = ((await request(port, 'POST', EVAL, pepCred,
+    evaluation())).json || { context: {} }).context.access_request || {};
+  t.check(r.status === 200 && catAr.request_catalogs_url === own +
+            '/access/v1/access-requests/catalogs/' + catEval &&
+          catAr.request_schema_url && !readAr.request_catalogs_url,
+          'V2. on, a denial whose advice lists entitlements names ' +
+          'request_catalogs_url beside request_schema_url, and one whose ' +
+          'advice lists none does not', brief(r));
+  r = await request(port, 'GET', pathOf(catAr.request_catalogs_url),
+                    pepCred);
+  const field = (((r.json || {}).fields || {})['/requested_access/' +
+                                                 'entitlement']) || {};
+  t.check(r.status === 200 && field.endpoint === catAr.request_catalogs_url +
+            '/entitlements' && field.search_param === 'q' &&
+          Object.keys((r.json || {}).fields || {}).length === 1,
+          'V3. the Catalogs Document names the one field and its endpoint',
+          brief(r));
+  since = marks.length;
+  r = await request(port, 'GET', pathOf(catAr.request_catalogs_url),
+                    pep2Cred);
+  const otherItems = await request(port, 'GET',
+    pathOf(field.endpoint), pep2Cred);
+  t.check(r.status === 404 && otherItems.status === 404 &&
+          markedSince(since, 'STS-AUTHZEN-0150') &&
+          !/read-write/.test(otherItems.text),
+          'V4. another caller is told nothing of the catalog (0149)',
+          brief(r) + ' / ' + brief(otherItems));
+  const ITEMS = pathOf(field.endpoint);
+  r = await request(port, 'GET', ITEMS, pepCred);
+  const all = (r.json || {}).items || [];
+  const written = await request(port, 'GET', ITEMS + '?q=WRITE', pepCred);
+  const pageOne = await request(port, 'GET', ITEMS + '?limit=1', pepCred);
+  const next = String((pageOne.json || {}).next_cursor || '');
+  const pageTwo = await request(port, 'GET', ITEMS + '?limit=1&cursor=' +
+                                encodeURIComponent(next), pepCred);
+  since = marks.length;
+  const wrongCursor = await request(port, 'GET', ITEMS + '?q=only&cursor=' +
+                                    encodeURIComponent(next), pepCred);
+  t.check(r.status === 200 && all.length === 2 && r.json.total === 2 &&
+          all[0].value === 'read-only' && all[0].label === 'Read only' &&
+          ((written.json || {}).items || []).length === 1 &&
+          written.json.items[0].value === 'read-write' &&
+          ((pageOne.json || {}).items || []).length === 1 && next &&
+          ((pageTwo.json || {}).items || [])[0].value === 'read-write' &&
+          !pageTwo.json.next_cursor &&
+          wrongCursor.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0151'),
+          'V5. the Catalog Endpoint searches, pages, and refuses a cursor ' +
+          'for another search (0150)', brief(r) + ' / ' + brief(pageTwo) +
+          ' / ' + brief(wrongCursor));
+  r = await request(port, 'GET', PREFIX +
+                    '/access/v1/access-requests/schema', null);
+  t.check(r.status === 200 &&
+          ((((r.json || {}).properties || {}).requested_access || {})
+            .properties || {}).entitlement,
+          'V6. the submission schema describes the entitlement while the ' +
+          'catalogs are on', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(catDenied, {
+    action: { name: 'share' } }));
+  const unlisted = await request(port, 'POST', SUBMIT, pepCred,
+    submission(catDenied, { action: { name: 'share' },
+                            requested_access: { entitlement: 'admin' } }));
+  t.check(r.status === 400 && unlisted.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0152'),
+          'V7. a submission without an entitlement, or with one the ' +
+          'catalog does not list, is refused (0151)',
+          brief(r) + ' / ' + brief(unlisted));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(catDenied, {
+    action: { name: 'share' },
+    requested_access: { entitlement: 'read-write' } }));
+  const catTask = (r.json || {}).task || {};
+  const catRow = inRealm(function () {
+    return requests.viewOf(requests.task(String(catTask.id)));
+  });
+  t.check(r.status === 202 && catRow.entitlement === 'read-write',
+          'V8. a listed entitlement submits, and the approvers see it',
+          brief(r) + ' / ' + JSON.stringify(catRow));
+  const catDecided = inRealm(function () {
+    return requests.decide(String(catTask.id), 'approve',
+                           { username: 'azbob', door: 'portal' });
+  });
+  r = await request(port, 'GET', SUBMIT + '/' + catTask.id, pepCred);
+  const catApproval = (((r.json || {}).result || {}).approval) || {};
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    action: { name: 'share' },
+    context: { application: 'todo-app', approval: catApproval } }));
+  t.check(catDecided.ok && r.status === 200 && r.json &&
+          r.json.decision === true,
+          'V9. the approved entitlement reaches the policy as a trusted ' +
+          'fact, and the policy permits by it', brief(r));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestCatalogs');
+  });
+
+  // -------------------------------------------------------------------------
+  // U. THE ACTOR COMPANION (#1204): ignored by default; on, a claimed chain
+  // must be the caller itself or its own token's act chain, a malformed
+  // actor or source is refused, and the verified chain is recorded.
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const actDenied1 = r.json || {};
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(actDenied1, {
+    client: { id: 'x', actor: { id: 'somebody-else' } } }));
+  const ignoredTask = (r.json || {}).task || {};
+  t.check(r.status === 202 && !inRealm(function () {
+            return requests.task(String(ignoredTask.id)).actor;
+          }),
+          'U1. by default client.actor is accepted and never read', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestActor', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const actDenied = r.json || {};
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(actDenied, {
+    client: { actor: { id: 'agent-1', act: { sub: 'azalice' } } } }));
+  const malformed = await request(port, 'POST', SUBMIT, pepCred,
+    submission(actDenied, { client: { actor: { type: 'ai_agent' } } }));
+  const badSource = await request(port, 'POST', SUBMIT, pepCred,
+    submission(actDenied, { client: { source: {
+      external_url: 'http://tickets.example.com/T-1' } } }));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0154') &&
+          malformed.status === 400 && badSource.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0155'),
+          'U2. a chain an mTLS caller\'s certificate does not authorize is ' +
+          '0153, and a malformed actor or a non-https external_url 0154',
+          brief(r) + ' / ' + brief(malformed) + ' / ' + brief(badSource));
+  const pepName = String(inRealm(function () {
+    return requests.task(String(ignoredTask.id)).requester;
+  }));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(actDenied, {
+    client: { id: 'todo-pep', actor: { id: pepName, type: 'service' },
+              source: { session_id: 'sess-1',
+                        external_url: 'https://tickets.example.com/T-1' } }
+  }));
+  const actTask = (r.json || {}).task || {};
+  const actRow = inRealm(function () {
+    return requests.viewOf(requests.task(String(actTask.id)));
+  });
+  t.check(r.status === 202 && actRow.actor &&
+          actRow.actor.chain.length === 1 &&
+          actRow.actor.chain[0].id === pepName &&
+          actRow.actor.verifiedBy === 'caller' &&
+          actRow.source && actRow.source.session_id === 'sess-1',
+          'U3. the caller naming itself is verified, and the chain and the ' +
+          'source are recorded for the approvers', brief(r) + ' / ' +
+          JSON.stringify(actRow.actor));
+  const tokenCaller = { kind: 'application', name: 'agent-pep',
+                        clientId: 'agent-pep', identifier: 'agent-pep',
+                        iss: own, act: { sub: 'agent-1',
+                                         iss: 'https://agents.example.com',
+                                         act: { sub: 'azalice' } } };
+  const fromToken = inRealm(function () {
+    return requests.actorOf({ actor: {
+      id: 'agent-1', issuer: 'https://agents.example.com',
+      type: 'ai_agent', act: { sub: 'azalice' } } }, tokenCaller, own);
+  });
+  const notToken = inRealm(function () {
+    return requests.actorOf({ actor: { id: 'agent-2' } }, tokenCaller, own);
+  });
+  const wrongIss = inRealm(function () {
+    return requests.actorOf({ actor: { id: 'agent-1',
+      issuer: 'https://elsewhere.example.com',
+      act: { sub: 'azalice' } } }, tokenCaller, own);
+  });
+  t.check(fromToken.actor && fromToken.actor.verifiedBy === 'token' &&
+          fromToken.actor.chain.length === 2 &&
+          fromToken.actor.chain[1].id === 'azalice' &&
+          notToken.code === 'STS-AUTHZEN-0154' &&
+          wrongIss.code === 'STS-AUTHZEN-0154',
+          'U4. a bearer caller\'s token act chain authorizes the same ' +
+          'chain link for link, and no other', JSON.stringify(
+            [fromToken, notToken.code, wrongIss.code]));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestActor');
+  });
+
+  // -------------------------------------------------------------------------
+  // Q. THE BULK COMPANION (#1204): off, items is refused as before; on,
+  // items each with its own denial make one bundle whose status aggregates
+  // its items, each item approved and re-evaluated alone.
+  // -------------------------------------------------------------------------
+  const docEval = function (id) {
+    log.debug("Entering docEval().");
+    log.debug("Leaving docEval().");
+    return evaluation({ resource: { type: 'document', id: id } });
+  };
+  const itemOf = function (denied, id) {
+    log.debug("Entering itemOf().");
+    const ar1 = denied.context.access_request;
+    log.debug("Leaving itemOf().");
+    return { resource: { type: 'document', id: id },
+             action: { name: 'read' },
+             denial: { expires_at: ar1.expires_at,
+                       binding_token: ar1.binding_token } };
+  };
+  const bulkOf = function (items, extra) {
+    log.debug("Entering bulkOf().");
+    log.debug("Leaving bulkOf().");
+    return Object.assign({ subject: { type: 'user', id: 'azalice' },
+                           context: { application: 'todo-app' },
+                           items: items }, extra || {});
+  };
+  let d1 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-1')))
+    .json;
+  let d2 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-2')))
+    .json;
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]));
+  t.check(r.status === 400 && /bulk companion profile/.test(r.text),
+          'Q1. by default a bulk submission is refused as before', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestBulk', true);
+  });
+  since = marks.length;
+  const withTuple = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [itemOf(d1, 'doc-1')], { resource: { type: 'document', id: 'doc-1' } }));
+  const withDenial = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [itemOf(d1, 'doc-1')], { denial: itemOf(d1, 'doc-1').denial }));
+  const noDenial = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [{ resource: { type: 'document', id: 'doc-1' },
+       action: { name: 'read' } }]));
+  const withCallback = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [itemOf(d1, 'doc-1')], { callback: { endpoint: 'https://x.example' } }));
+  const noItems = await request(port, 'POST', SUBMIT, pepCred, bulkOf([]));
+  t.check(withTuple.status === 400 && markedSince(since, 'STS-AUTHZEN-0156') &&
+          withDenial.status === 400 && noDenial.status === 400 &&
+          problemOf(noDenial) ===
+            'urn:openid:authzen:access-request:error:invalid_denial_binding' &&
+          markedSince(since, 'STS-AUTHZEN-0158') &&
+          withCallback.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0160') &&
+          noItems.status === 400 && markedSince(since, 'STS-AUTHZEN-0157'),
+          'Q2. a top-level tuple (0155), a bundle denial or an item without ' +
+          'one (0157), a callback (0159) and no items (0156) are refused',
+          [brief(withTuple), brief(noDenial), brief(withCallback)].join(
+            ' / '));
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]),
+                    { 'idempotency-key': 'bulk-1' });
+  const bundle = (r.json || {}).task || {};
+  const bAgain = await request(port, 'POST', SUBMIT, pepCred,
+    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]),
+    { 'idempotency-key': 'bulk-1' });
+  t.check(r.status === 202 && /^arb_/.test(String(bundle.id)) &&
+          bundle.status === 'pending' && (bundle.items || []).length === 2 &&
+          bundle.items[1].resource.id === 'doc-2' &&
+          bundle.items.every(function (one) {
+            return one.status === 'pending' && !one.result;
+          }) && bundle.links && bundle.links.cancel &&
+          !(r.json || {}).result &&
+          bAgain.status === 202 && bAgain.json.task.id === bundle.id,
+          'Q3. two items with their own denials are one bundle, pending, ' +
+          'its items in order; the same Idempotency-Key is the same bundle',
+          brief(r));
+  const bChildren = inRealm(function () {
+    return requests.bundleOf(String(bundle.id)).tasks;
+  });
+  inRealm(function () {
+    requests.decide(String(bChildren[0].id), 'approve',
+                    { username: 'azbob', door: 'portal' });
+    requests.decide(String(bChildren[1].id), 'deny',
+                    { username: 'azbob', door: 'portal' });
+  });
+  r = await request(port, 'GET', SUBMIT + '/' + bundle.id, pepCred);
+  const bMixed = (r.json || {}).task || {};
+  const bFirst = (bMixed.items || [])[0] || {};
+  const bSecond = (bMixed.items || [])[1] || {};
+  t.check(r.status === 200 && bMixed.status === 'partial' &&
+          bFirst.status === 'approved' && bFirst.result &&
+          bFirst.result.mode === 'reevaluate' && bFirst.result.approval &&
+          bSecond.status === 'denied' && !bSecond.result &&
+          !(r.json || {}).result && !bMixed.links,
+          'Q4. one item approved and one denied is partial, a result only ' +
+          'on the approved item and none at the top', brief(r));
+  const okRead = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: bFirst.result.approval } }));
+  const otherRead = await request(port, 'POST', EVAL, pepCred, evaluation({
+    resource: { type: 'document', id: 'doc-2' },
+    context: { application: 'todo-app', approval: bFirst.result.approval } }));
+  t.check(okRead.json && okRead.json.decision === true &&
+          otherRead.json && otherRead.json.decision === false,
+          'Q5. the approved item\'s approval permits its own re-evaluation ' +
+          'and not the other item\'s', brief(okRead) + ' / ' +
+          brief(otherRead));
+  r = await request(port, 'POST', SUBMIT + '/' + bundle.id + '/cancel',
+                    pepCred, {});
+  t.check(r.status === 409 && problemOf(r) ===
+            'urn:openid:authzen:access-request:error:invalid_task_state',
+          'Q6. cancelling a bundle whose items all finished is 409',
+          brief(r));
+  d1 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-1'))).json;
+  d2 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-2'))).json;
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]));
+  const bundle2 = (r.json || {}).task || {};
+  const bKids = inRealm(function () {
+    return requests.bundleOf(String(bundle2.id)).tasks;
+  });
+  inRealm(function () {
+    requests.decide(String(bKids[0].id), 'approve',
+                    { username: 'azbob', door: 'portal' });
+  });
+  r = await request(port, 'DELETE', SUBMIT + '/' + bundle2.id + '/cancel',
+                    pepCred);
+  const bAfter = (r.json || {}).task || {};
+  t.check(r.status === 200 && bAfter.status === 'partial' &&
+          bAfter.items[0].status === 'approved' &&
+          bAfter.items[1].status === 'cancelled',
+          'Q7. cancellation cancels the pending item and leaves the ' +
+          'approved one, and the bundle is partial', brief(r));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestBulk');
+  });
+
+  // -------------------------------------------------------------------------
   // O. OFF
   // -------------------------------------------------------------------------
   inRealm(function () {
@@ -730,15 +2256,21 @@ async function childBody() {
   });
   since = marks.length;
   r = await request(port, 'POST', SUBMIT, pepCred, {});
+  const offSchema = await request(port, 'GET',
+    PREFIX + '/access/v1/access-requests/schema', null);
   const offDenial = await request(port, 'POST', EVAL, pepCred, evaluation());
   inRealm(function () {
     config.setOverride('authzen.accessRequests', true);
   });
-  t.check(r.status === 501 && markedSince(since, 'STS-AUTHZEN-0070') &&
+  t.check(r.status === 403 && markedSince(since, 'STS-AUTHZEN-0070') &&
           offDenial.json && offDenial.json.decision === false &&
           !(offDenial.json.context && offDenial.json.context.access_request),
-          'O1. off, the endpoint answers 501 and no denial is requestable',
+          'O1. off, the endpoint answers 403 and no denial is requestable',
           brief(r) + ' / ' + brief(offDenial));
+  t.check(offSchema.status === 403 &&
+          markedSince(since, 'STS-AUTHZEN-0070') &&
+          /problem\+json/.test(String(offSchema.headers['content-type'] || '')),
+          'O2. off, the submission schema answers 403', brief(offSchema));
 
   await new Promise(function (ok) {
     listener.close(ok);

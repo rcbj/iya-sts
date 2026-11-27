@@ -406,7 +406,11 @@ function childMain() {
     // A CERTIFICATE-BOUND TOKEN, over a TLS listener of its own.
     const secure = https.createServer(Object.assign({
       cert: tlsPair.cert, key: tlsPair.key,
-      requestCert: true, rejectUnauthorized: false
+      // The main port's own posture, from the function server.js builds it
+      // with: a certificate asked for and not required at the handshake
+      // (tls/tls_server.js argues why), so 'mTLS, no certificate' reaches
+      // the token endpoint and is answered there, as on the main port.
+      ...tlsServer.clientAuthOptions('optional')
     }, tlsServer.protocolOptions()), require(ROOT + '/common/app'));
     await new Promise(function (resolve) {
       secure.listen(0, '127.0.0.1', resolve);
@@ -1064,9 +1068,11 @@ function scrub(value, name) {
   // A form a page posts (form_post, JARM's form_post.jwt): each credential
   // it carries is a placeholder by its name.
   if (typeof value === 'string' && value.indexOf('<form') >= 0) {
+    // Each member escaped whole, the backslash included, then joined.
     value = value.replace(new RegExp('(name="(' +
-      VOLATILE_MEMBERS.join('|').replace(/#/g, '\\#') +
-      ')" value=")[^"]*"', 'g'), '$1<$2>"');
+      VOLATILE_MEMBERS.map(function (one) {
+        return one.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }).join('|') + ')" value=")[^"]*"', 'g'), '$1<$2>"');
   }
   if (typeof value === 'string' && /^(https?:\/\/|\/)[^ ]*[?#]/.test(value)) {
     const mark = value.search(/[?#]/);

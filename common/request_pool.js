@@ -476,7 +476,7 @@ function dropSettledWaiter() {
 // * **WHAT THE FRONT PROCESS WRITES ITSELF IS EVERYBODY'S** (frontGeneration):
 //   those writes carry no ticket and so no key, and they are rare.
 //
-// What is given up, and `docs/v1.1.0/configuration.md` says so: a request does
+// What is given up, and `docs/v1.2.0/configuration.md` says so: a request does
 // not wait for ANOTHER BROWSER's write; a console page reads another session's
 // writes only once the workers converge, half a second to a second. A
 // request that carried no key — a back channel, SCIM, an API call, a
@@ -698,6 +698,33 @@ const REVOKE_KEY = '!revoke';
 // `request_worker.ts` and in `common/revoking_writes.ts`;
 // `tests/revoking_writes.js` compares the three.
 const REVOKING_HEADER = 'x-sts-pool-revoking';
+// ---------------------------------------------------------------------------
+// AN ANSWER THAT WROTE A SETTING IS HELD UNTIL THIS PROCESS HAS IT (found in
+// #2019; rcbj, 2026-11-23: "catch up on change").
+//
+// This process decides some things BEFORE dispatch, on its own copy of the
+// realm — `common/forwarded_client_certificate.ts`'s proxy pins and ranges
+// above all — and a setting a worker wrote reached that copy only at the
+// next change-log pull. A worker marks an answer during which a realm row or
+// a setting changed (`x-sts-pool-settings`, `request_worker.ts`'s
+// `markSettingsAnswer()`); the answer goes out after its commit on every
+// database store, so `persistence.syncSettingsNow()` (the cell's log and the
+// global tier's) here pulls it, and only then is a byte forwarded
+// (`holdForSettings()`). Coalesced: one catch-up in flight and at most one
+// queued behind it, which every answer that arrived meanwhile shares — the
+// queued one starts after they arrived, so it covers them (the minted
+// flush's arrangement). Never a timer, never a per-request store round trip:
+// only a marked answer waits. A catch-up that runs out (syncNow()'s own
+// deadline) or fails forwards the answer anyway, logged under
+// STS-WORKER-0058: the settings arrive at the next pull, as before.
+// persistence.js, THE SETTINGS GENERATION, carries the whole argument and
+// what it does not cover (another node's write).
+// ---------------------------------------------------------------------------
+const SETTINGS_HEADER = 'x-sts-pool-settings';
+let settingsCatchUp = null;
+let settingsCatchUpQueued = null;
+let settingsHolds = 0;
+let settingsNudges = 0;
 // A path whose every request may end a session: a sign-out door.
 const SIGN_OUT_PATH = /(?:^|\/)(?:logout|slo|signout|sign-out)(?:\/|$)/i;
 // WS-Federation's sign-out is a query on `/wsfed`.
@@ -3123,7 +3150,15 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/worker-pools', '/admin-api/worker-pools',
                           '/admin/node-health', '/admin-api/node-health',
                           '/admin/listeners', '/admin-api/listeners',
-                          '/admin/scheduler', '/admin-api/scheduler'];
+                          '/admin/scheduler', '/admin-api/scheduler',
+                          // #2164: the counts and the per-address limit are
+                          // the front's, so a report and the read of them
+                          // land in this process (`common/csp_reports.ts`).
+                          '/web/csp-report', '/admin-api/csp-reports',
+                          // #2220: every listener's socket is the front's,
+                          // and so are the key-exchange counts
+                          // (`tls/key_exchange.ts`).
+                          '/admin-api/tls/key-exchange'];
 
 // ---------------------------------------------------------------------------
 // THE LIVENESS PROBE IS ANSWERED HERE, AT ONCE, AND WAITS FOR NOTHING (#624,
@@ -3141,7 +3176,7 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
 // own block on that says what it then cost.
 //
 // **WHAT THE PATH IS DOCUMENTED TO MEAN DECIDES WHERE IT IS ANSWERED.**
-// `sts_metadata.ts` and `docs/v1.1.0/docker-compose.md` both say *liveness
+// `sts_metadata.ts` and `docs/v1.2.0/docker-compose.md` both say *liveness
 // only*: it answers 200 with a JSON message and reads no state. A question that
 // reads no state has nothing to be stale about, so it needs neither barrier,
 // and the process that answers it should be the one a restart would replace —
@@ -3294,6 +3329,91 @@ function ensureSocketDir() {
  * @param entry - the announcing worker's table entry
  * @param committed - the worker's announcement
  */
+/**
+ * A worker's realm or settings save committed: this process's change-log
+ * pulls are woken now (SETTINGS_HEADER's block). Coalesced by the pull.
+ */
+function receiveSettingsCommitted() {
+  log.debug("Entering receiveSettingsCommitted().");
+  settingsNudges++;
+  try {
+    require('../persistence/persistence').nudgeSettingsPull();
+  } catch (e) {
+    // The pull runs at its next nudge or poll, as before.
+    log.debug("Caught in receiveSettingsCommitted(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving receiveSettingsCommitted().");
+}
+
+/**
+ * One catch-up on the realm and settings logs that starts no earlier than
+ * this call, shared. A catch-up already in flight may have begun before the
+ * caller's write committed, so a caller arriving while one runs is handed
+ * the one queued behind it, made when none is (SETTINGS_HEADER's block).
+ *
+ * @returns a promise of whether this process caught up; never rejected
+ */
+function catchUpOnSettings() {
+  log.debug("Entering catchUpOnSettings().");
+  const run = function () {
+    return Promise.resolve().then(function () {
+      return require('../persistence/persistence').syncSettingsNow();
+    }).then(function (state) {
+      return !state || state.caughtUp !== false;
+    }, function (e) {
+      log.debug("Caught in catchUpOnSettings(): " + ((e && e.message) || e));
+      return false;
+    });
+  };
+  if (!settingsCatchUp) {
+    settingsCatchUp = run().then(function (caught) {
+      settingsCatchUp = null;
+      return caught;
+    });
+    log.debug("Leaving catchUpOnSettings(). Started.");
+    return settingsCatchUp;
+  }
+  if (!settingsCatchUpQueued) {
+    settingsCatchUpQueued = settingsCatchUp.then(function () {
+      settingsCatchUpQueued = null;
+      return catchUpOnSettings();
+    });
+  }
+  log.debug("Leaving catchUpOnSettings(). Queued.");
+  return settingsCatchUpQueued;
+}
+
+/**
+ * Hands a worker's answer on at once, or — where it is marked
+ * SETTINGS_HEADER — once this process has caught up on the realm and
+ * settings logs, so nothing of it reaches the client first.
+ *
+ * @param answer - the worker's answer
+ * @param onAnswer - what forwards it
+ * @param path - the request's path, for the log
+ */
+function holdForSettings(answer, onAnswer, path) {
+  log.debug("Entering holdForSettings().");
+  if (!answer || !answer.headers || !answer.headers[SETTINGS_HEADER]) {
+    log.debug("Leaving holdForSettings(). Not a settings answer.");
+    onAnswer(answer);
+    return;
+  }
+  settingsHolds++;
+  catchUpOnSettings().then(function (caught) {
+    if (!caught) {
+      warnSparingly('STS-WORKER-0058', 'request_pool: the front process ' +
+                    'could not catch up on the settings an answer to ' +
+                    path + ' wrote before forwarding it; it is forwarded, ' +
+                    'and a check this process makes before dispatch meets ' +
+                    'the new value at its next change-log pull.');
+    }
+    onAnswer(answer);
+  });
+  log.debug("Leaving holdForSettings(). Held.");
+}
+
 function receiveCommitted(entry, committed) {
   log.debug("Entering receiveCommitted().");
   if (!readYourWrite()) {
@@ -3433,9 +3553,16 @@ function receivePublishedKeys(entry, published) {
     // the worker is told, because a broadcast skips the publisher.
     const kept = keystore.withHeldMembers(published.blob, heldBlob);
     keystore.adoptShared(realmId, kept);
+    // THE GENERATION, AND WHETHER IT IS A ROTATION (2026-11-23): the line
+    // used to say neither, so an hourly `signing.rotate` minting a `next`
+    // key read the same as a store's arbitration (GitHub Actions run
+    // 45189343764 had both and could not tell them apart).
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
              'confirmed by the store through worker ' + (entry && entry.pid) +
-             '; every process here now uses it.');
+             ' (generation ' + keystore.generationOf(heldBlob) + ' -> ' +
+             keystore.generationOf(published.blob) +
+             (newer ? ', a new generation of the set held' : '') +
+             '); every process here now uses it.');
     broadcastKeys(realmId, kept, entry);
     if (kept !== published.blob) {
       sendKeys(entry, realmId);
@@ -3773,16 +3900,24 @@ let listenerRepairTimer = null;
 function reconcileTheListener(options) {
   log.debug("Entering reconcileTheListener().");
   const repair = !!(options && options.repair);
+  // THE RENEWAL JOB'S PASS (#2220): the same one pass at a time, so a
+  // renewal and a hierarchy reconcile never put two leaves on the socket out
+  // of order, and a renewed certificate reaches every worker the same way.
+  const renew = !!(options && options.renew);
   if (listenerPass) {
-    // A pass is running; one more after it, and a repair if either asked.
+    // A pass is running; one more after it, and a repair or a renewal if
+    // either asked.
     listenerPassAgain = { repair: repair ||
                                   !!(listenerPassAgain &&
-                                     listenerPassAgain.repair) };
+                                     listenerPassAgain.repair),
+                          renew: renew ||
+                                 !!(listenerPassAgain &&
+                                    listenerPassAgain.renew) };
     log.debug("Leaving reconcileTheListener(). Queued behind the running " +
               "pass.");
     return listenerPass;
   }
-  listenerPass = runListenerPass(repair).then(function () {
+  listenerPass = runListenerPass(repair, renew).then(function () {
     listenerPass = null;
     const next = listenerPassAgain;
     listenerPassAgain = null;
@@ -3835,8 +3970,9 @@ function listenerRepairArmed() {
   return !!listenerRepairTimer;
 }
 
-function runListenerPass(repair) {
-  log.debug("Entering runListenerPass(). repair=" + repair);
+function runListenerPass(repair, renew) {
+  log.debug("Entering runListenerPass(). repair=" + repair + " renew=" +
+            !!renew);
   // **LAZILY, AND THAT IS RULE 1 RATHER THAN TASTE.** `server.js` requires this
   // module well before the protocol stack — `tls/tls_server.js` with it — so a
   // require at the top of this file would register `/tls`'s views from HERE,
@@ -3847,6 +3983,14 @@ function runListenerPass(repair) {
   return Promise.resolve()
     .then(function () {
       return tls.reconcileWithHierarchy({ buildBranch: repair });
+    })
+    .then(function (changed) {
+      if (!renew || changed) {
+        return changed;
+      }
+      return tls.renewListenerCertificate().then(function (done) {
+        return !!(done && done.renewed);
+      });
     })
     .then(function (changed) {
       armListenerRepair(!repair && tls.listenerAwaitsBranch());
@@ -3871,8 +4015,9 @@ function runListenerPass(repair) {
                    'replaced.');
         }
       });
-      log.info('request_pool: the listener certificate was re-issued under ' +
-               'the rebuilt hierarchy and handed to ' + told + ' worker(s), ' +
+      log.info('request_pool: the listener certificate was re-issued (' +
+               (renew ? 'renewed, or ' : '') + 'under the rebuilt ' +
+               'hierarchy) and handed to ' + told + ' worker(s), ' +
                'so every process pins what the socket presents.');
     })
     .catch(function (e) {
@@ -4325,6 +4470,18 @@ function fork(pool, slot) {
       }
       if (message && message.poolStatus) {
         receivePoolStatus(entry, message);
+        return;
+      }
+      // A WORKER'S REALM OR SETTINGS SAVE COMMITTED: this process's pull
+      // runs now (SETTINGS_HEADER's block).
+      if (message && message.settingsCommitted) {
+        receiveSettingsCommitted();
+        return;
+      }
+      // A WORKER WHOSE CHANGE-LOG PULL WAITED OUT ITS OWN FLUSH (#1934):
+      // see receiveReplaceWorker().
+      if (message && message.replaceWorker) {
+        receiveReplaceWorker(entry, message);
         return;
       }
       if (message && message.collectGarbage) {
@@ -7827,6 +7984,14 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // Nothing a client says about whose directory connections should close may be
   // believed. See LDAP_DROP_HEADER.
   delete headers[LDAP_DROP_HEADER];
+  // THE TWO ANSWER MARKS A WORKER SETS FOR THIS PROCESS (REVOKING_HEADER,
+  // SETTINGS_HEADER) are read only off a worker's answer, never off a
+  // request, so a caller's copy decides nothing today. It is deleted anyway,
+  // as every other `x-sts-` name is: a handler that ever reflected a request
+  // header onto its answer would otherwise let a client make this process
+  // hold an answer for a settings catch-up, or read it as revoking.
+  delete headers[REVOKING_HEADER];
+  delete headers[SETTINGS_HEADER];
   // THE COOKIE HEADER AS THE BROWSER SENT IT, AND THAT IT CAME OVER TLS, so
   // that the worker translates the names by ITS view of the realm's mode
   // (`common/cookie_wire.ts`, A REQUEST A WORKER ANSWERS; GitHub Actions run
@@ -8150,7 +8315,8 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       // client's — for the reason the hop-by-hop headers below are dropped, and
       // because a header naming an identity key has no place on a page.
       if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER ||
-          name === REVOKING_HEADER || name === wire.PREFIX_HEADER) {
+          name === REVOKING_HEADER || name === wire.PREFIX_HEADER ||
+          name === SETTINGS_HEADER) {
         return;
       }
       // Hop-by-hop headers belong to the connection this process made and not
@@ -8245,7 +8411,9 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       // A worker's answer may carry headers past node's 16 KiB default
       // (#1225); see WORKER_ANSWER_MAX_HEADER_BYTES.
       maxHeaderSize: WORKER_ANSWER_MAX_HEADER_BYTES
-    }, onAnswer);
+    }, function (answer) {
+      holdForSettings(answer, onAnswer, req.originalUrl || req.url);
+    });
     // The `socket` event is when the agent hands one over. Measured on
     // node 22, it is not emitted inside `http.request()`, so the listener
     // sees it; `one.socket` covers a node that emits it during construction.
@@ -9257,6 +9425,134 @@ function failSchedulerRunsOf(entry, code, reason) {
   log.debug("Leaving failSchedulerRunsOf().");
 }
 
+// ---------------------------------------------------------------------------
+// A WORKER THAT ASKS TO BE REPLACED IS RETIRED AND REPLACED (#1934).
+//
+// A request worker whose change-log pull has waited on its OWN flush past
+// `workers.readBarrierTimeoutMs` (`persistence.js`, `waitForOwnFlush()`)
+// has refused every read-your-write request for that long and will go on
+// refusing them for as long as the flush stays out: in run #551 that was 44
+// minutes, until a restart. It says so once, `{ replaceWorker: { code,
+// reason } }`, and this retires it the way a drain does — `retiring`, so no
+// request, session pin or scheduler run is routed to it from here
+// (`readyWorkers()`), then `stop` — and `reap()` forks the replacement into
+// its slot when it exits, as for any worker that goes (`replaceIfWanted()`).
+// Nothing it could not apply is lost: those are committed rows, and the
+// replacement restores from the store and follows the log from there. What
+// may be lost is what its wedged flush never wrote, and `reap()` already
+// says that out loud (STS-WORKER-0021).
+//
+// **BOUNDED LIKE A SHUTDOWN'S DRAIN**: a wedged worker's requests in flight
+// may be waiting on the very commit that never comes, so its drain may never
+// finish on its own. Past RETIRE_DRAIN_MS — `stop()`'s default bound, 8000
+// ms — it is ended (STS-WORKER-0056). A one-shot timer within one
+// retirement.
+//
+// **BUT NOT WHILE ITS OWN FLUSH IS OUT** (#1934's follow-up). The worker
+// asks only once that flush has been out four bounds of
+// `workers.readBarrierTimeoutMs` (`persistence.js`, `ownFlushWedged()`),
+// and its ask carries `flushing: { since, giveUpAt }`. Ending it 8 s later
+// ended a statement that may only have been slow, and with it the worker's
+// unflushed writes — a revocation among them, which rcbj's rule says is
+// never lost. So the kill waits until RETIRE_DRAIN_MS past `giveUpAt` (ten
+// bounds after the flush began, 5 minutes by default): the worker's own
+// drain waits for the flush to land or fail first (`request_worker.ts`,
+// `releaseThenExit()`), and exits itself as soon as it has, which clears
+// this timer. Ended past that, it is STS-WORKER-0057 and not 0056: the
+// flush was given up on, and the writes in it may not have reached the
+// store. STS-WORKER-0021 at `reap()` still counts the answered requests it
+// held, as for any worker that dies.
+//
+// NOT when the pool is stopping or has given up, or for a worker already
+// retiring: `replacementFor()` decides as it does for a death, and a worker
+// it would not replace is left serving, wedged, with the line saying why.
+// ---------------------------------------------------------------------------
+const RETIRE_DRAIN_MS = 8000;
+
+/**
+ * Retires a worker that reported its change-log pull wedged on its own
+ * flush, so that `reap()` replaces it. See the block above.
+ *
+ * @param entry - the worker's entry
+ * @param message - `{ replaceWorker: { code, reason } }`
+ */
+function receiveReplaceWorker(entry, message) {
+  log.debug("Entering receiveReplaceWorker(). pid=" + entry.pid);
+  const ask = message.replaceWorker || {};
+  const pool = entry.pool || PROTOCOL_POOL;
+  if (entry.retiring) {
+    log.debug("Leaving receiveReplaceWorker(). Already retiring.");
+    return;
+  }
+  const plan = replacementFor(entry, workers.concat(queuedForks()));
+  log.error(errorCodes.tag('STS-WORKER-0055') +
+            'request_pool: ' + pool + ' worker ' + entry.pid + ' reported ' +
+            'that its change-log pull is wedged on its own flush (' +
+            String(ask.code || 'no code') + ': ' +
+            String(ask.reason || 'no reason given') + ')' +
+            (plan.replace
+              ? ', so it is retired and replaced: nothing more is routed to ' +
+                'it, it is drained, and a replacement is forked into slot ' +
+                plan.slot + ' once it exits.'
+              : '; it is NOT replaced, because ' + plan.why + ', and it ' +
+                'goes on serving with the pull failing a bound at a time.'));
+  if (!plan.replace) {
+    log.debug("Leaving receiveReplaceWorker(). Not replaced.");
+    return;
+  }
+  entry.retiring = true;
+  const flushing = ask.flushing || null;
+  const giveUpAt = flushing ? Number(flushing.giveUpAt) : NaN;
+  const waitMs = giveUpAt > 0
+    ? Math.max(RETIRE_DRAIN_MS, giveUpAt + RETIRE_DRAIN_MS - Date.now())
+    : RETIRE_DRAIN_MS;
+  if (giveUpAt > 0) {
+    log.info('request_pool: retired ' + pool + ' worker ' + entry.pid +
+             ' has its own flush out since ' +
+             new Date(Number(flushing.since) || giveUpAt).toISOString() +
+             '; its drain waits for it to settle, and it is ended only if ' +
+             'it has not exited ' + waitMs + ' ms from now.');
+  }
+  const timer = setTimeout(function () {
+    if (entry.child.exitCode === null && entry.child.signalCode === null) {
+      if (giveUpAt > 0) {
+        log.error(errorCodes.tag('STS-WORKER-0057') +
+                  'request_pool: retired ' + pool + ' worker ' + entry.pid +
+                  ' still had not exited ' + waitMs + ' ms after it asked, ' +
+                  'its own flush given up on at ' +
+                  new Date(giveUpAt).toISOString() + ', and was ended; ' +
+                  'the writes in that flush may not have reached the ' +
+                  'store. Its replacement follows.');
+      } else {
+        log.warn(errorCodes.tag('STS-WORKER-0056') +
+                 'request_pool: retired ' + pool + ' worker ' + entry.pid +
+                 ' did not finish draining within ' + RETIRE_DRAIN_MS +
+                 ' ms and was ended; its replacement follows.');
+      }
+      try {
+        entry.child.kill();
+      } catch (e) {
+        log.debug("Caught in receiveReplaceWorker(): " +
+                  ((e && e.message) || e));
+      }
+    }
+  }, waitMs);
+  if (timer && typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  entry.child.on('exit', function () {
+    clearTimeout(timer);
+  });
+  try {
+    entry.child.send({ stop: true });
+  } catch (e) {
+    // The channel has already gone; the exit is reap()'s, and the timer
+    // above is cleared by it.
+    log.debug("Caught in receiveReplaceWorker(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving receiveReplaceWorker().");
+}
+
 let nextPoolStatusId = 1;
 const poolStatusWaiters = new Map();
 
@@ -9743,6 +10039,17 @@ module.exports = {
   // And the revoking answer's (the review of #879), for
   // tests/revoking_writes.js.
   REVOKING_HEADER: REVOKING_HEADER,
+  // And the settings answer's, for tests/front_settings_catch_up.js, with
+  // the two halves of the front's catch-up and its counts.
+  SETTINGS_HEADER: SETTINGS_HEADER,
+  holdForSettings: holdForSettings,
+  catchUpOnSettings: catchUpOnSettings,
+  receiveSettingsCommitted: receiveSettingsCommitted,
+  settingsCatchUpCounts: function () {
+    log.debug("Entering settingsCatchUpCounts().");
+    log.debug("Leaving settingsCatchUpCounts().");
+    return { holds: settingsHolds, nudges: settingsNudges };
+  },
   WORKER_DECIDES: WORKER_DECIDES,
   // THIS PROCESS'S OWN WRITES MOVING THE GENERATION, exported so that
   // tests/front_process_writes.js can drive it without a store, a fork or a

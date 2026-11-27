@@ -30,8 +30,12 @@
 // transmitter.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -213,7 +217,7 @@ function atClient(r, redirect) {
   log.debug("Entering atClient().");
   const target = redirect || REDIRECT;
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(target) !== 0) {
+      !urls.isAt(r.location, target)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -379,16 +383,23 @@ async function test() {
     function () {
       assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
       const delivered = created.body.events_delivered || [];
-      assert.ok(delivered.indexOf(CAEP + "session-revoked") >= 0 &&
-                delivered.indexOf(RISC + "account-purged") >= 0,
+      assert.ok(urls.holds(delivered, CAEP + "session-revoked") &&
+                urls.holds(delivered, RISC + "account-purged"),
                 JSON.stringify(delivered));
     });
   const streamId = created.body.stream_id;
 
+  // Temporary, then the person's own (#2160, `own_password.js`): a typed
+  // password is temporary in product and the sign-in below uses PASSWORD.
   await ok(realmApi + "/users/create", { username: ALICE, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Delete " + ALICE, givenName: "Delete", sn: "Me",
                   mail: ALICE + "@del241.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   const scimToken = await tokenFor("scim:read scim:write");
   const scimAuth = { Authorization: "Bearer " + scimToken };
   const scimId = await scimIdOf(scimAuth, ALICE);

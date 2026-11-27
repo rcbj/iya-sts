@@ -153,6 +153,7 @@
   "registrationHtml.signalsNote": "CAEP: {caep}. RISC, para el dispositivo de una persona comprometido o quitado: {risc}. El sujeto es {subject}. Un cambio de cumplimiento solo sale cuando cambió lo que se le puede comunicar a un receptor: CAEP conoce compliant y not-compliant, y unknown se envía como not-compliant.",
   "registrationHtml.decidesHeading": "Qué decide sobre un dispositivo",
   "registrationHtml.decidesNote": "Puntuación de riesgo: las señales {signals}; las dos últimas bajan la puntuación; unregistered-device se activa {expect, select, yes {para cualquiera aquí (devices.expectRegistered)} other {solo para una persona que registró un dispositivo}}. La política de emisión ({policy}): un dispositivo comprometido {refuse, select, yes {se <strong>rechaza</strong>} other {es solo una señal de riesgo}}; un dispositivo registrado y conforme {require, select, yes {es <strong>obligatorio</strong>} attested {es <strong>obligatorio</strong>, y atestado} other {no es obligatorio (desactivado por defecto)}}. El acr <code>{acr}</code>, y el claim {claim}.",
+  "registrationHtml.adminDeviceNote": "La consola de administración y el token admin:* de una persona: {state, select, armed {se <strong>exige</strong> a todo administrador un dispositivo registrado conforme (devices.requireCompliantDeviceForAdmin), activado desde {armedAt}.} pending {<strong>aún no en vigor</strong>: ningún administrador ha iniciado sesión desde un dispositivo registrado conforme, así que se admite a todo administrador. Registre su dispositivo en la página Dispositivos del portal de usuario, márquelo como conforme en la lista de dispositivos e inicie sesión con la llave de acceso o el certificado que contiene: ese inicio de sesión activa el requisito, y queda activado.} other {no se exige dispositivo (devices.requireCompliantDeviceForAdmin está desactivado aquí; en producto está activado por defecto).}}",
   "registrationHtml.settings": "Ajustes",
   "monitorHtml.devices": "dispositivos",
   "monitorHtml.keys": "claves",
@@ -187,5 +188,8 @@
   "monitorHtml.thRegistered": "Registrados",
   "monitorHtml.thRemoved": "Quitados",
   "monitorHtml.thEvicted": "Desalojados",
-  "monitorHtml.thCompliance": "Cumplimiento: {source}"
+  "monitorHtml.thCompliance": "Cumplimiento: {source}",
+  "newDevice.button": "Registrar un dispositivo",
+  "newDevice.key": "Primera clave",
+  "newDevice.keyHint": "se registra solo con su tipo"
 }

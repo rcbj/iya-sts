@@ -43,11 +43,15 @@
 // otherwise the service's host on 636.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
 const ssfRoles = require("./ssf_roles.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -284,7 +288,13 @@ async function test() {
   log.info("=== 0. a throwaway product realm " + REALM + ", a stream ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Credential signals " + STAMP,
-    overrides: { "global.mode": "product" } }, "created the realm");
+    overrides: { "global.mode": "product",
+                 // EVERY PERSON'S EVENTS ON AN APPLICATION'S
+                 // STREAM, AS BEFORE #2234: this job's receivers hear
+                 // about people never signed in to them
+                 // (`ssf.applicationStreamScope`; the scope itself is
+                 // `sts_ssf_application_sessions.js`'s).
+                 "ssf.applicationStreamScope": "all" } }, "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
     // The Shared Signals scopes are issued only to a client that declares
@@ -306,8 +316,8 @@ async function test() {
         "account-credential-change-required", function () {
     assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
     const delivered = created.body.events_delivered || [];
-    assert.ok(delivered.indexOf(CAEP + "credential-change") >= 0 &&
-              delivered.indexOf(RISC + "credential-compromise") >= 0,
+    assert.ok(urls.holds(delivered, CAEP + "credential-change") &&
+              urls.holds(delivered, RISC + "credential-compromise"),
               JSON.stringify(delivered));
   });
   const streamId = created.body.stream_id;
@@ -315,9 +325,13 @@ async function test() {
   // The realm's attribute policy (#396) requires givenName, sn and mail of
   // every person in product mode — of the LDAP add below too, so that what
   // refuses it is the credential attribute and not a missing name.
+  // The administrator binds with PASSWORD at c., so theirs is made their
+  // own (#2160, `own_password.js`), before the drain below sweeps the
+  // signals that sets off. Alice's is never used.
   for (const who of [ALICE, ADMIN]) {
     const made = await ok(realmApi + "/users/create", { username: who,
-      invent: false, credential: "password", password: PASSWORD,
+      invent: false, credential: "password",
+      password: who === ADMIN ? ownPassword.temporaryFor(PASSWORD) : PASSWORD,
       attributes: { cn: "CS " + who, givenName: "CS", sn: who,
                     mail: who + "@cs231.test" } },
       "created " + who);
@@ -325,6 +339,11 @@ async function test() {
   }
   await ok(realmApi + "/rbac/grant", { username: ADMIN, role: "write" },
            "granted " + ADMIN + " Admin Write on the realm's own roster");
+  await ownPassword.ownPassword(realmBase, ADMIN, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   await drain(token, streamId);
 
   log.info("=== a. #236: EAB, SCEP challenge, self-issued subject ===");
@@ -462,6 +481,18 @@ async function test() {
     function () {
       assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
       assert.strictEqual(caep(found.hit).initiating_entity, "admin");
+    });
+  // ALICE'S PASSWORD WAS TYPED BY AN ADMINISTRATOR, SO IT IS TEMPORARY
+  // (#2160): her entry has carried `pwdReset: TRUE` since the create, and a
+  // write of TRUE over TRUE changes nothing and is announced as nothing —
+  // the door notices `pwdReset` going ON, not being written. The run of
+  // 2026-11-25 (45608374617) failed here in every mode with nothing on the
+  // stream. So the flag is taken off first, and then put on.
+  const cleared = await modify(client, dns[ALICE], "delete", "pwdReset",
+                               []);
+  check("the administrator clears the pwdReset the create set (#2160)",
+    function () {
+      assert.strictEqual(cleared.code, 0, cleared.message);
     });
   const reset = await modify(client, dns[ALICE], "replace", "pwdReset",
                              ["TRUE"]);

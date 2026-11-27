@@ -59,6 +59,7 @@ const assert = require("assert");
 const https = require("https");
 const K = require("./oauth_wire_kit.js").kit("sts_authzen_codes");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = K.log;
 const check = K.check;
@@ -134,7 +135,7 @@ function pep(method, path, identity, payload, extra) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: method,
-      rejectUnauthorized: false,
+      ca: serviceTrust.trustedCa(),
       cert: identity ? identity.certPem : undefined,
       key: identity ? identity.keyPem : undefined,
       headers: Object.assign(data ? { "Content-Type": "application/json",
@@ -380,9 +381,7 @@ async function evaluation() {
   await coded("STS-AUTHZEN-0013", "E15. a realm whose AuthZEN API is off " +
               "refuses", function () {
     return pep("POST", EV, caller, question());
-  }, function (one) {
-    assert.ok(one.status >= 400, one.text);
-  });
+  }, status(403));
   await K.unset(realm, "authzen.enabled");
   log.debug("Leaving evaluation().");
 }
@@ -431,9 +430,7 @@ async function batch() {
               function () {
     return pep("POST", EVS, caller, Object.assign({ evaluations: items(1) },
                                                   shared));
-  }, function (one) {
-    assert.ok(one.status >= 400, one.text);
-  });
+  }, status(403));
   await K.unset(realm, "authzen.batchEnabled");
   const c = await K.coded(null, "STS-AUTHZEN-0035", function () {
     return K.send(K.base + "/.well-known/authzen-configuration/realm/" +
@@ -549,9 +546,7 @@ async function accessRequests() {
               "an access request", function () {
     return pep("POST", AR, caller, Object.assign({}, asked,
                                                  { denial: denial }));
-  }, function (r) {
-    assert.ok(r.status >= 400, r.text);
-  });
+  }, status(403));
   await K.unset(realm, "authzen.accessRequests");
   log.debug("Leaving accessRequests().");
 }

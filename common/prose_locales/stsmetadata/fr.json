@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial : chaque ticket porte un PAC signé — informations d’ouverture de session (KERB_VALIDATION_INFO, NDR), informations client, informations UPN/DNS, attributs et SID du demandeur. Un TGT reçoit deux signatures et un ticket de service quatre, selon les sections 2.8.2/2.8.3. Les REVENDICATIONS CLIENT (PAC_CLIENT_CLAIMS_INFO, 2.11) sont produites tant que krb5.pacClaims est activé (#493), jamais compressées ; les tampons de revendications arrivant dans le PAC d’un autre royaume sont décodés (XPRESS Huffman compris) et transportés. Les informations d’appareil et les revendications d’APPAREIL ne sont pas produites. Un PAC arrivant à travers une approbation est FILTRÉ PAR SID comme le dit la section 4.1.2.2 pour la frontière de l’approbation avant d’être re-signé — informations d’appareil supprimées, ensemble de revendications supprimé sauf si l’approbation l’autorise — et le PAC d’un renvoi est signé avec la clé inter-royaumes."
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial : établissement du contexte. Le cadrage InitialContextToken (l'OID du mécanisme Kerberos et les identifiants de jeton sur deux octets) est lu et écrit, la somme de contrôle d'authentificateur 0x8003 de l'AP-REQ est lue par l'accepteur (ses indicateurs, l'authentification mutuelle et la délégation) et écrite côté client, et un AP-REP est renvoyé lorsque l'authentification mutuelle est demandée. Les jetons MIC (section 4.2.6.1) signent et vérifient le mechListMIC de SPNEGO, sous la sous-clé de l'accepteur lorsqu'il y en a une. Manquant : les liaisons de canal sont signalées, mais pas comparées au canal TLS, et aucune interface n'échange de jetons Wrap une fois le contexte établi."
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full pour un seul mécanisme : NegTokenInit (avec le mechToken optimiste) et NegTokenResp dans les quatre negState, le mechListMIC dans les deux sens avec la règle de la section 5 sur le moment où il est obligatoire, et le NegTokenInit2 de [MS-SPNG] décodé. Seul Kerberos est effectivement proposé — NTLM est reconnu dans la liste mechTypes d’un client et jamais sélectionné, car proposer un mécanisme que ce service ne peut pas exécuter serait un mensonge sur lequel un client agirait. Un mechListMIC qui ne se vérifie pas entraîne un REJET, pas un avertissement : c’est toute la défense contre la rétrogradation."
@@ -100,16 +104,32 @@
     "text": "partial : l’Access Evaluation API (section 6), décidée par le moteur XACML contre la politique racine du domaine au moyen d’un catalogue d’attributs par domaine, avec X-Request-ID et le défi de la section 11.3, l’Access Evaluations API (section 7) avec ses trois sémantiques, et les métadonnées du PDP (section 9) sous ses deux formes, signed_metadata comprises, et le brouillon Obligations Profile pour un PEP qui en déclare les types, et les trois Search APIs (section 8) sur les personnes, applications, API, relations de délégation et actions de politique propres à ce service, paginées et non transitives. Manquent : les obligations par résultat dans une recherche, et le profil OAuth, toujours un brouillon."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial : le refus demandable (context.access_request, evaluation_id, evaluated_at, reason) là où la politique du domaine marque un Deny avec l’advice access-request, lié par valeur au moyen d’un binding_token que ce domaine signe (les claims en ligne) ; la soumission avec Idempotency-Key, 201 ou 202 et un Task Handle ; le point de terminaison d’état de la tâche avec Retry-After ; l’annulation par POST ou DELETE ; les six statuts ; le mode d’achèvement reevaluate, approval.id résolu dans l’état de confiance et l’approbation parvenant à la politique sous forme de faits de confiance ; next_action et les cinq raisons ; chaque type de problème ; le membre de métadonnées, jwks_uri et la capacité. Manquent : evaluation_id comme liaison par référence, approval.state, la forme de liaison hachée, les formes lisibles par machine (form_url, request_schema_url), display, et les compléments BULK, ACTOR et CATALOG."
+    "en": "196f261782bb4038",
+    "text": "partial : le refus demandable (context.access_request, evaluation_id, evaluated_at, reason) là où la politique du domaine marque un Deny avec l’advice access-request, lié par valeur au moyen d’un binding_token que ce domaine signe (claims en ligne et binding_hash) et par référence depuis l’enregistrement du refus ; la soumission avec Idempotency-Key, 201 ou 202 et un Task Handle ; le point de terminaison d’état de la tâche avec Retry-After ; l’annulation par POST ou DELETE ; les six statuts ; le mode d’achèvement reevaluate, approval.id résolu dans l’état de confiance, approval.state émis et vérifié avec la recherche toujours exigée, et l’approbation parvenant à la politique sous forme de faits de confiance ; next_action et les cinq raisons ; chaque type de problème ; le membre de métadonnées, jwks_uri et la capacité ; request_schema_url sur un refus demandable, le JSON Schema de même origine des compléments facultatifs de la soumission; display sur un refus demandable et sur un Task Handle, les propres mots de l’advice ou ceux du service dans la langue demandée, tant que authzen.accessRequestDisplay est activé ; form_url, le formulaire hébergé du portail où le sujet du refus la soumet, et links.ticket, tant que authzen.accessRequestForm est activé. Manque : rien du profil de base ; la note de chaque compagnon dit ce qui lui manque."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial : le rappel (callback) d’une soumission (endpoint, state, events), le point de terminaison limité aux URL qu’un administrateur a enregistrées pour le PEP demandeur, un rappel de simple notification pour chaque événement terminal demandé, authentifié par un court JWT que ce domaine signe, sous la politique sortante. Manquent : l’événement partial (BULK) et les abonnements aux événements au niveau du déploiement ; une livraison échouée n’est pas retentée."
+    "en": "ca5109eae0e95b17",
+    "text": "partial : le rappel (callback) d’une soumission (endpoint, state, events), le point de terminaison limité aux URL qu’un administrateur a enregistrées pour le PEP demandeur, un rappel de simple notification pour chaque événement terminal demandé, authentifié par un court JWT que ce domaine signe, sous la politique sortante. Une erreur réseau, un délai dépassé ou un HTTP 5xx est retenté jusqu’à la borne de tentatives ; un HTTP 4xx ou une URL que la politique sortante refuse ne l’est pas. Manquent : l’événement partial (BULK) et les abonnements aux événements au niveau du déploiement."
+  },
+  "stsmetadata.specs.authzen-arap-catalog.coverage": {
+    "en": "10acf494ad5f24ef",
+    "text": "partial : request_catalogs_url sur un refus demandable enregistré dont l’advice de la politique énumère des droits, tant que authzen.accessRequestCatalogs est activé ; le Catalogs Document avec son seul champ, requested_access.entitlement ; le Catalog Endpoint avec q, cursor et limit, répondu seulement à l’appelant à qui le refus a été répondu ; la valeur validée à la soumission et transmise à la politique comme fait de confiance de l’approbation. Manquent : scope_params (un seul catalogue n’a rien par quoi se restreindre), granted, risk_level et owner, et les catalogues par protocole d’agent."
+  },
+  "stsmetadata.specs.authzen-arap-actor.coverage": {
+    "en": "3b5295559cb3ed65",
+    "text": "partial : client.actor, son id, son issuer, son type et la chaîne act imbriquée, vérifiés par rapport au propre justificatif de l’appelant (un maillon qui est l’appelant lui-même, ou la chaîne act de son propre jeton d’accès, maillon par maillon) et refusés sinon, tant que authzen.accessRequestActor est activé ; client.source enregistré comme métadonnée d’audit ; les deux montrés aux approbateurs et jamais un fait de politique. Manquent : le routage de l’approbation selon un acteur de la chaîne, et les assertions signées ou politiques de déploiement comme preuve d’une chaîne."
+  },
+  "stsmetadata.specs.authzen-arap-bulk.coverage": {
+    "en": "928b93533d6878b2",
+    "text": "partial : items, chacun avec son propre refus vérifié comme une soumission unique, d’un seul appelant à propos d’une seule application, tant que authzen.accessRequestBulk est activé ; les items du Task Handle avec l’état et le résultat propres à chacun, l’état agrégé avec partial, sans résultat de premier niveau ; l’annulation des éléments en attente et 409 une fois tous les éléments terminés ; chaque élément approuvé et réévalué seul ; Idempotency-Key sur tout le corps. Manquent : un refus groupé et le binding_hash groupé (ce service n’émet que des refus par élément), les rappels par élément et l’événement partial."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full pour la requête et la réponse : les noms abrégés des catégories, les noms courts des types de données, l’inférence du type de données à partir du type JSON (y compris la distinction entier/double, lue dans le texte source parce que JSON.parse l’a déjà perdue), les tableaux comme sacs (bags), les obligations, les conseils et la PolicyIdentifierList. Le profil ne définit aucune syntaxe de politique ; les politiques restent donc en XML."
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial : ensembles de politiques, politiques et règles avec leurs cibles, conditions, obligations et conseils (advice), lus et écrits sur le même modèle que le XML XACML, de sorte qu'une politique décide de la même façon quelle que soit la forme sous laquelle elle est arrivée. Les littéraux des autres types de données sont écrits sous forme de conversions (casts), un attribut est déclaré avant d'être utilisé, mustbepresent et issuer sont indiqués à chaque utilisation, et une fonction d'ordre supérieur prend une fonction par son nom court. Importé via /admin/xacml et par import-alfa sur /admin-api/xacml, et toute politique peut être affichée en ALFA. Ce que l'émetteur écrit, l'analyseur le lit et décide à l'identique. Manquant : les macros, les conseils (advice) au niveau de l'espace de noms et les imports entre fichiers sont refusés nommément. ALFA n'a pas de suite de conformité."
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -428,8 +448,12 @@
     "text": "full : chaque réponse d’autorisation porte iss, erreurs comprises, et les deux documents de découverte annoncent authorization_response_iss_parameter_supported afin qu’un client sache qu’il peut l’exiger."
   },
   "stsmetadata.specs.rfc8705.coverage": {
-    "en": "924a15881d40c04d",
-    "text": "full — sections 2 à 5. SECTION 5 (#139) : là où le port principal demande un certificat client, chaque point de terminaison qui en lit un est son propre alias ; mtls_endpoint_aliases nomme donc les points de terminaison de jeton, de révocation, d’introspection, PAR et UserInfo à leurs propres adresses. SECTION 2 : tls_client_auth authentifie un certificat dont la chaîne s’est vérifiée, émis par ce domaine à l’application (urn:sts:application:) ou portant celui des cinq paramètres de sujet enregistrés (subject_dn comparé en tant que nom, san_dns, san_uri, san_ip, san_email) ; self_signed_tls_client_auth correspond à un x5c de jwks ou à une empreinte ; une méthode déclarée est imposée dans tous les modes, aux points de terminaison de jeton et PAR. SECTION 3 : cnf[\"x5t#S256\"] sur les jetons d’accès et d’actualisation pour toute requête portant un certificat, vérifié sur chaque point de terminaison protégé et sur /admin-api, signalé à l’introspection ; un client qui enregistre tls_client_certificate_bound_access_tokens est refusé sans certificat. SECTIONS 4 et 7.1 : le jeton d’actualisation d’un client public est lié au certificat, un client authentifié par certificat s’actualise avec un nouveau certificat. Un certificat NON VÉRIFIÉ lie tout de même, comme le permet la section 3. Uniquement là où le port principal est en TLS (global.https), et annoncé comme tls_client_certificate_bound_access_tokens uniquement là. Aucun certificat n’est lu dans un en-tête de proxy."
+    "en": "b53effdbb54d526a",
+    "text": "full — sections 2 à 5. SECTION 5 (#139) : là où le port principal demande un certificat client, chaque point de terminaison qui en lit un est son propre alias ; mtls_endpoint_aliases nomme donc les points de terminaison de jeton, de révocation, d’introspection, PAR et UserInfo à leurs propres adresses. SECTION 2 : tls_client_auth authentifie un certificat dont la chaîne s’est vérifiée, émis par ce domaine à l’application (urn:sts:application:) ou portant celui des cinq paramètres de sujet enregistrés (subject_dn comparé en tant que nom, san_dns, san_uri, san_ip, san_email) ; self_signed_tls_client_auth correspond à un x5c de jwks ou à une empreinte ; une méthode déclarée est imposée dans tous les modes, aux points de terminaison de jeton et PAR. SECTION 3 : cnf[\"x5t#S256\"] sur les jetons d’accès et d’actualisation pour toute requête portant un certificat, vérifié sur chaque point de terminaison protégé et sur /admin-api, signalé à l’introspection ; un client qui enregistre tls_client_certificate_bound_access_tokens est refusé sans certificat. SECTIONS 4 et 7.1 : le jeton d’actualisation d’un client public est lié au certificat, un client authentifié par certificat s’actualise avec un nouveau certificat. Un certificat NON VÉRIFIÉ lie tout de même, comme le permet la section 3. Uniquement là où le port principal est en TLS (global.https), et annoncé comme tls_client_certificate_bound_access_tokens uniquement là. Un certificat n’est lu dans un en-tête que comme celui de RFC 9440, depuis un proxy terminant TLS désigné par son certificat et son adresse (#2012)."
+  },
+  "stsmetadata.specs.rfc9440.coverage": {
+    "en": "b761bd646855719e",
+    "text": "partial: la moitié du serveur d’origine, désactivée par défaut (#2012). Client-Cert et Client-Cert-Chain ne sont lus que depuis un proxy terminant TLS qu’un administrateur désigne À LA FOIS par le certificat client avec lequel il se connecte et par son adresse (tls.trustedProxyCertificates, tls.trustedProxyAddresses) ; la chaîne transmise est vérifiée ici jusqu’au magasin de confiance des clients, puis tient lieu du certificat de la négociation à chaque porte. Venant de tout autre expéditeur, les deux en-têtes sont supprimés et consignés. Ce service n’est jamais le proxy."
   },
   "stsmetadata.specs.rfc8707.coverage": {
     "en": "bc07e530c0abe862",
@@ -480,12 +504,12 @@
     "text": "full pour le serveur d’autorisation, ET DÉSACTIVÉ PAR DÉFAUT — le PROFIL oauth2.fapi=1-advanced (par domaine, ou le membre fapi d’un serveur d’autorisation nommé), qui est Baseline et davantage (#139) : un objet de requête signé JWS par valeur ou par référence (point 1) avec exp et nbf à moins de 60 minutes et aud l’émetteur (points 13, 15, 17) ; response_type code id_token, ou code avec JARM (point 2) ; l’ID Token comme signature détachée avec s_hash (5.2.2.1) ; uniquement des jetons d’accès liés à l’expéditeur — mTLS, ou DPoP sauf si oauth2.fapiRequireMtls — avec mtls_endpoint_aliases publié (points 5, 6) ; tls_client_auth, self_signed_tls_client_auth ou private_key_jwt et aucun client public (points 14, 16) ; PKCE S256 pour les requêtes poussées (point 18, et le point 7 de Baseline assoupli comme le dit la section) ; PS256 ou ES256 pour chaque signature dans les deux sens et jamais RSA1_5 (8.6), ce serveur signant en PS256 par défaut. La console, le portail et le débogueur s’y conforment : un objet de requête signé poussé vers PAR, JARM et un jeton lié. NON couverte : la suite de conformité (#176)."
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full pour le serveur d’autorisation, ET DÉSACTIVÉ PAR DÉFAUT — le PROFIL oauth2.fapi=2-security (par domaine, ou le membre fapi d’un serveur d’autorisation nommé), un profil à part entière (#140) : mode RFC 9700 activé ; clients confidentiels uniquement, par mTLS ou private_key_jwt, l’aud de l’assertion étant l’émetteur sous forme de chaîne (5.3.2.1 points 3, 6, 8) ; uniquement des jetons liés à l’expéditeur, par mTLS ou DPoP (points 4-5) ; pas de renouvellement des jetons d’actualisation sauf si oauth2.refreshTokenRotation l’impose (point 9) ; codes de 60 s (point 11) ; un iat ou nbf en avance de plus de 60 s refusé (point 13) ; code uniquement, PAR exigé et authentifié par le client, PKCE S256, redirect_uri poussé, request_uris de moins de 600 s (5.3.2.2) ; PS256, ES256 ou EdDSA, RSA de 2048 bits et EC de 224 bits (5.4.1). TLS (5.2) : les suites de BCP 195 sont la valeur par défaut de chaque écouteur, TLS 1.3 préféré. Les nonces DPoP restent facultatifs, et le consentement suit les règles ordinaires. L’Attacker Model ne comporte aucune exigence normative ; docs/v1.1.0/oauth-security.md associe chaque classe d’attaquant à ce qui l’arrête. La console, le portail et le débogueur s’y conforment. NON couverte : la suite de conformité (#176)."
+    "en": "01028f08fd980cb6",
+    "text": "full pour le serveur d’autorisation, ET DÉSACTIVÉ PAR DÉFAUT — le PROFIL oauth2.fapi=2-security (par domaine, ou le membre fapi d’un serveur d’autorisation nommé), un profil à part entière (#140) : mode RFC 9700 activé ; clients confidentiels uniquement, par mTLS ou private_key_jwt, l’aud de l’assertion étant l’émetteur sous forme de chaîne (5.3.2.1 points 3, 6, 8) ; uniquement des jetons liés à l’expéditeur, par mTLS ou DPoP (points 4-5) ; pas de renouvellement des jetons d’actualisation sauf si oauth2.refreshTokenRotation l’impose (point 9) ; codes de 60 s (point 11) ; un iat ou nbf en avance de plus de 60 s refusé (point 13) ; code uniquement, PAR exigé et authentifié par le client, PKCE S256, redirect_uri poussé, request_uris de moins de 600 s (5.3.2.2) ; PS256, ES256 ou EdDSA, RSA de 2048 bits et EC de 224 bits (5.4.1). TLS (5.2) : les suites de BCP 195 sont la valeur par défaut de chaque écouteur, TLS 1.3 préféré. Les nonces DPoP restent facultatifs, et le consentement suit les règles ordinaires. L’Attacker Model ne comporte aucune exigence normative ; docs/v1.2.0/oauth-security.md associe chaque classe d’attaquant à ce qui l’arrête. La console, le portail et le débogueur s’y conforment. NON couverte : la suite de conformité (#176)."
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full pour le serveur d’autorisation, ET DÉSACTIVÉ PAR DÉFAUT — le PROFIL oauth2.fapi=2-message-signing, le Security Profile plus ses trois composants (#141, décision de rcbj) : un objet de requête signé JAR exigé à PAR, avec aud l’émetteur et exp et nbf à moins de 60 minutes (5.3) ; JARM exigé, iss à l’intérieur du JWT (5.4) ; les réponses d’introspection RFC 9701 signées (5.5). La non-répudiation de la section 5.2 relève de recommandations, auxquelles répond docs/v1.1.0/oauth-security.md. La console, le portail et le débogueur s’y conforment. Les signatures HTTP RFC 9421 ne font PAS partie de la spécification finale : elles relèvent de FAPI 2.0 Http Signatures, l’entrée suivante (#178)."
+    "en": "8aff442a2af8fd53",
+    "text": "full pour le serveur d’autorisation, ET DÉSACTIVÉ PAR DÉFAUT — le PROFIL oauth2.fapi=2-message-signing, le Security Profile plus ses trois composants (#141, décision de rcbj) : un objet de requête signé JAR exigé à PAR, avec aud l’émetteur et exp et nbf à moins de 60 minutes (5.3) ; JARM exigé, iss à l’intérieur du JWT (5.4) ; les réponses d’introspection RFC 9701 signées (5.5). La non-répudiation de la section 5.2 relève de recommandations, auxquelles répond docs/v1.2.0/oauth-security.md. La console, le portail et le débogueur s’y conforment. Les signatures HTTP RFC 9421 ne font PAS partie de la spécification finale : elles relèvent de FAPI 2.0 Http Signatures, l’entrée suivante (#178)."
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -520,16 +544,36 @@
     "text": "full, dans tous les modes (#143, construit dans #139) : response_mode query.jwt, fragment.jwt, form_post.jwt et jwt (query pour code, fragment sinon) ; les paramètres de réponse avec iss, aud et exp (oauth2.jarmResponseLifetimeS) signés avec l’authorization_signed_response_alg du client (RS256, ou PS256 sous FAPI 1.0 Advanced) et chiffrés lorsqu’il a enregistré authorization_encrypted_response_alg ; les erreurs renvoyées de la même manière ; query.jwt refusé avec un jeton en clair (2.3.1) ; les membres de métadonnées et d’enregistrement des sections 3 et 4."
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "84ea7cdfbe803962",
-    "text": "partial, côté partie de confiance : l’enregistrement (section 7.1) et l’assertion (section 7.2) sont vérifiés — défi, origine, hachage du RP ID, indicateurs de présence et de vérification de l’utilisateur, BE/BS, l’alg de l’identifiant par rapport à pubKeyCredParams, le credential id de 1023 octets, le compteur de signatures, et la signature sur authenticatorData || SHA-256(clientDataJSON), pour les clés ES256/384/512, RS256/384/512, PS256/384/512, EdDSA et ML-DSA-44/65/87 (RFC 9964). Depuis #105, la DÉCLARATION D’ATTESTATION est vérifiée dans les huit formats de la section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) selon webauthn.attestationPolicy — by-mode correspond à verify-if-present en mode produit et à off en développement — sa chaîne contre les ancres configurées et les racines du FIDO Metadata Service, sa révocation consultée, et un modèle que MDS signale comme compromis refusé. Depuis #643, une clé d’accès classique et une clé d’accès post-quantique (ML-DSA) peuvent être détenues côte à côte (webauthn.pqcAlongsideClassical) : chaque voie a son propre identifiant d’utilisateur (section 5.4.3), sa liste d’algorithmes et ses excludeCredentials, et la Signal API (section 5.1.10) est envoyée une fois par voie. Manquent : l’attestation d’entreprise (section 5.4.7) n’a pas de liste d’autorisation de RP ID, et les extensions d’authentification ne sont pas traitées. Écrit indépendamment du décodeur propre au débogueur afin que les deux puissent être vérifiés l’un par rapport à l’autre (tests/webauthn_cross_impl.js)."
+    "en": "e293d58d8fdd5cd1",
+    "text": "partial, côté partie de confiance : l’enregistrement (section 7.1) et l’assertion (section 7.2) sont vérifiés — défi, origine, hachage du RP ID, indicateurs de présence et de vérification de l’utilisateur, BE/BS, l’alg de l’identifiant par rapport à pubKeyCredParams, le credential id de 1023 octets, le compteur de signatures, et la signature sur authenticatorData || SHA-256(clientDataJSON), pour les clés ES256/384/512, RS256/384/512, PS256/384/512, EdDSA et ML-DSA-44/65/87 (RFC 9964). Depuis #105, la DÉCLARATION D’ATTESTATION est vérifiée dans les huit formats de la section 8 (packed, tpm, android-key, android-safetynet, fido-u2f, none, apple, compound) selon webauthn.attestationPolicy — by-mode correspond à verify-if-present en mode produit et à off en développement — sa chaîne contre les ancres configurées et les racines du FIDO Metadata Service, sa révocation consultée, et un modèle que MDS signale comme compromis refusé. Depuis #643, une clé d’accès classique et une clé d’accès post-quantique (ML-DSA) peuvent être détenues côte à côte (webauthn.pqcAlongsideClassical) : chaque voie a son propre identifiant d’utilisateur (section 5.4.3), sa liste d’algorithmes et ses excludeCredentials, et la Signal API (section 5.1.10) est envoyée une fois par voie. L’attestation d’entreprise (section 5.4.7) n’est demandée que pour les RP ID que liste webauthn.attestationEnterpriseRpIds. Le membre hints (section 5.4.8) est envoyé comme le dit la politique des clés d’accès. Extensions (section 10) : credProps (10.1.3) est demandée et son rk enregistré ; credProtect et minPinLength de CTAP 2.1 sont demandées comme le dit la politique des clés d’accès et leurs sorties lues dans les données d’authentificateur (voir CTAP 2.1) ; appid (10.1.1) et appidExclude (10.1.2) servent les anciens identifiants FIDO U2F qu’un administrateur a importés sur l’entrée d’une personne, désactivées tant que webauthn.u2fAppIds ne nomme pas leur AppID : le rpIdHash d’une assertion n’est tenu au SHA-256 de l’AppID que lorsque le client a renvoyé appid true, une telle clé ne répond qu’à une étape de second facteur, et un enregistrement demande appidExclude pour que la même clé ne soit pas enregistrée deux fois. Manquent : les autres extensions enregistrées (largeBlob, prf et le reste) ne sont ni demandées ni traitées, et un AppID n’est utilisé qu’à un RP ID dont il partage l’hôte ou dont il est un suffixe — la liste TrustedFacets de la FIDO AppID and Facet Specification n’est ni récupérée ni servie ici. Écrit indépendamment du décodeur propre au débogueur afin que les deux puissent être vérifiés l’un par rapport à l’autre (tests/webauthn_cross_impl.js)."
+  },
+  "stsmetadata.specs.ctap21.coverage": {
+    "en": "4cc6ee6c2a81e46e",
+    "text": "minimal : la moitié partie de confiance de deux extensions, puisque ce service n’est ni un client ni un authentificateur : credProtect (section 12.1) — le credProtect de la politique des clés d’accès demande un niveau en tant que credentialProtectionPolicy, enforceCredProtect envoie enforceCredentialProtectionPolicy et refuse un enregistrement dont les données d’authentificateur signalent un niveau inférieur (aucun signalement vaut le niveau 1), et le niveau est enregistré sur la clé d’accès ; et minPinLength (section 12.4), demandé tant que la politique des clés d’accès impose une longueur de PIN et tenu à son minimum à l’enregistrement et à la connexion. Rien d’autre de CTAP : l’API de l’authentificateur, les protocoles PIN, les grands blobs et la gestion des identifiants relèvent de la plateforme."
+  },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial, via WebAuthn plutôt que comme protocole à part entière : le format d'attestation fido-u2f est vérifié à l'enregistrement (WebAuthn section 8.6), et un identifiant U2F hérité (son key handle, sa clé publique P-256 et son compteur) importé par un administrateur dans l'entrée d'une personne est utilisé sous son AppID via l'extension appid, uniquement lors d'une étape de second facteur, dès que webauthn.u2fAppIds nomme cet AppID. Manquant : l'API JavaScript U2F et les messages bruts d'enregistrement et d'authentification U2F (c'est un navigateur qui les échange avec la clé, pas ce service), ainsi que la liste des facettes de confiance AppID et Facet."
   },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial, le côté serveur d’une session limitée à l’origine par authentification unique : Secure-Session-Registration proposant ES256 et RS256, la preuve dbsc+jwt à l’enregistrement (son jwk, son typ, son alg et son jti vérifiés et la signature contrôlée) et au renouvellement (vérifiée avec la clé liée), les instructions de session JSON avec un seul cookie lié, l’échange 403 et Secure-Session-Challenge, et Sec-Secure-Session-Id. Chaque défi n’est consommé qu’une fois pour le cluster. Manquent : les sessions fédérées (provider_key, le document well-known), les sessions limitées au site et les règles de portée, le paramètre authorization, et la lecture de Secure-Session-Skipped. Désactivé par défaut (authn.deviceBoundSessions)."
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full pour ce dont RFC 6238 a besoin : la troncature dynamique de la section 5.3 sur HMAC-SHA-1, SHA-256 ou SHA-512, de six à huit chiffres, le compteur étant une valeur de huit octets gros-boutiste. Vérifié contre les vecteurs de test de l’annexe D de la spécification elle-même (tests/totp.js), ce qui est la raison de l’implémenter plutôt que de recourir à une bibliothèque : chacune des quatre étapes de cette troncature a été mal faite par quelqu’un, et un vecteur publié est le seul contrôle qui le détecte. NON couvert : HOTP basé sur un compteur comme mécanisme d’authentification — rien ici ne détient de compteur qui avance à l’usage, car le seul appelant est la construction basée sur le temps ci-dessous."
+    "en": "5ab7b9d048e74e7e",
+    "text": "full, côté vérificateur, en tant que DEUXIÈME FACTEUR UNIQUEMENT (#1955 P4) : la troncature dynamique de la section 5.3 sur HMAC-SHA-1, SHA-256 ou SHA-512, six à huit chiffres, le compteur une valeur big-endian de huit octets, vérifiée avec les vecteurs de test de l’annexe D elle-même (tests/totp.js, tests/hotp.js) ; un compteur par identifiant avec l’anticipation de la section 7.4 (hotp.window, 10 par défaut, 0 autorisé) et la resynchronisation à partir de deux codes consécutifs (hotp.resyncWindow) ; le refus de rejeu de la section 7.2, le compteur avancé par compare-and-set dans le stockage pour que deux nœuds ou workers n’acceptent jamais un même code ; la limitation de la section 7.3 par le budget de codes de la connexion. Un emplacement OTP de YubiKey est programmé depuis le code otpauth://hotp ou la commande ykman du portail ; le jeton d’un fournisseur est importé (RFC 6030). Il vaut amr otp, et hwk seulement pour un jeton importé. NON couvert : le mécanisme de délai de la section 7.3 en tant que tel (le budget refuse à la place), et OCRA (RFC 6287)."
+  },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial, côté vérificateur (#1955 P5) : l’OTP publié, une identité publique modhex suivie d’un bloc AES-128-ECB sans remplissage, résidu CRC-16 0xf0b8, et les compteurs d’usage et de session avancés par compare-and-set afin qu’un OTP soit accepté une seule fois. L’horodatage n’est pas vérifié. L’enrôlement est désactivé par défaut (yubiotp.offered). amr otp, jamais hwk, parce que ce service détient la clé AES. NON couvert : YubiCloud, et toute vérification de l’horodatage."
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial, comme serveur de validation (#1955 P5) : GET et POST /wsapi/2.0/verify avec id, otp, nonce et h, HMAC-SHA1 sur les paramètres triés, et les statuts OK, BAD_OTP, BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP et REPLAYED_REQUEST. Désactivé par défaut (yubiotp.ykval). Activé, l’identifiant du client et le HMAC sont vérifiés dans tous les modes. La réponse porte sl=100. NON couvert : le client YubiCloud, et un pourcentage de synchronisation autre que 100."
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial, en tant que DESTINATAIRE (#1955 P4) : un KeyContainer de version 1.0 avec des clés HOTP et TOTP, Manufacturer, SerialNo et Model de DeviceInfo, le ResponseFormat (6 à 8 chiffres décimaux), un Counter simple, Time (0 uniquement) et TimeInterval ; en clair (refusé en mode produit sauf avec pskc.allowPlaintextImport), une clé prépartagée (section 6.1 : AES-128/192/256-CBC et KW-AES) et une phrase secrète (section 6.2 : PBKDF2), le ValueMAC de la section 6.1.1 étant vérifié d’abord (HMAC-SHA1 et les MAC SHA-2). Vérifié avec les Figures 2 à 7 du RFC lui-même (tests/pskc.js). NON couvert : le chiffrement pour un certificat (6.3), une clé MAC par référence, Triple DES et Camellia, un compteur ou une heure chiffrés, les clés et politiques de PIN (ignorées), les signatures sur le conteneur (section 7), et la production d’un tel fichier."
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -696,8 +740,16 @@
     "text": "minimal : uniquement le type d’identifiant permanent-identifier, qui désigne ici l’entrée d’annuaire propre au compte et devient son subjectAltName urn:sts:. Le challenge device-attest-01 et la déclaration d’attestation WebAuthn ne sont pas implémentés."
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial : l’attribut id-aa-attestation d’une requête PKCS#10 (au plus un, exactement un AttestationBundle, uniquement le choix certificate et les autres choix) pour le profil device sur EST et SCEP ; le seul type de déclaration vérifié est tcg-attest-tpm-certify du TCG dans la syntaxe de l’annexe A.2.3 de la révision 20, qu’aucune révision ultérieure ni aucun document du TCG ne remplace (#257). L’extension CRMF n’est pas lue (pas de CMP ici), et les autres types de déclaration sont enregistrés, non vérifiés. La fraîcheur (section 6.2) passe par draft-ietf-lamps-attestation-freshness sur EST."
+    "en": "59b1734815ece664",
+    "text": "partial : l’attribut id-aa-attestation d’une demande PKCS#10 (un au plus, exactement un AttestationBundle, le certificat et les autres choix seulement), via EST, SCEP et ACME. Deux types de déclaration sont vérifiés : le tcg-attest-tpm-certify du TCG dans la syntaxe de l’annexe A.2.3 de la révision 20, pour le profil d’appareil (#257), et une attestation PIV de YubiKey pour chaque profil (#1955), sous 1.3.6.1.4.1.41482.3.2, avec le certificat de l’emplacement comme stmt et le certificat f9 dans certs, un type que ce service a choisi parce que le brouillon n’en définit aucun. L’extension CRMF n’est pas lue (pas de CMP ici), et les autres types de déclaration sont enregistrés, non vérifiés. La fraîcheur (section 6.2) via draft-ietf-lamps-attestation-freshness sur EST, pour les déclarations TPM seulement : une attestation PIV ne porte aucun nonce."
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial : le certificat d’attestation de l’emplacement est vérifié, au travers du certificat d’attestation f9, jusqu’aux racines PIV de Yubico (Serial 263751, et Attestation Root 1 avec ses intermédiaires PIV pour le micrologiciel 5.7.4 et ultérieur, livrées et épinglées) ou celles propres à un domaine ; sa clé est confrontée à celle de la demande ; les extensions de micrologiciel, de numéro de série, de politique de PIN et de toucher et de facteur de forme sont lues, et les politiques confrontées à celles du domaine. La carte elle-même n’est jamais gérée : aucune écriture de PIN, de PUK ni d’emplacement."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "d223f1239342ae1c",
+    "text": "partial: les quatre emplacements de clé comme profils de certificat (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, qui ne connecte personne par défaut) ; une carte PIV ou CAC externe associée par l’UUID de carte de son subjectAltName urn:uuid lorsqu’elle affirme une politique PIV Authentication (désactivé par défaut) ; le PKI-AUTH de la section 6.2.3.1 comme profils de connexion par certificat (#2012) : les émetteurs, keyUsage, extendedKeyUsage et les politiques que le traitement des politiques RFC 5280 fait traverser le chemin, correspondances comprises, et une liaison à un compte par émetteur et numéro de série, émetteur et SKI, la clé, le certificat ou l’UUID de carte, avec un statut de révocation vérifié là où le domaine l’exige, sur un écouteur propre si souhaité. Pas de FASC-N, de CHUID, de gestion de cartes ni de biométrie."
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +794,54 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial : la signature, relaxed/relaxed, rsa-sha256 avec une clé d’au moins 2048 bits (RFC 8301), dans common/crypto.js, sur ce qu’envoie le transport SMTP lorsqu’un domaine est configuré. Absents : la canonicalisation simple, l= et la vérification du courrier envoyé par quiconque d’autre — ce service n’en reçoit aucun. DKIM n’a aucun algorithme post-quantique enregistré."
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "a2930bdb8ffe747d",
+    "text": "partial : lecture d'une clé publique transférable, v6 et (RFC 4880) v4, vérification d'une signature en clair par l'une de ses clés de signature et chiffrement d'un message pour sa clé de chiffrement, Les algorithmes classiques passent par openpgp.js. Les composites RFC 9980 sont lus ici (voir rfc9980). Ed25519, Ed448, ECDSA et ECDH sur les courbes NIST, X25519, X448 et RSA d'au moins openpgp.minRsaBits sont acceptés ; DSA, ElGamal et Brainpool sont refusés. Manquent : la signature, le déchiffrement, un trousseau, un serveur de clés."
+  },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial, pour les clés v4 (la RFC 9580 la rend obsolète, et une clé v6 suit rfc9580) : une clé publique transférable lue avec ses auto-signatures, une signature en clair vérifiée par sa clé de signature, et un message chiffré vers sa clé de chiffrement, au moyen d'openpgp.js. Les clés de signature peuvent être EdDSA sur Ed25519, ECDSA sur P-256, P-384 et P-521, ou RSA de openpgp.minRsaBits ; les clés de chiffrement ECDH sur Curve25519 et les courbes NIST, ou RSA. DSA, ElGamal et Brainpool sont refusés. Manquant : la signature, le déchiffrement, un trousseau de clés, un serveur de clés."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial : signatures ML-DSA-65+Ed25519 et ML-DSA-87+Ed448, et chiffrement ML-KEM-768+X25519 et ML-KEM-1024+X448, à l’enregistrement et lorsqu’une clé déjà enregistrée est utilisée. Un composite compte comme post-quantique. openpgp.pqcOnly ne restreint que l’enregistrement. Les deux moitiés d’une signature sont vérifiées par common/crypto_impl/openpgp_pqc.js. Manquent : SLH-DSA (identifiants d’algorithme 32-34), et ce service ne génère pas de clé RFC 9980. openpgp.js n’analyse pas ces clés."
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial : multipart/encrypted avec une partie de version application/pgp-encrypted et le message blindé, les véritables en-têtes protégés à l'intérieur. Manque : multipart/signed — ce service signe les messages avec DKIM, pas avec OpenPGP."
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial : application/pkcs7-mime enveloped-data, un CMS EnvelopedData avec chiffrement du contenu en AES-256-CBC. Un certificat classique utilise RSAES-OAEP (SHA-256) ou ECDH. Un certificat ML-KEM (RFC 9935) utilise KEMRecipientInfo (RFC 9629) : HKDF-SHA-256 et AES-Wrap. Un moteur qui ne peut pas encapsuler n’envoie pas le message sous un algorithme classique. Manquent : signed-data, AuthEnvelopedData (AES-GCM), le déchiffrement."
+  },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial, en émission uniquement : un message S/MIME destiné à un certificat ML-KEM (rfc9935) transporte sa clé de chiffrement de contenu dans un KEMRecipientInfo (l'other recipient info id-ori-kem) : ML-KEM-512, ML-KEM-768 ou ML-KEM-1024, HKDF avec SHA-256 sur CMSORIforKEMOtherInfo et sans sel, et enveloppement de clé AES-128 ou AES-256, dans AuthEnvelopedData (par défaut) ou EnvelopedData. Manquant : le déchiffrement d'un KEMRecipientInfo (ce service ne reçoit jamais de courrier chiffré), l'ukm, et toute autre fonction KEM ou de dérivation de clé."
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial : une clé publique ML-KEM-512, ML-KEM-768 ou ML-KEM-1024 est lue à partir d'un SubjectPublicKeyInfo ou d'un certificat par son identifiant id-alg-ml-kem, et contrainte à des paramètres absents et à la longueur de clé fixée par FIPS 203. La clé d'une personne est certifiée par l'EST Issuing CA du royaume avec keyEncipherment comme seul usage de clé, après une preuve de possession par encapsulation à laquelle seule la clé privée peut répondre, et le certificat est un destinataire S/MIME (rfc9629). Manquant : les formats de clé privée (ce service ne détient jamais de clé privée ML-KEM) et les certificats ML-KEM pour les propres clés de ce service."
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial : les méthodes de recherche avancée et directe (le SHA-1 en z-base-32 de la partie locale en minuscules, le paramètre l) et le fichier de politique, avec réponse pour les personnes ayant accepté, par domaine de confiance et désactivé par défaut. Manque : le Web Key Service (submission-address, le protocole de soumission) ; CORS suit la liste d'autorisation de ce service plutôt que le * du projet de spécification."
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial, en tant qu'application appelant un module (tout PKCS #11 v2.40 ou ultérieur ; YubiHSM 2 et SoftHSM2 sont ceux qui ont été essayés) : une clé de chiffrement de clés AES-256 non extractible qui enveloppe et désenveloppe chaque clé de données à l'intérieur du jeton (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD ou CKM_YUBICO_AES_CCM_WRAP), et les clés de signature d'un royaume générées et utilisées sur place : RSA PKCS #1 v1.5 et PSS, ECDSA sur P-256, P-384, P-521 et secp256k1, et EdDSA, avec déchiffrement RSA-OAEP et dérivation ECDH par ces mêmes clés. Les mécanismes CKM_ML_DSA et CKM_SLH_DSA de la version 3.2 ne sont utilisés que lorsque le jeton les répertorie ; sinon, ces signatures restent logicielles. Les sessions sont propres à chaque thread, et un module est réinitialisé une fois après une panne. Manquant : ce service n'est pas lui-même un module, n'importe aucune clé dans un jeton et n'en exporte aucune."
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial : un URI désigne le jeton et la clé de chiffrement de clés, ou le jeton des clés de signature. Les attributs de chemin token, object, id (octets encodés en pourcentage), serial et slot-id sont pris en compte, les autres attributs de la section 2.3 sont acceptés et ignorés, et l'attribut de requête module-path choisit le module pour cette clé seule. pin-value et pin-source sont refusés : un PIN est fourni par keys.pkcs11PinProvider, jamais dans un URI. Manquant : type, manufacturer, model et les attributs library ne restreignent pas la correspondance, et module-name n'est pas lu."
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial : la CA utilisateur de chaque royaume émet des certificats utilisateur -cert-v01@openssh.com pour ssh-ed25519, ECDSA, RSA et les deux types de clés de sécurité sk-, signés avec ssh-ed25519, ecdsa-sha2-nistp256/384/521 ou rsa-sha2-256/512 dans l'ordre indiqué par pki.sshUserCaAlgorithms, avec des principals issus de l'entrée propre de la personne, les extensions du royaume et aucune option critique, et une durée de vie plus longue uniquement en cas de preuve matérielle vérifiée. La clé de la CA est publiée à /pki/ssh-user-ca/{scope}. Un certificat d'hôte est lu et vérifié, mais pas émis. ssh-mldsa-65 est un type de clé défini par ce service, car OpenSSH n'en a pas, et OpenSSH standard ne peut pas le vérifier. Manquant : les certificats d'hôte et les certificats pour les clés DSA."
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial : la KRL de chaque royaume à /pki/ssh-user-krl/{scope}, reconstruite par une tâche planifiée lorsqu'un certificat est révoqué ou qu'un jeton matériel est déclaré perdu, contient une section de certificats par clé de CA avec une liste de numéros de série, ainsi que les empreintes SHA-256 des clés révoquées. Elle est relue aussi bien qu'écrite. Manquant : une section de signature (la KRL n'est pas signée, c'est pourquoi elle n'est servie que sur le port principal), ainsi que les listes de key-id, les plages et bitmaps de numéros de série, les clés explicites et les empreintes SHA-1."
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -846,6 +946,18 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "POST le sujet, la ressource, l’action et le contexte d’une évaluation refusée avec le refus reçu (son binding_token et son expires_at, renvoyés tels quels) ; obtenez 202 et un Task Handle, ou 201 avec le résultat lorsqu’elle est décidée immédiatement (accès d’urgence que la politique autorise). Seul un Deny que la politique du domaine a marqué avec l’advice urn:sts:xacml:advice:access-request est demandable. La même porte d’appelant et AUTHZEN_PEPS qu’une évaluation ; Idempotency-Key honoré par appelant ; un rappel (callback) uniquement vers une URL enregistrée pour l’appelant. Tout refus est en problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "fb06abe45104accd",
+    "text": "GET du JSON Schema (draft 2020-12) des compléments qu’une soumission peut ajouter : context.business_justification, ainsi que requested_access.requested_until et emergency, ce dernier exigeant la justification. Public, de même origine que access_request_endpoint ; le request_schema_url d’un refus demandable le désigne. Tant que authzen.accessRequestForm est activé, un refus désigne aussi form_url, une page du portail. Répond 501 tant que l’API ou le profil est désactivé. Enregistré avant le chemin d’état de la tâche, qui lirait sinon « schema » comme un identifiant."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation.what": {
+    "en": "85bf86a2b7ad419f",
+    "text": "GET du Catalogs Document qu’un refus demandable désigne par request_catalogs_url : le seul champ adossé à un catalogue, requested_access.entitlement, et son Catalog Endpoint. Seulement pour un refus enregistré dont l’advice de la politique énumère des droits, et seulement à l’appelant à qui il a été répondu, toujours limité à l’application. La même porte et AUTHZEN_PEPS qu’une soumission. Répond 501 tant que authzen.accessRequestCatalogs est désactivé."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation/entitlements.what": {
+    "en": "307d85d64e66c5d4",
+    "text": "GET des droits qu’énumère l’advice de la politique du refus, comme Catalog Items (value et label) : q correspond à l’un ou l’autre, cursor poursuit la même recherche et limit est plafonné à 50. Le même appelant que le Catalogs Document. Le requested_access.entitlement d’une soumission doit être l’un d’eux."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1043,6 +1155,14 @@
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, et délibérément ici malgré tout : une personne qui dirige un client vers ces points de terminaison doit savoir ce que SONT ces adresses, et les lire dans un certificat avec `openssl x509 -text` est une mauvaise première étape. Une ligne par autorité avec son sujet, le nombre de certificats qu’elle a révoqués, et sa CRL dans les deux schémas (http, ldap) à côté de ses adresses OCSP et caIssuers. AUCUN NUMÉRO DE SÉRIE N’Y FIGURE — la liste de ce qui est révoqué est la CRL, et une copie JSON à côté serait une seconde réponse à la même question : celle qui devient obsolète, et celle que personne n’a signée. Il dit en toutes lettres que ce service PUBLIE la révocation et ne peut obliger personne à la consulter, ce qui vaut pour toute autorité de certification et explique pourquoi l’auteur d’un client dirigerait sa pile ici. Sans contrôle d’accès, car tout ce qu’il contient figure déjà dans chaque certificat que ce service délivre."
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3) : la clé de l’AC utilisateur OpenSSH propre au domaine, publiée comme ligne authorized-key à laquelle les serveurs SSH font confiance. Avec `?algorithm=ssh-mldsa-65`, elle renvoie à la place l’autorité ML-DSA du domaine, que la version standard d’OpenSSH ne sait pas encore vérifier. Sans contrôle et `no-store`, sur le port principal seulement : l’écouteur de révocation HTTP en clair la refuse, car la clé est une ancre de confiance. La clé privée de l’AC correspondante ne quitte jamais ce service."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3) : la KRL OpenSSH propre au domaine, mise à jour quand un appelant révoque un certificat ou signale un jeton matériel perdu. Sans contrôle et `no-store`, sur le port principal seulement : la KRL n’est pas signée, donc l’écouteur de révocation HTTP en clair la refuse. Les serveurs SSH doivent être configurés pour la consulter, car ce service ne peut pas y contraindre une partie de confiance."
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "Ce qu’affiche GET /admin/xacml, sous forme de données. Sans contrôle d’accès, comme le reste de /admin-api."
@@ -1207,13 +1327,33 @@
     "en": "8899a7fad6b6b50c",
     "text": "L’alias de la section 3.11 pour le sujet sous lequel la requête s’est authentifiée. GET, PUT, PATCH et DELETE résolvent le justificatif en une entrée d’annuaire et délèguent aux MÊMES gestionnaires User qu’utilise /Users/{id} ; il n’y a donc pas de second chemin de lecture ou d’écriture à maintenir en phase. Il répondait autrefois 501 à chaque méthode parce que rien ici n’authentifiait, et DEUX DE CES 501 RESTENT JUSTES et sont conservées : un appelant ANONYME n’a aucun sujet à désigner par l’alias (l’alias est indisponible, ce qui n’est pas la même chose qu’une ressource absente), et POST créerait un sujet qui, par définition, existe déjà. Un justificatif désignant quelqu’un sans entrée — un jeton client_credentials, un certificat client — reçoit plutôt une 404."
   },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service section 3.1, la méthode avancée, interrogée sur openpgpkey.<domain> : la clé publique OpenPGP binaire de la personne dont l'adresse a pour haché :hash (z-base-32 du SHA-1 de la partie locale en minuscules, l= la partie locale), en application/octet-stream avec Cache-Control: no-store. Seule une personne ayant accepté sur /portal/openpgp reçoit une réponse, et seulement là où le domaine de confiance a activé openpgp.wkd et sert :domain ; tout le reste renvoie 404. Un chemin sans segment de domaine de confiance reçoit la réponse du domaine de confiance qui sert le domaine DNS."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "Le fichier de politique de la méthode avancée : vide, en text/plain, 200 là où un domaine de confiance sert :domain et 404 sinon. Sa présence indique au client que l'annuaire existe ; aucun Web Key Service n'est proposé, il n'y a donc pas de submission-address."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "La méthode directe : comme la méthode avancée, le domaine étant l'hôte auquel la requête a été adressée."
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "Le fichier de politique de la méthode directe, pour l'hôte auquel la requête a été adressée."
+  },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
     "text": "RFC 7486 section 7. Un POST encodé en formulaire portant pub=<PEM public key> et (paramètre propre à ce service) username=<who it is for>, auquel il est répondu 201 avec l’en-tête Hobareg: regok. NON AUTHENTIFIÉ à dessein : c’est ainsi qu’un appelant OBTIENT un justificatif ; en exiger un pour y accéder rendrait le schéma inutilisable pour quiconque n’en possède pas déjà un autre. N’importe qui peut enregistrer n’importe quelle clé pour n’importe quel nom — la SIGNATURE est ensuite réellement vérifiée, et c’est la moitié qui rend le schéma digne d’être implémenté. La clé arrive sur l’entrée propre de la personne sous ou=users en tant que hobaPublicKey ; un ldapsearch et /admin/users la montrent donc. GET décrit le point de terminaison, car un chemin well-known qui renvoie 404 à un navigateur ne se distingue pas d’un chemin que personne n’a implémenté."
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "b9f18166e17e9c9d",
-    "text": "UN CERTIFICAT CLIENT VÉRIFIÉ DEVIENT UNE SESSION (2026-09-05), sur ce port depuis le 2026-09-16 — c’était un effet de bord de l’accès à l’un ou l’autre des écouteurs TLS supprimés, ce qui signifiait que charger une page de diagnostic vous connectait. Il indique ce qui est arrivé, si cela a été vérifié, l’empreinte à laquelle le point de terminaison de jeton lierait un jeton, ce qu’a révélé la vérification de révocation, et si une session a été démarrée. Il ne refuse personne lors de la négociation et ne le peut pas : un certificat qui ne se vérifie pas, un certificat émis par ce service qui n’est pas une identité de client TLS, un certificat d’une autorité de certification externe qui n’est pas enregistré dans userCertificate sur exactement une entrée du domaine (jamais rapproché par son nom commun), et le certificat d’une application (un justificatif RFC 8705, pas une personne) reçoivent chacun une réponse 200 sans session, avec la raison."
+    "en": "86c9267a55ef2564",
+    "text": "UN CERTIFICAT CLIENT VÉRIFIÉ DEVIENT UNE SESSION (2026-09-05), sur ce port depuis le 2026-09-16 — c’était un effet de bord de l’accès à l’un ou l’autre des écouteurs TLS supprimés, ce qui signifiait que charger une page de diagnostic vous connectait. Il indique ce qui est arrivé, si cela a été vérifié, l’empreinte à laquelle le point de terminaison de jeton lierait un jeton, ce qu’a révélé la vérification de révocation, et si une session a été démarrée. Il ne refuse personne lors de la négociation et ne le peut pas : un certificat qui ne se vérifie pas, un certificat émis par ce service qui n’est pas une identité de client TLS, un certificat d’une autorité de certification externe qui n’est pas enregistré dans userCertificate sur exactement une entrée du domaine (jamais rapproché par son nom commun), et le certificat d’une application (un justificatif RFC 8705, pas une personne) reçoivent chacun une réponse 200 sans session, avec la raison. Derrière un proxy de terminaison TLS que l’administrateur a désigné (tls.trustedProxyCertificates et tls.trustedProxyAddresses, désactivés par défaut), le certificat est le Client-Cert et le Client-Cert-Chain de RFC 9440, vérifiés ici comme le serait celui d’une négociation TLS ; venant de quiconque d’autre, ces en-têtes sont supprimés."
+  },
+  "stsmetadata.endpoints./authn/certificate/continue.what": {
+    "en": "7a42e6050c748fd8",
+    "text": "LE RELAIS DE CONNEXION PAR CERTIFICAT (#2012, désactivé par défaut : certSignIn.handoff). L’écran de connexion renvoie ici, sur l’écouteur auquel l’application certificate-sign-in est associée — un écouteur dont le clientAuth demande un certificat —, si bien que la carte à puce et son code PIN ne sont demandés que pour cette seule requête. Le certificat est soumis à ce qu’exige la propre porte de certificat de l’écran, lié à la connexion en attente et à la session d’authentification unique du navigateur (les deux requêtes la portent), et le navigateur est renvoyé à l’écran, qui continue en tant que son titulaire. Un relais inconnu, utilisé ou expiré reçoit la réponse 400, et un relais arrivant sans la session du navigateur qui l’a lancé, 403."
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -1251,6 +1391,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. L’icône qu’un navigateur demande de lui-même sur chaque page : la marque carrée du logo (common/favicon.ico). Servie sur chaque écouteur ; conservée un jour."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). Le récepteur de ce que CSP Level 3 et la Reporting API font envoyer à un navigateur : la politique de chaque page le nomme dans report-uri et report-to, avec un en-tête Reporting-Endpoints. POST seulement, sans authentifiant, au plus 16 Kio et 60 rapports par minute d'une même adresse ; il enregistre la directive, le chemin de la page sans sa requête et l'origine bloquée, journalise STS-HTTP-0027 et répond 204 sans corps. Répondu par le processus frontal (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Les règles de la carte de l’écran de connexion et du sélecteur de langue, en une seule feuille de style que lie le shell d’une surface publique statique (common/web_card_css.ts). Servie sur chaque écouteur ; une adresse portant le ?v= de ce build est mise en cache définitivement."
@@ -1258,6 +1402,10 @@
   "stsmetadata.endpoints./web/footer.css.what": {
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC (2026-11-14). Les règles du pied de page que dessine le shell de chaque surface statique — les liens vers la documentation, le contact et la présentation, les icônes des réseaux sociaux, le copyright et la version (common/web_footer.ts). Servie sur chaque écouteur ; une adresse qui porte le ?v= de cette compilation est mise en cache pour toujours."
+  },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220). Un script en ECMAScript 5, exécuté avant le bundle d'une surface statique, qui vérifie que le navigateur dispose de fetch, TextEncoder, URL et ECMAScript 2022 et, sinon, affiche l'avis que le shell a dessiné masqué dans la langue du lecteur (common/web_browser_check.ts). Répondu sur chaque listener, no-cache."
   },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
@@ -1603,6 +1751,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "NON-SPEC. Propre à la console (#454) : apply-profile, generate-keys, generate-alt-keys et use-key remplissent le formulaire de certificat à partir d’un profil, d’une nouvelle paire de clés ou d’une paire stockée, et n’écrivent rien. L’émission à laquelle elles mènent est POST /admin-api/pki/issue-certificate."
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "NON-SPEC. Propre à la console (#2080) : inspect lit les certificats PEM fournis — sujet, SHA-256, SHA-256 de la SubjectPublicKeyInfo — pour l’éditeur des profils de connexion par certificat, les listes PEM de PIV et l’éditeur de liaisons d’une personne, et avec bindings répond les valeurs stsCertificateBinding par lesquelles le premier est trouvé. Il n’écrit et ne conserve rien ; ce à quoi il mène est POST /admin-api/config/set ou /admin-api/users/add-attribute."
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "NON-SPEC. Propre à la console (#454) : generate-secret produit un secret client pour un formulaire sur le point d’être soumis et n’écrit rien. La création est POST /admin-api/applications/create."
@@ -1638,6 +1790,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — les commandes de /admin/pki/trust. add prend `certificates` (un ou plusieurs blocs PEM, chacun soumis à la règle d’admission, chaque refus étant nommé), avec `purposes` pour les restreindre ; remove prend un seul `fingerprint` ; recheck lance l’audit immédiatement ; set-row prend un `setting` `pki.paranoid*` et sa `value`, par l’écriture ordinaire des réglages. Exige admin:write. Écrit dans ou=signerTrustAnchors, donc une modification survit à un redémarrage."
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "Les onglets Magasins de confiance, Cas d’usage et Magasin de confiance du système de /admin/pki/trust en JSON (#2118) : chaque magasin de confiance que ce domaine peut nommer (intégré, vue, réglage, bundle SPIFFE ou nommé), avec son contenu compté et les cas d’usage qui lui font confiance, chaque cas d’usage avec ce à quoi il fait confiance maintenant et son défaut, les limites, et le magasin par défaut de node décrit certificat par certificat sans PEM."
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign — les contrôles des onglets Magasins de confiance et Cas d’usage de /admin/pki/trust (#2118). show prend un `name` (et `withPem`) et n’écrit rien ; create prend un `name` et une `description` ; delete est refusé tant qu’un cas d’usage fait confiance au magasin ; add prend des `certificates`, chacun soumis à la règle d’admission et chaque refus nommé ; remove prend une `fingerprint` ; assign prend un `useCase` et ses `truststores` ordonnés, et unassign ramène le cas d’usage à son défaut. Un cas d’usage à l’échelle du service ne s’attribue que depuis le domaine par défaut. Requiert admin:write. Écrit dans ou=truststores, donc une modification survit à un redémarrage."
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -1723,6 +1883,18 @@
     "en": "bcf806336009d1f4",
     "text": "met en file un message de test, ou enregistre ou réinitialise la formulation d’un domaine"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC (#1955). Ce que dessine Directory → OpenPGP keys : avec ?user=, la clé OpenPGP de cette personne, son défi d'enregistrement en cours, sa publication dans le Web Key Directory, son certificat S/MIME et la façon dont ses messages sont chiffrés ; ainsi que l'interrupteur et les domaines du Web Key Directory du domaine de confiance. Reflète GET /admin/openpgp."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC (#1955). challenge, register (publicKey, signed : le défi de la personne signé avec gpg --clearsign), remove, publish, withdraw, mail-encryption (choice) et smime (certificate), chacun avec { user } : ce que /portal/openpgp propose à la personne, pour son compte. Une clé n'est enregistrée que sur la propre preuve de la personne."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "émet un défi, enregistre ou supprime une clé OpenPGP, la publie, ou définit le chiffrement des messages ou le certificat S/MIME d'une personne"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "NON-SPEC (#63). Ce qu’affiche GET /admin/mail/outbox : chaque message que ce domaine a mis en file, à qui il était destiné et ce qu’il en est advenu, paginé et filtré par état et par recherche — jamais un corps, sauf celui d’un message capturé (développement) via ?message=. Reflète GET /admin/mail/outbox."
@@ -1803,6 +1975,30 @@
     "en": "b48aa4041763958e",
     "text": "NON-SPEC. Les paramètres `webauthn.*` en quatre catégories — la CÉRÉMONIE (nom du RP, remplacement de l’ID du RP, algorithmes, vérification de l’utilisateur, transmission de l’attestation, délai), CTAP2 (rattachement de l’authentificateur, credProps) et la POLITIQUE (si une clé peut être principale, si elle peut être un second facteur, combien par personne) — avec la table des algorithmes COSE à côté, lue dans authn/webauthn.js, le module qui vérifie la signature. **UN SEUL EST APPLIQUÉ ET LES AUTRES SONT DES DEMANDES** : userVerification est vérifié par rapport à l’indicateur UV dans les octets que l’authentificateur a signés. La politique d’attestation (#105) et les métadonnées FIDO en vigueur sont indiquées à côté. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/webauthn."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "NON-SPEC (#2049). Le groupe Hardware tokens : hardwareTokens.hardwareClaims, qui décide si une inférence PKINIT et une clé d’accès sans attestation de confiance obtiennent encore hwk, avec ce qu’est un registre de jetons et ce que retire un jeton perdu. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/hardware-tokens-settings."
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "NON-SPEC (#2049). Chaque paramètre piv.* : les racines d’attestation, si un profil PIV exige une attestation, les politiques de PIN et de toucher, la connexion par authentification de carte, le séquestre de clés et les émetteurs externes associés par UUID de carte. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/piv."
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "NON-SPEC (#2049). Chaque paramètre yubiotp.* : l’enrôlement, le point de vérification YK-VAL 2.0 et les imports en clair. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/yubiotp."
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "NON-SPEC (#2049). Les paramètres hotp.* et pskc.allowPlaintextImport : la longueur du code, les deux fenêtres et si le mode produit accepte un fichier de graines PSKC en clair. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/oath-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "NON-SPEC (#2049). Chaque paramètre pki.ssh* de l’autorité de certification utilisateur OpenSSH du domaine : ses algorithmes, les règles post-quantiques, le certificat le plus long avec et sans preuve matérielle, les extensions et les principaux. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/ssh-user-ca."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "NON-SPEC (#2049). Chaque paramètre openpgp.* : le Web Key Directory, les algorithmes acceptés, la plus petite clé RSA, les règles post-quantiques, la durée de vie du défi et le décalage d’horloge de la signature. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/openpgp-settings."
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "NON-SPEC. Une ligne par personne : mot de passe, clés de sécurité dans le rôle `mfa`, si une application d’authentification est enrôlée, et lequel des deux lui sera demandé. `totpUsable: false` est la ligne à rechercher — un enrôlement que ce processus ne peut pas lire, dont le titulaire est REFUSÉ à l’étape du code plutôt qu’admis avec un seul facteur. **LA PAGE DE CONSOLE QUE CECI REFLÉTAIT A DISPARU** : /admin/mfa a duré quelques heures avant de se scinder en pages de mécanismes /admin/totp et /admin/webauthn et en une liste qui est désormais un ensemble de colonnes sur /admin/users. Cette ressource est conservée et répond À PARTIR DE CETTE VUE ; il y a donc un seul décompte plutôt que deux parcours. Reflète GET /admin/users, et GET /admin-api/users porte les mêmes faits sous `factors` sur chaque ligne."
@@ -1826,6 +2022,18 @@
   "stsmetadata.endpoints./admin-api/rbac/:action.effect": {
     "en": "d4fe53d89f2efabd",
     "text": "accorde ou révoque l’accès à la console d’administration"
+  },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5). Ce que dessine GET /admin/approvals : si l'approbation à deux personnes (admin.dualControl, désactivée par défaut) est activée et en vigueur dans ce domaine, la table des actes qu'elle retient, et chaque acte d'administration retenu pour un second administrateur, ceux en attente d'abord ; ?id= en désigne un. Reflète GET /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166). approve, refuse et withdraw, avec { id, reason }. Approuver et refuser reviennent à une seconde personne, différente, détenant l'autorité dont l'acte a besoin ; une approbation demande une connexion récente et exécute l'opération stockée par son propre gestionnaire comme l'acte du demandeur. Retirer revient au demandeur. Reflète POST /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "exécute, refuse ou retire un acte d'administration retenu"
   },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
@@ -1942,6 +2150,30 @@
   "stsmetadata.endpoints./admin-api/users/new.what": {
     "en": "ee45e233f511ee47",
     "text": "NON-SPEC. LE CATALOGUE FERMÉ D’ATTRIBUTS QUE PREND UNE CRÉATION, en JSON : chaque attribut qui peut être attribué à une personne de cet annuaire, chacun nommant la revendication qu’il atteint dans un jeton ou un justificatif émis et le document dont provient son nom — ce qui importe, car cet annuaire n’a AUCUN SCHÉMA et n’en refuserait aucun nulle part — plus le conteneur ou=users dans lequel arriverait une nouvelle personne (CELUI DE CE DOMAINE, car l’annuaire est propre à chaque domaine) et les quatre façons de lui donner un moyen d’entrer. uid ne figure pas dans la liste car il EST le nom d’utilisateur, et userPassword non plus, car un mot de passe passe par l’option de justificatif afin d’être haché plutôt que consigné en clair. IL NE CRÉE PERSONNE : la création est POST /admin-api/users/create, et ceci est la liste par rapport à laquelle cet appel valide — un nom d’attribut absent de la liste est refusé et toute la création échoue ; un appelant qui lit ceci d’abord ne peut donc pas apprendre ensuite que la moitié de ce qu’il a envoyé a été ignorée. Reflète GET /admin/users/new."
+  },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi un groupe peut être créé, en JSON : chaque champ de la création et si la création est refusée sans lui — le cn est obligatoire, la description, l’adresse et les membres ne le sont pas — ainsi que le conteneur ou=groups où un nouveau groupe arriverait, celui de CE DOMAINE. ELLE NE CRÉE RIEN : la création est POST /admin-api/groups/create. Reflète GET /admin/groups/new."
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi un rôle peut être créé, en JSON : chaque champ de la création et si la création est refusée sans lui — le nom est obligatoire, le reste ne l’est pas — ainsi que le conteneur où les rôles sont stockés et les applications auxquelles un rôle peut être destiné. ELLE NE CRÉE RIEN : la création est POST /admin-api/roles/create-role. Reflète GET /admin/roles/new."
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi un appareil peut être enregistré, en JSON : chaque champ de la création et si la création est refusée sans lui — le propriétaire est obligatoire, le reste ne l’est pas — ainsi que les ensembles fermés d’où viennent ses choix. ELLE N’ENREGISTRE RIEN : la création est POST /admin-api/devices/create. Reflète GET /admin/devices/new."
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi une source d’attributs peut être ajoutée, en JSON : chaque champ de la création et si la création est refusée sans lui — l’identifiant, l’hôte, la base, l’utilisateur, la table, sa colonne clé et au moins une correspondance de colonne sont obligatoires, le reste a des valeurs par défaut — ainsi que les ensembles fermés d’où viennent ses choix. ELLE N’AJOUTE RIEN : la création est POST /admin-api/attribute-sources/add-source. Reflète GET /admin/attribute-sources/new."
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "HORS SPÉCIFICATION. Ce avec quoi une destination de secrets peut être ajoutée, en JSON : chaque champ de la création et si la création est refusée sans lui — l’identifiant et le fournisseur toujours, et certains pour certains fournisseurs seulement (requiredWhen) : l’identifiant d’écriture pour tous sauf file, la région pour aws, le point de terminaison pour azure et vault, le répertoire pour file. ELLE N’AJOUTE RIEN : la création est POST /admin-api/secret-destinations/add-destination. Reflète GET /admin/secret-destinations/new."
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "76e1013ae3d82e5b",
+    "text": "HORS SPÉCIFICATION. Les types dont une politique nommée peut être faite et, pour le type demandé, chaque champ de son enregistrement et si l’enregistrement est refusé sans lui — toujours le nom, car un enregistrement sans nom modifie la politique par défaut, et chaque champ que l’enregistrement refuse vide. ELLE N’ENREGISTRE RIEN : une politique nommée est l’enregistrement du type sous un nom que le domaine ne détient pas encore. Reflète GET /admin/policies/new."
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
@@ -2127,6 +2359,34 @@
     "en": "0550e836ba364102",
     "text": "lance, met en pause, reprend ou termine une activité après connexion"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955). Ce que dessine Annuaire → Jetons matériels : les clés de sécurité et cartes à puce physiques que ce domaine a enregistrées, chacune à partir de sa propre attestation, paginées et recherchées par numéro de série ou par personne, avec les clés d'accès et certificats de chacune. Reflète GET /admin/hardware-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4). Les jetons HOTP et TOTP que les administrateurs ont importés depuis les fichiers de semences PSKC des fournisseurs, non attribués, attribués ou retirés, paginés et recherchés par numéro de série ou personne. Jamais un secret. Reflète GET /admin/hardware-tokens (son onglet OATH)."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071). Les YubiKey OTP que les administrateurs ont importés d’un CSV, non attribués, attribués ou retirés, paginés et recherchés par numéro de série ou par personne ; ceux d’une personne sont lus sur son entrée, la copie maîtresse. Jamais une clé. Reflète GET /admin/hardware-tokens (son onglet YubiKey OTP)."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte retirée, chaque certificat qu’il porte révoqué pour keyCompromise, un credential-change CAEP envoyé pour chacun et les sessions qu’ils ont ouvertes terminées. enrol-piv, avec { username, profile, csr, attestationCertificate?, attestationIssuer? } : un certificat d’emplacement PIV émis à cette personne par l’AC émettrice EST, son attestation PIV YubiKey vérifiée et la YubiKey enregistrée. recover-key, avec { username, serial } : la clé piv-key-management séquestrée de cette personne, que la politique de contrôle d’accès n’autorise qu’à PIV_KEY_RECOVERY, après une connexion récente. revoke-ssh, avec { username, serial } : le certificat utilisateur SSH de cette personne révoqué et inscrit dans la KRL du domaine. issue-ssh, avec { username, publicKey, principals?, lifetimeS? } : un certificat utilisateur SSH émis pour cette personne, écrit d’abord sur son entrée (#2071). Les cinq actions de la console sur cette page."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "38d7254e0ab72a00",
+    "text": "signale un jeton matériel perdu et retire ses identifiants, émet un certificat d’emplacement PIV, remet une clé séquestrée, ou émet ou révoque le certificat SSH d’une personne"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (la revue de #1955). Les certificats utilisateur OpenSSH émis à une personne et non expirés, les révoqués marqués : numéro de série, type et empreinte de la clé, principaux, validité et si une preuve matérielle couvrait la clé. Jamais une clé. Reflète GET /admin/hardware-tokens (son onglet Certificats SSH)."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Les certificats piv-key-management séquestrés d’une personne (piv.keyEscrow) : numéro de série, sujet, validité et si chacun a été révoqué. Jamais une clé. Reflète GET /admin/hardware-tokens."
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NON-SPEC (#552). Ce qu’affiche Protocols → SCIM → Clients : les entrées d’application déclarées pour scim-client — les fournisseurs de services vers lesquels ce domaine pousse ses personnes et ses groupes — chacune avec les décomptes de sa file et sa pause de temporisation, et avec ?client= les files de nouvelles tentatives et de lettres mortes et la découverte d’un client. Jamais un justificatif."
@@ -2142,6 +2402,10 @@
   "stsmetadata.endpoints./admin-api/roles/preview.what": {
     "en": "efc872210c98747b",
     "text": "NON-SPEC. Une décision d’émission, prise puis jetée : rien n’est émis et rien n’est enregistré. Elle passe par le MÊME appel que font les neuf points d’émission — issuance_gate.check(), le PEP intégré et le PDP face à la politique que nomme xacml.issuancePolicy — de sorte qu’un aperçu qui ne concorderait avec l’application que par coïncidence est impossible, ce qui est sa seule raison d’être. Ce n’est PAS POST /xacml/pdp, qui interroge le même moteur sur la RACINE du référentiel : ce document répond à des questions sur la frontière de quelqu’un D’AUTRE, et celui-ci répond à une question sur ce service. `application` et `subject` sont tous deux obligatoires, car une émission qui ne nomme ni l’un ni l’autre est autorisée par définition plutôt que par politique. `kind` devient l’action-id XACML ; une politique peut donc autoriser un jeton d’accès et refuser un jeton d’actualisation. `available: false` signifie que le moteur n’est pas chargé ici. Reflète la simulation de /admin/roles."
+  },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "HORS SPÉCIFICATION (#1072). La politique d’éligibilité XACML propre à un rôle dynamique sélectionnable, décidée par le PDP pour une personne, comme le ferait une connexion à `application`, sans connexion : éligible ou non, le code sinon, la décision et le statut (un attribut manquant s’y nomme). Seul Permit rend éligible. Rien n’est écrit hormis la ligne d’audit roles.eligibility, et ni la politique ni les attributs de la personne ne sont montrés. `role` et `user` sont tous deux nécessaires ; sinon la réponse est `answered: false`. Reflète le test de la page /admin/roles d’un rôle dynamique."
   },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
@@ -2176,8 +2440,8 @@
     "text": "Surface NON-SPEC sur un comportement de spécification. L’historique des assertions utilisées en JSON : chaque assertion RFC 7523 et RFC 7522 que ce domaine a acceptée et qui n’a pas encore expiré, avec l’endroit où l’historique est conservé (persistant, atomique entre processus), le décompte actuel par rapport à oauth2.assertionReplayCacheSize, filtré par texte, format, usage et état et paginé avec ?page= et ?per=. Aucune assertion et aucun justificatif dans aucune ligne. EN LECTURE SEULE. Reflète GET /admin/used-assertions."
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "NON-SPEC. La table centrale de toutes les conditions d’échec que ce service peut produire, STS-<SUBSYSTEM>-<NNNN>, en JSON : chaque code avec son sous-système, ce qui a échoué, ce qui est dit au CLIENT dans le vocabulaire de son propre protocole, et le nombre de lignes du journal d’audit conservé qui le portent dans ce domaine — filtrée par sous-système, texte et ?seen=1, paginée avec ?page= et ?per=. UN CODE N’EST JAMAIS ENVOYÉ À UN CLIENT : il figure uniquement sur la ligne d’audit et dans la ligne de journal. EN LECTURE SEULE — la table est dans le code source. Reflète GET /admin/error-codes ; la même table est docs/v1.1.0/error-codes.md."
+    "en": "d4977def3313bbf1",
+    "text": "NON-SPEC. La table centrale de toutes les conditions d’échec que ce service peut produire, STS-<SUBSYSTEM>-<NNNN>, en JSON : chaque code avec son sous-système, ce qui a échoué, ce qui est dit au CLIENT dans le vocabulaire de son propre protocole, et le nombre de lignes du journal d’audit conservé qui le portent dans ce domaine — filtrée par sous-système, texte et ?seen=1, paginée avec ?page= et ?per=. UN CODE N’EST JAMAIS ENVOYÉ À UN CLIENT : il figure uniquement sur la ligne d’audit et dans la ligne de journal. EN LECTURE SEULE — la table est dans le code source. Reflète GET /admin/error-codes ; la même table est docs/v1.2.0/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -2230,6 +2494,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Une page des résidents d’une autre cellule, renvoyée par cette cellule uniquement lorsque sa politique de divulgation le permet."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports en JSON : les violations de la Content Security Policy que les navigateurs ont signalées pour ce domaine, comptées par directive par le processus frontal de ce nœud, et le paramètre de transfert. Il ne change rien."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",
@@ -2342,6 +2610,10 @@
   "stsmetadata.endpoints./admin-api/tls.what": {
     "en": "019419feb342ad45",
     "text": "GET /admin/tls en JSON : les paramètres tls.*, tous pris en compte au seul redémarrage, car le certificat est émis et les sockets liés avant que quoi que ce soit n’écoute. Le fait que le port PRINCIPAL soit en HTTPS relève de global.https, sur /admin-api/config avec les paramètres propres au processus. Lecture seule."
+  },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220). Le groupe d'échange de clés négocié par chaque négociation TLS terminée sur les listeners de ce nœud depuis le démarrage de son processus frontal, compté par listener et par groupe, et combien étaient post-quantiques (un groupe ML-KEM). Affiché sur /admin/crypto-metadata. Ne change rien."
   },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
@@ -3027,6 +3299,22 @@
     "en": "9547cda6898c37a6",
     "text": "demande une clé d’accès post-quantique après une connexion, puis établit la session de connexion qu’elle retenait"
   },
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "PROTOCOLE DE VALIDATION 2.0 DE YUBICO (#1955 P5). GET ou POST de id, otp, nonce et h. Désactivé par défaut : la route répond OPERATION_NOT_ALLOWED et ne signe rien. Activé, l’identifiant du client et le HMAC-SHA1 sont vérifiés dans tous les modes, y compris le développement ; un nonce est retenu cinq minutes ; un OTP correspondant est consommé. Cache-Control: no-store. Rien n’est envoyé à YubiCloud."
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "vérifie un OTP YubiKey pour un client qui a signé la requête, ou répond OPERATION_NOT_ALLOWED tant que yubiotp.ykval est désactivé"
+  },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "RÔLES DYNAMIQUES SÉLECTIONNABLES (#1072). Après tous les facteurs, une connexion à une application dont le domaine définit un rôle dynamique (sauf si roles.dynamicSelection ou appDynamicRoleSelection de l’application le désactive) est SUSPENDUE pendant que la politique d’éligibilité XACML de chaque rôle dynamique est décidée pour la personne ; seul Permit propose un rôle. Si la personne a coché « Choisir des rôles pour cette connexion » ou si un rôle obligatoire est proposé, cette page liste les choix possibles ; Continuer (/authn-api/mfa/{id}/roles) confronte le choix à l’offre de l’étape et de nouveau aux politiques, puis démarre la session avec ce choix inscrit sur l’enregistrement de session, jamais dans l’annuaire. Un jeton pour cette application porte alors les rôles choisis, chacun soumis de nouveau à sa politique à chaque émission. Exige un identifiant ?mfa= émis par la connexion suspendue ; suivi seul, il répond 400."
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "demande quels rôles dynamiques sélectionnables utiliser pour cette connexion, puis établit la session qu’elle avait suspendue avec ce choix"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "LE SECOND SECOND FACTEUR (2026-09-10). Une étape de mot de passe réussie pour quelqu’un ayant une application d’authentification enrôlée aboutit ici, et ce point de terminaison demande les six chiffres qu’affiche son application. En cas de succès, la session enregistre amr [\"pwd\",\"otp\"] — la valeur de la RFC 8176, dont l’entrée de registre nomme la RFC 4226 et la RFC 6238 — et acr \"mfa\", le seul cas où ce service peut honnêtement parler de deux facteurs. **LE CODE EST RÉELLEMENT VÉRIFIÉ DANS LES DEUX MODES**, contrairement au mot de passe qui le précède : un vérificateur de mot de passe à usage unique qui accepterait n’importe quels six chiffres ne serait pas permissif, il serait cassé, et c’est l’argument de SPNEGO lu une seconde fois. Débit limité par identité ET par adresse, car six chiffres représentent un million de valeurs et c’est le plus petit espace de recherche du service. LE GET EST LE LIEN *utiliser plutôt un code* de l’écran de clé de sécurité et ne crée rien — il affiche la page pour une étape qui existe déjà, et la refuse à quelqu’un qui ne détient aucun enrôlement. **IL N’ENRÔLE PERSONNE**, ce qui fait toute la différence avec /authn/webauthn à côté : enrôler signifie se voir montrer un secret partagé, cela se fait donc sur /portal/mfa ou lors de l’utilisation d’un lien d’activation, et jamais sur un écran de connexion. Une page de la surface de connexion depuis #572 : le code est envoyé à /authn-api/mfa/{id}/totp."
@@ -3207,6 +3495,18 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Pour le snoozeDays du profil ; refusé une fois le délai accordé écoulé. La session retenue démarre."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC (#2009 P2). L’activité pqc-mail-encryption : un défi et une clé OpenPGP, ou un certificat S/MIME, dont la clé de chiffrement est ML-KEM ; la session retenue démarre une fois la clé enregistrée."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC (#2009 P3). L’activité piv-reissue : la demande de certificat d’un emplacement et son attestation, auxquelles répond le certificat réémis ; la session retenue démarre une fois celui-ci écrit."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "HORS SPÉCIFICATION (#1072). Le choix de l’étape des rôles, confronté à l’offre de l’étape et à la politique d’éligibilité de chaque rôle ; la session suspendue démarre avec ce choix."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
     "text": "NON-SPEC (#573). À l’adresse vérifiée uniquement ; un nouvel envoi remplace le précédent."
@@ -3326,6 +3626,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "répond 401 avec un défi WWW-Authenticate lorsqu’il est suivi sans paramètres — c’est une ressource protégée qui requiert le jeton d’accès d’un flux OIDC"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "LA SOURCE DISTRIBUÉE D’UNE REVENDICATION DE GROUPES AU-DELÀ DE SA LIMITE (#2247). Un jeton d’accès ou un ID Token dont la revendication de groupes dépasserait groups.claimMaxBytes porte à la place les _claim_names et _claim_sources de la section 5.6.2 d’OpenID Connect Core, pointant ici, et ce point de terminaison renvoie la liste pour le sujet du jeton d’accès présenté sous forme d’application/jwt signé (iss, sub, aud, iat, exp et la revendication), comme la section l’exige d’une source distribuée. Le jeton est vérifié comme UserInfo en vérifie un — signature, émetteur, contrainte d’expéditeur, typ, révocation — sauf son audience et la portée openid, car le jeton d’un serveur de ressources est celui dont la revendication pointait ici. Seul un jeton qui porte lui-même la référence peut la racheter, et il reçoit ce qu’il aurait porté sous la limite, à travers les paramètres de groupes et le filtre de diffusion de son propre client, et rien de plus. Un jeton client_credentials n’a pas de personne et est refusé."
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "répond 401 avec un défi WWW-Authenticate lorsqu’on le suit sans rien — il faut un jeton d’accès émis par ce service"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
@@ -3883,6 +4191,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "CE N’EST PAS UN PROTOCOLE, et il a une carte parce que cette page signale tout groupe de points de terminaison qu’aucune carte ne revendique — c’est la règle qui empêche une nouvelle famille d’arriver sans être annoncée, et il vaut mieux en payer le prix ici que de rendre la règle conditionnelle. LA PREMIÈRE SURFACE DE CE SERVICE QUI APPARTIENT À LA PERSONNE QUI LA REGARDE : toute autre page de navigateur ici est destinée à quelqu’un d’autre — l’écran de connexion est une étape du flux d’un autre protocole, l’écran de consentement pose une question et s’en va, /admin est destiné à un opérateur et protégé par deux rôles. C’est ici qu’une personne voit ce que ce fournisseur d’identité sait d’elle et modifie sa manière de s’authentifier : son mot de passe, ses clés de sécurité et, pour chacune, si elle est un identifiant principal ou un second facteur. C’est une APPLICATION DISTINCTE de la console d’administration, qui ne partage avec elle que la session d’authentification unique auprès du serveur d’autorisation de ce service : chacune est un client OAuth public (ici sts-user-portal) qui conserve en mémoire son propre jeton lié par DPoP. /portal/activate en est la moitié non authentifiée, où quelqu’un provisionné via /admin-api ou SCIM utilise un lien d’activation à usage unique et limité dans le temps pour configurer un identifiant — haché au repos comme un mot de passe, soumis à une limitation de débit, consommé lorsque la configuration s’achève plutôt qu’à l’ouverture du lien, et ne connectant jamais personne. DEPUIS #568, C’EST UNE APPLICATION STATIQUE au-dessus de /account-api, le groupe Account API ci-dessous : une opération par page et par formulaire, la personne étant toujours le sujet du jeton, décrite par son propre document OpenAPI."
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "La clé OpenPGP d'une personne (#1955), enregistrée sur le portail ou par un administrateur sur preuve de possession — la personne signe un défi avec gpg --clearsign ; sur la carte OpenPGP d'une YubiKey, c'est la carte qui signe — et conservée dans son entrée ; publiée, si elle le souhaite et que le domaine de confiance l'a activé, dans le Web Key Directory ; et la clé pour laquelle ses messages sont chiffrés (PGP/MIME), ou son certificat S/MIME (S/MIME), selon son choix. Un domaine de confiance peut exiger le chiffrement de certains messages (mail.encryptionRequired), qui ne sont alors jamais envoyés en clair. Rien n'est enregistré comme lié au matériel : le serveur ne peut pas voir une carte. Il n'existe pas de connexion par OpenPGP."
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "NON PROTOCOLE. L’application de rapports (#956) : une page statique sur /report au-dessus de /report-api, le client public sts-report, et un catalogue des propres enregistrements de ce domaine. Elle ouvre la session dans le navigateur, détient un jeton lié par DPoP et ne prend jamais de chaîne SQL. Une définition enregistrée appartient à son propriétaire ; un partage avec un groupe d’annuaire accorde l’exécution et la lecture, pas la modification."
@@ -4012,8 +4324,12 @@
     "text": "Un second facteur sur l’écran de connexion vers lequel chaque protocole ici envoie une personne : des cérémonies d’enregistrement et d’assertion avec une véritable clé de sécurité, l’attestation et les données de l’authentificateur étant vérifiées et pas seulement analysées."
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "L’autre second facteur sur l’écran de connexion vers lequel chaque protocole ici envoie une personne, et le seul identifiant, à part un ticket Kerberos, que ce service VÉRIFIE réellement : le code est calculé à partir du secret partagé et de l’horloge puis comparé, dans les deux modes, avec application de la règle d’acceptation unique de la section 5.2 de la RFC 6238. L’enrôlement passe par un code QR dessiné par ce serveur, sur /portal/mfa ou lors de l’utilisation d’un lien d’activation ; la ligne de la personne sur /admin/users est l’endroit où un opérateur en efface un, et /admin/totp celui où le mécanisme se configure."
+    "en": "54893544268bf168",
+    "text": "L’autre deuxième facteur de l’écran de connexion vers lequel chaque protocole d’ici envoie une personne, et le seul identifiant, avec un ticket Kerberos, que ce service VÉRIFIE vraiment : le code est calculé à partir du secret partagé et de l’horloge puis comparé, dans les deux modes, avec la règle d’acceptation unique de RFC 6238 section 5.2 appliquée. L’enrôlement est un code QR que ce serveur a dessiné, sur /portal/mfa ou pendant l’utilisation d’un lien d’activation ; la ligne de la personne sur /admin/users est l’endroit où un opérateur l’efface, et /admin/totp celui où le mécanisme est configuré. Depuis #1955 P4, aussi son pendant à compteur : un jeton HOTP RFC 4226 (un emplacement OTP de YubiKey, enrôlé sur /portal/mfa, ou le jeton d’un fournisseur importé depuis son fichier de semences RFC 6030 dans Annuaire → Jetons matériels et attribué ou réclamé par numéro de série), son compteur avancé par compare-and-set, accepté à chaque point d’entrée qui prend un code."
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "Un emplacement OTP YubiKey vérifié sur ce service (#1955 P5). La clé AES-128 reste ici, donc une connexion est amr otp et jamais hwk. L’enrôlement, l’attribution et une revendication restent désactivés jusqu’à yubiotp.offered ; un identifiant déjà détenu est encore vérifié à l’étape du code à usage unique. GET et POST /wsapi/2.0/verify sont YK-VAL 2.0 et restent OPERATION_NOT_ALLOWED jusqu’à yubiotp.ykval. Aucune requête n’est envoyée à YubiCloud."
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

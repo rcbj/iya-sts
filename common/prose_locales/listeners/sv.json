@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "Inloggningstjänsten och dess andra faktorer, plånboken, SPNEGO- och certifikatinloggningar, samt utloggningen."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "Certifikatinloggning"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "Lyssnaren som en certifikatinloggning lämnas över till: den enda begäran som frågar efter ett smartkort eller certifikat."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "Användarportal"
@@ -312,8 +320,8 @@
     "text": "Certifikatutfärdare"
   },
   "listeners.applications.pki.what": {
-    "en": "8b280b2baedbdfe6",
-    "text": "CRL:er, OCSP, CA-certifikaten och kedjorna, samt de kryptografiska metadatadokumenten."
+    "en": "227bec56922b2292",
+    "text": "CRL:er, OCSP, CA:ns certifikat och kedjor, de kryptografiska metadatadokumenten och Web Key Directorys OpenPGP-nycklar."
   },
   "listeners.applications.kerberos.label": {
     "en": "43c19a093b34b581",

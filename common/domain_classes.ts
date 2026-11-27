@@ -723,6 +723,47 @@ class TrustAnchor {
 }
 
 /**
+ * A named truststore: certificate authorities a use case is assigned to trust
+ * (#2118), or a key set bound to one party (#2149).
+ */
+class Truststore {
+  /**
+   * Makes one from what holds it.
+   *
+   * @param held - the attributes or the record
+   * @param options - what it alone cannot say
+   * @returns the concept
+   */
+  static fromEntry(held: any, options?: any):
+      IyaDomain.Truststore {
+    log.debug("Entering Truststore.fromEntry().");
+    const made = DomainMap.fromEntry('Truststore', held, options);
+    log.debug("Leaving Truststore.fromEntry().");
+    return made;
+  }
+}
+
+/**
+ * Which truststores each use case of a realm trusts (#2118).
+ */
+class TruststoreAssignments {
+  /**
+   * Makes one from what holds it.
+   *
+   * @param held - the attributes or the record
+   * @param options - what it alone cannot say
+   * @returns the concept
+   */
+  static fromEntry(held: any, options?: any):
+      IyaDomain.TruststoreAssignments {
+    log.debug("Entering TruststoreAssignments.fromEntry().");
+    const made = DomainMap.fromEntry('TruststoreAssignments', held, options);
+    log.debug("Leaving TruststoreAssignments.fromEntry().");
+    return made;
+  }
+}
+
+/**
  * A person this service authenticates, as every protocol projects them.
  */
 class User {
@@ -899,6 +940,8 @@ export = {
   SignerTrustAnchor: SignerTrustAnchor,
   SpiffeRegistration: SpiffeRegistration,
   TrustAnchor: TrustAnchor,
+  Truststore: Truststore,
+  TruststoreAssignments: TruststoreAssignments,
   User: User,
   VerifiableCredentialPartner: VerifiableCredentialPartner,
   WsFederationRelyingParty: WsFederationRelyingParty,

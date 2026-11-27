@@ -102,6 +102,47 @@
 // `setClaimSet()` applies to a typed claim, made in the only place that can
 // make it.
 // ---------------------------------------------------------------------------
+// THE CAP, AND WHAT A RELYING PARTY SEES PAST IT (#2247, ASVS 5.0.0 4.2.5).
+//
+// An access token travels in an `Authorization` header and an ID Token in a
+// redirect, a form and an `id_token_hint`; somebody in a few hundred groups
+// used to get a token over Node.js's 16 KiB header bound (and the 8 KiB most
+// other servers keep), and every API they called answered 431 with nothing
+// pointing back here. `groups.claimMaxBytes` (4096 by default, 0 for no
+// cap) bounds the claim in those two JWTs: the JSON of its values, measured
+// before base64url. 4 KiB is about 150 group names of the usual length, or
+// 60 DNs, and is the claim's share of an 8 KiB header once the rest of a
+// token and an RS256 or ES256 signature are counted, so the tokens people
+// realistically get today are unchanged.
+//
+// PAST THE CAP THE CLAIM IS A DISTRIBUTED CLAIM, OpenID Connect Core section
+// 5.6.2, never a shorter list: a relying party that read a cut list would
+// silently see somebody in fewer groups than they are in, and branch on it.
+// The claim's name goes in `_claim_names` and points at the source
+// `GROUPS_SOURCE`, whose `endpoint` is this realm's `/oauth2/groups`, which
+// answers the whole list for the presented access token's subject as a
+// signed JWT (section 5.6.2: "The endpoint URL MUST return the Claims as a
+// JWT") — to a token that itself carries the reference, and as that token
+// would have carried it below the cap (`groups_uncapped`, set only there). No `access_token` member is sent: the section lets the relying party
+// present the access token it already holds, and putting one inside a token
+// would make the token bigger, which is the opposite of the point. In an
+// access token the same members tell a resource server where the list is.
+//
+// ONLY THE TWO JWTS. UserInfo is a response body and carries the whole list
+// whatever its size; so does a SAML assertion, which travels in a POST body
+// or a SOAP body (the HTTP-POST binding, WS-Trust, WS-Federation) and never
+// in a header, and for which SAML 2.0 defines no reference to attributes
+// held elsewhere — an attribute query would be a protocol of its own, and a
+// cut attribute is the defect this file's multi-valued attribute rule
+// exists to prevent. A Kerberos PAC carries no groups claim. And a context
+// that names no base URL (the console's preview, a WS-Trust JWT) is left
+// whole, because there is no endpoint to point at.
+//
+// The cut is applied by `overage()` AFTER every layer and the release filter
+// have run (`admin_stats.js`'s `jwtClaims()`), and only to the value THIS
+// layer produced: a typed claim or a directory attribute of the same name won
+// over it and is somebody's statement, not this one's.
+// ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `GroupClaims` takes the logger, the settings, the application
 // registry, the claim-set registry (`admin_stats.js`) and the error codes
@@ -133,6 +174,13 @@ import InstanceSlot = require('./instance_slot');
 
 const { log } = helpers;
 
+// The claim sets the cap applies to (#2247): the two JWTs that travel in a
+// header or a URL. See THE CAP above.
+const OVERAGE_SETS = ['access_token', 'id_token'];
+
+// The `_claim_sources` member a groups claim past the cap points at.
+const GROUPS_SOURCE = 'sts-groups';
+
 // One group as `ldap_server.js`'s groupsOfUser() reports it.
 interface GroupRow {
   dn?: string;
@@ -151,6 +199,13 @@ interface DirectoryHooks {
 // The two kinds of context the resolver halves are handed.
 interface IssuanceContext {
   application?: unknown;
+  // The realm's base URL the token is issued under (#2247): where the
+  // distributed claim's endpoint is, past the cap.
+  base_url?: unknown;
+  // Set only by `/oauth2/groups` (#2247), which answers what the token would
+  // have carried below the cap: the layers and release filter run, and the
+  // cap does not.
+  groups_uncapped?: unknown;
   username?: unknown;
   subject?: unknown;
   client_id?: unknown;
@@ -162,7 +217,7 @@ interface IssuanceContext {
 // asked of each, so a test can supply exactly that and nothing more.
 interface GroupClaimsDeps {
   log: typeof helpers.log;
-  config: unknown;
+  config: { value(key: string): unknown };
   applications: {
     settingFor(identifier: string, settingKey: string, config: any): any;
   };
@@ -345,6 +400,77 @@ class GroupClaims {
   // provider's entityID, or the SAML 1.1 relying party — and the registry
   // files an application under either, so one lookup answers for all four
   // claim sets.
+  /**
+   * Returns the most bytes the claim's values may take in an access token or
+   * ID Token (`groups.claimMaxBytes`), measured as their JSON; 0 is no cap.
+   *
+   * @returns the budget in bytes
+   */
+  maxBytes(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering GroupClaims.maxBytes().");
+    // Read directly: 0 is a legal value (no cap), and `|| n` would hide it.
+    const raw = Number(config.value('groups.claimMaxBytes'));
+    log.debug("Leaving GroupClaims.maxBytes().");
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+  }
+
+  /**
+   * Replaces a groups claim over `groups.claimMaxBytes` in an access token or
+   * ID Token with an OpenID Connect Core section 5.6.2 distributed claim
+   * naming this realm's `/oauth2/groups` (#2247). Below the cap, in any other
+   * claim set, or with no base URL in the context, nothing changes.
+   *
+   * @param setId - the claim set
+   * @param context - the issuance context; `base_url` names the endpoint
+   * @param claims - the merged claims, changed in place
+   * @param produced - what this layer produced for the token, so that only
+   *   its own value is ever cut
+   * @returns true when the claim was replaced
+   */
+  overage(setId: unknown, context: IssuanceContext | null | undefined,
+          claims: Record<string, unknown> | null | undefined,
+          produced: Record<string, unknown> | null | undefined): boolean {
+    const { log } = this.deps;
+    log.debug("Entering GroupClaims.overage(). set=" + setId);
+    if (OVERAGE_SETS.indexOf(String(setId)) < 0 || !claims || !produced ||
+        (context && context.groups_uncapped === true)) {
+      log.debug("Leaving GroupClaims.overage(). Not a capped set.");
+      return false;
+    }
+    const name = Object.keys(produced)[0];
+    const values = name ? claims[name] : undefined;
+    if (!name || !Array.isArray(values) || values !== produced[name]) {
+      log.debug("Leaving GroupClaims.overage(). No groups claim of this " +
+                "layer's.");
+      return false;
+    }
+    const budget = this.maxBytes();
+    const size = Buffer.byteLength(JSON.stringify(values));
+    const base = String((context && context.base_url) || '')
+      .replace(/\/+$/, '');
+    if (!budget || size <= budget || !base) {
+      log.debug("Leaving GroupClaims.overage(). " + size + " byte(s), " +
+                "budget " + (budget || 'none') + ".");
+      return false;
+    }
+    delete claims[name];
+    const names = (claims._claim_names && typeof claims._claim_names ===
+                   'object') ? claims._claim_names as Record<string, string>
+      : {};
+    const sources = (claims._claim_sources && typeof claims._claim_sources ===
+                     'object')
+      ? claims._claim_sources as Record<string, unknown> : {};
+    names[name] = GROUPS_SOURCE;
+    sources[GROUPS_SOURCE] = { endpoint: base + '/oauth2/groups' };
+    claims._claim_names = names;
+    claims._claim_sources = sources;
+    log.debug("Leaving GroupClaims.overage(). " + values.length +
+              " group(s), " + size + " bytes over " + budget + ": " +
+              "referenced as a distributed claim.");
+    return true;
+  }
+
   private appOf(context: IssuanceContext | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering GroupClaims.appOf().");
@@ -706,8 +832,9 @@ class GroupClaims {
               'token without it cannot.',
       precedence: 'A typed claim and a directory attribute of the same name ' +
                   'both win over the groups claim.',
+      maxBytes: this.maxBytes(),
       settings: ['groups.claim', 'groups.claimName', 'groups.claimValue',
-                 'groups.claimFromMemberOf']
+                 'groups.claimFromMemberOf', 'groups.claimMaxBytes']
     };
     log.debug("Leaving GroupClaims.state(). enabled=" + out.enabled);
     return out;
@@ -737,7 +864,9 @@ class GroupClaims {
     log.debug("Entering GroupClaims.installResolver().");
     stats.setGroupResolver({
       jwtClaims: this.jwtClaimsFor.bind(this),
-      samlAttributes: this.samlAttributesFor.bind(this)
+      samlAttributes: this.samlAttributesFor.bind(this),
+      // #2247: the cap, applied after every layer has run.
+      overage: this.overage.bind(this)
     });
     log.debug("Leaving GroupClaims.installResolver().");
   }
@@ -777,6 +906,9 @@ export = {
   setDirectory: slot.forward('setDirectory'),
   enabled: slot.forward('enabled'),
   claimName: slot.forward('claimName'),
+  maxBytes: slot.forward('maxBytes'),
+  overage: slot.forward('overage'),
+  GROUPS_SOURCE: GROUPS_SOURCE,
   valueForm: slot.forward('valueForm'),
   memberOfCounts: slot.forward('memberOfCounts'),
   groupsOf: slot.forward('groupsOf'),

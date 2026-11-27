@@ -183,6 +183,7 @@ import WsTrustMex = require('./wstrust_mex');
 // XML Encryption of a request and a response (#1668). A library: it
 // registers nothing and does not require this module.
 import WsEncryption = require('./ws_encryption');
+import WsIntegrity = require('./ws_integrity');
 // The names a leaf gives its holder, defined once (#1827).
 import SubjectUrn = require('../common/subject_urn');
 
@@ -199,6 +200,8 @@ interface WsTrustDeps {
   validation: typeof validation;
   buildSamlAssertion: Saml2['buildSamlAssertion'];
   buildSaml11Assertion: (opts: any) => string;
+  buildSamlAssertionAsync: Saml2['buildSamlAssertionAsync'];
+  buildSaml11AssertionAsync: (opts: any) => Promise<string>;
   encryptAssertion: Saml2['encryptAssertion'];
   stats: typeof stats;
   applications: typeof applications;
@@ -341,6 +344,8 @@ class WsTrust {
       validation: validation,
       buildSamlAssertion: saml2.buildSamlAssertion,
       buildSaml11Assertion: saml11.buildSaml11Assertion,
+      buildSamlAssertionAsync: saml2.buildSamlAssertionAsync,
+      buildSaml11AssertionAsync: saml11.buildSaml11AssertionAsync,
       encryptAssertion: saml2.encryptAssertion,
       stats: stats,
       applications: applications,
@@ -534,12 +539,46 @@ class WsTrust {
   // ---------------------------------------------------------------------------
   private buildJwt(subject, audience, lifetimeMin, delegates?, requester?,
                    application?, jwtIssuer?, amr?: string[]) {
+    const { log, logArtifact, signJwtAs } = this.deps;
+    log.debug("Entering WsTrust.buildJwt().");
+    const draft = this.jwtDraft(subject, audience, lifetimeMin, delegates,
+                                requester, application, jwtIssuer, amr);
+    // `wstrust.jwtCertificateHeader` decides the `x5c` / `x5u`.
+    const signed = signJwtAs(draft.payload, draft.alg, null,
+                             { certificateHeader: 'wstrust-jwt',
+                               header: draft.header });
+    logArtifact('WS-Trust JWT', 'after signing', signed);
+    log.debug("Leaving WsTrust.buildJwt(). " + draft.alg + ", jti=" +
+              draft.jti + ".");
+    return { token: signed, jti: draft.jti };
+  }
+
+  // `buildJwt()` with a realm key in the HSM signing off the event loop
+  // (#1955 P8 follow-up): `helpers.signJwtAsOffLoop()`.
+  private async buildJwtAsync(subject, audience, lifetimeMin, delegates?,
+                              requester?, application?, jwtIssuer?,
+                              amr?: string[]) {
+    const { log, logArtifact } = this.deps;
+    log.debug("Entering WsTrust.buildJwtAsync().");
+    const draft = this.jwtDraft(subject, audience, lifetimeMin, delegates,
+                                requester, application, jwtIssuer, amr);
+    const signed = await helpers.signJwtAsOffLoop(draft.payload, draft.alg,
+      null, { certificateHeader: 'wstrust-jwt', header: draft.header });
+    logArtifact('WS-Trust JWT', 'after signing', signed);
+    log.debug("Leaving WsTrust.buildJwtAsync(). " + draft.alg + ", jti=" +
+              draft.jti + ".");
+    return { token: signed, jti: draft.jti };
+  }
+
+  // Everything `buildJwt()` does but the signature: the claims, the
+  // algorithm and the header, logged before signing.
+  private jwtDraft(subject, audience, lifetimeMin, delegates?, requester?,
+                   application?, jwtIssuer?, amr?: string[]) {
     const {
-      config, log, logArtifact, randomId, signJwtAs, subjectForName,
-      delegationPolicy
+      config, log, logArtifact, randomId, subjectForName, delegationPolicy
     } = this.deps;
     const self = this;
-    log.debug("Entering WsTrust.buildJwt().");
+    log.debug("Entering WsTrust.jwtDraft().");
     const alg = helpers.usableSigningAlg(
       String(config.value('wstrust.jwtAlgorithm') || 'RS256'));
     const now = Math.floor(Date.now() / 1000);
@@ -643,14 +682,8 @@ class WsTrust {
     logArtifact('WS-Trust JWT', 'before signing',
                 { header: Object.assign({ alg: alg }, header),
                   payload: payload });
-    // `wstrust.jwtCertificateHeader` decides the `x5c` / `x5u`.
-    const signed = signJwtAs(payload, alg, null,
-                             { certificateHeader: 'wstrust-jwt',
-                               header: header });
-    logArtifact('WS-Trust JWT', 'after signing', signed);
-    log.debug("Leaving WsTrust.buildJwt(). " + alg + ", jti=" + claims.jti +
-              ".");
-    return { token: signed, jti: claims.jti };
+    log.debug("Leaving WsTrust.jwtDraft().");
+    return { payload: payload, header: header, alg: alg, jti: claims.jti };
   }
 
   // The access-token claims an application's settings put in a token about
@@ -701,21 +734,40 @@ class WsTrust {
     return String(kept || '').trim();
   }
 
-  // A success envelope, encrypted where the application's response
-  // switch is on (#1668). envelope() has already held the clear text to
-  // the model. What is sent is the encrypted document, and a fault is
-  // not this function's to send: the caller returns it in the clear.
+  // A success envelope, signed and encrypted where the application's
+  // response switches are on (#1668 encrypts, #1917 signs, in the order
+  // WsIntegrity.protect() keeps). envelope() has already held the clear
+  // text to the model. What is sent is the protected document, and a
+  // fault is not this function's to send: the caller returns it in the
+  // clear. A realm whose keys are in the HSM signs off the event loop, so
+  // the answer is then a Promise of the same shape.
   private sealedBody(clear, doc, audience, version, trustNs): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.sealedBody().");
-    const sealed = WsEncryption.protectResponse(clear, doc,
+    const answer = (sealed: any): any => {
+      if (!sealed.ok) {
+        return { fault: this.encryptionFault(version, sealed, trustNs) };
+      }
+      return { xml: sealed.xml };
+    };
+    const sealing = WsIntegrity.protect(clear, doc,
       this.appliesToApplication(audience));
-    if (!sealed.ok) {
-      log.debug("Leaving WsTrust.sealedBody(). Not sealed.");
-      return { fault: this.encryptionFault(version, sealed, trustNs) };
+    if (WsTrust.isPending(sealing)) {
+      log.debug("Leaving WsTrust.sealedBody(). Off the event loop.");
+      return sealing.then(answer);
     }
-    log.debug("Leaving WsTrust.sealedBody().");
-    return { xml: sealed.xml };
+    log.debug("Leaving WsTrust.sealedBody(). " + !!sealing.ok);
+    return answer(sealing);
+  }
+
+  // Whether an answer is a Promise rather than the value itself.
+  private static isPending(value: any): boolean {
+    return !!value && typeof value.then === 'function';
+  }
+
+  // A sealed body's value now, or when it resolves (#1917).
+  private static whenSealed(held: any, next: (h: any) => any): any {
+    return WsTrust.isPending(held) ? held.then(next) : next(held);
   }
 
   // Every encryption refusal, as one SOAP Fault. The code that happened
@@ -723,7 +775,9 @@ class WsTrust {
   private encryptionFault(version, fault, trustNs): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.encryptionFault().");
-    log.info('wstrust: encryption refused the exchange — ' +
+    // #1917: a signature the message protection requires, or could not
+    // make, is refused through here too.
+    log.info('wstrust: message protection refused the exchange — ' +
              String(fault.reason || '') + '.');
     const code = fault.code === 'STS-WSTRUST-0075' ? 'STS-WSTRUST-0075'
       : fault.code === 'STS-WSTRUST-0076' ? 'STS-WSTRUST-0076'
@@ -733,6 +787,10 @@ class WsTrust {
       : fault.code === 'STS-WSTRUST-0081' ? 'STS-WSTRUST-0081'
       : fault.code === 'STS-WSTRUST-0082' ? 'STS-WSTRUST-0082'
       : fault.code === 'STS-WSTRUST-0083' ? 'STS-WSTRUST-0083'
+      : fault.code === 'STS-WSTRUST-0084' ? 'STS-WSTRUST-0084'
+      : fault.code === 'STS-WSTRUST-0085' ? 'STS-WSTRUST-0085'
+      : fault.code === 'STS-WSTRUST-0086' ? 'STS-WSTRUST-0086'
+      : fault.code === 'STS-WSTRUST-0087' ? 'STS-WSTRUST-0087'
       : 'STS-WSTRUST-0077';
     log.debug("Leaving WsTrust.encryptionFault().");
     return { status: 500, version: version, errorCode: code,
@@ -1069,7 +1127,7 @@ class WsTrust {
   buildToken(tokenType, subject, audience, lifetimeMin,
                       authnContextClassRef, delegates?, requester?,
                       application?, jwtIssuer?, amr?: string[]) {
-    const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
+    const { buildSamlAssertion, log } = this.deps;
     log.debug("Entering WsTrust.buildToken(). tokenType=" + tokenType + ", " +
         "subject=" +
               subject);
@@ -1078,13 +1136,8 @@ class WsTrust {
       const built = this.buildJwt(subject, audience, lifetimeMin,
                                   delegates, requester, forApp, jwtIssuer,
                                   amr);
-      const token = { xml: '<wsse:BinarySecurityToken xmlns:wsse="' +
-        WSSE_NS + '"' + WsModel.attributes('wsse.BinarySecurityToken', {
-          valueType: WsModel.term('wsse.valueType', 'jwt') }) + '>' +
-        built.token + '</wsse:BinarySecurityToken>',
-        ref: '', tokenType: JWT_TOKEN_TYPE, id: built.jti };
       log.debug("Leaving WsTrust.buildToken(). Issued a JWT.");
-      return token;
+      return this.jwtTokenFrom(built);
     }
     if (tokenType === SAML11_TOKEN_TYPE) {
       const built11 = this.buildSaml11Token(subject, audience, lifetimeMin,
@@ -1093,29 +1146,108 @@ class WsTrust {
       log.debug("Leaving WsTrust.buildToken(). Issued a SAML 1.1 assertion.");
       return built11;
     }
+    // The options, and why, are saml2TokenOptions()'s.
+    const assertion = buildSamlAssertion(subject, audience, lifetimeMin,
+      this.saml2TokenOptions(audience, authnContextClassRef, delegates,
+                             application, jwtIssuer));
+    log.debug("Leaving WsTrust.buildToken(). Issued a SAML 2.0 assertion.");
+    return this.saml2TokenFrom(assertion);
+  }
+
+  /**
+   * `buildToken()`, with a realm key in the HSM signing off the event loop
+   * (#1955 P8 follow-up): the same token, built by the builders' async
+   * twins. `handleRst()` takes this road only where the realm's keys are in
+   * the HSM (`helpers.keysInHsm()`), so a software realm's RSTR is built as
+   * it always was.
+   *
+   * @param tokenType - as `buildToken()`'s
+   * @param subject - as `buildToken()`'s
+   * @param audience - as `buildToken()`'s
+   * @param lifetimeMin - as `buildToken()`'s
+   * @param authnContextClassRef - as `buildToken()`'s
+   * @param delegates - as `buildToken()`'s
+   * @param requester - as `buildToken()`'s
+   * @param application - as `buildToken()`'s
+   * @param jwtIssuer - as `buildToken()`'s
+   * @param amr - as `buildToken()`'s
+   * @returns a promise of what `buildToken()` answers
+   */
+  async buildTokenAsync(tokenType, subject, audience, lifetimeMin,
+                        authnContextClassRef, delegates?, requester?,
+                        application?, jwtIssuer?, amr?: string[]) {
+    const { buildSamlAssertionAsync, log } = this.deps;
+    log.debug("Entering WsTrust.buildTokenAsync(). tokenType=" + tokenType);
+    if (tokenType === JWT_TOKEN_TYPE) {
+      const forApp = application || this.appliesToApplication(audience);
+      const built = await this.buildJwtAsync(subject, audience, lifetimeMin,
+                                             delegates, requester, forApp,
+                                             jwtIssuer, amr);
+      log.debug("Leaving WsTrust.buildTokenAsync(). Issued a JWT.");
+      return this.jwtTokenFrom(built);
+    }
+    if (tokenType === SAML11_TOKEN_TYPE) {
+      const assertion11 = await this.deps.buildSaml11AssertionAsync(
+        this.saml11TokenOptions(subject, audience, lifetimeMin,
+                                authnContextClassRef, application, delegates,
+                                jwtIssuer));
+      log.debug("Leaving WsTrust.buildTokenAsync(). Issued a SAML 1.1 " +
+                "assertion.");
+      return this.saml11TokenFrom(assertion11);
+    }
+    const assertion = await buildSamlAssertionAsync(subject, audience,
+      lifetimeMin, this.saml2TokenOptions(audience, authnContextClassRef,
+                                          delegates, application,
+                                          jwtIssuer));
+    log.debug("Leaving WsTrust.buildTokenAsync(). Issued a SAML 2.0 " +
+              "assertion.");
+    return this.saml2TokenFrom(assertion);
+  }
+
+  // A JWT's token element, around the signed JWT.
+  private jwtTokenFrom(built) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.jwtTokenFrom().");
+    log.debug("Leaving WsTrust.jwtTokenFrom().");
+    return { xml: '<wsse:BinarySecurityToken xmlns:wsse="' +
+      WSSE_NS + '"' + WsModel.attributes('wsse.BinarySecurityToken', {
+        valueType: WsModel.term('wsse.valueType', 'jwt') }) + '>' +
+      built.token + '</wsse:BinarySecurityToken>',
+      ref: '', tokenType: JWT_TOKEN_TYPE, id: built.jti };
+  }
+
+  // What the SAML 2.0 builder is asked for a WS-Trust token.
+  private saml2TokenOptions(audience, authnContextClassRef, delegates,
+                            application, jwtIssuer) {
+    const { authnContext, log } = this.deps;
+    log.debug("Entering WsTrust.saml2TokenOptions().");
     // #186: an ActAs token NAMES the parties that acted — the SAML V2.0
     // Condition for Delegation Restriction, least to most recent.
     // #483: the AppliesTo's application, so its own claim settings (the
     // groups claim's, its custom attributes) govern the assertion as a
     // service provider's govern a SAML SSO one.
     const samlApp = application || this.appliesToApplication(audience);
+    log.debug("Leaving WsTrust.saml2TokenOptions().");
     // #523: the Issuer is the realm's one name, its OAuth issuer — the `iss`
     // a JWT from this same request carries, and the entityID SAML SSO and
     // WS-Federation publish (`common/issuer_names.ts`). Not the AppliesTo's:
     // the Issuer names who issued, and the delegates who asked.
-    const assertion = buildSamlAssertion(subject, audience, lifetimeMin,
-      { authnContextClassRef: authnContextClassRef ||
-                              authnContext.AC_UNSPECIFIED,
-        delegates: delegates || [],
-        application: samlApp,
-        issuer: String(jwtIssuer || this.oauthIssuer('')) });
+    return { authnContextClassRef: authnContextClassRef ||
+                                   authnContext.AC_UNSPECIFIED,
+             delegates: delegates || [],
+             application: samlApp,
+             issuer: String(jwtIssuer || this.oauthIssuer('')) };
+  }
+
+  // A SAML 2.0 assertion's token element and its reference.
+  private saml2TokenFrom(assertion) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.saml2TokenFrom().");
     const idm = assertion.match(/\bID="([^"]+)"/);
     const id = idm ? idm[1] : '';
     const ref = this.requestedReference('attached', this.tokenReference(
       WsModel.term('wsse.valueType', 'samlId'), '', id));
-    log.debug("Leaving WsTrust.buildToken(). Issued a SAML 2.0 assertion " +
-              "with ID " + id +
-              ".");
+    log.debug("Leaving WsTrust.saml2TokenFrom(). ID " + id + ".");
     // `id` is carried out because /admin/delegation quotes the identifier of
     // what a delegated request PRODUCED: the AssertionID for this branch and,
     // since 2026-09-12, the `jti` for the JWT branch above, which had no
@@ -1155,8 +1287,21 @@ class WsTrust {
   private buildSaml11Token(subject, audience, lifetimeMin,
                            authnContextClassRef, application, delegates?,
                            issuer?) {
-    const { buildSaml11Assertion, authnContext, log, xmlEscape } = this.deps;
+    const { buildSaml11Assertion, log } = this.deps;
     log.debug("Entering WsTrust.buildSaml11Token().");
+    const assertion = buildSaml11Assertion(this.saml11TokenOptions(subject,
+      audience, lifetimeMin, authnContextClassRef, application, delegates,
+      issuer));
+    log.debug("Leaving WsTrust.buildSaml11Token().");
+    return this.saml11TokenFrom(assertion);
+  }
+
+  // What the SAML 1.1 builder is asked for a WS-Trust token.
+  private saml11TokenOptions(subject, audience, lifetimeMin,
+                             authnContextClassRef, application, delegates?,
+                             issuer?) {
+    const { authnContext, log } = this.deps;
+    log.debug("Entering WsTrust.saml11TokenOptions().");
     const samlApp = application || this.appliesToApplication(audience);
     // #1046: a TLS client certificate is SAML 1.1 section 7.1's
     // `urn:ietf:rfc:2246`, "SSL/TLS Certificate Based Client
@@ -1169,7 +1314,8 @@ class WsTrust {
         ? authnContext.AM_TLS_CLIENT
         : (authnContextClassRef === authnContext.AC_X509
           ? authnContext.AM_X509 : authnContext.AM_UNSPECIFIED));
-    const assertion = buildSaml11Assertion({
+    log.debug("Leaving WsTrust.saml11TokenOptions().");
+    return {
       subject: subject, audience: audience, lifetimeMin: lifetimeMin,
       authnMethod: method, application: samlApp,
       attributes: (delegates || []).length
@@ -1180,12 +1326,18 @@ class WsTrust {
         : [],
       // #523: the same Issuer a SAML 2.0 WS-Trust assertion carries, the
       // realm's one name.
-      issuer: String(issuer || this.oauthIssuer('')) });
+      issuer: String(issuer || this.oauthIssuer('')) };
+  }
+
+  // A SAML 1.1 assertion's token element and its reference.
+  private saml11TokenFrom(assertion) {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.saml11TokenFrom().");
     const idm = assertion.match(/\bAssertionID="([^"]+)"/);
     const id = idm ? idm[1] : '';
     const ref = this.requestedReference('attached', this.tokenReference(
       SAML11_ASSERTION_ID_REF, '', id));
-    log.debug("Leaving WsTrust.buildSaml11Token(). AssertionID " + id + ".");
+    log.debug("Leaving WsTrust.saml11TokenFrom(). AssertionID " + id + ".");
     return { xml: assertion, ref: ref, tokenType: SAML11_TOKEN_TYPE, id: id };
   }
 
@@ -2140,19 +2292,41 @@ class WsTrust {
       log.debug("Leaving WsTrust.signedReading(). In the clear.");
       return this.messageSignature(doc, connection, prepare);
     }
-    const opened = WsEncryption.openedCopy(doc);
+    const tried = WsEncryption.openedCopyOrWhy(doc);
+    const opened = tried.copy;
     const order = WsEncryption.decryptsBeforeVerifying(doc) && opened
       ? [opened, doc] : (opened ? [doc, opened] : [doc]);
     let first: any = undefined;
     for (let i = 0; i < order.length; i++) {
       const reading = this.messageSignature(order[i], connection, prepare);
       if (reading && reading.ok) {
+        // Which document the signature verified over (#2007's review):
+        // what it covers is resolved against that one (markSigned()).
+        reading.overOpened = order[i] === opened;
         log.debug("Leaving WsTrust.signedReading(). Reading " + i + ".");
         return reading;
       }
       if (first === undefined || (first === null && reading)) {
         first = reading;
       }
+    }
+    // A SIGNATURE THAT COULD NOT BE CHECKED BECAUSE ITS CIPHERTEXT WOULD NOT
+    // OPEN is refused for that (#2046, rcbj 2026-11-24). Read over the
+    // ciphertext alone, a signature made before the encryption — an
+    // encrypted Body, signed first, as WSS4J and WCF send it — fails its
+    // digests, and was refused as a part altered after it was signed
+    // (STS-WSTRUST-0045) when nothing had been altered: the realm had
+    // refused to open the ciphertext. The opening's own fault is the
+    // reason, the one an encrypted header that does not open is given.
+    if (first && first.ok === false && tried.refused) {
+      log.info(errorCodes.tag(String(tried.refused.code || '')) +
+               'wstrust: the request\'s signature could not be checked: ' +
+               'its ciphertext would not open — ' + tried.refused.reason +
+               '.');
+      log.debug("Leaving WsTrust.signedReading(). The ciphertext.");
+      return { ok: false, errorCode: tried.refused.code,
+               trustFault: tried.refused.trustFault,
+               reason: tried.refused.reason };
     }
     log.debug("Leaving WsTrust.signedReading(). Neither verified.");
     return first === undefined ? null : first;
@@ -4114,6 +4288,32 @@ class WsTrust {
                                       { kerberos: kerberos }) }));
       });
     }
+    // A REALM KEY IN THE HSM OPENS THE CIPHERTEXT OFF THE EVENT LOOP
+    // (#1955 P8 follow-up), and FIRST, for the Kerberos tokens' reason: the
+    // decryption alone is run over an opened copy, in passes, with each
+    // RSA-OAEP or ECDH answer fetched from the token asynchronously, and
+    // this request then runs once with the answers in hand, so the
+    // decryptions below are answered rather than made. Nothing has happened
+    // yet, so nothing is repeated. A software realm never comes here.
+    if (!options.hsmAnswers && WsEncryption.hasCiphertext(doc) &&
+        helpers.keysInHsm()) {
+      log.debug("Leaving WsTrust.handleRst(). Its ciphertext is opened " +
+                "off the event loop first.");
+      return stsCrypto.hsmAnswersFor(function () {
+        return WsEncryption.openedCopy(doc);
+      }).then((answers) => {
+        return this.handleRst(rawBody, contentType,
+                              Object.assign({}, options,
+                                            { hsmAnswers: answers }));
+      });
+    }
+    if (options.hsmAnswers && !options.hsmAnswersHeld) {
+      const held = Object.assign({}, options, { hsmAnswersHeld: true });
+      log.debug("Leaving WsTrust.handleRst(). With the HSM's answers.");
+      return stsCrypto.withHsmAnswers(options.hsmAnswers, () => {
+        return this.handleRst(rawBody, contentType, held);
+      });
+    }
     // THE SIGNATURE, AND THEN THE REQUEST'S ENCRYPTED ELEMENTS (#1668). A
     // Kerberos token stays in the header and is accepted above, before
     // either. The signature is read in the order WS-Security processes the
@@ -4142,7 +4342,7 @@ class WsTrust {
       options.connection.acceptedSignature = signed;
       // The recipient expression may select only what this signature
       // covers (WsEncryption.coveredBySignature()).
-      WsEncryption.markSigned(doc);
+      WsEncryption.markSigned(doc, !!signed.overOpened);
     }
     // WHAT WAS OPENED IS HELD TO THE SIGNED BODY TOO (#521's step 5, on
     // #1908's review), before any encryption setting is read. A signature
@@ -4184,6 +4384,16 @@ class WsTrust {
       const openedNs = (openedRst && openedRst.namespaceURI) || earlyNs;
       log.debug("Leaving WsTrust.handleRst(). The request would not open.");
       return this.encryptionFault(earlyVersion, opened, openedNs);
+    }
+    // WHAT THE APPLICATION REQUIRES SIGNED (#1917), held to the signature
+    // accepted above, on the opened request — its AppliesTo names the
+    // application only now, and a signature made before the encryption
+    // references the elements as they are once opened.
+    const signedFor = WsIntegrity.holdRequest(doc,
+      !!options.connection.acceptedSignature);
+    if (!signedFor.ok) {
+      log.debug("Leaving WsTrust.handleRst(). Not signed as required.");
+      return this.encryptionFault(earlyVersion, signedFor, earlyNs);
     }
     const version = this.detectSoapVersion(doc, contentType);
     const requestType = textByLocal(doc, 'RequestType');
@@ -4356,17 +4566,15 @@ class WsTrust {
           code: '<wst:Code>' + code + '</wst:Code>',
           reason: '<wst:Reason>' + xmlEscape(reason) + '</wst:Reason>' }) +
           '</wst:Status>' });
-      const held = this.sealedBody(this.envelope(version,
+      log.debug("Leaving WsTrust.handleRst(). Validate answers with " +
+                "wst:Status, once sealed.");
+      return WsTrust.whenSealed(this.sealedBody(this.envelope(version,
         WsTrust.answerAction('validate', trustNs), rstr), doc, audience,
-        version, trustNs);
-      if (held.fault) {
-        log.debug("Leaving WsTrust.handleRst(). Validate was not sealed.");
-        return held.fault;
-      }
-      log.debug("Leaving WsTrust.handleRst(). Validate answered with " +
-                "wst:Status.");
-      return { status: 200, version: version, errorCode: invalidCode,
-               body: held.xml };
+        version, trustNs), (held: any): any => {
+        return held.fault ? held.fault
+          : { status: 200, version: version, errorCode: invalidCode,
+              body: held.xml };
+      });
     }
 
     if (op === 'cancel' && trustNs === WST_2004_04_NS) {
@@ -4383,16 +4591,14 @@ class WsTrust {
     if (op === 'cancel') {
       const rstr = this.response(trustNs, {
         requestedTokenCancelled: '<wst:RequestedTokenCancelled/>' });
-      const held = this.sealedBody(this.envelope(version,
+      log.debug("Leaving WsTrust.handleRst(). Cancel answers with " +
+                "wst:RequestedTokenCancelled, once sealed.");
+      return WsTrust.whenSealed(this.sealedBody(this.envelope(version,
         WsTrust.answerAction('cancel', trustNs), rstr), doc, audience,
-        version, trustNs);
-      if (held.fault) {
-        log.debug("Leaving WsTrust.handleRst(). Cancel was not sealed.");
-        return held.fault;
-      }
-      log.debug("Leaving WsTrust.handleRst(). Cancel answered with " +
-                "wst:RequestedTokenCancelled.");
-      return { status: 200, version: version, body: held.xml };
+        version, trustNs), (held: any): any => {
+        return held.fault ? held.fault
+          : { status: 200, version: version, body: held.xml };
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -4589,6 +4795,20 @@ class WsTrust {
                body: this.soapFault(version, roleAnswer.why, 'RequestFailed',
                                     trustNs) };
     }
+    // A REQUIRED DYNAMIC ROLE (#1072, rcbj's decision 5): an RST has no
+    // sign-in screen to choose one on, so the token is refused rather than
+    // issued without it. `wst:RequestFailed`, as the policy's own refusal.
+    const roleRefusal = subject && subject !== 'anonymous'
+      ? require('../authn/role_selection').noBrowserRefusal({
+        username: String(subject), application: String(audience || ''),
+        protocol: 'WS-Trust' })
+      : null;
+    if (roleRefusal) {
+      log.debug("Leaving the RST handler. A required dynamic role.");
+      return { status: 403, version: version, errorCode: 'STS-XACML-0332',
+               body: this.soapFault(version, roleRefusal.why, 'RequestFailed',
+                                    trustNs) };
+    }
 
     // #487: SAML 1.1 by either of its two names; anything else that is not
     // the JWT's is answered with SAML 2.0, as it always was.
@@ -4647,6 +4867,18 @@ class WsTrust {
                             : this.finishIssue(issuing, minted);
       });
     }
+    // A REALM WHOSE KEYS ARE IN THE HSM (#1955 P8 follow-up) has its token
+    // signed off the event loop, so this answer is a Promise, as a Kerberos
+    // token's is; a software realm's is built here, as it always was.
+    if (helpers.keysInHsm()) {
+      log.debug("Leaving WsTrust.handleRst(). Signed off the event loop.");
+      return this.buildTokenAsync(tokenType, subject, audience, lifetimeMin,
+        this.authnContextOf(auth), delegates, requester, undefined,
+        jwtIssuer, auth.kind === 'delegated' ? [] : this.amrOf(auth))
+        .then((built) => {
+          return this.finishIssue(issuing, built);
+        });
+    }
     const tok = this.buildToken(tokenType, subject, audience, lifetimeMin,
                            this.authnContextOf(auth), delegates, requester,
                            undefined, jwtIssuer,
@@ -4663,12 +4895,10 @@ class WsTrust {
   // relying party's sighting, the delegation act and the session.
   // ---------------------------------------------------------------------------
   private finishIssue(issuing: any, tok: any): any {
-    const {
-      applications, delegation, log, xmlEscape, iso, delegationPolicy
-    } = this.deps;
+    const { log, xmlEscape, iso } = this.deps;
     log.debug("Entering WsTrust.finishIssue().");
-    const { doc, version, trustNs, audience, subject, auth,
-            delegationDecision, lifetimeMin, keyTypeIssued, op } = issuing;
+    const { doc, version, trustNs, audience, auth, lifetimeMin,
+            keyTypeIssued, op } = issuing;
 
     const appliesToOut = audience
       ? '<wsp:AppliesTo xmlns:wsp="' + WSP_NS + '" xmlns:wsa="' + WSA_NS +
@@ -4769,15 +4999,37 @@ class WsTrust {
         '</wst:RequestSecurityTokenResponseCollection>');
     const action = WsTrust.answerAction(op === 'renew' ? 'renew' : 'issue',
                                         trustNs);
-    const held = this.sealedBody(this.envelope(version, action, inner),
-                                 doc, audience, version, trustNs);
+    const sealing = this.sealedBody(this.envelope(version, action, inner),
+                                    doc, audience, version, trustNs);
+    // A RESPONSE SIGNED IN THE HSM (#1917) is sealed off the event loop, so
+    // what follows the seal runs when it resolves, as an HSM token's issue
+    // already does (handleRst()); every other seal is in place.
+    if (WsTrust.isPending(sealing)) {
+      log.debug("Leaving WsTrust.finishIssue(). Sealed off the event loop.");
+      return sealing.then((held: any): any => {
+        return this.issueSealed(issuing, tok, signIn, held);
+      });
+    }
+    log.debug("Leaving WsTrust.finishIssue(). Sealed.");
+    return this.issueSealed(issuing, tok, signIn, sealing);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT FOLLOWS A SEALED ISSUE (#1917: moved out of finishIssue() unchanged,
+  // so a response signed off the event loop reaches it as one sealed in place
+  // does): the sighting and the delegation act, which follow a response that
+  // will be sent. A seal that failed issued nothing.
+  // ---------------------------------------------------------------------------
+  private issueSealed(issuing: any, tok: any, signIn: any, held: any): any {
+    const { applications, delegation, log, delegationPolicy } = this.deps;
+    log.debug("Entering WsTrust.issueSealed().");
+    const { version, trustNs, audience, subject, auth,
+            delegationDecision, op } = issuing;
     if (held.fault) {
-      log.debug("Leaving WsTrust.finishIssue(). The response was not " +
+      log.debug("Leaving WsTrust.issueSealed(). The response was not " +
                 "sealed.");
       return held.fault;
     }
-    // The sighting and the delegation act follow a response that will be
-    // sent. A seal that failed issued nothing.
 
     // THE RELYING PARTY. AppliesTo is WS-Trust's name for the service a token
     // is being issued FOR, and this is where one is about to be. It is optional
@@ -4948,7 +5200,7 @@ class WsTrust {
       : (WsTrust.preOasis(trustNs)
         ? 'Issue answered with an RSTR (a pre-OASIS version).'
         : 'Issue answered with an RSTR Collection.');
-    log.debug("Leaving WsTrust.finishIssue(). " + leaving);
+    log.debug("Leaving WsTrust.issueSealed(). " + leaving);
     return { status: 200, version: version, signIn: signIn,
              body: held.xml };
   }
@@ -5634,5 +5886,6 @@ export = {
   handleRst: slot.forward('handleRst'),
   checkedAssertion: slot.forward('checkedAssertion'),
   buildToken: slot.forward('buildToken'),
+  buildTokenAsync: slot.forward('buildTokenAsync'),
   soapFault: slot.forward('soapFault')
 };

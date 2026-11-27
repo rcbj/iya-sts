@@ -323,6 +323,8 @@ class ProtocolEndpoints {
         '/.well-known/openid-configuration',
         '/.well-known/oauth-authorization-server', '/oauth2/authorize',
         '/oauth2/par', '/oauth2/token', '/oauth2/userinfo', '/oauth2/jwks',
+        // #2247: the groups claim's distributed source.
+        '/oauth2/groups',
         '/oauth2/introspect',
         '/oauth2/revoke', '/oauth2/register', '/oauth2/register/:client_id',
         '/oauth2/logout', '/oauth2/consent', '/oauth2/rfc9700',
@@ -449,6 +451,31 @@ class ProtocolEndpoints {
                           '/authn-api/mfa/:id/webauthn/options',
                           '/authn-api/mfa/:id/webauthn', '/account-api/keys',
                           '/account-api/keys/remove'].map(route),
+      // THE #1955 MECHANISMS AND OPENPGP (#2049): the doors each is used
+      // at. A token's are the sign-in doors that read its evidence and the
+      // portal's own list; PIV's the enrolment and card sign-in; the two
+      // one-time codes' the code step and YK-VAL; SSH's the CA's published
+      // key and list and a person's own certificates; OpenPGP's the Web
+      // Key Directory and a person's own key.
+      '/admin/hardware-tokens-settings': ['/authn/webauthn', '/tls/sign-in',
+                                          '/account-api/tokens'].map(route),
+      '/admin/piv': ['/.well-known/est/serverkeygen', '/tls/sign-in',
+                     '/authn-api/mfa/:id/post-login/piv',
+                     '/account-api/certificates'].map(route),
+      '/admin/yubiotp': ['/authn/totp', '/wsapi/2.0/verify',
+                         '/account-api/mfa'].map(route),
+      '/admin/oath-tokens': ['/authn/totp', '/account-api/mfa',
+                             '/account-api/tokens'].map(route),
+      '/admin/ssh-user-ca': ['/pki/ssh-user-ca/:scope',
+                             '/pki/ssh-user-krl/:scope',
+                             '/account-api/ssh/certificates',
+                             '/account-api/ssh/certificates/revoke']
+        .map(route),
+      '/admin/openpgp-settings': ['/.well-known/openpgpkey/:domain/hu/:hash',
+                                  '/.well-known/openpgpkey/:domain/policy',
+                                  '/.well-known/openpgpkey/hu/:hash',
+                                  '/.well-known/openpgpkey/policy',
+                                  '/account-api/openpgp'].map(route),
       // DEVICE REGISTRATION (#164, #218): the doors a device arrives and is
       // recognised through today — Native SSO's token endpoint and its
       // revocation of a device_secret, and the owner's own list. Phase 2's

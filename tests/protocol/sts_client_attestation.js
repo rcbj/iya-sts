@@ -53,8 +53,12 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const forge = require("node-forge");
@@ -242,7 +246,7 @@ async function follow(b, first, who) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(base) !== 0) {
+    if (!urls.isUnder(where, base)) {
       break;
     }
     if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {
@@ -388,11 +392,18 @@ async function test() {
   await ok(realmApi + "/config/set", { key: "oauth2.openRegistration",
                                        value: true },
            "opened dynamic registration in the realm");
+  // Temporary, then the person's own (#2160, `own_password.js`): the
+  // sign-ins below use PASSWORD.
   await ok(realmApi + "/users/create", {
     username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Attest " + ALICE, givenName: "Attest", sn: ALICE,
                   mail: ALICE + "@attest.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(base + R, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   const attester = attesterOf("attest root " + STAMP);
   const stranger = attesterOf("stranger root " + STAMP);
   const k1 = instanceKey();
@@ -505,7 +516,7 @@ async function test() {
   const alice = browser("alice");
   r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
     form({ client_id: clientId, request_uri: requestUri })), ALICE);
-  const back = r.location && r.location.indexOf(REDIRECT) === 0
+  const back = r.location && urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams : null;
   check("the code comes back to the wallet", function () {
     assert.ok(back && back.get("code"), r.status + " " + r.location + " " +
@@ -526,7 +537,7 @@ async function test() {
   r = await postForm(parUrl, params, attested(k1));
   r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
     form({ client_id: clientId, request_uri: r.body.request_uri })), ALICE);
-  const again = r.location && r.location.indexOf(REDIRECT) === 0
+  const again = r.location && urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams : null;
   check("a fresh authorization gives another code", function () {
     assert.ok(again && again.get("code"), r.status + " " + r.location);

@@ -1,6 +1,7 @@
 {
   "yes": "是",
   "no": "否",
+  "follows": "同 {row}",
   "configuration": "配置",
   "schema": "架构",
   "saveProfile": "保存配置文件",
@@ -230,5 +231,7 @@
   "transfer.view.trustedHeading": "本领域信任的其他领域",
   "transfer.view.noneTrusted": "本领域不信任任何其他领域的策略导出。",
   "transfer.view.kind": "类型",
-  "transfer.view.addedBy": "添加者"
+  "transfer.view.addedBy": "添加者",
+  "newPolicy.button": "新建策略",
+  "newPolicy.choose": "选择要创建的策略类型。"
 }

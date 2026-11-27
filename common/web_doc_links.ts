@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 // A LINK TO THE PUBLIC DOCUMENTATION, ON EVERY CONSOLE AND PORTAL PAGE (#895).
 //
-// The pages are https://rcbj.github.io/iya-sts/v1.1.0/: the site is
+// The pages are https://rcbj.github.io/iya-sts/v1.2.0/: the site is
 // versioned, and a build links to its OWN version's folder, not the
 // landing page or the latest (docs/CLAUDE.md, *The versioned site*; the
 // front door and the footer name the same folder). A link is absolute so
@@ -66,6 +66,8 @@ const CONSOLE: Record<string, string> = {
     'applications.html#the-console-page-and-the-api',
   '/admin/applications/new': 'applications.html#adminapplicationsnew',
   '/admin/attribute-sources': 'attribute-sources.html',
+  '/admin/attribute-sources/new':
+    'attribute-sources.html#adding-a-source--adminattribute-sourcesnew',
   '/admin/authorization-servers':
     'oauth-oidc.html#multiple-authorization-servers--adminauthorization-servers',
   '/admin/caches': 'caches.html',
@@ -100,7 +102,11 @@ const CONSOLE: Record<string, string> = {
   '/admin/deliveries': 'signing-out.html',
   '/admin/device-registration': 'devices.html',
   '/admin/devices': 'devices.html',
+  '/admin/devices/new':
+    'devices.html#registering-a-device--admindevicesnew',
   '/admin/devices/monitor': 'devices.html',
+  '/admin/hardware-tokens': 'hardware-tokens.html',
+  '/admin/openpgp': 'openpgp.html',
   '/admin/service-accounts': 'service-accounts.html',
   '/admin/encryption': 'encryption-at-rest.html',
   '/admin/error-codes': 'error-codes.html',
@@ -113,6 +119,8 @@ const CONSOLE: Record<string, string> = {
   '/admin/grants':
     'oauth-oidc.html#grant-management-grant-management-for-oauth-20',
   '/admin/groups': 'admin-console.html#groups--admingroups',
+  '/admin/groups/new':
+    'admin-console.html#creating-a-group--admingroupsnew',
   '/admin/keys':
     'pki.html#signing-key-generations-and-the-crypto-metadata-document',
   '/admin/keys/history':
@@ -129,6 +137,8 @@ const CONSOLE: Record<string, string> = {
   '/admin/ldap/spiffe': 'spiffe.html',
   '/admin/listeners': 'listeners.html',
   '/admin/malware-scanning': 'malware-scanning.html',
+  '/admin/csp-reports':
+    'oauth-security.html#content-security-policy-violation-reports',
   '/admin/logout': 'signing-out.html',
   '/admin/mail': 'mail.html',
   '/admin/broadcast': 'shared-signals.html#broadcast-announcements',
@@ -146,16 +156,22 @@ const CONSOLE: Record<string, string> = {
   '/admin/pki': 'pki.html',
   '/admin/pki/trust': 'signer-truststore.html',
   '/admin/policies': 'policies.html',
+  '/admin/policies/new':
+    'admin-console.html#creating-a-named-policy--adminpoliciesnew',
   '/admin/rbac': 'admin-console.html#who-may-use-the-console',
+  '/admin/approvals': 'admin-console.html#two-person-approval',
   '/admin/realms': 'trust-realms.html',
   '/admin/risc-accounts': 'signals-received.html',
   '/admin/risc-accounts/account': 'signals-received.html',
   '/admin/risk': 'risk-scoring.html',
   '/admin/risk-scoring': 'risk-scoring.html',
   '/admin/roles': 'admin-console.html#roles--adminroles',
+  '/admin/roles/new': 'admin-console.html#creating-a-role--adminrolesnew',
   '/admin/saml2': 'saml2-sso.html',
   '/admin/scheduler': 'configuration.html#scheduler',
   '/admin/secret-destinations': 'secret-destinations.html',
+  '/admin/secret-destinations/new':
+    'secret-destinations.html#adding-a-destination--adminsecret-destinationsnew',
   '/admin/oidfed': 'oidfed.html',
   '/admin/scim': 'scim.html',
   '/admin/scim/monitor': 'scim.html',
@@ -199,6 +215,12 @@ const CONSOLE: Record<string, string> = {
   '/admin/persistence': 'persistence.html',
   '/admin/totp': 'authentication.html#totp-mfa',
   '/admin/webauthn': 'authentication.html#webauthn',
+  '/admin/hardware-tokens-settings': 'hardware-tokens.html',
+  '/admin/piv': 'hardware-tokens.html#piv-key-attestation',
+  '/admin/yubiotp': 'yubiotp.html',
+  '/admin/oath-tokens': 'one-time-code-tokens.html',
+  '/admin/ssh-user-ca': 'pki.html#openssh-user-certificates',
+  '/admin/openpgp-settings': 'openpgp.html',
   '/admin/wstrust': 'ws-trust.html',
   '/admin/wsfed': 'ws-federation.html',
   '/admin/worker-pools':
@@ -238,6 +260,8 @@ const EXACT: Record<string, string> = {
   'xacml-tab-pep-clusters': 'remote-pep.html#remote-pep-clusters',
   // An application's page: the remote PEP routes in front of it (#1760).
   'tab-pep-routes': 'remote-pep.html',
+  // An application's page: the embedded remote PEPs bound to it (#2025).
+  'tab-embedded-peps': 'remote-pep.html#an-embedded-peps-application',
   // A remote PEP's page (#1760): its settings and its reverse proxy.
   'xacml-pep-tab-settings':
     'remote-pep.html#the-settings-this-service-sets-for-it',
@@ -271,6 +295,7 @@ const EXACT: Record<string, string> = {
   'tab-custom': 'listeners.html',
   'tab-applications': 'listeners.html',
   'tab-defaults': 'listeners.html',
+  'tab-cert-sign-in': 'configure-tls.html#smart-card-and-certificate-sign-in',
   'policies-tab-metadata': 'policies.html',
   'tab-password': 'authentication.html#passwords',
   'tab-authn': 'authentication.html#the-authentication-policy',
@@ -340,6 +365,14 @@ const EXACT: Record<string, string> = {
   'ucred-keys': 'pki.html#a-persons-credentials-on-their-own-page',
   'ucred-self-issued': 'oid4vp.html#self-issued-id-tokens-siopv2',
   'ucred-kerberos': 'kerberos.html',
+  // A person's token and key sub-tabs (#2052).
+  'ucred-hardware-tokens': 'hardware-tokens.html',
+  'ucred-oath-tokens': 'one-time-code-tokens.html',
+  'ucred-yubiotp': 'yubiotp.html',
+  'ucred-piv': 'hardware-tokens.html#piv-key-attestation',
+  'ucred-cert-binding': 'configure-tls.html#recording-a-binding-on-a-person',
+  'ucred-ssh': 'pki.html#openssh-user-certificates',
+  'ucred-openpgp': 'openpgp.html',
   'utab-federation': 'federation.html',
   'utab-gnap': 'gnap.html',
   'utab-uma': 'uma.html#the-console',
@@ -379,6 +412,7 @@ const PORTAL: Record<string, string> = {
   '/portal/consents': 'oauth-oidc.html#consent',
   '/portal/gnap': 'gnap.html#what-a-person-sees-portalgnap',
   '/portal/access-requests': 'authzen.html#access-requests-and-approvals',
+  '/portal/access-request': 'authzen.html#the-hosted-form-and-the-ticket',
   '/portal/email': 'mail.html',
   '/portal/pseudonyms': 'people.html#sign-in-names',
   '/portal/verify-pseudonym': 'people.html#sign-in-names',
@@ -401,6 +435,7 @@ const PORTAL: Record<string, string> = {
   '/portal/self-issued/did': 'oid4vp.html',
   '/portal/wallet': 'oid4vci.html',
   '/portal/devices': 'devices.html',
+  '/portal/tokens-and-keys': 'hardware-tokens.html#seeing-them',
   '/portal/ciba': 'configure-oidc-flows.html',
   '/portal/device': 'configure-oidc-flows.html',
   '/portal/claim-sources': 'oauth-oidc.html',
@@ -433,7 +468,26 @@ class WebDocLinks {
    * This version's folder of the published documentation site, with its
    * trailing slash.
    */
-  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/v1.1.0/';
+  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/v1.2.0/';
+
+  /**
+   * WHAT THIS SERVICE NEEDS FROM A BROWSER, SAID TO PEOPLE (#2220): the
+   * section of the browser requirements page written for the person in
+   * front of the page rather than the operator. Every notice that a browser
+   * falls short links it — the `<noscript>`, the browser check's, the
+   * WebCrypto and the session-storage ones.
+   */
+  static readonly BROWSER_SUPPORT =
+    'browser-requirements.html#for-people-using-this-service';
+
+  /**
+   * The absolute address of what this service needs from a browser.
+   *
+   * @returns the URL
+   */
+  static browserSupport(): string {
+    return WebDocLinks.abs(WebDocLinks.BROWSER_SUPPORT);
+  }
 
   /**
    * Turns a site-relative page into an absolute URL. An absolute URL is

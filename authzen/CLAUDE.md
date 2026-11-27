@@ -25,8 +25,9 @@ rcbj's design is the comment of 2026-10-29 on #563; the phases are #1160
 container answers AuthZEN too since #1179**, as an edge PDP — *The edge PDP*
 below. Search (#1175), the Obligations Profile (#1177), Access Request and
 Approval (#1180, *Access requests* below) and the token-exchange binding
-(#1181, direction A — *The token-exchange binding* below) are tickets of
-their own, and each is advertised only while it is on.
+(#1181, direction A — *The token-exchange binding* below; #1200, direction B
+— *Asking an external PDP* below) are tickets of their own, and each is
+advertised only while it is on.
 
 | File | What it is |
 |---|---|
@@ -35,7 +36,8 @@ their own, and each is advertised only while it is on.
 | `authzen_caller.ts` | Who is asking (the realm's door), whether they may (AUTHZEN_PEPS on resource `authzen-api`), and about which application — and, asked ahead of any request, the callers a remote PEP's edge PDP admits (`edgeCallers()`, #1189). |
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_exchange.ts` | The OAuth 2.0 Token Exchange Binding, direction A (#1181): which tuples are its gates and scopes, the FIXED conversion rules, and each tuple's answer from the questions a local RFC 8693 exchange asks. Built by `authzen.ts`'s `defaultDeps()` beside the caller and the search. |
-| `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial and its `binding_token`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its three routes. |
+| `authzen_external_pdp.ts` | Direction B (#1200): this authorization server asks an external PDP before it issues an OAuth access token for an RFC 8693 exchange. A library, no route. `oauth2.ts`'s token grant requires it only while `authzen.externalPdp` is on, and only on the branch that mints an access token. |
+| `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial, its `binding_token` and `binding_hash`, the denial record an `evaluation_id` resolves, `approval.state`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its four routes, the submission schema among them. |
 | `authzen_model.ts` | **The AuthZEN model, as the endpoints read it (#1579).** Builds every request's shape pass from `models/generated/authzen.json`, answers the lists the code branches on, and holds every answer to its member set. A leaf. See *THE REQUEST SHAPES ARE THE MODEL'S*, below. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
@@ -88,7 +90,16 @@ this API read any body as JSON (`app.js`'s text parser takes every type):
 section 10.1's "Requests MUST include a `Content-Type` header with the
 value `application/json`" is now held, 415 `0117` (`notJson()`, after the
 caller is admitted, before the body is read; a parameter is allowed, an
-absent header is refused). And the Resource Search of type `record` found
+absent header is refused). **The same rule holds in the two places it was
+missing (2026-11-20, #936)**:
+- the Access Request profile's submission (`POST /access/v1/access-requests`)
+  answers 415 `0122` as problem+json, titled *Unsupported media type*. The
+  status and the cancellation read no JSON body and are not held to it;
+- the remote PEP's edge PDP (`rust/bins/xacml-pep/src/authzen.rs`,
+  `is_json_type()`) answers 415 `0117` at its evaluation and batch, at the
+  same point.
+
+And the Resource Search of type `record` found
 nothing, since this service has no records: a type with no objects here
 now takes the policy's `resource-id` literals as its candidates (*The
 searches*). **One module is LEDGERED, not fixed**: the batch's
@@ -105,7 +116,7 @@ searches send neither property.
 ## The mapping, in one table
 
 **The public statement of the conversion, and the guidelines for a realm's
-conversion rules and the policies that read them, is `docs/v1.1.0/authzen.md`**
+conversion rules and the policies that read them, is `docs/v1.2.0/authzen.md`**
 (#1182). This file is why the code is the way it is; that page is what a
 policy author relies on, and `tests/authzen_map.js` X holds its worked
 example (the ALFA policy and the request) to the code.
@@ -263,12 +274,28 @@ DN; `roles.rolesOf()` resolves groups only for a person by itself, so
 
 **The application scope** (decision 1): the realm is the tenant; within it,
 `stsAuthzenApplication` on a person's or service account's entry,
-`appAuthzenApplication` (plus its own identifiers) on an application's.
+`appAuthzenApplication` (plus its own identifiers) on an application's. An
+mTLS caller is `kind: 'entry'` with the directory DN for both a person and
+an application (`byCertificate`); `scopeOf()` reads `appAuthzenApplication`
+when that entry has `appIdentifier` (#1202).
 Administrator-set: `sts*` is refused by every self-service and provisioning
 door, and the attribute is not in the portal's list. `context.application`
 must be in the set (403 `0025`), none named and one in the set picks it,
 none in the set is `0026`, several and none named `0027`. **`ou=peps` is not
 consulted**: registration is not a permission.
+
+**A BOUND EMBEDDED PEP IS SCOPED BY ITS BINDING (#2026, rcbj's D3 (a) on
+#1206).** A `central`-mode PEP embedded in an application asks
+`/access/v1/evaluation` (and `/evaluations`) for every decision on its own
+DPoP-bound `authzen:evaluate` token. `byPepToken()` reads the PEP entry's
+`stsPepApplication` (#2025, `xacml/xacml_pep_binding.ts`) into the caller's
+`embeddedIn`; `rolesOf()` then adds AUTHZEN_PEPS, so the access-control
+policy still decides (and `/admin/xacml/decide` reproduces it), and
+`scopeOf()` answers the binding and nothing else, so a `context.application`
+naming another is `0025` as any scoped caller's is, and none named picks the
+binding. No group membership or `stsAuthzenApplication` to keep in step; a
+PEP also in AUTHZEN_PEPS with a wider scope is narrowed to its binding.
+Only on the PEP token door, and never from `ou=peps`.
 
 **ENABLING FGA ON AN APPLICATION WRITES BOTH FOR THE REALM'S REMOTE PEPS
 (#1210, rcbj's decision of 2026-10-30), WHICH DELIBERATELY MAKES THE
@@ -330,8 +357,24 @@ identifier, signed by `oauth2.ts`'s `signPublishedDocument()` under the
 per fetch from the very object it is served beside, and switched by
 `authzen.signedMetadata`. A failure to sign leaves it out (`0040`) rather
 than failing the document: the plain members are the metadata.
-While the API is off the document answers 501 rather than advertising an
+While the API is off the document answers 403 rather than advertising an
 endpoint that does not.
+
+**EVERY SWITCHED-OFF PART OF THE API IS A 403 (#2208, 2026-11-25).** rcbj:
+"Follow the spec, but return 403 otherwise", and then, for this service,
+"Go ahead and make those 403s as well under the same conditions".
+AuthZEN 1.0 (Final) prescribes no status for an API a PDP does not serve
+or has switched off: section 10.1.2's Table 2 defines 400, 401, 403 and
+500, and section 9.1.1 says only that "the absence of any of these
+parameters is sufficient for the PEP to determine that the PDP is not
+capable and therefore will not return a result for the associated API".
+The Access Request profiles say nothing of a PDP that does not support
+them. So the API off (`0013`, `0014`), the batch off (`0039`), search off
+(`0044`), the Access Request profile off (`0070`, the schema too) and the
+catalogs off (`0153`) answer 403 — they were 501, as XACML's still are —
+and the metadata goes on leaving out what is off, which the spec does
+govern. The code is marked on the response for the log and the audit row,
+never sent. An `about:blank` problem at 403 is titled "Forbidden".
 
 ## The Obligations Profile (#1177)
 
@@ -380,7 +423,7 @@ same audit row and monitor count per item — with section 7's additions:
   `deny_on_first_deny` an error counts as a deny.
 * **The batch id** is `X-Request-ID` or one made here, and each item's audit
   row carries it with the item's position (`<id>#<n>`), decision 9.
-* `authzen.batchEnabled` off answers 501 (`0039`) and takes the endpoint out
+* `authzen.batchEnabled` off answers 403 (`0039`) and takes the endpoint out
   of the metadata; the single endpoint is unaffected.
 
 ## The searches (#1175)
@@ -432,10 +475,11 @@ type with no source answers empty results, never a 400.
 ## The token-exchange binding, direction A (#1181)
 
 **This service is the PDP an external authorization server asks** whether
-it may perform an RFC 8693 exchange (rcbj, 2026-10-30, decision 1);
-direction B — this AS consulting an external PDP — is not built. The
+it may perform an RFC 8693 exchange (rcbj, 2026-10-30, decision 1).
+Direction B — this authorization server consulting an external PDP — is
+*Asking an external PDP* below (#1200). The
 binding's draft and the Token Issuance Profile it builds on are on the
-ticket; `docs/v1.1.0/authzen.md` is the public statement, with the fixed-rule
+ticket; `docs/v1.2.0/authzen.md` is the public statement, with the fixed-rule
 table (`authzen_exchange.ts`'s `FIXED_RULES`, which
 `tests/authzen_token_exchange.js` F3 holds to that page).
 
@@ -477,9 +521,23 @@ table (`authzen_exchange.ts`'s `FIXED_RULES`, which
   binding is off, carrying one of them is 400 (`0101`).
 * **`context.issuance` only narrows**, on the subject gate only:
   `token_lifetime` (the subject token's remaining life, and the realm's
-  access-token lifetime for the client), and `granted_scope` for a request
-  naming no scope. `narrowOnly()` is the last check, and nothing else — no
-  `sub`, `aud`, `act`, `may_act`, no claim — can leave.
+  access-token lifetime for the client), `granted_scope` for a request
+  naming no scope, and nothing else is BUILT: #1201 asks for `audience`
+  and `claims` that only narrow and defines no rule that produces one, so
+  the review of #1201 (2026-11-23) corrected the documents rather than
+  invent one. `shape()` still holds both keys, were one ever built:
+  `audience` never leaves on one target: every element equal to this
+  gate's resource id
+  does not narrow it and is omitted, anything else is logged
+  (`STS-AUTHZEN-0132`) and dropped, and an empty array withdraws the
+  target (`0134`, the gate false). `claims` keeps a proper subset of a
+  string array the subject token already carries, and a smaller
+  non-negative integer ceiling; a reserved name (`sub`, `aud`, `act` and
+  `may_act` among them), a claim the token does not carry, or a wider
+  value is logged (`0133`) and dropped. An equal value is omitted
+  without a log. `shape()` is that check; `narrowOnly()` returns only
+  the envelope. The answer never writes `sub`, `aud`, `act` or
+  `may_act`, and never returns a rewritten `authorization_details`.
 * **`authzen.tokenExchange`, off by default**: it takes over two resource
   types (`audience`, `protected_resource`) that a realm may already use for
   its own AuthZEN questions, and it advertises a draft's capability
@@ -488,21 +546,83 @@ table (`authzen_exchange.ts`'s `FIXED_RULES`, which
   commits to.
 * **The parties are this realm's**: an external AS whose users and clients
   are not registered here gets an unregistered party's answer.
-* **NOT ROUTED BY #564, DELIBERATELY.** A binding tuple never reaches
-  `decideEvaluation()`, so an application that enforces fine-grained
-  authorization does not move it to that application's policy. The rule it
-  holds to is the local exchange's: there, an enforcing application's
-  policy is asked only about RFC 9396 details, and the subject token's
-  details bound the requested ones (#564 decision 6, `oauth-oidc/
-  CLAUDE.md`); the gate and the scopes stay the issuance policy's.
-  Routing the binding would make it disagree with the token endpoint, which
-  is the one thing #1181 must not do. **Authorization-detail tuples, when
-  built, owe the same per-detail question through `common/fga_gate.ts`**
-  and the same bound, or an external AS gets a wider answer than this
-  token endpoint would give.
-* **Not built:** direction B; authorization-detail tuples (RFC 9396 cells);
-  the edge PDP answering the binding (its port only refuses the catalogue
-  rows); the `claims` and `audience` shaping keys.
+* **NOT ROUTED BY #564, DELIBERATELY, EXCEPT A DETAIL TUPLE.** A gate or
+  a scope never reaches `decideEvaluation()`, so an application that
+  enforces fine-grained authorization does not move those to that
+  application's policy. The rule they hold to is the local exchange's:
+  there, an enforcing application's policy is asked only about RFC 9396
+  details, and the subject token's details bound the requested ones
+  (#564 decision 6, `oauth-oidc/CLAUDE.md`); the gate and the scopes stay
+  the issuance policy's. Routing those would make the binding disagree
+  with the token endpoint, which is the one thing #1181 must not do.
+  **An authorization-detail tuple (#1201) is that per-detail question.**
+  `classify()` stays a gate or a scope only; `plan()` marks a tuple
+  whose `resource.type` is a declared type, and only while the binding
+  is on, and never `audience` or `protected_resource`. With no exchange
+  subject in the batch it is an ordinary evaluation again (a binding
+  member on it is still `0101`). The exchange subject's cell is decided
+  by `detailVerdict()`: a cell naming anybody else, a Txn-Token's
+  requesting party included, is false (`0128`) in every mode. The cell
+  is the type, one location when the tuple names an id, and an action
+  or `action:datatype` split on the last colon; `authorization_detail`
+  names neither. An enforcing type is held to `exchangeBoundProblem()`
+  against `subject_token.authorization_details` and "issued here"
+  (`subject_token.iss` equal to this realm's issuer, not a
+  re-verification) before `fineGrainedRefusal()` at stage `exchange`;
+  not covered is false (`0129`) and the decider is not asked. A permit
+  is true. A deny is false (`0130`). A fault is `STS-AUTHZEN-0046`
+  (HTTP 500) with the STS-FGA code on the audit row, and is not counted.
+  A type that does not enforce skips the bound and is granted as asked,
+  in every mode. `declaredTypes()` throwing while planning is logged
+  (`0131`) and no detail is recognized; throwing while answering a cell
+  already recognized is the same log and false (`0129`). The answer
+  does not carry the cell back.
+* **Not built:** the edge PDP answering the binding (its port only
+  refuses the catalogue rows). Direction B is *Asking an external PDP*
+  below.
+
+## Asking an external PDP (#1200)
+
+**This authorization server asks a PDP an administrator configured**, before
+it issues an OAuth access token for an RFC 8693 exchange. It is the other
+direction of the same binding. `authzen_external_pdp.ts` builds the batch
+and reads the answer. `oauth-oidc/oauth2.ts`'s token grant calls it, lazily,
+only while `authzen.externalPdp` is on and only in the branch that mints an
+access token. A Kerberos `requested_token_type` is outside the binding and
+is not sent.
+
+* **IT SITS BESIDE THE ISSUANCE GATE.** `delegation_policy.decide()` and the
+  local scope narrowing have already run. A refusal that policy enforces is
+  not sent on. The PDP may only narrow: a false scope drops that scope,
+  `granted_scope` is intersected with the scopes the local endpoint would
+  already issue, and `token_lifetime` is a ceiling on the access token
+  (`lifetimeCapS`, which only shortens). Nothing here writes `sub`, `aud`,
+  `act`, `may_act` or a claim. The refresh token, when one is also issued,
+  keeps its own lifetime.
+* **FAIL CLOSED, IN EVERY MODE.** Development softens the local issuance
+  policy. It does not soften this. An unusable URL (`0123`), no answer
+  (`0124`: outbound off, unreachable, timeout, non-2xx, a throw), a body
+  that is not the batch's decision (`0126`, including an item whose
+  `context.error` says the PDP did not decide it), or a client certificate,
+  key or named CA file that cannot be read (`0127`) means no token. A
+  `decision: false` on a subject or requesting-party gate is `0125`, HTTP
+  400, and the client is told neither which gate nor the code. The other
+  four are HTTP 503.
+* **THE URL IS AN ADMINISTRATOR'S**, the twenty-seventh row of
+  `federation/CLAUDE.md`. Absolute https only, no userinfo, query or
+  fragment, through `federation_http.requestConfigured`. Mutual TLS is the
+  only mode. The PEM paths are settings, read at the dial and held to
+  `security.fileRoots` in product. The key's bytes are not a configuration
+  value. An empty audience is asked with a resource id of `''`; a PDP that
+  requires a non-empty id refuses the token, which is the same fail-closed
+  rule (`0126`, because this service's own model answers that shape as an
+  item error rather than a policy `false`).
+* **Off by default**, so a deployment that never turns it on dials nothing
+  and does not load the module on a token exchange. The settings are the
+  `AuthZEN` group's, on `/admin/xacml` and `GET /admin-api/config` (rule 7).
+  No new route.
+* `tests/authzen_external_pdp.js` holds the injected dial and a second realm
+  over mutual TLS.
 
 ## The console and the API (#1162)
 
@@ -625,7 +745,7 @@ or the two drift with both suites green.
   `parse()`, so a reserved row cannot reach a request there either.
 * **The codes are shared where the condition is the contract's**: a request
   refused there carries the `STS-AUTHZEN-*` code it carries here, and the
-  `501`s for a realm with the API off are `0013` and `0014`. Its own
+  `403`s for a realm with the API off are `0013` and `0014`. Its own
   conditions — the client CA, the catalogue and caller pulls, admission by
   the pulled list and the local narrowing — are `STS-XPEP-*`.
 * **Who may ask is this service's answer, pulled** (#1189, below):
@@ -653,7 +773,7 @@ or the two drift with both suites green.
   `0046` included (`xacml-pep/CLAUDE.md` has the status mapping). Until the
   edge's next poll an application just switched on is still decided there
   from the root: the same convergence as the caller list, stated in
-  `docs/v1.1.0/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
+  `docs/v1.2.0/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
   forwarding rules it out no more than it did.
 
 ### The forward on the PEP's token (#1827's follow-up)
@@ -728,14 +848,36 @@ header argues each. What a maintainer needs quickly:
   `reason`). No per-application switch; `authzen.accessRequests` turns the
   whole profile off. A NotApplicable carries no advice in XACML, so in
   practice only a Deny is requestable.
-* **The denial is bound BY VALUE, the approval BY REFERENCE.** The
+* **The denial is bound BY VALUE AND BY REFERENCE.** The
   `binding_token` is signed with `oauth2.ts`'s `signPublishedDocument()`
   (use case `oauth-signed-metadata`, the metadata's signer) over the tuple
   whole less `subject.properties.act`, the advice's context members, the
-  caller, the application and the advice's terms; nothing is stored per
-  denial, so `evaluation_id` alone is refused (`0073`). The approval is a
-  store row, looked up by a digest of `approval.id`, so revocation is a
-  write. `approval.state` is never issued and never read.
+  caller, the application and the advice's terms, and it always carries
+  `binding_hash` (base64url SHA-256 of the RFC 8785 form of that tuple).
+  The same denial is a row of `authzen.accessRequestDenials`, keyed by
+  `evaluation_id`, so a submission may name it by that id and the echoed
+  `expires_at` (`0073` when this realm has no such denial, `0074` when the
+  echo or the tuple does not match, `0075` when the recorded window has
+  passed). When the token is present it is authoritative. The approval is
+  a store row, looked up by a digest of `approval.id`, and `approve()`
+  also signs `approval.state`. A presented state is verified, and a bad
+  signature is not an approval (`0084`) even when the row would be; a
+  state with no row is not an approval either, so revocation stays a
+  write.
+* **The submission schema is published, and no form is** (#1204). A
+  requestable denial's `request_schema_url` is
+  `GET /access/v1/access-requests/schema` on the same origin as
+  `endpoint`, so a PEP's same-origin check (the profile's section
+  11.2) passes. The document is JSON Schema draft 2020-12 of the
+  augmentations `requestedAccess()` accepts:
+  `context.business_justification`, and
+  `requested_access.requested_until` and `emergency`. None is
+  required on an ordinary submission, and emergency requires the
+  justification. It is public, names no secret, and is not read when
+  a submission arrives — the reader stays the enforcer. While the
+  API or the profile is off it answers 403. `form_url` is omitted:
+  this service hosts no requester-facing form, and a URL that is not
+  one would be a lie.
 * **AN APPROVAL NEVER PERMITS BY ITSELF.** `verify()` (same caller, same
   application, exact tuple, not revoked, inside `approved_until`) adds
   `urn:sts:xacml:authzen:approval-id`, `:approved-until`, `:approver` to the
@@ -759,24 +901,69 @@ header argues each. What a maintainer needs quickly:
   names is the subject or the requester; the FIRST rule now excludes that
   resource, or a role it required would bypass the self-approval rule.
   `mayDecide()` needs a real Permit: the gate's allow-when-nothing-decides is
-  right for a console and wrong for an approval.
+  right for a console and wrong for an approval. **A revocation is asked
+  as `revoke-access-request`** (the review of #1203, `mayRevoke()`), which
+  the fourth rule's target lists beside `approve-access-request`, so the
+  built-in document answers the two alike. A repository policy whose text
+  never names the new action predates it and is asked
+  `approve-access-request` instead — rcbj's backwards-compatibility rule:
+  an existing deployment's own policy decides a revocation as it did.
 * **Eligibility is computed, the decision is not**: `eligible()` (role,
   group, application owners) is routing — who is mailed, whose
   `/portal/access-requests` lists it — and a fact the rule reads.
-* **The callback** goes only to a URL in `appAuthzenCallbackUri` /
-  `stsAuthzenCallbackUri` (the tab's `set-callbacks`; `ldap_server.js`'s
-  AuthZEN `write` hook now takes both `sts*` names), through
+* **The callback** goes only to a URL registered for the caller (the tab's
+  `set-callbacks`): an application's `appAuthzenCallbackUri`, or a
+  person's or service account's `stsAuthzenCallbackUri`. #1202 had stopped
+  honouring the second and refused to write it (`0136`, now retired); no
+  decision of rcbj's said so — decision 4 on #1180 is "a callback URL
+  registered for the requester" — and a 1.1.0 deployment with person
+  callbacks would have broken on upgrade, so the review restored it. A
+  per-URL override is an application's only (`0137` for a person). Delivery is
   `federation_http.deliverJson()` under the SENDABLE attribute
-  `authzenCallbackEndpoint`, once, with a 300-second JWT as the Bearer. Not
-  retried: the task status endpoint is the record (`federation/CLAUDE.md`,
-  the twentieth row).
+  `authzenCallbackEndpoint`, with a 300-second JWT as the Bearer. A network
+  error, a timeout or an HTTP 5xx is tried again by this file's
+  `authzen.access-requests` job, up to `authzen.callbackAttempts` (the
+  first included), the first wait `authzen.callbackBackoffS` and each
+  later one doubled, up to a day (`waitAfter()`). One URL may set
+  either in `appAuthzenCallbackConfig` (`url attempts=N backoff=S`, stored
+  only when at least one override is set). A 4xx or an outbound-policy
+  refusal is not tried again (`0137` is the set-callbacks refusal for a
+  bad override). Each failed try is `0091`. When the delivery will not
+  succeed, `callbackDelivery.state` is `failed` and the give-up is `0135`.
+  A delivery's outcome never writes the task's status. The status
+  endpoint stays the record (`federation/CLAUDE.md`, the twentieth row).
+  Each attempt (time, status, reason, `code`) is on
+  `viewOf().callbackDelivery.attempts`, drawn per attempt on the console
+  row, and on the portal; not on the public Task Handle. **A write after
+  the POST re-reads the row** (`currentOf()`) and writes only the delivery
+  record onto it, so a revocation made while the POST was in flight is
+  not lost (rcbj's rule, no lost revocations), and a row the sweep removed
+  is not brought back.
+* **`failed` is a workflow step that cannot complete** (#1202, the
+  review): `approve()` writes the approval's index row and then the task;
+  either refused moves the task to `failed` (`0142`) instead of an
+  `approved` no re-evaluation could find. The job fails a pending task
+  whose advice named approvers that resolve, CERTAINLY, to nobody but the
+  subject (`0143`): `approverWalk()` is certain only when the directory was
+  readable and every role named is a configured static one, since a
+  computed or dynamic role's holders cannot be listed. Advice that named no
+  approver is never "nobody": an administrator decides it.
 * **The store is cell-tier** (`authzen.accessRequests`,
-  `authzen.accessRequestIndex`), and `/access/v1` is placed `local`: under
-  cells a PEP must poll the cell it submitted to.
+  `authzen.accessRequestIndex`, `authzen.accessRequestDenials`), and
+  `/access/v1` is placed `local`: under cells a PEP must poll the cell it
+  submitted to.
 * **Expiry**: read-time (a pending task past `expiresAt` is finished as
   expired by `task()`) and the `authzen.access-requests` cluster job, realm
   scope, every minute, which also removes rows past `keepUntil` (a day after
-  finishing, or the approval's end).
+  finishing, or the approval's end) — EXCEPT a row whose callback is still
+  being tried, kept up to `horizonS()` past `keepUntil` (every wait and
+  flight the bound allows); one that must go with its delivery open gets
+  the final `0135` row first (`giveUp()`).
+* **The denial store is capped at the insert**
+  (`authzen.accessRequestMaxDenials`, default 100000, per realm): full,
+  `recordDenial()` records nothing and the token form still works; the full
+  store is logged and audited once as `0144` (state changes, never per
+  denial).
 * **A DELETED SUBJECT'S TASKS END WITH THEM (2026-11-16, #1612's rule: a
   person deleted and made again under the same name inherits nothing).** A
   task names its subject as the PEP sent it — a username, often — and
@@ -793,10 +980,89 @@ header argues each. What a maintainer needs quickly:
   **A task from before the index** is noted by the sweep job, which walks
   every task already: the backfill, within a minute of the upgrade and never
   on the delete path; a delete inside that minute misses such a task.
-* Not built: `evaluation_id` binding by reference, `approval.state`, the
-  hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
-  CATALOG, a `failed` transition, and revocation from the portal (the console
-  revokes). `tests/authzen_access_request.js` holds it in process and
+* **The portal lists and revokes the approvals that person gave** (#1203),
+  through the same `decide()` door, and ONLY those: a revocation on the
+  portal door of an approval somebody else gave is refused (`0141`), since
+  the policy question alone would let any permitted approver revoke
+  another's. `grantedBy()` is the list: status `approved`, a live approval
+  whose `approver` is that username, and `mayRevoke()` on the portal door.
+  **Neither portal list reads the store** (no full scans): `grantedBy()`
+  reads the APPROVER INDEX (`approver:<SHA-256 of the lower-cased
+  username>` in `authzen.accessRequestIndex`), and `awaiting()` the
+  PENDING INDEX (`pending:tasks`), whose length
+  `authzen.accessRequestMaxPending` bounds — eligibility is computed at
+  the read, so a per-approver list could not be exact. `save()` writes
+  both; two processes can lose each other's id, and the sweep, which walks
+  every task already, puts it back within a minute.
+  The requester is mailed (`authzen-access-revoked`) when the channel can
+  address their own entry; a failure to mail is `0138` and the revocation
+  stands. An emergency approval, whose approver is the door rather than a
+  person, stays on the console.
+* **`display` (#1204)** is a hint for a person, behind
+  `authzen.accessRequestDisplay` (off by default). The denial's is the
+  advice's `display-title` and `display-description` verbatim, or the
+  catalog `authzenDisplay` in the evaluation's `Accept-Language`; a Task
+  Handle's is the same catalog for its status. `handleOf()` draws it only
+  when it is handed a language list, so a callback's handle (built for
+  nobody) carries none. It is never bound, echoed or read back, and it
+  names no approver, role, group or policy.
+* **The hosted form (#1204)** is the portal page `/portal/access-request`
+  (`portal/portal_access_request.ts`, `web_access_request.ts`), behind
+  `authzen.accessRequestForm` (off by default). `form_url` names it with
+  the denial's `evaluation_id`, and only for a denial the record kept; a
+  Task Handle's `links.ticket` names it with the task's id. `formView()`
+  answers only the denial's or the task's SUBJECT (`isSubject()`: a type
+  in `authzen.resolveSubjectTypes`, an id among `approverIdentity()`'s
+  names) and 0147 otherwise, the same as for nothing. `submitByForm()`
+  opens the task through `openTask()`, the one place a PEP's submission
+  makes one too, with `requester` the denial's PEP, `origin: "form"` and
+  `formSubmittedBy`. A denial has one task (its `jti`), and the PEP's own
+  submission of it gets the form's task back unless it asks for other
+  augmentations (`sameAugmentations()`, else 0076). The draft does not
+  say how a form's input reaches the task; making the denial's own
+  submission is this service's answer.
+* **The CATALOG companion (#1204)**, behind `authzen.accessRequestCatalogs`
+  (off by default). A catalog is the POLICY'S: the advice's repeatable
+  `entitlement` (`value` or `value|label`) is `Terms.entitlements`, so it
+  is inside the binding token and the denial record, and the list is
+  scoped to the denied tuple by construction. `request_catalogs_url` only
+  for a recorded denial that lists some. The Catalogs Document and the
+  Catalog Endpoint (`catalogDenial()`) answer only the denial's own caller,
+  still scoped (`applicationOf()`), 0150 otherwise. The cursor is bound to
+  the search it continues (0151). `requestedAccess()` requires and checks
+  `requested_access.entitlement` against the denial's list (0152), for a
+  PEP's submission and the form's alike. `factsOf()` hands it to
+  `xacml_request.js` as `urn:sts:xacml:authzen:approved-entitlement`,
+  added only when one was chosen. A query string is never logged.
+* **The ACTOR companion (#1204)**, behind `authzen.accessRequestActor`
+  (off by default). `actorOf()` verifies `client.actor` against the
+  caller's own credential, which is the PEP's: one link that IS the
+  caller (its DN, client_id or identifier), or link for link the `act`
+  chain of its own access token. The bearer door carries the verified
+  token's `iss` and `act` on the caller for this. Anything else is 0154,
+  and a malformed actor or source is 0155. Section 3.2's MUST reject
+  governs its MAY retain, so nothing unverified is kept. `client.source`
+  is audit metadata only, and `external_url` is never dialled. The chain
+  is context for the approvers and the audit row, and never an XACML
+  fact. openid/authzen#756 (pending) would put `subject.properties.act`
+  into the binding; `bound()` still strips it.
+* **The BULK companion (#1204)**, behind `authzen.accessRequestBulk` (off
+  by default; off, the single model refuses `items` with its old
+  sentence). `submit()` hands a body with `items` to `submitBulk()`.
+  Every item carries its own denial, because this service issues no
+  bundle denial, so a top-level `denial` is 0158. Each item is the single
+  submission it would be, checked by `verifyOne()` (the one check a
+  single submission gets too) and `requestedAccess()`, and opened as an
+  ordinary task with `bundle` and `position`. The bundle is an index row,
+  `bundle:<digest of arb_ id>`, removed by the sweep at its `until`.
+  `bundleBody()` builds the handle from its items when it is read: 3.4's
+  aggregate, `partial` included, each item's own `result`, no top-level
+  one. `STATES` leaves `partial` out, so no task, and no callback event,
+  is ever `partial`. A callback on a bulk submission is 0160.
+* Not built: of BULK, a bundle denial and a bulk callback; of ACTOR,
+  routing by an actor; of CATALOG, `scope_params`, `granted`,
+  `risk_level`, `owner` and agent-protocol catalogs.
+  `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
 ## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
@@ -882,4 +1148,38 @@ token, 0115 the no-broadening check; 0116 an answer that is not its model's
 (#936); 0118–0121 a remote PEP's DPoP-bound token from `sts-remote-pep`
 (#1827's follow-up): 0118 refused as a token, 0119 without
 `authzen:evaluate`, 0120 naming no entry or one outside REMOTE_PEPS, 0121
-`xacml.pepAuthentication` set to `certificate`.
+`xacml.pepAuthentication` set to `certificate`; 0122 an access request
+submission whose `Content-Type` is not `application/json` (#936); 0123–0127
+direction B (#1200): 0123 an unusable PDP address, 0124 no answer, 0125 a
+subject or requesting-party gate refused, 0126 an answer that is not the
+batch's decision, 0127 a client certificate, key or named CA file that
+cannot be read; 0128–0134 the binding's authorization-detail tuples and
+the issuance envelope's audience and claims (#1201): 0128 a cell naming
+somebody other than the exchange subject, 0129 a cell not covered, not
+issued here, or whose type can no longer be read, 0130 the application's
+policy denying the cell, 0131 the type list unreadable (logged), 0132 an
+audience that would broaden (logged and dropped), 0133 a claim that
+would broaden, is reserved, or is not on the subject token (logged and
+dropped), 0134 an empty audience withdrawing the target; 0135–0137 the
+callback retry (#1202): 0135 the delivery will not be tried again (the
+task status is unchanged), 0136 retired (a callback for somebody who is
+not an application, refused until the review of #1202), 0137 a per-URL
+`attempts` or `backoff` that is not an integer in range or is set for a
+person; 0138 the requester of a revoked approval could not be
+mailed, and the revocation stands (#1203); 0139 a requestable denial
+could not be recorded, and the binding_token is still issued; 0140 an
+approval's state could not be signed, and the approval stands by id
+(#1204); 0141 a portal revocation of an approval somebody else gave
+(#1203), 0142 an approval that could not be stored and 0143 approvers who
+resolve to nobody, each a task moved to `failed` (#1202), 0144 the denial
+store full (#1204); 0146–0149 the hosted form (#1204): 0146 a denial the
+record does not hold, 0147 a person who is not the subject, 0148 a
+window that has passed, 0149 the form off; 0150–0153 the catalogs
+(#1204): 0150 a catalog call for a denial that is not the caller's, 0151 a
+cursor this endpoint did not issue, 0152 a submission's entitlement
+missing or not listed, 0153 the catalogs off; 0154–0155 the actor
+(#1204): 0154 a chain the caller's credential does not authorize, 0155 a
+malformed `client.actor` or `client.source`; 0156–0160 the bulk request
+(#1204): 0156 a top-level resource or action, 0157 items out of bounds,
+0158 a bundle denial or an item without its own, 0159 items about different
+applications, 0160 a callback.

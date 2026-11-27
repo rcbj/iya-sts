@@ -856,6 +856,11 @@ function normalise(record) {
     // load). The chain is the PKI's, not SAML's, so it is one placeholder.
     ['chain', /(<ds:X509Certificate><opaque><\/ds:X509Certificate>)+/g],
     ['hex', /\b[0-9a-f]{24,}\b/g],
+    // The consent screen's handle, by name: `random` below needs a capital
+    // AND a digit, and a 24-character base64url handle has no digit about
+    // one time in sixty (PR #2030's unit run: `consent=VOOoXhVkDgo-oGiW…`).
+    // Written as `<random>`, which is what the snapshot recorded.
+    ['random', /\bconsent=[A-Za-z0-9_-]{16,}/g],
     ['random', /(?<![A-Za-z0-9_+/=-])(?=[A-Za-z0-9_+/=-]*[A-Z])(?=[A-Za-z0-9_+/=-]*[0-9])[A-Za-z0-9_+/=-]{24,}/g]
   ];
   const wire = record.wire.map(function (one) {
@@ -939,8 +944,10 @@ function firstDifference(a, b, where) {
     }
   }
   log.debug("Leaving firstDifference().");
-  return where + ': ' + JSON.stringify(b).slice(0, 400) + ' where ' +
-    JSON.stringify(a).slice(0, 400) + ' was recorded';
+  // String(): JSON.stringify(undefined) is undefined, and a member present on
+  // one side only is exactly the difference this is asked to name.
+  return where + ': ' + String(JSON.stringify(b)).slice(0, 400) + ' where ' +
+    String(JSON.stringify(a)).slice(0, 400) + ' was recorded';
 }
 
 // The SAML messages of every recorded step, decoded: what

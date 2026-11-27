@@ -5,6 +5,7 @@
   "reauth.here": "Iniciar sesión en esta página",
   "reauth.hereInstead": "Iniciar sesión en esta página en su lugar",
   "reauth.noPopup": "Este navegador no puede devolver un inicio de sesión desde otra ventana, así que inicie sesión en esta página.",
+  "reauth.popupBlocked": "Se bloqueó la ventana de inicio de sesión. Permita las ventanas emergentes para este sitio, o inicie sesión en esta página.",
   "reauth.finish": "Termine de iniciar sesión en la ventana que se abrió.",
   "otherPerson.waiting": "Inició sesión otra persona, así que lo que esperaba en esta página no se envió.",
   "otherPerson.typed": "Inició sesión otra persona, así que lo que se había escrito antes en esta página no se restauró.",
@@ -17,5 +18,17 @@
   "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán.",
   "accounts.otherAccount": "Ese inicio de sesión fue de otra cuenta, así que esta pestaña no lo aceptó. Vuelva a iniciar sesión como {user} o cambie de cuenta desde el menú de la cuenta.",
   "accounts.refused.title": "La consola no se abre para esta cuenta",
-  "accounts.refused.text": "La API de administración respondió {status} para la cuenta con la que esta pestaña tiene la sesión iniciada."
+  "accounts.refused.text": "La API de administración respondió {status} para la cuenta con la que esta pestaña tiene la sesión iniciada.",
+  "policyName.required": "Se requiere un nombre.",
+  "noWebCrypto.title": "Este navegador no puede abrir esta página",
+  "noWebCrypto.text": "Este navegador no puede ejecutar esta página de forma segura: WebCrypto no está disponible, normalmente porque la página no se abrió mediante HTTPS o porque el navegador es demasiado antiguo.",
+  "step.pending": "Obteniendo permiso para hacer este cambio…",
+  "step.blocked": "Este cambio necesita su permiso. Abra la ventana para darlo.",
+  "step.signIn": "Inicie sesión para hacer este cambio.",
+  "step.fresh": "Este cambio requiere que vuelva a iniciar sesión.",
+  "step.open": "Continuar",
+  "step.cancel": "Cancelar",
+  "step.refused": "No se concedió permiso para hacer este cambio: ",
+  "step.other": "Ese inicio de sesión era de otra cuenta, así que no se envió nada.",
+  "step.failed": "No se pudo obtener permiso para hacer este cambio."
 }

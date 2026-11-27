@@ -95,6 +95,18 @@
     "en": "4b0c4feb0af59f04",
     "text": "تقديم طلب وصول"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "مخطط إرسال طلب الوصول"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation.name": {
+    "en": "c633cd939009e41d",
+    "text": "Catalogs Document لطلب وصول"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation/entitlements.name": {
+    "en": "2fc2571728b32fa3",
+    "text": "فهرس استحقاقات طلب وصول"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "حالة مهمة طلب وصول"
@@ -291,6 +303,14 @@
     "en": "f399711ce1261bf4",
     "text": "كل CRL وكل مستجيب OCSP تنشرهما هذه الخدمة"
   },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "المفتاح العام لمرجع شهادات مستخدمي OpenSSH في نطاق الثقة"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "قائمة إلغاء مفاتيح مستخدمي OpenSSH في نطاق الثقة"
+  },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
     "text": "صفحة XACML في وحدة التحكم عبر JSON"
@@ -431,6 +451,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me، الموضوع المُصادَق عليه"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "مفتاح دليل مفاتيح الويب (الطريقة المتقدمة)"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "سياسة دليل مفاتيح الويب (الطريقة المتقدمة)"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "مفتاح دليل مفاتيح الويب (الطريقة المباشرة)"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "سياسة دليل مفاتيح الويب (الطريقة المباشرة)"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "تسجيل مفتاح HOBA العام"
@@ -438,6 +474,10 @@
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "تسجيل الدخول بشهادة عميل"
+  },
+  "endpoints.route./authn/certificate/continue.name": {
+    "en": "801f4e0b4934b5df",
+    "text": "تسجيل الدخول بالشهادة على مستمع خاص به"
   },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
@@ -475,6 +515,10 @@
     "en": "6a36418727489219",
     "text": "أيقونة الخدمة"
   },
+  "endpoints.route./web/csp-report.name": {
+    "en": "4c905dd496d09bb9",
+    "text": "تقارير مخالفات سياسة أمان المحتوى"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "ورقة أنماط بطاقات الأسطح العامة"
@@ -482,6 +526,10 @@
   "endpoints.route./web/footer.css.name": {
     "en": "b1ae9012425d7c77",
     "text": "ورقة أنماط تذييل الصفحة"
+  },
+  "endpoints.route./web/browser-check.js.name": {
+    "en": "c00f945d4a14cdbe",
+    "text": "فحص المتصفح الذي تشغّله كل واجهة أولًا"
   },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
@@ -799,6 +847,10 @@
     "en": "91b14d0429eaa0bc",
     "text": "مساعدات نموذج الشهادة"
   },
+  "endpoints.route./admin-api/console/certificates/:action.name": {
+    "en": "134f5f716b5ca38d",
+    "text": "قارئ الشهادات لتسجيل الدخول بالشهادة"
+  },
   "endpoints.route./admin-api/console/applications/:action.name": {
     "en": "18ea7bf0d0fcc0d4",
     "text": "مساعد نموذج التطبيق الجديد"
@@ -834,6 +886,14 @@
   "endpoints.route./admin-api/pki/trust/:action.name": {
     "en": "49eac4924ef09867",
     "text": "تغيير مخزن ثقة الموقّعين، أو صفًا متشكّكًا، أو إعادة فحص التثبيتات"
+  },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "مخازن الثقة المسمّاة وحالات الاستخدام التي تثق بها"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "تغيير مخزن ثقة مسمّى أو ما تثق به حالة استخدام"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -895,6 +955,14 @@
     "en": "cff7055c2db49c6a",
     "text": "إجراءات البريد"
   },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "مفاتيح OpenPGP"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "إجراءات مفاتيح OpenPGP"
+  },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",
     "text": "صندوق صادر البريد"
@@ -947,6 +1015,30 @@
     "en": "dcc6aecb3740fef3",
     "text": "إعدادات WebAuthn"
   },
+  "endpoints.route./admin-api/hardware-tokens-settings.name": {
+    "en": "f7c0eac08cccb13f",
+    "text": "إعدادات الرموز المادية"
+  },
+  "endpoints.route./admin-api/piv.name": {
+    "en": "3708b64a7c448009",
+    "text": "إعدادات PIV"
+  },
+  "endpoints.route./admin-api/yubiotp.name": {
+    "en": "1b84971a31275a96",
+    "text": "إعدادات YubiKey OTP"
+  },
+  "endpoints.route./admin-api/oath-tokens.name": {
+    "en": "87d8bb1a9df4fe02",
+    "text": "إعدادات رموز OATH"
+  },
+  "endpoints.route./admin-api/ssh-user-ca.name": {
+    "en": "863acd9a2df9d014",
+    "text": "إعدادات شهادات مستخدمي SSH"
+  },
+  "endpoints.route./admin-api/openpgp-settings.name": {
+    "en": "60b6f8684877d1e1",
+    "text": "إعدادات OpenPGP"
+  },
   "endpoints.route./admin-api/mfa.name": {
     "en": "63fc7f058d95883b",
     "text": "من يحمل عاملًا ثانيًا"
@@ -962,6 +1054,14 @@
   "endpoints.route./admin-api/rbac/:action.name": {
     "en": "de7f185fcea232a6",
     "text": "إجراءات دور المسؤول"
+  },
+  "endpoints.route./admin-api/approvals.name": {
+    "en": "0405f4b67edd2784",
+    "text": "الموافقات المعلّقة"
+  },
+  "endpoints.route./admin-api/approvals/:action.name": {
+    "en": "c00eefb987efe9e3",
+    "text": "قرارات الموافقات المعلّقة"
   },
   "endpoints.route./admin-api/sessions.name": {
     "en": "366487a11e4c5380",
@@ -1050,6 +1150,30 @@
   "endpoints.route./admin-api/users/new.name": {
     "en": "911ac7f1d87d5691",
     "text": "نموذج مستخدم جديد"
+  },
+  "endpoints.route./admin-api/groups/new.name": {
+    "en": "e7e8f8038d460304",
+    "text": "نموذج مجموعة جديدة"
+  },
+  "endpoints.route./admin-api/roles/new.name": {
+    "en": "2693340ee18861ff",
+    "text": "نموذج دور جديد"
+  },
+  "endpoints.route./admin-api/devices/new.name": {
+    "en": "8922b80eac839903",
+    "text": "نموذج جهاز جديد"
+  },
+  "endpoints.route./admin-api/attribute-sources/new.name": {
+    "en": "24f2d80ebcf05f5e",
+    "text": "نموذج مصدر سمات جديد"
+  },
+  "endpoints.route./admin-api/secret-destinations/new.name": {
+    "en": "a6b78c1984266387",
+    "text": "نموذج وجهة أسرار جديدة"
+  },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "نموذج سياسة جديدة"
   },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
@@ -1207,6 +1331,30 @@
     "en": "6bfc2bea96fee884",
     "text": "بدء نشاط ما بعد تسجيل الدخول أو إيقافه مؤقتًا أو استئنافه أو إنهاؤه"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "الرموز المادية"
+  },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "رموز OATH المستوردة"
+  },
+  "endpoints.route./admin-api/hardware-tokens/yubiotp.name": {
+    "en": "038eb465fd8d6235",
+    "text": "YubiKey OTP المستوردة"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "33209f967f070175",
+    "text": "إجراءات الرموز العتادية"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "شهادات مستخدم SSH لشخص"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "مفاتيح PIV المودَعة"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "عملاء SCIM الصادرون"
@@ -1218,6 +1366,10 @@
   "endpoints.route./admin-api/roles/preview.name": {
     "en": "c2e62734c4466542",
     "text": "هل سيُصدَر هذا؟"
+  },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "هل هذا الشخص مؤهل لهذا الدور الديناميكي؟"
   },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
@@ -1290,6 +1442,10 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "قاطنو الخلية"
+  },
+  "endpoints.route./admin-api/csp-reports.name": {
+    "en": "ff0444716f951c5e",
+    "text": "تقارير مخالفات CSP"
   },
   "endpoints.route./admin-api/malware-scanning.name": {
     "en": "48adceb89b5e59c8",
@@ -1378,6 +1534,10 @@
   "endpoints.route./admin-api/tls.name": {
     "en": "96b20b887882a558",
     "text": "إعدادات TLS / TLS المتبادل"
+  },
+  "endpoints.route./admin-api/tls/key-exchange.name": {
+    "en": "74b3b800a6486eba",
+    "text": "تبادل مفاتيح TLS المتفاوض عليه"
   },
   "endpoints.route./admin-api/tls/trust.name": {
     "en": "7afb6aac81a9a73c",
@@ -1847,6 +2007,14 @@
     "en": "69876d051e66729c",
     "text": "خطوة نشاط ما بعد تسجيل الدخول"
   },
+  "endpoints.route./wsapi/2.0/verify.name": {
+    "en": "0734c12f6e3eb870",
+    "text": "تحقق YK-VAL 2.0"
+  },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "خطوة الأدوار الديناميكية"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "خطوة العامل الثاني بالرمز لمرة واحدة"
@@ -2003,6 +2171,18 @@
     "en": "3d081a5b28f53bd6",
     "text": "تأجيل نشاط ما بعد تسجيل الدخول"
   },
+  "endpoints.route./authn-api/mfa/:id/post-login/mail.name": {
+    "en": "07e532c277a3f57e",
+    "text": "تسجيل مفتاح تشفير بريد ما بعد الكم"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/piv.name": {
+    "en": "e0733b33f8ee2cb8",
+    "text": "إعادة إصدار شهادة PIV يطلبها نشاط ما بعد تسجيل الدخول"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "اختيار الأدوار الديناميكية لتسجيل الدخول هذا"
+  },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",
     "text": "إرسال رمز أو رابط تسجيل دخول بالبريد"
@@ -2106,6 +2286,10 @@
   "endpoints.route./oauth2/userinfo.name": {
     "en": "aebc2aa96e6b1b70",
     "text": "نقطة نهاية UserInfo"
+  },
+  "endpoints.route./oauth2/groups.name": {
+    "en": "fc727eb9da0b20fe",
+    "text": "مصدر مطالبة المجموعات"
   },
   "endpoints.route./oauth2/introspect.name": {
     "en": "328dfd36fb81f446",

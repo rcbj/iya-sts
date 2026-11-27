@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# iya-sts remote PEP: the member ${member}. Its keys must have been read —
+# a member without its assertion key cannot authenticate, and must not run
+# as though it could. They are mounted READ-ONLY: the PEP reads them and the
+# listener pair again every PEP_HTTPS_RELOAD_INTERVAL_MS, and must never be
+# able to change them.
+#
+# NO --no-healthcheck AND NO RESTART ON IT: the image's own check reports a
+# member with no listener pair yet as unhealthy, which is accurate; the load
+# balancer's check, after the group's initial delay, is what replaces one.
+[Unit]
+Description=iya-sts remote PEP: ${member}
+Requires=pep-secrets.service
+After=pep-secrets.service
+
+[Service]
+Environment=HOME=/var/lib/pep
+ExecStartPre=-/usr/bin/docker rm -f xacml-pep
+ExecStartPre=/usr/bin/docker pull ${image}
+ExecStart=/usr/bin/docker run --rm --name xacml-pep \
+  --env-file /etc/pep/pep.env \
+  --env-file ${pep_dir}/anchor.env \
+  -v ${pep_dir}:${pep_dir}:ro \
+  -p ${https_port}:${https_port} \
+  -p ${proxy_port}:${proxy_port} \
+  --label sts.environment=${environment} \
+  --label sts.pep=${member} \
+  --log-driver=gcplogs \
+  --log-opt labels=sts.environment,sts.pep \
+  ${image}
+ExecStop=/usr/bin/docker stop -t 30 xacml-pep
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

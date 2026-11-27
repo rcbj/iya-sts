@@ -16,7 +16,7 @@ the barrier that makes one node see what another committed.
 | `cluster.js` | Membership, heartbeat, leases, the fence provider, fail-stop, the settings agreement, and `gate()` — which `persistence.js` calls before anything is restored. |
 | `cluster_capabilities.js` | The table of what active-active mode depends on, one row per failure #46 describes, each `provide()`d by the module that fixed it. |
 | `cluster_claims.js` | `claim()` / `release()`: an atomic "once" in the store for every single-use value; `claimMany()` / `releaseMany()` / `releaseAtCommit()` for several at once, released in the writer's commit (#628). Memory on a store that cannot be shared. |
-| `cluster_counters.js` | `advance()`: a value that may only go UP, agreed by every node — a WebAuthn signature counter, the last RFC 6238 step spent. One conditional upsert in the store. Memory on a store that cannot be shared. And `countInWindow()`: a rate-limit bucket's count inside a fixed window, one budget for every node. |
+| `cluster_counters.js` | `advance()`: a value that may only go UP, agreed by every node — a WebAuthn signature counter, the last RFC 6238 step spent, an RFC 4226 HOTP token's next counter (#1955 P4, `authn.hotp-counter`: the next counter, so never the 0-to-0 case). One conditional upsert in the store. Memory on a store that cannot be shared. And `countInWindow()`: a rate-limit bucket's count inside a fixed window, one budget for every node. |
 | `cluster_secrets.ts` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
 | `cluster_barrier.js` | The middleware that makes a request wait for other nodes' commits, and holds a writing response until its own commit lands. Active-active only. |
 | `scheduler.ts` | **The one scheduler every periodic job runs on** (#49, 2026-09-22): a leader on the `ops.scheduler` lease, a claim and a fence per run, slots by the database clock, manual runs and a step-down as command rows in the store, cluster and per-process jobs. `/admin/scheduler` draws it. See *The scheduler*, below. |
@@ -184,6 +184,14 @@ skipping a node that left or whose row lapsed. It is a stored value, not a
 computation, so the beat stays a lookup; the cost is a few kilobytes on each
 row (an ML-DSA leaf is about seven), and a new node's key reaches the other
 nodes' documents at most a heartbeat late.
+
+**The certificate details view reads them too (2026-11-24, run
+45326782254's `cluster` mode).** `/admin/crypto-metadata` drawn by node A
+linked A's own leaf; the details view landed on node B, which holds only its
+own listener row (the row carries the private key), and answered 404
+STS-ADMIN-0641. `admin-core/certificate_views.ts` adds every live node's
+leaf as an authority, and a fingerprint it does not find waits for one
+`refreshState()` before it is refused.
 
 **THE LAST LISTENER CERTIFICATE ANNOUNCED IS THE SERVICE'S, NOT A ROW OF THIS
 TABLE (#264).** `tls-certificate-changed` at restart compares with a
@@ -586,6 +594,27 @@ operator's variable set before start wins; a store that cannot share, no KEK, or
 open) leaves one value per container, as before. The DPoP server nonce is NOT a
 shared secret: it is a persisted store of issued nonces, which the barrier makes
 current on every node.
+
+**They ROTATE since #2220, with an overlap, and two of them never do.** The
+stored value becomes an envelope (`current`, `next`, `previous`, dates) at the
+`cluster.secret-rotate` job's first sight of it — dated, not changed, so an
+upgrade rotates nothing — and then two steps: a NEXT value published (every
+process accepts it, none MACs with it), promoted `ACTIVATION_LEAD_MS` (ten
+minutes, forty refreshes) later with the old one kept as PREVIOUS for
+`cluster.secretOverlapS`. Each write is a compare-and-set
+(`replaceSharedSecret()`), so two leaders cannot both rotate. `text()`/`get()`
+stay the current value; a VERIFIER asks `texts()`/`keys()` — the CSRF check,
+the ACME nonce, the SSF receiver token, the OpenID Federation page pointer,
+the sign-out result and DBSC's challenge and cookie. A worker inherits the
+envelope through `STS_CLUSTER_SECRET_STATE` and re-reads it every fifteen
+seconds (`cluster.secret-refresh`). **`oidc-pairwise` and `bootstrap-name` are
+IDENTIFIERS** (`identifier` on the row): the first derives every pairwise
+`sub`, the second the generated bootstrap administrator's name, which was
+derived from the CSRF key until #2220 and is now SEEDED from the CSRF value the
+store held (`seedFrom`), so the name survived the CSRF key starting to rotate.
+A new secret that keys a MAC needs its verifier to ask `texts()`; one whose
+output is stored and compared later is an identifier and must say so. The
+module's header argues it.
 
 **The BBS key pair WAS the fourth (2026-09-14 to 2026-09-22, capability
 `vc.keys-agreement`)** — one per service, offered by a `generate` on its row
@@ -1181,7 +1210,7 @@ row's body runs on a request worker except those marked **front**:
 | Job | Kind, scope | Owner and argument |
 |---|---|---|
 | `authn.session-expiry` | cluster, service | `authn/authn.ts`, `authn/CLAUDE.md` |
-| `authn.account-set-expiry` | cluster, realm; hourly — every browser's account set brought up to date, a remembered account past `authn.rememberedAccountDays` dropped, an empty set deleted (#561) | `authn/authn.ts`, `authn/CLAUDE.md` |
+| `authn.account-set-expiry` | cluster, realm; every minute, a pass an hour, its session reads asynchronous (#784, #780) — every browser's account set brought up to date, a remembered account past `authn.rememberedAccountDays` dropped, an empty set deleted (#561) | `authn/authn.ts`, `authn/CLAUDE.md` |
 | `pki.crl-directory-refresh` | cluster, service | `common/pki_revocation.js` |
 | `scheduler.history` | cluster, service, **front**; every ten minutes — the run history past its bound (per job, `scheduler.runHistoryCount` runs or `scheduler.runHistoryHours`, whichever keeps more, the latest always) and every row naming a removed realm, in batches of 2000, at most 25 a run, each written down before the next; pins a kept row whose expiry is near (#338) | `cluster/scheduler.ts`, *The run history's bound*, above |
 | `signing.rotate` | cluster, realm; hourly, deciding per unit from the NEXT key's age | `common/signing_rotation.ts` (#42) |
@@ -1189,6 +1218,12 @@ row's body runs on a request worker except those marked **front**:
 | `signing.rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/keys` and `POST /admin-api/keys/rotate` queue | `common/signing_rotation.ts` (#48) |
 | `krb5.krbtgt-rotate` | cluster, realm; hourly, deciding per realm from the krbtgt key's own age (`krb5.krbtgtRotationIntervalDays`, 180) and never while the version the last rotation kept is inside its window; off in development and with `krb5.retainedKeyVersions` 0; makes a product realm's first key | `kerberos/krb5_krbtgt_rotation.ts` (#169), `kerberos/CLAUDE.md` |
 | `krb5.krbtgt-rotate-now` | cluster, realm; manual only, ON in every mode — what `/admin/kerberos/principals` and `POST /admin-api/kerberos/principals/{rotate-krbtgt,rotate-krbtgt-invalidate}` queue; `params.invalidate` keeps nothing | `kerberos/krb5_krbtgt_rotation.ts` (#169) |
+| `krb5.service-key-rotate` | cluster, realm; hourly, off in development and with `krb5.retainedKeyVersions` 0 — the key this service made for its own acceptor replaced once it is `krb5.serviceKeyRotationIntervalDays` old, never while the version the last rotation kept is in its window; a key whose keytab was handed out is reported as due in the run's result, not rotated (#2220) | `kerberos/krb5_krbtgt_rotation.ts`, `kerberos/CLAUDE.md` |
+| `pki.ca-renew` | cluster, service; daily, both modes, no Run now — the Root, then each Intermediate, then each Issuing CA inside its lead renewed over the same key and subject; a renewed Root's predecessor stays published as `root-previous.cer` (#2220) | `common/key_renewal.ts`, `common/pki.js` (`renewCaCertificate()`) |
+| `keys.credential-signer-rotate` | cluster, realm; hourly, off in development and with `keys.credentialSigner` `realm-key` — a dedicated credential signer family's next generation once its key is `keys.credentialSignerRotationIntervalDays` old, counted from first sight (`keys.renewalClock`); the old generation stays published (#2220) | `common/key_renewal.ts`, `common/credential_signer.js` |
+| `keys.encryption-key-rotate` | cluster, realm; hourly, off in development — the request object, OpenID4VCI request and KEM decryption keys replaced once `keys.encryptionKeyRotationIntervalDays` old, counted from first sight; the replaced key decrypts for `keys.encryptionKeyOverlapDays` and `signing.retire` drops it (#2220) | `common/key_renewal.ts`, `common/helpers.js` (`rotateEncryptionKeys()`) |
+| `tls.server-certificate-renew` | per-process; hourly, off in a request worker — the front process's listener certificate re-issued over the same key at a third of its validity or inside `tls.serverCertificateRenewLeadDays`, through `request_pool.js`'s one listener pass, which hands it to the workers (#2220) | `tls/tls_server.js`, `tls/CLAUDE.md` |
+| `tls.ocsp-staple-refresh` | per-process; every quarter of `pki.crlLifetimeMinutes` (30 s – 15 min), off in a request worker, while `tls.ocspStapling` is not in force, and until a listener of the process has been asked for a staple — re-makes every OCSP staple this process's listeners served in the last day from this service's own responder, so a staple is always well before its `nextUpdate` and a revocation made elsewhere reaches it; drops the idle ones (#2254) | `tls/ocsp_stapling.ts`, `tls/CLAUDE.md` |
 | `oauth2.backchannel-logout-sweep` | cluster, service; `oauth2.backchannelLogoutSweepS` | `oauth-oidc/backchannel_logout.ts` (P5) |
 | `oauth2.ephemeral-subjects-purge` | cluster, realm; hourly — removes each ephemeral subject mapping past the longest token or session of its authentication (#149) | `oauth-oidc/pairwise_subjects.ts` |
 | `oauth2.claim-sources-refresh` | cluster, realm; every minute — refreshes each person's Claims Provider token five minutes before it expires and drops link requests older than ten minutes (#147); off in a realm with no Claims Provider registered and no link request pending (#338) | `oauth-oidc/claims_providers.ts` |
@@ -1227,6 +1262,9 @@ row's body runs on a request worker except those marked **front**:
 | `cluster.node-snapshot` | per-process, quiet; every 15 s, joined front processes of a cluster whose store is shared — writes the node's Worker Pools and Node Health views to `sts_node_snapshots` (#332) | `cluster/node_snapshots.ts` |
 | `cluster.node-snapshot-purge` | cluster, service; hourly, off with no cluster store — deletes the row of a node that is not a live member once its snapshot is older than `cluster.nodeSnapshotRetentionHours` (24); never a live member's, nothing while membership cannot be read (#332) | `cluster/node_snapshots.ts` |
 | `cluster.claims-purge` | cluster, service; a minute, registered at the first claim against a database | `cluster/cluster_claims.js` (P5) |
+| `cluster.secret-rotate` | cluster, service; a minute — one step of each shared secret that is a key: date a bare value, publish a next value every `cluster.secretRotationDays`, promote it ten minutes later, drop the previous one after `cluster.secretOverlapS` (#2220). Registered at the foot of `scheduler.ts` | `cluster/cluster_secrets.ts` |
+| `cluster.secret-refresh` | per-process, quiet; fifteen seconds — reads every shared secret this process holds again from the store (#2220) | `cluster/cluster_secrets.ts` |
+| `persistence.database-password-refresh` | per-process, quiet; `persistence.databasePasswordRefreshS` (3600) — reads the database password again and dials new connections with a changed one (#2220). Registered by `persistence.start()`, so it is drawn in English | `persistence/persistence.js` |
 | `oauth2.access-token-block-reap` | cluster, service; a minute, registered from `service_state.start()` in every process (before the scheduler starts), off with no shared claims table — releases access-token status-list blocks whose stable origin no longer holds a live origin claim — one lapsed for more than `ORIGIN_LAPSE_GRACE_MS` (90 s, #884's review), so a late renewal keeps its block — or whose node membership has left or expired (#884). A start also releases that process's own origin once, which this job never does | `oauth-oidc/access_token_status.ts` |
 | `cluster.rate-window-purge` | cluster, service; a minute, registered at the first shared count | `cluster/cluster_counters.js` (P5) |
 | `oauth2.used-assertion-purge` | cluster, service; a minute, registered at the first claim against a database | `common/used_assertions.js` (P5) |
@@ -1247,8 +1285,9 @@ row's body runs on a request worker except those marked **front**:
 | `pki.pins.audit` | cluster, realm; daily at 03:00 UTC and Run now — holds what the realm pins and its signer truststore to the checks of paranoid PKI mode, keeps the result `/admin/pki/trust` draws, and logs and mails only what changed (#1360) | `common/certificate_trust.ts`, `common/CLAUDE.md` (3dd) |
 | `passkeys.report-recount` | cluster, realm; daily and Recount now (`POST /admin-api/passkey-report/recount`) — counts the realm's passkeys from the HOLDERS of `stsWebauthnCredential`, a slice after a key cursor at a time, `stillOwner()` asked between slices, and makes the count the report's new baseline (#942); then writes the day's passkey history row and removes the rows past `webauthn.passkeyHistoryDays` (#1109) — in this job rather than a sibling, because the scheduler orders no job after another | `common/passkey_report.ts`, `common/CLAUDE.md` 3cs |
 | `post-login.activity-mail` | cluster, realm; every 10 minutes and Run now, off in a realm with no started post-login activity running — one slice of each running one's people after a key cursor (the realm's through `passkeyScanAsync()`, the union of its groups' through `groupMembersAfterAsync()`, #1123), each person `post_login.dueFor()` names mailed a reminder to sign in unless inside the interval or past its maximum; the cursor starts over at the end of the people; `stillOwner()` and its state asked before each person; one audit row per started activity per run (#1111) | `common/post_login_activities.ts`, `common/CLAUDE.md` 3ct |
+| `post-login.mail-classical-retire` | cluster, realm; hourly and Run now — the rows of `openpgp.classicalKept` (one per person keeping a classical OpenPGP key beside a post-quantum one, #2009 P2, rcbj's D3) walked with `scanAsync()`, never the directory; a key past `keptUntil` removed from the entry (and so the Web Key Directory) with an `openpgp.classical-retired` audit row, a row whose person is gone dropped, at most 500 a run, `stillOwner()` asked between people; a failure is STS-OPENPGP-0032 and the next run tries again | `common/post_login_mail.ts`, `common/openpgp_keys.ts`, `common/CLAUDE.md` 3ct |
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token, dated by the `exp` the revocation carries since #345 (not per-process: the revocation set is replicated, so one delete on the leader reaches every process) | `common/admin_stats.js` (P5; the ticket's "tracked tokens"), `common/CLAUDE.md` 3b |
-| `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or applications whose every secret has expired, and removes expired secrets an application holds an unexpired one beside (never its last) | `common/signing_rotation.ts`, `common/applications.js` (P5) |
+| `oauth2.client-secret-expiry` | cluster, realm; daily — first ROTATES the secret of every application listed in `oauth2.clientSecretAutoRotate` that expires within `oauth2.clientSecretAutoRotateDays`, pushing it to its secret destination before the commit (#2220); then warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or applications whose every secret has expired, and removes expired secrets an application holds an unexpired one beside (never its last) | `common/signing_rotation.ts`, `common/applications.js` (P5) |
 | `keys.data-key-reencrypt` | cluster, service; hourly — re-seals every value under a superseded data key and destroys one nothing is sealed under. On the front from #408 to #704, because `keystore.resealOwnRows()` re-seals the rows the running process holds sealed in memory; every other process takes the re-sealed key-set row since #704 (*Two left the front*, above) | `common/data_key_rotation.ts`, `common/CLAUDE.md` (*Rotation, re-sealing, destruction*) |
 | `report.drain` | cluster, realm, **front**; every 2 s — claims queued report jobs up to the concurrency caps and writes each artifact. The fence is a set in this process, so the body stays on the front (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.retention` | cluster, realm, **front**; every 60 s — deletes artifacts past their retention, drops finished job rows past theirs, and fails a running job whose fence is gone (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
@@ -1257,6 +1296,12 @@ row's body runs on a request worker except those marked **front**:
 | `report.retention.here` | per-process, realm, quiet; every 60 s — `report.retention` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.schedule.here` | per-process, realm, quiet; every 60 s — `report.schedule` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `audit.export` | per-process, realm, quiet; `auditExport.intervalS` — each process delivers its own audit ring to the enabled destinations, cursors `merge: 'own'`, at-least-once (#641) | `common/audit_export.ts`, `common/CLAUDE.md` 3da |
+| `ssh-user-ca.krl` | cluster, realm; every five minutes — rebuilds the realm's OpenSSH KRL from the register's revoked rows and the PKI row's, the expired left off (#1955 P3) | `common/ssh_user_ca.ts` |
+| `ssh-user-ca.entries` | cluster, realm, in every cell (a person's entry is in their home cell, the register global); every five minutes — the register's `e:1` rows: a `pending` certificate written onto its holder's entry (the master), an expired one taken off; the entry observer, not this job, keeps the index right day to day; on its first run in a process the backfill of certificates issued before #2050 (#2050) | `common/ssh_issued.ts` |
+| `mail.credential-expiry` | cluster, realm, in every cell (a person's entry and their index rows are in their home cell); hourly, off while `mail.expiryReminders`, security notices or a transport is not — the expiry index's rows due today or in the last thirty days, one reminder per person naming every certificate due, each once per step of `mail.expiryReminderDays`; a slice of people a run until the backfill of certificates held before 1.2.0 is done (#2247) | `common/credential_expiry.ts` |
+| `hardware-tokens.entries` | cluster, realm, in every cell; every ten minutes — every hardware token, OATH and YubiKey OTP index row marked `e:pending` written onto its holder's entry again, and on its first run in a process the backfill of every row with a holder (#2051) | `common/token_entries.ts` |
+| `hardware-tokens.rebuild-index` | cluster, realm; manual only — the register and the two inventories rewritten from the entries, which are the master; a walk of the realm's holders, so never scheduled (#2051) | `common/token_entries.ts` |
+| `yubiotp.nonce-sweep` | cluster, realm, **a global job** (`GLOBAL_JOBS`, so one cell sweeps the shared map); every minute — drops YK-VAL nonces older than five minutes, and the oldest past ten thousand. The nonce is a client-chosen replay key on the global tier; a sweep in every cell would delete the same rows (#1955 P5) | `common/yubiotp_store.ts` |
 
 **The timers still outside it** are listed, each with the reason it stays, in
 `tests/no_periodic_timers.js`, which fails on a new one and on an entry whose

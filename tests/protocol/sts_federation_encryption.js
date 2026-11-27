@@ -60,8 +60,12 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -482,13 +486,24 @@ async function createPerson(realm, username, mailDomain, withPassword) {
                   sn: username, displayName: "Federation " + username,
                   mail: username + "@" + mailDomain },
     credential: withPassword ? "password" : "none" };
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product and the sign-in at the identity provider would stop at the
+  // change step, so a temporary one is set and the person chooses PASSWORD
+  // (`own_password.js`; in development it is simply set).
   if (withPassword) {
-    payload.password = PASSWORD;
+    payload.password = ownPassword.temporaryFor(PASSWORD);
   }
   const r = await api(realm, "POST", "/users/create", payload);
   must(r.status === 200 && r.body && r.body.ok,
        "creating " + username + " in " + realm + " answered " + r.status +
        " " + r.text.slice(0, 300));
+  if (withPassword) {
+    await ownPassword.ownPassword(realmBase(realm), username, PASSWORD,
+      function (who, value) {
+        return api(realm, "POST", "/users/set-password",
+                   { user: who, password: value });
+      });
+  }
   log.debug("Leaving createPerson().");
 }
 
@@ -1087,7 +1102,7 @@ async function samlFromPartner(world) {
   await check("the IdP realm sent an EncryptedAssertion under rsa-oaep and " +
               "no assertion in clear", async function () {
     assert.ok(/EncryptedAssertion/.test(xml) &&
-              xml.indexOf(XENC11 + "rsa-oaep") >= 0 &&
+              xml.indexOf('Algorithm="' + XENC11 + 'rsa-oaep"') >= 0 &&
               !/<saml2?:Assertion[ >]/.test(xml), xml.slice(0, 600));
   });
   await signedIn("and it signs the person in", await deliver(cookies, door));

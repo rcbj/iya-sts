@@ -62,6 +62,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -521,12 +522,20 @@ async function test() {
   await fixtures.publicClient(api, CLIENT, [REDIRECT]);
   const created = await call("POST", "/users/create", {
     username: PERSON, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Dual Lane " + PERSON, givenName: "Dual", sn: PERSON,
                   mail: PERSON + "@passkey-dual.test" } });
   assert.ok(created.status === 200 && created.body && created.body.ok,
     "creating " + PERSON + " answered " + created.status + " " +
     String(created.raw).slice(0, 300));
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, PERSON, PASSWORD,
+    function (who, value) {
+      return call("POST", "/users/set-password",
+                  { user: who, password: value });
+    });
 
   await switchedOff();
 

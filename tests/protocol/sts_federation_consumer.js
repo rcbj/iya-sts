@@ -40,6 +40,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -352,10 +353,19 @@ async function createPerson(realm, username, mail) {
     username: username, invent: false,
     attributes: { cn: "Consumer " + username, givenName: "Consumer",
                   sn: username, mail: mail },
-    credential: "password", password: PASSWORD });
+    credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD) });
   must(r.status === 200 && r.body && r.body.ok,
        "creating " + username + " in " + realm + " answered " + r.status +
        " " + r.text.slice(0, 300));
+  // Temporary, then the person's own (#2160, `own_password.js`): a typed
+  // password is temporary in product, and the sign-in would stop at the
+  // change step.
+  await ownPassword.ownPassword(realm ? realmBase(realm) : base, username,
+    PASSWORD, function (who, value) {
+      return api(realm, "POST", "/users/set-password",
+                 { user: who, password: value });
+    });
   log.debug("Leaving createPerson().");
 }
 
@@ -534,7 +544,11 @@ async function theCategory(world) {
     fields: { oauthClientId: [CLIENT], oauthRedirectUri: [acs],
               oauthTokenEndpointAuthMethod: "none",
               oauthGrantType: ["implicit"],
-              oauthResponseType: ["id_token"] } });
+              oauthResponseType: ["id_token"],
+              // The generic-oidc profile's `fedScope`, declared (#2169):
+              // in product a client that declares none is issued `openid`
+              // alone (#1589).
+              oauthAllowedScope: ["openid", "profile", "email"] } });
   must(app.status === 200 && app.body && app.body.ok,
        "creating the partner's application answered " + app.status + " " +
        app.text.slice(0, 300));

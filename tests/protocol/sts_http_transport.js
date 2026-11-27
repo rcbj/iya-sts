@@ -45,6 +45,7 @@ const net = require("net");
 const tls = require("tls");
 const http2 = require("http2");
 const names = require("./random_username.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -108,7 +109,7 @@ function connect(kind, onConnect) {
   if (kind === "tls") {
     return tls.connect({ host: MAIN.hostname, port: mainPort(),
       servername: MAIN.hostname, ALPNProtocols: ["http/1.1"],
-      rejectUnauthorized: false }, onConnect);
+      ca: serviceTrust.trustedCa() }, onConnect);
   }
   return net.connect(Number(PLAIN.port || 80), PLAIN.hostname, onConnect);
 }
@@ -226,7 +227,7 @@ function parses(buffer) {
 async function sectionHttp2() {
   log.debug("Entering sectionHttp2().");
   log.info("=== 2. a large body over HTTP/2 always finishes ===");
-  const session = http2.connect(base, { rejectUnauthorized: false });
+  const session = http2.connect(base, { ca: serviceTrust.trustedCa() });
   let sessionError = "";
   session.on("error", function (e) {
     sessionError = e.code || String(e);

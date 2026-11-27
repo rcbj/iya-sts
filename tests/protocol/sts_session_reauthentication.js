@@ -48,6 +48,9 @@
 // OWNED HERE (local: true): this repository's own sessions.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -408,7 +411,7 @@ async function codeFlow(b, who, prompt) {
     r = await b.go("GET", new URL(sent.location,
                                   realmBase(REALM) + "/").toString());
   }
-  must(r.location.indexOf(REDIRECT) === 0, "no code: " + r.status + " " +
+  must(urls.isAt(r.location, REDIRECT), "no code: " + r.status + " " +
        r.location);
   const code = new URL(r.location).searchParams.get("code");
   const t = await send(realmBase(REALM) + "/oauth2/token", {
@@ -435,7 +438,7 @@ async function opens(cookie) {
            scope: "openid", state: "s", nonce: "n" + Date.now(),
            code_challenge: p.challenge, code_challenge_method: "S256" }));
   log.debug("Leaving opens(). " + r.status);
-  return r.location.indexOf(REDIRECT) === 0 && /[?&]code=/.test(r.location);
+  return urls.isAt(r.location, REDIRECT) && /[?&]code=/.test(r.location);
 }
 
 function refresh(token) {

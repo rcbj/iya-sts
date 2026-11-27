@@ -35,6 +35,15 @@
 //       longer current while one rebuild runs behind it;
 //   P8. a long list's name batches and census pages are asked a few at a
 //       time, at most four.
+//   P9. a rebuild asks only the subjects the last build did not meet
+//       (#790, 2026-11-20): none when nothing new was issued, only the new
+//       ones when something was, every one after a rename or a delete made
+//       here, and every one once the memo is two minutes old — and a person
+//       named from the memo is still listed by their name. A subject that
+//       named nobody is not remembered (#1952) and is asked every build;
+//   P10. nor is anything a build named through the synchronous fallback
+//       after the asynchronous door threw: the next build asks every
+//       subject again.
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts synchronous and asynchronous questions.
@@ -86,7 +95,10 @@ async function inTheWorker(t) {
       created_at: '1', modified_at: '1' });
   });
   const base = shared.fakeBridge(rows);
-  const asked = { sync: 0, async: 0 };
+  // `subjects`: how many subjects the asynchronous withUuids asked, for P9.
+  const asked = { sync: 0, async: 0, subjects: 0 };
+  // P10: the asynchronous withUuids throws while this is set.
+  const failing = { uuids: false };
   // Every question by name, for P4.
   const byName = { sync: {}, async: {} };
   const withUuids = function (args) {
@@ -112,7 +124,11 @@ async function inTheWorker(t) {
     queryAsync: function (name, args) {
       byName.async[name] = (byName.async[name] || 0) + 1;
       if (name === 'withUuids') {
+        if (failing.uuids) {
+          return Promise.reject(new Error('the store is failing (P10)'));
+        }
         asked.async++;
+        asked.subjects += (args[1] || []).length;
         return Promise.resolve(withUuids(args));
       }
       // A question the shared stand-in does not know (the population's
@@ -287,12 +303,17 @@ async function inTheWorker(t) {
     return ldap.createUser('upa-after', { invent: false });
   });
   asked.async = 0;
+  asked.subjects = 0;
   const after = await inRealm(function () {
     return views.peopleAndCensusAsync();
   });
-  t.check(asked.async >= 1 && after !== again[0],
+  // Built again, and from the memo of the subjects' names (#790): no
+  // subject was issued since, so the rebuild asks withUuids for no person —
+  // only for the subjects naming nobody, which are never kept (#1952).
+  t.check(after !== again[0] && asked.subjects === NOBODY,
           'P6. a person written under ou=users is seen at once: the ' +
-          'population is built again', JSON.stringify(asked));
+          'population is built again, its subjects named from the memo',
+          JSON.stringify(asked));
 
   // P7 (2026-10-21): a page asked WITHOUT a filter is answered from the
   // kept population at once when it is no longer current — under a sign-in
@@ -311,8 +332,7 @@ async function inTheWorker(t) {
   const fresh = await inRealm(function () {
     return views.peopleAndCensusAsync();
   });
-  t.check(servedStale && fresh !== after && asked.async >= 1 &&
-          asked.async <= batches + 1,
+  t.check(servedStale && fresh !== after && asked.async <= batches + 1,
           'P7. an unfiltered page is answered from the kept population at ' +
           'once while ONE rebuild runs; a filtered ask gets the rebuilt one',
           JSON.stringify({ servedStale: servedStale, asked: asked.async }));
@@ -361,6 +381,97 @@ async function inTheWorker(t) {
           mostInFlight.byKeys >= 2 && mostInFlight.byKeys <= 4,
           'P8. a long list\'s name batches and census pages are asked a few ' +
           'at a time, at most four', JSON.stringify(mostInFlight));
+
+  // P9 (#790, 2026-11-20): the kept population remembers the names its last
+  // build asked. Each rebuild below is forced by a person written under
+  // ou=users, which moves the directory's version.
+  let written = 0;
+  const rebuilt = async function () {
+    written++;
+    await inRealm(function () {
+      return ldap.createUser('upa-memo-' + written, { invent: false });
+    });
+    asked.async = 0;
+    asked.subjects = 0;
+    return inRealm(function () {
+      return views.peopleAndCensusAsync();
+    });
+  };
+  await rebuilt();
+  const remembered = await rebuilt();
+  const listedByName = remembered.population.rows.some(function (row) {
+    return row.key === people[0].uid;
+  }) && !remembered.population.rows.some(function (row) {
+    return row.key === 'urn:uuid:' + people[0].uuid;
+  });
+  t.check(asked.subjects === NOBODY && listedByName,
+          'P9. a rebuild with nothing new issued asks no person again, only ' +
+          'the subjects that named nobody (never remembered, #1952), and a ' +
+          'person named from the memo is listed by their name',
+          JSON.stringify({ subjects: asked.subjects,
+                           listedByName: listedByName }));
+  const fresh3 = [crypto.randomUUID(), crypto.randomUUID(),
+                  crypto.randomUUID()];
+  fresh3.forEach(function (uuid, i) {
+    stats.recordAssertion('2.0', { id: 'upa-m-' + i,
+                                   subject: 'urn:uuid:' + uuid });
+  });
+  await rebuilt();
+  t.check(asked.subjects === NOBODY + fresh3.length &&
+          asked.async === Math.ceil((NOBODY + fresh3.length) / 500),
+          'P9. a rebuild after three new subjects asks those three beside ' +
+          'the ones naming nobody, and no person again',
+          JSON.stringify({ subjects: asked.subjects, asked: asked.async }));
+  const everySubject = distinct + fresh3.length;
+  inRealm(function () {
+    return stats.renameIdentity('upa-nobody-before', 'upa-nobody-after');
+  });
+  await rebuilt();
+  t.check(asked.subjects === everySubject,
+          'P9. after a rename made here, every subject is asked again',
+          asked.subjects + ' of ' + everySubject);
+  inRealm(function () {
+    return stats.forgetIdentity('upa-nobody-deleted');
+  });
+  await rebuilt();
+  t.check(asked.subjects === everySubject,
+          'P9. after a delete made here, every subject is asked again',
+          asked.subjects + ' of ' + everySubject);
+  const realNow = Date.now;
+  const skew = 121000;
+  Date.now = function () {
+    return realNow.call(Date) + skew;
+  };
+  try {
+    await rebuilt();
+  } finally {
+    Date.now = realNow;
+  }
+  t.check(asked.subjects === everySubject,
+          'P9. a memo two minutes old is not read: every subject is asked',
+          asked.subjects + ' of ' + everySubject);
+  // P10 (#1952): a build whose asynchronous door throws names everybody
+  // through the synchronous fallback, and keeps none of it.
+  inRealm(function () {
+    return stats.forgetIdentity('upa-nobody-deleted-again');
+  });
+  failing.uuids = true;
+  let fellBack = null;
+  try {
+    fellBack = await rebuilt();
+  } finally {
+    failing.uuids = false;
+  }
+  const namedInFallback = !!fellBack && fellBack.population.rows.some(
+    function (row) {
+      return row.key === people[0].uid;
+    });
+  await rebuilt();
+  t.check(namedInFallback && asked.subjects === everySubject,
+          'P10. a build named through the fallback after the asynchronous ' +
+          'door threw remembers nothing: the next build asks every subject',
+          JSON.stringify({ namedInFallback: namedInFallback,
+                           subjects: asked.subjects, of: everySubject }));
   log.debug('Leaving inTheWorker().');
 }
 

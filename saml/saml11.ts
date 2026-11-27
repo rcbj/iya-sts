@@ -221,8 +221,8 @@ class Saml11Assertions {
    * @returns the signed assertion
    */
   signSaml11Assertion(xml) {
-    const { documentSettings, stsCrypto } = this.deps;
-    const { STS, log, logArtifact } = this.deps.helpers;
+    const { stsCrypto } = this.deps;
+    const { log, logArtifact } = this.deps.helpers;
     log.debug("Entering Saml11Assertions.signSaml11Assertion().");
     logArtifact('SAML 1.1 assertion', 'before signing', xml);
     // LAST, which is where a SAML 1.1 assertion's signature goes. "After the
@@ -236,8 +236,41 @@ class Saml11Assertions {
     // verification time and the signature would fail for every relying party
     // while verifying perfectly here. That argument is now made once, over
     // signXml(). The configured algorithms (2026-09-12), for saml2.ts's reason.
+    const signed = stsCrypto.signXml(xml, this.assertionSignatureOptions());
+    logArtifact('SAML 1.1 assertion', 'after signing', signed);
+    log.debug("Leaving Saml11Assertions.signSaml11Assertion().");
+    return signed;
+  }
+
+  /**
+   * `signSaml11Assertion()`, with a realm key in the HSM signing off the
+   * event loop (`stsCrypto.signXmlOffLoop()`, #1955 P8 follow-up); a
+   * software key signs the same bytes, in place.
+   *
+   * @param xml - the assertion
+   * @returns a promise of the signed assertion
+   */
+  async signSaml11AssertionAsync(xml) {
+    const { stsCrypto } = this.deps;
+    const { log, logArtifact } = this.deps.helpers;
+    log.debug("Entering Saml11Assertions.signSaml11AssertionAsync().");
+    logArtifact('SAML 1.1 assertion', 'before signing', xml);
+    const signed = await stsCrypto.signXmlOffLoop(xml,
+      this.assertionSignatureOptions());
+    logArtifact('SAML 1.1 assertion', 'after signing', signed);
+    log.debug("Leaving Saml11Assertions.signSaml11AssertionAsync().");
+    return signed;
+  }
+
+  // What both signers hand `signXml()`; the algorithms are the configured
+  // ones (2026-09-12), for saml2.ts's reason.
+  private assertionSignatureOptions(): any {
+    const { documentSettings, stsCrypto } = this.deps;
+    const { STS, log } = this.deps.helpers;
+    log.debug("Entering Saml11Assertions.assertionSignatureOptions().");
     const how = documentSettings.signatureOptions();
-    const signed = stsCrypto.signXml(xml, {
+    log.debug("Leaving Saml11Assertions.assertionSignatureOptions().");
+    return {
       // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
       // `STS.xmlSigner`, the one for the configured algorithm (#68).
       privateKeyPem: STS.xmlSigner.privateKeyPem,
@@ -249,10 +282,7 @@ class Saml11Assertions {
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       what: 'SAML 1.1 assertion'
-    });
-    logArtifact('SAML 1.1 assertion', 'after signing', signed);
-    log.debug("Leaving Saml11Assertions.signSaml11Assertion().");
-    return signed;
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -374,10 +404,82 @@ class Saml11Assertions {
    * @returns the assertion's XML
    */
   buildSaml11Assertion(opts) {
-    const { authnContext, config, errorCodes, stats } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml11Assertions.buildSaml11Assertion().");
+    const draft = this.draftSaml11Assertion(opts);
+    if (draft.unsigned) {
+      log.debug("Leaving Saml11Assertions.buildSaml11Assertion(). Unsigned " +
+                "because the caller asked for that.");
+      return draft.xml;
+    }
+    try {
+      const signed = this.signSaml11Assertion(draft.xml);
+      log.debug("Leaving Saml11Assertions.buildSaml11Assertion(). " +
+                "AssertionID " + draft.id + ".");
+      return signed;
+    } catch (e) {
+      log.debug("Caught in Saml11Assertions.buildSaml11Assertion(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml11Assertions.buildSaml11Assertion(). Unsigned.");
+      return this.signingFailed(draft, e);
+    }
+  }
+
+  /**
+   * `buildSaml11Assertion()`, with a realm key in the HSM signing off the
+   * event loop (#1955 P8 follow-up): the same assertion, record and answer
+   * to a failed signature. Every service caller with a realm key awaits it.
+   *
+   * @param opts - as `buildSaml11Assertion()`'s
+   * @returns a promise of the assertion's XML
+   */
+  async buildSaml11AssertionAsync(opts) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml11Assertions.buildSaml11AssertionAsync().");
+    const draft = this.draftSaml11Assertion(opts);
+    if (draft.unsigned) {
+      log.debug("Leaving Saml11Assertions.buildSaml11AssertionAsync(). " +
+                "Unsigned because the caller asked for that.");
+      return draft.xml;
+    }
+    try {
+      const signed = await this.signSaml11AssertionAsync(draft.xml);
+      log.debug("Leaving Saml11Assertions.buildSaml11AssertionAsync(). " +
+                "AssertionID " + draft.id + ".");
+      return signed;
+    } catch (e) {
+      log.debug("Caught in Saml11Assertions.buildSaml11AssertionAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml11Assertions.buildSaml11AssertionAsync(). " +
+                "Unsigned.");
+      return this.signingFailed(draft, e);
+    }
+  }
+
+  // A signature that failed: returned unsigned rather than not at all,
+  // exactly as saml2.ts does: an unsigned assertion in the response is
+  // something a relying party can look at and reject for the right reason,
+  // where a 500 here would say nothing about what failed. The log line is
+  // the record of which it was — and so, now, is the console's Signed
+  // column, which is why the record is corrected here.
+  private signingFailed(draft, e) {
+    const { errorCodes } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml11Assertions.signingFailed().");
+    draft.record.signed = false;
+    log.error(errorCodes.tag('STS-SAML-0024') + 'SAML 1.1 signing failed, ' +
+                                                'returning the assertion ' +
+                                                'unsigned: ' + e.message);
+    log.debug("Leaving Saml11Assertions.signingFailed().");
+    return draft.xml;
+  }
+
+  // Everything `buildSaml11Assertion()` does but the signature.
+  private draftSaml11Assertion(opts) {
+    const { authnContext, config, stats } = this.deps;
     const { genId, iso, log, xmlEscape } = this.deps.helpers;
     const self = this;
-    log.debug("Entering Saml11Assertions.buildSaml11Assertion(). subject=" +
+    log.debug("Entering Saml11Assertions.draftSaml11Assertion(). subject=" +
               (opts.subject || '(none)'));
     // STAMPED WITH THE MINTING CELL (#98 D10): the SAML 1.1 responder answers
     // an AssertionIDReference from the store of the cell that issued the
@@ -462,10 +564,16 @@ class Saml11Assertions {
     // namespace, which is where a relying party is already looking.
     // `application` (#487, #483's member): the entry whose settings govern,
     // where the caller resolved it — WS-Trust's AppliesTo application.
+    // `session_id` (#1072), as saml2.ts carries it: the browser profile's
+    // sign-on session, whose chosen dynamic roles the roles attribute may
+    // carry; a WS-Trust Issue names none.
     const custom = stats.samlAttributes('saml11',
                                         Object.assign({ subject: opts.subject,
                                                         audience:
-                                                          opts.audience },
+                                                          opts.audience,
+                                                        session_id:
+                                                          opts.sessionId ||
+                                                          '' },
                                           opts.application
                                             ? { application: opts.application }
                                             : {}));
@@ -551,32 +659,12 @@ class Saml11Assertions {
     // service being broken.
     if (opts.sign === false) {
       record.signed = false;
-      log.debug("Leaving Saml11Assertions.buildSaml11Assertion(). Unsigned " +
-                "because the caller " +
-                "asked for that.");
-      return xml;
+      log.debug("Leaving Saml11Assertions.draftSaml11Assertion(). " +
+                "Unsigned because the caller asked for that.");
+      return { xml: xml, record: record, id: id, unsigned: true };
     }
-    try {
-      const signed = this.signSaml11Assertion(xml);
-      log.debug("Leaving Saml11Assertions.buildSaml11Assertion(). " +
-                "AssertionID " + id + ".");
-      return signed;
-    } catch (e) {
-      log.debug("Caught in Saml11Assertions.buildSaml11Assertion(): " +
-                ((e && e.message) || e));
-      // Returned unsigned rather than not at all, exactly as saml2.ts does: an
-      // unsigned assertion in the response is something a relying party can
-      // look at and reject for the right reason, where a 500 here would say
-      // nothing about what failed. The log line is the record of which it was —
-      // and so, now, is the console's Signed column, which is why the record is
-      // corrected here.
-      record.signed = false;
-      log.error(errorCodes.tag('STS-SAML-0024') + 'SAML 1.1 signing failed, ' +
-                                                  'returning the assertion ' +
-                                                  'unsigned: ' + e.message);
-      log.debug("Leaving Saml11Assertions.buildSaml11Assertion(). Unsigned.");
-      return xml;
-    }
+    log.debug("Leaving Saml11Assertions.draftSaml11Assertion().");
+    return { xml: xml, record: record, id: id, unsigned: false };
   }
 }
 
@@ -623,5 +711,7 @@ export = {
   CONFIRMATION_ARTIFACT: CONFIRMATION_ARTIFACT,
   NAMEID_FORMAT_UNSPECIFIED: NAMEID_FORMAT_UNSPECIFIED,
   buildSaml11Assertion: slot.forward('buildSaml11Assertion'),
+  buildSaml11AssertionAsync: slot.forward('buildSaml11AssertionAsync'),
+  signSaml11AssertionAsync: slot.forward('signSaml11AssertionAsync'),
   signSaml11Assertion: slot.forward('signSaml11Assertion')
 };

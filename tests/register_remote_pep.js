@@ -14,8 +14,8 @@
 // management API token minted for `sts-api-client` in its environment:
 //
 //   U. what it refuses before it calls anything: plain http:// to a host
-//      that is not loopback, and NODE_TLS_REJECT_UNAUTHORIZED=0 without
-//      --insecure (exit 2).
+//      that is not loopback, NODE_TLS_REJECT_UNAUTHORIZED=0 without
+//      --insecure, and --pep-app without --cluster (exit 2).
 //   T. a token the service did not issue: step "Checking the token and the
 //      realm" fails with the service's own words, and nothing is written.
 //   O. a realm with no Admin Write group (a bare process has none): the
@@ -29,12 +29,21 @@
 //      Admin Write group, in remote-peps), ONE valid RFC 7523 key whose
 //      serial is the certificate's in --out, the key file 0600 and never
 //      printed, the environment and compose files, the cluster membership,
-//      and the listener step waiting for a registration.
+//      and the listener step waiting for a registration. The cluster
+//      compose is the members plus one load balancer on 127.0.0.1, with
+//      no TCP forwarder and no published decision API.
+//   C. a second member beside the first shares that balancer. A member
+//      whose PEP_PDP_URL host is localhost also gets the reach script;
+//      a PDP URL of https://sts:8081 does not.
 //   I. the same command again: every step skipped, still one key, the key
 //      file unchanged.
 //   K. the key in --out signs the PEP's own grant, and the PEP registers on
 //      the token; a third run then issues the HTTPS listener pair, and a
 //      fourth skips it.
+//   P. --pep-app on its own cluster: the application and role already
+//      exist from the cluster run above. This cluster gets the same
+//      session path, the secret is not printed again, and a second run
+//      skips.
 // ===========================================================================
 
 const fs = require('fs');
@@ -127,7 +136,9 @@ function childMain() {
         scope: 'admin:read admin:write', client_id: 'sts-api-client',
         sub: 'sts-api-client' });
     });
-    const ENV = { STS_ADMIN_API_TOKEN: token };
+    // The tests image has no Docker daemon. A real run starts the containers.
+    const ENV = { STS_ADMIN_API_TOKEN: token,
+                  REGISTER_PEP_NO_START: '1' };
     const get = function (where) {
       return call(port, 'GET', '/admin-api' + where, token);
     };
@@ -181,6 +192,13 @@ function childMain() {
          /NODE_TLS_REJECT_UNAUTHORIZED=0/.test(quietOff.err),
          'U2. verification turned off by the environment is refused, not ' +
          'obeyed silently', said(quietOff));
+    const noCluster = await tool(['--url=http://127.0.0.1:' + port,
+      '--name=rrp-u-' + stamp, '--out=' + outDir('u3'), '--pep-app'], ENV);
+    note(noCluster.code === 2 && /--pep-app/.test(noCluster.err) &&
+         /--cluster/.test(noCluster.err) &&
+         !(await entryOf('rrp-u-' + stamp)).found,
+         'U3. --pep-app without --cluster is refused before anything is ' +
+         'written', said(noCluster));
 
     // ---------------------------------------------------------------------
     // T. A TOKEN THE SERVICE DID NOT ISSUE.
@@ -244,9 +262,14 @@ function childMain() {
       '--create-cluster', '--pdp-url=https://sts:8081']);
     const dry = await tool(full.concat(['--dry-run']), ENV);
     const clustersAfterDry = await get('/xacml/pep-clusters');
+    const dryParent = pathc.dirname(OUTDIR);
     note(dry.code === 0 && /DRY RUN/.test(dry.out) &&
          /would be created/.test(dry.out) &&
          !(await entryOf(NAME)).found && !fsc.existsSync(OUTDIR) &&
+         !fsc.existsSync(pathc.join(dryParent,
+           'pep-cluster-' + CLUSTER + '.json')) &&
+         !fsc.existsSync(pathc.join(dryParent,
+           'docker-compose.pep-cluster.yml')) &&
          !((clustersAfterDry.json && clustersAfterDry.json.clusters) || [])
            .some(function (one) { return one.name === CLUSTER; }),
          'D1. --dry-run says what it would do and creates no entry, no ' +
@@ -309,6 +332,62 @@ function childMain() {
          /PEP_ASSERTION_KEY=/.test(first.out),
          'R6. the environment and the compose service are written, and ' +
          'the environment printed', envText);
+    const parent = pathc.dirname(OUTDIR);
+    const clusterYml = pathc.join(parent, 'docker-compose.pep-cluster.yml');
+    const haproxyFile = pathc.join(parent, 'pep-cluster-haproxy.cfg');
+    const reachFile = pathc.join(parent, 'pep-cluster-reach-sts.sh');
+    const planFile = pathc.join(parent, 'pep-cluster-' + CLUSTER + '.json');
+    const memberCompose = fsc.existsSync(
+      pathc.join(OUTDIR, 'docker-compose.pep.yml'))
+      ? fsc.readFileSync(pathc.join(OUTDIR, 'docker-compose.pep.yml'), 'utf8')
+      : '';
+    const sharedCompose = fsc.existsSync(clusterYml)
+      ? fsc.readFileSync(clusterYml, 'utf8') : '';
+    const haproxy = fsc.existsSync(haproxyFile)
+      ? fsc.readFileSync(haproxyFile, 'utf8') : '';
+    let plan = {};
+    try {
+      plan = JSON.parse(fsc.readFileSync(planFile, 'utf8'));
+    } catch (e) {
+      // R6b reports the empty plan.
+      plan = {};
+    }
+    note(/pep-lb:/.test(memberCompose) &&
+         /127\.0\.0\.1:\d+:9543/.test(memberCompose) &&
+         /"\.:\/certs:ro"/.test(memberCompose) &&
+         !/9444:9443/.test(memberCompose) &&
+         !/network_mode/.test(memberCompose) &&
+         !/^  sts:/m.test(memberCompose) &&
+         /external: true/.test(sharedCompose) &&
+         /"\.\/[^"]+:\/certs:ro"/.test(sharedCompose) &&
+         /iya-sts_default/.test(sharedCompose) &&
+         /haproxy:3\.2\.23-alpine/.test(sharedCompose) &&
+         /\n  companion:\n/.test(sharedCompose) &&
+         /iya-sts-companion/.test(sharedCompose) &&
+         // #1972: the companion publishes no host port (its route trusts
+         // identity headers) and never turns TLS verification off; with a
+         // CA the anchor is mounted beside the variable that names it.
+         !/COMPANION_HOST_PORT|:9700:9700/.test(sharedCompose) &&
+         !/COMPANION_STS_TLS_INSECURE/.test(sharedCompose) &&
+         (!/COMPANION_STS_CA_FILE/.test(sharedCompose) ||
+          /pep-cluster-service-ca\.pem:\/certs\/service-ca\.pem:ro/
+            .test(sharedCompose)) &&
+         /COMPANION_KRB5_SERVICE_PORT: "off"/.test(sharedCompose) &&
+         !/^  sts:/m.test(sharedCompose) &&
+         /balance source/.test(haproxy) &&
+         /bind :9443/.test(haproxy) &&
+         haproxy.indexOf('server ' + NAME + ' ' + NAME + ':9543') >= 0 &&
+         plan.hostPort > 0 && plan.members &&
+         plan.members[NAME] === pathc.resolve(OUTDIR) &&
+         !fsc.existsSync(reachFile) &&
+         /docker compose -f /.test(first.out) &&
+         first.out.indexOf('docker-compose.pep-cluster.yml') >= 0 &&
+         first.out.indexOf('-p 9444:9443') < 0 &&
+         /9\. The containers: not started/.test(first.out) &&
+         /8\. The \/pep-app path:/.test(first.out),
+         'R6b. the cluster compose is the members, one load balancer on ' +
+         '127.0.0.1 and the companion, and /pep-app is registered',
+         memberCompose + '\n' + sharedCompose + '\n' + haproxy);
     const clusters = await get('/xacml/pep-clusters');
     const cluster = ((clusters.json && clusters.json.clusters) || [])
       .filter(function (one) { return one.name === CLUSTER; })[0];
@@ -378,6 +457,171 @@ function childMain() {
          /6\. The HTTPS listener pair: already in/.test(fourth.out),
          'K4. and the next run skips it', said(fourth));
 
+    // ---------------------------------------------------------------------
+    // C. A SECOND MEMBER, AND A LOCALHOST PDP URL.
+    // ---------------------------------------------------------------------
+    const OUT2 = pathc.join(parent, 'out2');
+    const NAME2 = 'rrp-pep2-' + stamp;
+    const second = await tool(common(NAME2, OUT2).concat([
+      '--cluster=' + CLUSTER, '--pdp-url=https://sts:8081']), ENV);
+    const haproxy2 = fsc.existsSync(haproxyFile)
+      ? fsc.readFileSync(haproxyFile, 'utf8') : '';
+    const secondCompose = fsc.existsSync(
+      pathc.join(OUT2, 'docker-compose.pep.yml'))
+      ? fsc.readFileSync(pathc.join(OUT2, 'docker-compose.pep.yml'), 'utf8')
+      : '';
+    let plan2 = {};
+    try {
+      plan2 = JSON.parse(fsc.readFileSync(planFile, 'utf8'));
+    } catch (e) {
+      // C1 reports the empty plan.
+      plan2 = {};
+    }
+    note(second.code === 0 &&
+         haproxy2.indexOf('server ' + NAME + ' ' + NAME + ':9543') >= 0 &&
+         haproxy2.indexOf('server ' + NAME2 + ' ' + NAME2 + ':9543') >= 0 &&
+         plan2.members && !!plan2.members[NAME2] &&
+         /127\.0\.0\.1:/.test(secondCompose) &&
+         !/9444:9443/.test(secondCompose) &&
+         !fsc.existsSync(reachFile),
+         'C1. a second member joins the same load balancer, and a sts ' +
+         'PDP URL writes no reach script', said(second));
+    const OUT3 = pathc.join(parent, 'out3');
+    const NAME3 = 'rrp-loc-' + stamp;
+    const local = await tool(common(NAME3, OUT3).concat([
+      '--cluster=' + CLUSTER, '--pdp-url=https://localhost:8081']), ENV);
+    const reach = fsc.existsSync(reachFile)
+      ? fsc.readFileSync(reachFile, 'utf8') : '';
+    const composed = fsc.existsSync(clusterYml)
+      ? fsc.readFileSync(clusterYml, 'utf8') : '';
+    const reachHits = (composed.match(/pep-reach-sts\.sh/g) || []).length;
+    note(local.code === 0 &&
+         /getent ahostsv4 sts/.test(reach) &&
+         /grep -v localhost/.test(reach) &&
+         /exec xacml-pep/.test(reach) &&
+         reachHits === 2 &&
+         composed.indexOf('network_mode') < 0 &&
+         /points that name at the sts container/.test(local.out) &&
+         local.out.indexOf('Pass --pdp-url') < 0,
+         'C2. a localhost PDP URL points that name at the sts container',
+         reach + '\n' + said(local));
+
+    // ---------------------------------------------------------------------
+    // P. ONE PATH ON THE CLUSTER, PROTECTED BY ONE ROLE.
+    // ---------------------------------------------------------------------
+    const fieldValues = function (entry, attribute) {
+      const fields = (entry && (entry.attributes || entry.fields)) || {};
+      const held = fields[attribute];
+      if (held === undefined || held === null || held === '') {
+        return [];
+      }
+      return Array.isArray(held) ? held.map(String) : [String(held)];
+    };
+    const P_APP = 'pep-app';
+    const P_ROLE = 'pep-app';
+    const P_BASE = 'https://localhost:9543';
+    const P_CALLBACK = P_BASE + '/.iya-pep/callback';
+    const pName = 'rrp-p-' + stamp;
+    const pCluster = 'rrp-pc-' + stamp;
+    const pOut = outDir('p');
+    const pArgs = common(pName, pOut).concat(['--cluster=' + pCluster,
+      '--create-cluster', '--pep-app']);
+    const pDry = await tool(pArgs.concat(['--dry-run']), ENV);
+    note(pDry.code === 0 && /8\. The \/pep-app path:/.test(pDry.out) &&
+         !fsc.existsSync(pOut),
+         'P1. --dry-run --pep-app writes no files', said(pDry));
+    const pFirst = await tool(pArgs, ENV);
+    const secret = ((first.out.match(/shown once\): (\S+)/) || [])[1]) || '';
+    note(pFirst.code === 0 &&
+         /8\. The \/pep-app path:/.test(pFirst.out) &&
+         pFirst.out.indexOf('shown once') < 0 &&
+         secret.length >= 16 &&
+         (pFirst.out + pFirst.err).indexOf('PRIVATE KEY') < 0 &&
+         (pFirst.out + pFirst.err).indexOf(secret) < 0,
+         'P2. this cluster gets /pep-app, and the secret is not printed ' +
+         'again', said(pFirst));
+    const application = await get('/applications?application=' + P_APP);
+    const redirects = fieldValues(application.json, 'oauthRedirectUri');
+    const grants = fieldValues(application.json, 'oauthGrantType');
+    const methods = fieldValues(application.json,
+                                'oauthTokenEndpointAuthMethod');
+    const scopes = fieldValues(application.json, 'oauthAllowedScope');
+    note(application.json && application.json.found &&
+         redirects.indexOf(P_CALLBACK) >= 0 &&
+         grants.indexOf('authorization_code') >= 0 &&
+         methods.indexOf('client_secret_basic') >= 0 &&
+         methods.indexOf('client_secret_post') >= 0,
+         'P3. the application is a confidential client of the proxy callback',
+         JSON.stringify({ redirects: redirects, grants: grants,
+                          methods: methods }));
+    // The route asks for signals, so the proxy's CAEP/RISC receiver needs a
+    // client-credentials token with the two SSF scopes (STS-XPEP-0094 on
+    // AWS, #1284).
+    note(grants.indexOf('client_credentials') >= 0 &&
+         scopes.indexOf('ssf.read') >= 0 && scopes.indexOf('ssf.manage') >= 0,
+         'P3b. and may get the signals receiver\'s token: client_credentials, ' +
+         'ssf.read and ssf.manage',
+         JSON.stringify({ grants: grants, scopes: scopes }));
+    const ssfRoles = await Promise.all(['SSF_READ', 'SSF_MANAGE'].map(
+      function (one) {
+        return get('/roles?role=' + one);
+      }));
+    note(ssfRoles.every(function (one) {
+      return one.json && one.json.role &&
+        (one.json.role.applications || []).indexOf(P_APP) >= 0;
+    }), 'P3c. and holds SSF_READ and SSF_MANAGE, which confer those scopes',
+         JSON.stringify(ssfRoles.map(function (one) {
+           return one.json && one.json.role && one.json.role.applications;
+         })));
+    const role = await get('/roles?role=' + encodeURIComponent(P_ROLE));
+    note(role.json && role.json.role && role.json.role.found === true &&
+         role.json.role.name === P_ROLE,
+         'P4. the one role exists',
+         JSON.stringify(role.json && role.json.role));
+    const held = await get('/xacml/pep-clusters?cluster=' +
+                           encodeURIComponent(pCluster));
+    const pClusterRow = ((held.json && held.json.clusters) || [])
+      .filter(function (one) { return one.name === pCluster; })[0];
+    const pRoute = pClusterRow && pClusterRow.proxy &&
+      (pClusterRow.proxy.routes || []).filter(function (one) {
+        return one.path === '/pep-app';
+      })[0];
+    const pRoles = pRoute && pRoute.authorization &&
+      pRoute.authorization.roles;
+    note(!!pRoute && pRoute.application === P_APP &&
+         (pRoute.mechanisms || []).indexOf('session') >= 0 &&
+         (pRoute.methods || []).indexOf('POST') >= 0 &&
+         pRoles && pRoles.read && pRoles.read.length === 1 &&
+         pRoles.read[0] === P_ROLE &&
+         pRoles.write && pRoles.write.length === 1 &&
+         pRoles.write[0] === P_ROLE &&
+         pClusterRow.proxy.publicBaseUrl === P_BASE &&
+         pClusterRow.proxy.upstream === 'http://companion:9700',
+         'P5. one prefix, one role on read and write',
+         JSON.stringify(pRoute && {
+           path: pRoute.path, application: pRoute.application,
+           methods: pRoute.methods, roles: pRoles,
+           base: pClusterRow.proxy.publicBaseUrl,
+           upstream: pClusterRow.proxy.upstream }));
+    const pAgain = await tool(pArgs, ENV);
+    note(pAgain.code === 0 &&
+         /8\. The \/pep-app path:.*skipped/.test(pAgain.out) &&
+         pAgain.out.indexOf('shown once') < 0 &&
+         pAgain.out.indexOf(secret) < 0,
+         'P6. a second run skips the path and does not print the secret',
+         said(pAgain));
+    const pComposePath = pathc.join(pOut, 'docker-compose.pep.yml');
+    const pCompose = fsc.existsSync(pComposePath)
+      ? fsc.readFileSync(pComposePath, 'utf8') : '';
+    note(/127\.0\.0\.1:9543:9543/.test(pCompose) &&
+         !/9444:9443/.test(pCompose) &&
+         !/network_mode/.test(pCompose) &&
+         !fsc.existsSync(pathc.join(pathc.dirname(pOut),
+           'pep-cluster-reach-sts.sh')) &&
+         /inside a container is the container itself/.test(pFirst.out),
+         'P7. --pep-app on a free 9543 publishes only that load balancer, ' +
+         'and 127.0.0.1 is not rewritten', pCompose);
+
     dirs.forEach(function (dir) {
       fsc.rmSync(dir, { recursive: true, force: true });
     });
@@ -437,7 +681,10 @@ module.exports = {
   describe: 'utilities/register-remote-pep.js registers a new remote PEP ' +
             'end to end (entry, remote-peps, service account, a key ' +
             'certified from its own request, cluster, listener pair, the ' +
-            'environment), idempotently, refuses a bad token and a realm ' +
-            'with no owner clearly, and --dry-run changes nothing',
+            'environment; a cluster compose is the members plus one load ' +
+            'balancer on 127.0.0.1), and with --pep-app one session path ' +
+            'protected by a single role, idempotently; it refuses a bad ' +
+            'token and a realm with no owner clearly, and --dry-run ' +
+            'changes nothing',
   run: run
 };

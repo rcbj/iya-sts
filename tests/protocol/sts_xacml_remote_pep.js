@@ -229,6 +229,9 @@
 //     produces, which is the other half of the same claim.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const fs = require("fs");
 const net = require("net");
@@ -392,6 +395,7 @@ function sleep(ms) {
 // deployment and not an inconvenience.
 // ---------------------------------------------------------------------------
 const https = require("https");
+const serviceTrust = require("../tools/service_trust.js");
 const credentials = require("../tools/pep-credential.js");
 // Roots this job minted. Removed when it finishes, pass or fail (#335). The
 // launcher's PEP anchor is not one of them: the container stays up for the
@@ -504,7 +508,7 @@ function certPostJson(url, payload) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: "POST",
-      rejectUnauthorized: false,
+      ca: serviceTrust.trustedCa(),
       cert: xacmlUser ? xacmlUser.certPem : undefined,
       key: xacmlUser ? xacmlUser.keyPem : undefined,
       // A full handshake every time (#406): the main port's sessions resume on
@@ -712,7 +716,7 @@ function findTheNetwork() {
   const port = target.port ||
                (target.protocol === "https:" ? "443" : "80");
   const local = ["localhost", "127.0.0.1", "::1", "[::1]"];
-  if (local.indexOf(target.hostname) < 0) {
+  if (!urls.holds(local, target.hostname)) {
     // The service is somewhere this job cannot reason about — which in practice
     // means a containerized runner dialling a compose name, and that runner has
     // no docker and never reaches this function. Said plainly rather than
@@ -1425,6 +1429,25 @@ async function waitForItToFindTheRealm() {
 // which this job sends once the PEP's entry exists in its realm.
 // ===========================================================================
 
+// This run's anchor for the service, the PEM NODE_EXTRA_CA_CERTS names
+// (`tools/trust.js`), re-read at each call because a rebuilt Root replaces
+// it; '' when there is none (a plain-HTTP run).
+function runAnchorPem() {
+  log.debug("Entering runAnchorPem().");
+  const file = String(process.env.NODE_EXTRA_CA_CERTS || "");
+  let pem = "";
+  if (file) {
+    try {
+      pem = fs.readFileSync(file, "utf8");
+    } catch (e) {
+      log.debug("Caught in runAnchorPem(): " + ((e && e.message) || e));
+      pem = "";
+    }
+  }
+  log.debug("Leaving runAnchorPem(). " + (pem ? "found" : "none"));
+  return pem.indexOf("-----BEGIN CERTIFICATE-----") >= 0 ? pem : "";
+}
+
 // The launcher's request, beside the server pair's directory as pep.crt is
 // (`launcherLeafPem()`); '' where the launcher wrote none.
 function launcherAssertionCsr() {
@@ -2125,7 +2148,7 @@ async function theListenerServesARealmCertificate() {
       "Root a client installs");
     assert.strictEqual(got.realm, REALM,
       "it was issued by the realm the PEP registered to");
-    assert.ok(got.dnsNames.concat(got.ipAddresses).indexOf(host) >= 0 &&
+    assert.ok(urls.holds(got.dnsNames.concat(got.ipAddresses), host) &&
               got.dnsNames.indexOf(PEP_NAME) >= 0,
       "it names the host this job dials (" + host + ") and the PEP's " +
       "registered name; it names " +
@@ -3350,6 +3373,7 @@ async function itKeepsEnforcingWhenThePdpIsGone() {
 const http = require("http");
 const nodeCrypto = require("crypto");
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const ssfRoles = require("./ssf_roles.js");
 
 const OUTSIDER_PERSON = "pep-outsider-person";
@@ -3419,6 +3443,9 @@ async function startTheCompanion() {
                   "--network", pep.network,
                   "--env", "COMPANION_KRB5_SERVICE_PORT=off",
                   "--env", "COMPANION_STS_TLS_INSECURE=true",
+                  // `/pep-app` dials only this origin for the realm's
+                  // metadata and JWKS (`companion/pep_app_identity.js`).
+                  "--env", "COMPANION_STS_URL=" + new URL(pep.pdpUrl).origin,
                   "--env", "COMPANION_LOG_LEVEL=" +
                            (appconfig.LOG_LEVEL || "info")];
   let port = 9700;
@@ -4272,13 +4299,17 @@ async function itProxiesAnApplication() {
   // the realm's JWKS. Both as the COMPANION reaches the service.
   const realmAsTheCompanionSees = LAUNCHER_STARTED_IT ? realmUrl("")
                                                       : pep.pdpUrl;
+  // AND THE ANCHOR IT VERIFIES THEM WITH: this run's service Root, which
+  // the launcher hands this job and no companion image can hold. The
+  // companion never dials with verification off.
   const setUp = await proxyRequest("POST", pep.upstreamDirectUrl +
     "/pep-app/saml/_setup", {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       audience: PROXY_SAML_AUDIENCE,
       metadataUrl: realmAsTheCompanionSees + "/saml2/metadata",
-      jwksUrl: realmAsTheCompanionSees + "/oauth2/jwks" }) });
+      jwksUrl: realmAsTheCompanionSees + "/oauth2/jwks",
+      caPem: runAnchorPem() }) });
   assert.ok(setUp.status === 200 && setUp.json &&
             setUp.json.certificates > 0,
     "POST /pep-app/saml/_setup should read the realm's signing " +
@@ -4934,8 +4965,11 @@ async function theProxyForwardsTheIdentity() {
       "and it verifies against the realm's JWKS: " + jwt.why);
     assert.strictEqual(String((jwt.payload || {}).sub), adminSub,
       "its sub is the person's; it is " + JSON.stringify(jwt.payload));
+    // An element of aud EQUAL to the audience, not a string search.
     assert.ok([].concat((jwt.payload || {}).aud || [])
-      .indexOf(PROXY_API_AUDIENCE) >= 0,
+      .some(function (one) {
+        return one === PROXY_API_AUDIENCE;
+      }),
       "its aud is the application's audience " + PROXY_API_AUDIENCE);
   });
   check("jwt mode: the client's own Authorization is gone", function () {
@@ -5679,6 +5713,7 @@ async function createThePeople() {
   log.debug("Entering createThePeople().");
   for (const one of [[ADMIN_PERSON, "admin", "Admin"],
                      [STAFF_PERSON, "staff", "Staff"]]) {
+    const password = "Pep-" + nodeCrypto.randomBytes(18).toString("base64url");
     const r = await postJson(api("/users/create"), {
       username: one[0], invent: false,
       attributes: { cn: "Remote PEP " + one[2] + " Person", givenName: "Remote",
@@ -5690,14 +5725,21 @@ async function createThePeople() {
       // one and sets pwdReset (#1446), and section 10's browser sign-in —
       // in the realm switched to development, which checks no password but
       // still honours pwdReset — was sent to the password-change step
-      // instead of on. An administrator's typed password sets no pwdReset.
+      // instead of on. SINCE #2160 A TYPED ONE SETS pwdReset TOO, so it is
+      // a temporary one and the person chooses their own at the sign-in
+      // screen (`own_password.js`; in development it is simply set).
       credential: "password",
-      password: "Pep-" + nodeCrypto.randomBytes(18).toString("base64url")
+      password: ownPassword.temporaryFor(password)
     });
     assert.ok(r.status === 200 && r.body && r.body.ok,
       "POST /admin-api/users/create should put " + one[0] + " (employeeType=" +
       one[1] + ") in " + REALM + "; it answered " + r.status + " " +
       String(r.text).slice(0, 300));
+    await ownPassword.ownPassword(realmUrl(""), one[0], password,
+      function (who, value) {
+        return postJson(api("/users/set-password"),
+                        { user: who, password: value });
+      });
   }
   log.debug("Leaving createThePeople().");
 }

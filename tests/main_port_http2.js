@@ -122,12 +122,22 @@ function childMain() {
     const app = require(ROOT_DIR + '/common/app');
     const tlsServer = require(ROOT_DIR + '/tls/tls_server');
     const own = tlsServer.serverCertificate();
-    // Asked for and not required, as the main port does; the client below
-    // presents the listener's own certificate, which binds a token as well
-    // as any (RFC 8705 section 3 permits a self-signed one).
+    // EVERY LISTENER BELOW presents the listener certificate as the main
+    // port presents it (the leaf, its chain and the Root), and EVERY CLIENT
+    // verifies it against the anchor a loopback caller of this process pins
+    // (`trustAnchorPems()`, tests/tls_trust_anchor.js): nothing here is
+    // about the server's certificate, and nothing here dials unverified.
+    const presented = tlsServer.presentedBundlePem(own);
+    const anchors = tlsServer.trustAnchorPems();
+    const verified = { ca: anchors };
+    // Asked for and not required, as the main port does
+    // (`clientAuthOptions('optional')`, the function `server.js` builds it
+    // with); the client below presents the listener's own certificate,
+    // which binds a token as well as any (RFC 8705 section 3 permits a
+    // self-signed one).
     const server = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem,
-      requestCert: true, rejectUnauthorized: false }, app);
+      allowHTTP1: true, cert: presented, key: own.privateKeyPem,
+      ...tlsServer.clientAuthOptions('optional') }, app);
     // As server.js installs it on the main port, ahead of the application.
     server.prependListener('request',
       require(ROOT_DIR + '/common/http2_framing').markFramedBody);
@@ -136,8 +146,7 @@ function childMain() {
     tlsServer.registerHttpListener(server, 'main');
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
-    const tls = { cert: own.certPem, key: own.privateKeyPem,
-                  rejectUnauthorized: false };
+    const tls = { cert: own.certPem, key: own.privateKeyPem, ca: anchors };
     const session = http2.connect('https://127.0.0.1:' + port, tls);
     session.on('error', function (e) {
       note(false, 'the HTTP/2 session stays up', e && e.message);
@@ -287,7 +296,7 @@ function childMain() {
       return new Promise(function (resolve) {
         const socket = tlsModule.connect({
           host: '127.0.0.1', port: port, ALPNProtocols: ['h2', 'http/1.1'],
-          rejectUnauthorized: false }, function () {
+          ca: anchors }, function () {
           const chosen = socket.alpnProtocol;
           socket.end();
           resolve(chosen);
@@ -379,8 +388,8 @@ function childMain() {
       pool.proxy(entry, req, res, 0, 0);
     });
     const front = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem,
-      requestCert: true, rejectUnauthorized: false }, frontApp);
+      allowHTTP1: true, cert: presented, key: own.privateKeyPem,
+      ...tlsServer.clientAuthOptions('optional') }, frontApp);
     front.prependListener('request',
       require(ROOT_DIR + '/common/http2_framing').markFramedBody);
     await new Promise(function (r) { front.listen(0, '127.0.0.1', r); });
@@ -454,7 +463,7 @@ function childMain() {
     let most = 0;
     const waiting = [];
     const slow = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem },
+      allowHTTP1: true, cert: presented, key: own.privateKeyPem },
     function (req, res) {
       active += 1;
       most = Math.max(most, active);
@@ -471,7 +480,7 @@ function childMain() {
          JSON.stringify(tlsServer.httpPolicyFor('main')));
     config.setOverride('listenerMain.http2MaxConcurrentStreams', '2');
     settle();
-    const capped = http2.connect(slowUrl, { rejectUnauthorized: false });
+    const capped = http2.connect(slowUrl, verified);
     capped.on('error', function () {});
     await new Promise(function (r) { capped.once('remoteSettings', r); });
     note(capped.remoteSettings.maxConcurrentStreams === 2,
@@ -508,7 +517,7 @@ function childMain() {
     config.clearOverride('listenerMain.http2MaxConcurrentStreams');
     config.setOverride('listenerMain.keepAliveTimeoutS', '1');
     settle();
-    const idle = http2.connect(slowUrl, { rejectUnauthorized: false });
+    const idle = http2.connect(slowUrl, verified);
     idle.on('error', function () {});
     const idleAt = Date.now();
     const idleEnd = await new Promise(function (resolve) {
@@ -529,7 +538,7 @@ function childMain() {
     config.clearOverride('listenerMain.keepAliveTimeoutS');
     config.setOverride('listenerMain.maxRequestsPerSocket', '2');
     settle();
-    const counted = http2.connect(slowUrl, { rejectUnauthorized: false });
+    const counted = http2.connect(slowUrl, verified);
     counted.on('error', function () {});
     let goneAway = false;
     counted.on('goaway', function () { goneAway = true; });
@@ -618,14 +627,14 @@ function childMain() {
     // And request_pool.proxy() asks it itself, on a request no adapted app
     // saw first.
     const raw = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem },
+      allowHTTP1: true, cert: presented, key: own.privateKeyPem },
     function (req, res) {
       lastRes = res;
       pool.proxy(entry, req, res, 0, 0);
     });
     await new Promise(function (r) { raw.listen(0, '127.0.0.1', r); });
     const rawSession = http2.connect('https://127.0.0.1:' +
-      raw.address().port, { rejectUnauthorized: false });
+      raw.address().port, verified);
     rawSession.on('error', function () {});
     const proxiedBad = await withHost(rawSession, 'evil.example',
                                       '127.0.0.1:' + raw.address().port);
@@ -677,7 +686,7 @@ function childMain() {
     // offering both protocols is given.
     const alpnOn = async function (id) {
       const probe = http2.createSecureServer({
-        allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem },
+        allowHTTP1: true, cert: presented, key: own.privateKeyPem },
       function (req, res) {
         res.end('ok');
       });
@@ -686,7 +695,7 @@ function childMain() {
       const chosen = await new Promise(function (resolve) {
         const socket = tlsModule.connect({
           host: '127.0.0.1', port: probe.address().port,
-          ALPNProtocols: ['h2', 'http/1.1'], rejectUnauthorized: false },
+          ALPNProtocols: ['h2', 'http/1.1'], ca: anchors },
         function () {
           const got = socket.alpnProtocol;
           socket.end();
@@ -753,7 +762,7 @@ function childMain() {
       apiProcess[k] = stub[k];
     });
     const dbgServer = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem }, dbg.app);
+      allowHTTP1: true, cert: presented, key: own.privateKeyPem }, dbg.app);
     dbgServer.prependListener('request',
       require(ROOT_DIR + '/common/http2_framing').markFramedBody);
     let dbgRes = null;
@@ -763,7 +772,7 @@ function childMain() {
     await new Promise(function (r) { dbgServer.listen(0, '127.0.0.1', r); });
     const dbgAuthority = '127.0.0.1:' + dbgServer.address().port;
     const dbgSession = http2.connect('https://' + dbgAuthority,
-                                     { rejectUnauthorized: false });
+                                     verified);
     dbgSession.on('error', function () {});
     // `POST /api/samlacs` is a landing: no credential, straight to the
     // forwarder (tests/debugger_server.js B).
@@ -828,12 +837,12 @@ function childMain() {
       forwarder.forward(req, res);
     });
     const changedServer = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem }, changed);
+      allowHTTP1: true, cert: presented, key: own.privateKeyPem }, changed);
     await new Promise(function (r) {
       changedServer.listen(0, '127.0.0.1', r);
     });
     const changedSession = http2.connect('https://127.0.0.1:' +
-      changedServer.address().port, { rejectUnauthorized: false });
+      changedServer.address().port, verified);
     changedSession.on('error', function () {});
     const forwardBefore = apiSeen.length;
     const changedAnswer = await new Promise(function (resolve) {
@@ -875,7 +884,7 @@ function childMain() {
     // with no Allow over HTTP/2 and a dropped connection over HTTP/1.1.
     const ConnectRefusal = require(ROOT_DIR + '/common/connect_refusal');
     const fresh = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem }, app);
+      allowHTTP1: true, cert: presented, key: own.privateKeyPem }, app);
     ConnectRefusal.install(fresh, 'the probe');
     let connectRes = null;
     fresh.on('connect', function (req, res) {
@@ -888,7 +897,7 @@ function childMain() {
     await new Promise(function (r) { fresh.listen(0, '127.0.0.1', r); });
     const freshPort = fresh.address().port;
     const freshSession = http2.connect('https://127.0.0.1:' + freshPort,
-                                       { rejectUnauthorized: false });
+                                       verified);
     freshSession.on('error', function () {});
     const connectTo = function (target) {
       return new Promise(function (resolve) {
@@ -941,7 +950,7 @@ function childMain() {
     const overOne = await new Promise(function (resolve) {
       const socket = tlsModule.connect({
         host: '127.0.0.1', port: freshPort, ALPNProtocols: ['http/1.1'],
-        rejectUnauthorized: false }, function () {
+        ca: anchors }, function () {
         socket.write('CONNECT example.com:443 HTTP/1.1\r\n' +
                      'Host: example.com:443\r\n\r\n');
       });

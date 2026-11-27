@@ -116,7 +116,15 @@ const STANDALONE = {
   // output directory is already registered; its key and request come from
   // the X.509 engine (utilities/pep-assertion-request.js). Nothing in the
   // service requires it.
-  'utilities/register-remote-pep.js': 'an operator\'s management API client'
+  'utilities/register-remote-pep.js': 'an operator\'s management API client',
+  // The container healthcheck (2026-11-20): run every few seconds as a
+  // process of its own, which by design requires nothing of this service
+  // and loads no configuration (its header) — crypto.js would load both.
+  // It parses the Root the revocation listener answers, to hand it to the
+  // TLS verify as an anchor; it signs and decides nothing. Nothing in the
+  // service requires it.
+  'common/healthcheck_probe.js': 'the container healthcheck, a process of ' +
+    'its own'
 };
 
 // Node's module, by either spelling, required or imported for a value.
@@ -133,9 +141,10 @@ const NODE_CRYPTO = [
 // are the zcap and Ed25519 ones; the BBS suite is common/crypto_impl's
 // (bbs2023.js), which is not walked.
 // jsonwebtoken and node-forge, which only common/crypto.js and the engines
-// under it may hold (#1368). Empty, and so it stays.
+// under it may hold (#1368). Empty, and so it stays. openpgp.js too (#1955
+// P6, rcbj's D3): only `common/crypto_impl/openpgp_engine.js` requires it.
 const JOSE_LIBRARIES = [
-  /(?:require)\s*\(\s*['"](?:jsonwebtoken|node-forge)['"]\s*\)/
+  /(?:require)\s*\(\s*['"](?:jsonwebtoken|node-forge|openpgp(?:\/[^'"]*)?)['"]\s*\)/
 ];
 const LIBRARY_PENDING = {};
 

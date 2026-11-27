@@ -117,10 +117,14 @@
 //
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 // ---------------------------------------------------------------------------
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
+const ownPassword = require("./own_password");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
 // The redirect URI the token-minting client registers: tokens come from the
@@ -861,7 +865,8 @@ async function everyDocumentedExampleIsAccepted(doc) {
       return;
     }
     rows.push({ path: relative, example: example,
-                operationId: operation.operationId });
+                operationId: operation.operationId,
+                documented: Object.keys(operation.responses || {}) });
   });
 
   assert.ok(rows.length > 60,
@@ -892,9 +897,19 @@ async function everyDocumentedExampleIsAccepted(doc) {
                          JSON.stringify(row.example));
       continue;
     }
-    assert.ok(reply.status === 400 && errors.length,
+    // A REFUSAL ABOUT THE REFERENT IS A 400, OR A 4xx THE OPERATION ITSELF
+    // DOCUMENTS (2026-11-23). The hardware-token acts (#1955) answer a key,
+    // serial or client id the realm does not hold with 404 and an assigned
+    // token with 409, and say so in their own `responses`; the example's
+    // serial is invented, so that is what a replay meets. What is held to
+    // is the same: a documented status, and `errors` saying why.
+    const documentedRefusal = reply.status === 400 ||
+      (reply.status >= 400 && reply.status < 500 &&
+       row.documented.indexOf(String(reply.status)) >= 0);
+    assert.ok(documentedRefusal && errors.length,
       "POST " + row.path + ", sent the document's own example, answered " +
-      reply.status + " with no `errors` array: " +
+      reply.status + " (documented: " + row.documented.join(", ") +
+      ") with no `errors` array, or with a status it does not document: " +
       JSON.stringify(reply.body).slice(0, 300) + ". Every refusal on this " +
       "API carries `errors`, because a status alone is not something a " +
       "caller can act on.");
@@ -1355,8 +1370,8 @@ async function theApplicationsRegistryRoundTrips() {
       value: "https://two.example/cb" },
     "added a second value to " + multi.name);
   let values = fieldValues(await application(identifier), multi.name);
-  assert.ok(values.indexOf("https://one.example/cb") >= 0 &&
-            values.indexOf("https://two.example/cb") >= 0,
+  assert.ok(urls.holds(values, "https://one.example/cb") &&
+            urls.holds(values, "https://two.example/cb"),
     "`add` must ACCUMULATE on a multi-valued attribute rather than assign — " +
     "that is the whole difference between the two modes, and an `add` that " +
     "assigned would pass every single-value check in this file. " +
@@ -1367,8 +1382,8 @@ async function theApplicationsRegistryRoundTrips() {
       value: "https://one.example/cb" },
     "removed one value from " + multi.name);
   values = fieldValues(await application(identifier), multi.name);
-  assert.ok(values.indexOf("https://one.example/cb") < 0 &&
-            values.indexOf("https://two.example/cb") >= 0,
+  assert.ok(!urls.holds(values, "https://one.example/cb") &&
+            urls.holds(values, "https://two.example/cb"),
     "`remove` must take away the ONE value it was given and leave the rest; " +
     multi.name + " now holds " + JSON.stringify(values));
 
@@ -1701,7 +1716,7 @@ async function theObservedReturnAddressesAreDecided() {
                            async function () {
     const now = await observedOn();
     const values = now.rows.map(function (row) { return row.value; });
-    return { done: values.indexOf(ONE) >= 0 && values.indexOf(TWO) >= 0,
+    return { done: urls.holds(values, ONE) && urls.holds(values, TWO),
              detail: now.rows, now: now };
   });
   both.now.rows.forEach(function (row) {
@@ -1785,8 +1800,8 @@ async function theObservedReturnAddressesAreDecided() {
              detail: now.rows,
              now: now };
   });
-  assert.ok(fieldValues(afterConfirm.now.entry,
-                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+  assert.ok(urls.holds(fieldValues(afterConfirm.now.entry,
+                                   "samlAssertionConsumerService"), ONE),
     "CONFIRM takes the mark off and KEEPS the address; " + ONE + " is gone " +
         "from " +
     JSON.stringify(fieldValues(afterConfirm.now.entry,
@@ -1836,11 +1851,11 @@ async function theObservedReturnAddressesAreDecided() {
     const acs = fieldValues(now.entry, "samlAssertionConsumerService");
     return { done:
                now.rows.every(function (row) { return row.value !== TWO; }) &&
-                   acs.indexOf(TWO) < 0,
+                   !urls.holds(acs, TWO),
              detail: { rows: now.rows, acs: acs }, now: now };
   });
-  assert.ok(fieldValues(afterDiscard.now.entry,
-                        "samlAssertionConsumerService").indexOf(ONE) >= 0,
+  assert.ok(urls.holds(fieldValues(afterDiscard.now.entry,
+                                   "samlAssertionConsumerService"), ONE),
     "a discard takes only the address it named; the confirmed one must still " +
     "be there");
   await refused("/applications/discard-address",
@@ -1940,7 +1955,7 @@ async function theDeclaredFlowsAreEnforced() {
                 [])[1] || "";
   const target = location ||
     (asked.status === 400 ? link.replace(/&amp;/g, "&") : "");
-  assert.ok(target.indexOf(MINT_REDIRECT_URI) === 0 &&
+  assert.ok(urls.isAt(target, MINT_REDIRECT_URI) &&
             /[?&#]error=unauthorized_client/.test(target),
     "a response type the client did not declare should be sent back to its " +
     "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1), by a " +
@@ -2748,8 +2763,10 @@ async function mintPermissionToken(client, wanted) {
       attributes: { cn: "Operations " + username, givenName: "Operations",
                     sn: username,
                     mail: username + "@admin-api-operations.test" },
-      credential: "password", password: MINT_PASSWORD
+      credential: "password",
+      password: ownPassword.temporaryFor(MINT_PASSWORD)
     }, "created " + username + " before a permission token is minted");
+    await mintPasswordIsTheirs(username, false);
     mintedParties["realm:user:" + username] = true;
   }
   const granted = await registry.authorizationCode(base + "/realm/" + REALM, {
@@ -2840,14 +2857,14 @@ async function theSamlRegistriesRoundTrip() {
   await ok("/saml2/set-logout-service",
     { sp: sp, value: "https://sp.example/slo" },
     "added a single logout service");
-  assert.ok(JSON.stringify(await serviceProvider(sp))
-                .indexOf("https://sp.example/slo") > 0,
+  assert.ok(urls.namesAddress(JSON.stringify(await serviceProvider(sp)),
+                              "https://sp.example/slo"),
     "the logout service should be readable back off the service provider.");
   await ok("/saml2/remove-logout-service",
     { sp: sp, value: "https://sp.example/slo" },
     "removed the single logout service");
-  assert.ok(JSON.stringify(await serviceProvider(sp))
-      .indexOf("https://sp.example/slo") < 0,
+  assert.ok(!urls.namesAddress(JSON.stringify(await serviceProvider(sp)),
+                               "https://sp.example/slo"),
     "and the logout service should be gone from the entry afterwards. A " +
     "SAML 2.0 SP that is still listed as having a SingleLogoutService it no " +
     "longer wants is sent a LogoutRequest it will refuse, which is a " +
@@ -3698,6 +3715,22 @@ const MINT_PASSWORD = names.passwordFor();
 const MINT_CLIENT_SECRET = "admin-api-operations-client-secret-" + REALM;
 const mintedParties = {};
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): MINT_PASSWORD typed by this
+// administrator is temporary in product, and the sign-in that mints a token
+// would stop at the change step. Every person a token is minted for is
+// created with a temporary password and chooses MINT_PASSWORD
+// (`own_password.js`; in development it is simply set). The set-password
+// writes are read back by the `/users` reads that follow each create.
+async function mintPasswordIsTheirs(username, root) {
+  log.debug("Entering mintPasswordIsTheirs(). " + username);
+  await ownPassword.ownPassword(root ? base : base + "/realm/" + REALM,
+    username, MINT_PASSWORD, function (one, value) {
+      return post("/users/set-password", { user: one, password: value },
+                  root);
+    });
+  log.debug("Leaving mintPasswordIsTheirs().");
+}
+
 async function ensureTokenParties(username, client, root) {
   log.debug("Entering ensureTokenParties(). username=" + username +
             ", client=" + client);
@@ -3708,8 +3741,10 @@ async function ensureTokenParties(username, client, root) {
       attributes: { cn: "Operations " + username, givenName: "Operations",
                     sn: username, displayName: "Operations " + username,
                     mail: username + "@admin-api-operations.test" },
-      credential: "password", password: MINT_PASSWORD
+      credential: "password",
+      password: ownPassword.temporaryFor(MINT_PASSWORD)
     }, "created " + username + " before a token is minted for them", root);
+    await mintPasswordIsTheirs(username, root);
     const back = await get("/users?user=" + encodeURIComponent(username), root);
     assert.strictEqual(back.status, 200,
       "GET /users?user=" + username + " should read the person just created; " +
@@ -3904,9 +3939,16 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     attributes: { cn: "Operations " + username, givenName: "Operations",
                   sn: username, displayName: "Operations " + username,
                   mail: username + "@admin-api-operations.test" },
-    credential: "password", password: MINT_PASSWORD
+    credential: "password",
+    password: ownPassword.temporaryFor(MINT_PASSWORD)
   }, "created a person in the directory");
-  mintedParties["realm:user:" + username] = true;
+  // THE REGISTER IS READ BEFORE THE PERSON SIGNS IN. Since #2238 they are
+  // given their own password by signing in with it (`own_password.js`), and
+  // a sign-in is exactly what turns `knownBy: "created"` into
+  // "authentication" (`admin_stats.js`, `noteKnownIdentity()`): a person who
+  // has signed in is no longer one who merely exists. Read after it, the
+  // answer depended on whether the sign-in had reached the register yet, and
+  // the single-node and mariadb runs of 2026-11-25 saw "authentication".
   assert.ok(String(created.dn || "").indexOf("dc=" + REALM + ",") > 0,
     "the entry should land in THIS realm's ou=users; its DN is " + created.dn);
   const listedUsers = await get("/users?q=" + encodeURIComponent(username));
@@ -3923,6 +3965,8 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
     "only one on this API that puts a person in the directory without a " +
     "sign-in, and that provenance is the whole difference. It says " +
     JSON.stringify((listedUsers.body.users[0] || {}).knownBy));
+  await mintPasswordIsTheirs(username, false);
+  mintedParties["realm:user:" + username] = true;
 
   // With the attributes the realm's policy (#396) requires in product mode,
   // so that what refuses it is the duplicate and not a missing name.
@@ -4069,8 +4113,10 @@ async function thePersonDeleteRoundTrip() {
     attributes: { cn: "Deleted " + username, givenName: "Deleted",
                   sn: username, displayName: "Deleted " + username,
                   mail: username + "@admin-api-operations.test" },
-    credential: "password", password: MINT_PASSWORD
+    credential: "password",
+    password: ownPassword.temporaryFor(MINT_PASSWORD)
   }, "created the person to delete");
+  await mintPasswordIsTheirs(username, false);
   // Made here, so ensureTokenParties() must not make them again (it would
   // be refused, one entry per person): the arrangement of
   // theDirectoryAndSignOutDoorsRoundTrip(), which this one lacked.
@@ -4483,8 +4529,15 @@ async function theKerberosPrincipalsRoundTrip() {
       attributes: { cn: "Kerberos " + keyPerson, givenName: "Kerberos",
                     sn: keyPerson, displayName: "Kerberos " + keyPerson,
                     mail: keyPerson + "@admin-api-operations.test" },
-      credential: "password", password: MINT_PASSWORD
+      // Temporary, then the person's own (#2160, `own_password.js`): the
+      // keytab reset below is refused while a change is owed, in product.
+      credential: "password", password: ownPassword.temporaryFor(MINT_PASSWORD)
     }, "created " + keyPerson + " to hold (or not hold) Kerberos keys", true);
+    await ownPassword.ownPassword(base, keyPerson, MINT_PASSWORD,
+      function (one, value) {
+        return post("/users/set-password", { user: one, password: value },
+                    true);
+      });
     // READ BACK in the scope it was written in — the root — the way
     // ensureTokenParties() reads its people back (2026-09-21). This create
     // arrived on 2026-09-19 without one, and the ledger's last check
@@ -5439,6 +5492,26 @@ async function settleThenStatus(previous) {
 // operation that cannot be driven here needs somewhere to say why — and an
 // empty object is a much better prompt for that than no object at all.
 const NOT_DRIVEN_HERE = {
+  // NAMED TRUSTSTORES (#2118 phase 4). Driven by `sts_truststores.js`, with
+  // the minted certificates, refusals and realm confinement an example walk
+  // cannot carry; the service-wide half (the default realm) is
+  // `tests/truststores_api.js`'s, in process.
+  "POST /truststores/show": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/create": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/delete": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/add": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/remove": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/assign": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/unassign": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2118).",
+  "POST /truststores/set-keys": "sts_truststores.js drives it in throwaway " +
+    "realms and reads every write back on GET /truststores (#2149).",
   // SIGNING KEY ROTATION (#48, 2026-09-22). Driven by `sts_key_rotation.js`,
   // end to end and in a realm of its own: a rotation is checked against the
   // JWKS, the crypto metadata document and a token signed before it, which a
@@ -5538,7 +5611,13 @@ const NOT_DRIVEN_HERE = {
     "it with the ML-DSA registration the prove offered",
   "POST /users/cancel-passkey-upgrade": "admin-ui/web_runtime.ts calls " +
     "it when the browser ceremony throws after begin; " +
-    "sts_passkey_dual_lane.js finishes the upgrade instead"
+    "sts_passkey_dual_lane.js finishes the upgrade instead",
+  // #1955 P7: a legacy U2F key imported by value. Refused by design in a
+  // realm whose webauthn.u2fAppIds is empty — every realm this walk drives
+  // — so the example can only be refused here; sts_webauthn_u2f_import.js
+  // lists an AppID, imports a key made at run time and signs in with it.
+  "POST /users/import-u2f-key": "sts_webauthn_u2f_import.js drives it in a " +
+    "realm that lists the AppID, and signs in with the key it imported"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

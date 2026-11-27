@@ -122,5 +122,15 @@
   "pepCredential.urn": "Pangalan",
   "pepCredential.env": "Simulan ang PEP gamit ang environment na ito. Hindi kailanman umalis ang private key sa makinang gumawa ng request; walang maibibigay ang serbisyong ito.",
   "pepCredential.chain": "Ang certificate at ang chain nito hanggang sa Root ng serbisyo. Pampubliko: hindi ito kailangan ng PEP para mag-authenticate, at nasa listahan ito ng mga key ng entry.",
-  "pepCredential.download": "I-download ang certificate"
+  "pepCredential.download": "I-download ang certificate",
+  "once.pivCertificate": "PIV na sertipiko",
+  "once.pivKey": "Naka-escrow na PIV key",
+  "piv.keyWarn": "Ito ang private decryption key ng tao. Isang beses lang ito ipinapakita, at nasa audit log ang pagbawi nito. Iabot ito gaya ng pag-abot mo sa card.",
+  "piv.privateKey": "Private key",
+  "piv.certificate": "Sertipiko",
+  "piv.import": "Isulat ito sa slot ng YubiKey gamit ang: ykman piv certificates import SLOT cert.pem",
+  "once.sshCertificate": "SSH user certificate",
+  "ssh.certificate": "Sertipiko",
+  "ssh.pqc": "ML-DSA na sertipiko",
+  "ssh.install": "I-save ito katabi ng private key, sa pangalan ng file ng key na may -cert.pub sa dulo, at ipapakita ito ng ssh kasama ng key."
 }

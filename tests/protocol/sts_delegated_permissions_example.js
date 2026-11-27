@@ -130,11 +130,15 @@
 //
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 // ---------------------------------------------------------------------------
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const common = require("./jwt_vc_json_common.js");
 // The authorization code walk (#551: a delegated permission needs a person).
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -918,13 +922,19 @@ async function theTokenSaysBothHalves() {
   const password = "Dpx-" + require("crypto").randomBytes(12)
     .toString("base64url") + "-9a!";
   // The realm's attribute policy (#396) requires givenName, sn and mail of
-  // every person in product mode.
+  // every person in product mode. Temporary, then the person's own
+  // (#2160, `own_password.js`): the code flow below signs in with it.
+  const temporary = ownPassword.temporaryFor(password);
   await ok("/users/create", { username: person, invent: false,
-    credential: "password", password: password,
-    passwordConfirm: password,
+    credential: "password", password: temporary,
+    passwordConfirm: temporary,
     attributes: { givenName: "Dpx", sn: person,
                   mail: person + "@dpx.example.test" } },
     "created the person the token is for");
+  await ownPassword.ownPassword(base, person, password,
+    function (who, value) {
+      return post("/users/set-password", { user: who, password: value });
+    });
   const redirectUri = SPENDER_REDIRECT_URI;
   const granted = await registry.authorizationCode(base, {
     clientId: SPENDER.id, redirectUri: redirectUri, username: person,
@@ -946,7 +956,7 @@ async function theTokenSaysBothHalves() {
   const token = reply.body.access_token;
   const audience = claimOf(token, "aud");
   const audiences = Array.isArray(audience) ? audience : [audience];
-  assert.ok(audiences.indexOf(SPENT_ON.baseUri) >= 0,
+  assert.ok(urls.holds(audiences, SPENT_ON.baseUri),
     "THE ACCESS TOKEN SHOULD BE AUDIENCED TO " + SPENT_ON.baseUri + " — the " +
     "base URI of the application whose permissions were asked for, and not " +
     "one of the other four. That is what a resource server checks once " +
@@ -1042,7 +1052,7 @@ async function theClientCredentialsGrantNeedsARole() {
     "answered " + withRole.status + " " + String(withRole.raw).slice(0, 300));
   const token = withRole.body.access_token;
   const audience = claimOf(token, "aud");
-  assert.ok([].concat(audience).indexOf(SPENT_ON.baseUri) >= 0,
+  assert.ok(urls.holds(audience, SPENT_ON.baseUri),
     "the token is addressed to " + SPENT_ON.baseUri + "; it carried " +
     JSON.stringify(audience));
   const scopes = String(claimOf(token, "scope")).split(/\s+/);

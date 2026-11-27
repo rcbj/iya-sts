@@ -1721,7 +1721,9 @@ const BOOLEAN_ATTRIBUTES = [
   // ASVS 5.0.0 7.6.2: whether single sign-on asks first.
   'saml2SsoConsent', 'saml11SsoConsent', 'wsfedSsoConsent',
   // UMA 2.0 (#1168): whether the resource server may own resources itself.
-  'umaOwnsResources'
+  'umaOwnsResources',
+  // #1072: whether dynamic selectable roles are offered on its sign-ins.
+  'appDynamicRoleSelection'
 ];
 
 /**
@@ -1777,6 +1779,13 @@ const FLOW_RESPONSE_TYPES = ['code', 'token', 'id_token', 'code token',
 // `oauth2.dynamicRegistrationTokenResponseTypes` (#1296).
 const TOKEN_RESPONSE_TYPES = ['token', 'code token', 'id_token token',
   'code id_token token'];
+// WHAT A CLIENT MAY LIST IN `oauthResponseMode` (#2247): every response mode
+// the authorization endpoint performs — the three plain ones and JARM's four,
+// `response_modes_supported` with JARM on, which `tests/response_modes.js`
+// holds this to. Written out here because `oauth-oidc/jarm.ts` is not a
+// module this library may require.
+const FLOW_RESPONSE_MODES = ['query', 'fragment', 'form_post', 'jwt',
+  'query.jwt', 'fragment.jwt', 'form_post.jwt'];
 const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
   'client_credentials', 'password',
   'urn:ietf:params:oauth:grant-type:token-exchange',
@@ -1849,6 +1858,10 @@ const ATTRIBUTE_CHOICES = {
   },
   oauthResponseType: function () {
     return FLOW_RESPONSE_TYPES.slice(0);
+  },
+  // #2247: the response modes the authorization endpoint performs.
+  oauthResponseMode: function () {
+    return FLOW_RESPONSE_MODES.slice(0);
   },
   // #1296: the four token response types.
   oauthAllowedTokenResponseTypes: function () {
@@ -2100,6 +2113,9 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   // #706: a grant or response type this service does not implement is one
   // no request could ever be allowed by.
   'oauthGrantType', 'oauthResponseType',
+  // #2247: a response mode the endpoint does not perform restricts nothing
+  // a request could be allowed by.
+  'oauthResponseMode',
   // #1296: only the four token response types.
   'oauthAllowedTokenResponseTypes',
   // #430: a misspelt word would be `inherit`, which widens.
@@ -2696,6 +2712,8 @@ const FIELD_EXAMPLES = {
     '"attributeId":"urn:example:classification"}',
   appAuthzenApplication: 'engineering-portal',
   appAuthzenCallbackUri: 'https://pep.example.com/callbacks/access-requests',
+  appAuthzenCallbackConfig:
+    'https://pep.example.com/callbacks/access-requests attempts=3 backoff=120',
   oauthStepUpAcrValues: 'mfa',
   oauthStepUpMaxAge: '600',
   oauthDefaultAcrValues: 'mfa 1',
@@ -2752,6 +2770,17 @@ const FIELD_EXAMPLES = {
   wstrustEncryptionCertificate: '-----BEGIN CERTIFICATE----- MIIC… ' +
     '-----END CERTIFICATE-----',
   wstrustResponseRecipientXPath: '//wsse:Security/wsse:BinarySecurityToken',
+  // WS-Security message integrity (#1917): the console's Body preset for
+  // each map, and the switches.
+  wstrustSignRequestElements: '/soap11:Envelope/soap11:Body | ' +
+    '/soap12:Envelope/soap12:Body',
+  wstrustSignResponseElements: '/soap11:Envelope/soap11:Body | ' +
+    '/soap12:Envelope/soap12:Body',
+  wstrustSignRequest: 'true',
+  wstrustSignResponse: 'true',
+  wstrustResponseProtectionOrder: 'sign-then-encrypt',
+  wstrustEncryptSignature: 'false',
+  wstrustRecipientIgnoresKeyUsage: 'false',
   krb5ServicePrincipalName: 'HTTP/app.example.com@EXAMPLE.COM',
   oid4vpClientId: 'x509_san_dns:verifier.example.com',
   federationPartnerId: 'partner-idp',
@@ -2837,6 +2866,7 @@ const FIELD_EXAMPLES = {
   oauthTosUri: 'https://app.example.com/terms',
   oauthGrantType: 'authorization_code',
   oauthResponseType: 'code',
+  oauthResponseMode: 'form_post',
   oauthAllowedTokenResponseTypes: 'id_token token',
   oauthAllowedScope: 'profile',
   oauthPermissionBaseUri: 'https://api.example.com/',
@@ -3017,6 +3047,9 @@ const SIMPLE_FIELD_ATTRIBUTES = [
   // WS-Federation, WS-Trust, Kerberos: their identifiers and addresses.
   'wsfedRealm', 'wsfedReplyUrl', 'wsfedSignOutUri', 'wstrustAppliesTo',
   'krb5ServicePrincipalName',
+  // WS-Trust's JWT scopes (#2046, rcbj): the simple view is every WS-Trust
+  // field that is not about signing or encrypting a message.
+  'wstrustJwtScope',
   // Shared Signals: the receiver, where its events go and which.
   'ssfReceiverId', 'ssfDeliveryEndpoint', 'ssfAllowedEvents',
   'ssfSigningAlgorithm',
@@ -3835,8 +3868,9 @@ const ssfAllowedCount = cacheRegistry.register({
  * building a view; the answer is cached until `ou=applications` changes.
  *
  * @param principal - the stream owner's name
- * @returns the owning application's identifier, receiver ids and allowed
- *   events, or null when no application owns it
+ * @returns the owning application's identifier, receiver ids, allowed
+ *   events, family identifiers (`names`) and kinds, or null when no
+ *   application owns it
  */
 function ssfAllowedEventsFor(principal) {
   log.debug("Entering ssfAllowedEventsFor().");
@@ -3953,10 +3987,26 @@ function findSsfOwner(backing, wanted) {
         }
       }
     });
+    // `names` (#2234): every identifier the entry answers to in a family
+    // (`identifiersOf()`'s attributes — a client_id, an entityID, a
+    // wtrealm, a GNAP instance id), which is what a sign-on session records
+    // a relying party under; and `kinds`, what it has been seen as. Read
+    // here so `ssf/application_sessions.ts` asks the registry nothing more
+    // per event than this cached answer.
+    const names = [];
+    IDENTIFIER_ATTRIBUTES.forEach(function (row) {
+      valuesOf(indexed[row.attribute.toLowerCase()]).forEach(function (one) {
+        if (one && names.indexOf(String(one)) < 0) {
+          names.push(String(one));
+        }
+      });
+    });
     return { identifier: firstValue(indexed, 'appIdentifier') ||
                          firstValue(indexed, 'cn') || wanted,
              values: valuesOf(indexed.ssfallowedevents),
              receiverIds: valuesOf(indexed.ssfreceiverid),
+             names: names,
+             kinds: valuesOf(indexed.appkind),
              overrides: overrides };
   };
   const direct = backing.readApplication(wanted);
@@ -7052,6 +7102,10 @@ function authorizationDetailsTypeOf(value) {
     .trim();
   const out = { type: '', description: '', locations: [], schema: null,
                 validate: null, problem: '',
+                // WHAT A WRITE WOULD REFUSE TODAY (#2220): '' or the
+                // sentence. Never a refusal here — see
+                // `accessTypeWriteProblem()`.
+                schemaProblem: '',
                 // THE CATALOGUE (#432 phase 4): null or [] where the
                 // definition says nothing — see the block's header.
                 actions: null, datatypes: null, privileges: null,
@@ -7182,8 +7236,116 @@ function authorizationDetailsTypeOf(value) {
     out.notForPolicy = mapping.notForPolicy;
   }
   out.source = definition;
+  out.schemaProblem = accessTypeWriteProblem(definition);
   log.debug("Leaving authorizationDetailsTypeOf(). " + out.type + ".");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A WRITE HOLDS A DEFINITION TO, AND A READ DOES NOT (#2220, ASVS 5.0.0
+// 1.3.12).
+//
+// A definition's `schema` is compiled by Ajv and run against every
+// authorization_details a client sends, and JSON Schema's `pattern` is a
+// JavaScript regular expression: one of the exponential shape is a request
+// that holds the event loop. So a WRITE holds the main `schema` to the
+// keyword subset its `limits` schema already uses (LIMITS_SCHEMA_KEYWORDS —
+// no `$ref`, no combinators, no conditionals, nothing whose meaning a
+// person cannot read off the page) and every `pattern` in either schema to
+// `common/pattern_safety.js`'s bound: at most ACCESS_TYPE_PATTERN_MAX
+// characters, no backreference, no quantified group that is itself
+// quantified or an alternation, compiling with the `u` flag Ajv uses.
+//
+// **A DEFINITION STORED BEFORE #2220 KEEPS WORKING** (backwards
+// compatibility): `authorizationDetailsTypeOf()` answers it as usable, with
+// the sentence in `schemaProblem`, so requests are validated against it as
+// they were. Only `authorizationDetailsAttributeProblem()` refuses —
+// STS-REG-0374, at a create, an add, or a set of a value the entry does not
+// already hold — and the console's Access types tab and /admin/mode's
+// `access-type-schemas` row show every stored one that fails.
+// ---------------------------------------------------------------------------
+const ACCESS_TYPE_PATTERN_MAX = 1024;
+
+// Every `pattern` keyword of a schema in the subset, each held to the bound.
+// As a sentence naming the path, or ''.
+function schemaPatternProblem(node, path, depth) {
+  log.debug("Entering schemaPatternProblem(). " + path);
+  if (!node || typeof node !== 'object' || Array.isArray(node) ||
+      depth > 8) {
+    log.debug("Leaving schemaPatternProblem(). Not a schema.");
+    return '';
+  }
+  if (node.pattern !== undefined) {
+    const pattern = String(node.pattern);
+    const PatternSafety = require('./pattern_safety');
+    let problem = PatternSafety.problem(pattern, ACCESS_TYPE_PATTERN_MAX);
+    if (!problem) {
+      try {
+        new RegExp(pattern, 'u');
+      } catch (e) {
+        log.debug("Caught in schemaPatternProblem(): " +
+                  ((e && e.message) || e));
+        problem = 'it does not compile: ' + e.message;
+      }
+    }
+    if (problem) {
+      log.debug("Leaving schemaPatternProblem(). Refused.");
+      return path + '.pattern "' + pattern.slice(0, 80) + '" is refused: ' +
+        problem;
+    }
+  }
+  const inner = [];
+  if (node.properties && typeof node.properties === 'object') {
+    Object.keys(node.properties).forEach(function (name) {
+      inner.push([node.properties[name], path + '.properties.' + name]);
+    });
+  }
+  if (node.items !== undefined) {
+    inner.push([node.items, path + '.items']);
+  }
+  for (let i = 0; i < inner.length; i++) {
+    const found = schemaPatternProblem(inner[i][0], inner[i][1], depth + 1);
+    if (found) {
+      log.debug("Leaving schemaPatternProblem(). Below.");
+      return found;
+    }
+  }
+  log.debug("Leaving schemaPatternProblem().");
+  return '';
+}
+
+/**
+ * Says what a write would refuse today of a definition that reads (#2220):
+ * a main `schema` outside the keyword subset of a `limits` schema, or a
+ * `pattern` in either that `common/pattern_safety.js` refuses.
+ *
+ * @param definition - the definition object, already read as usable
+ * @returns the sentence, or '' when a write accepts it
+ */
+function accessTypeWriteProblem(definition) {
+  log.debug("Entering accessTypeWriteProblem().");
+  if (definition.schema !== undefined) {
+    const shape = limitsSchemaProblem(definition.schema, 'schema', 0,
+                                      'a type\'s schema');
+    if (shape) {
+      log.debug("Leaving accessTypeWriteProblem(). The schema's keywords.");
+      return shape;
+    }
+    const pattern = schemaPatternProblem(definition.schema, 'schema', 0);
+    if (pattern) {
+      log.debug("Leaving accessTypeWriteProblem(). A schema pattern.");
+      return pattern;
+    }
+  }
+  if (definition.limits !== undefined) {
+    const pattern = schemaPatternProblem(definition.limits, 'limits', 0);
+    if (pattern) {
+      log.debug("Leaving accessTypeWriteProblem(). A limits pattern.");
+      return pattern;
+    }
+  }
+  log.debug("Leaving accessTypeWriteProblem().");
+  return '';
 }
 
 // A list member of a definition: an array of distinct non-empty printable
@@ -7219,8 +7381,11 @@ function accessTypeListProblem(name, value) {
 // A `limits` schema held to the SUBSET (LIMITS_SCHEMA_KEYWORDS), walked
 // node by node: `properties` and `items` are schemas again, every other
 // keyword is a value. As a sentence naming the path, or ''.
-function limitsSchemaProblem(node, path, depth) {
+function limitsSchemaProblem(node, path, depth, noun) {
   log.debug("Entering limitsSchemaProblem(). " + path);
+  // Which schema the sentence names (#2220): a `limits` schema, or the
+  // definition's own, which a write holds to the same subset.
+  const kind = noun || 'a limits schema';
   if (depth > 8) {
     log.debug("Leaving limitsSchemaProblem(). Too deep.");
     return path + ' nests more than eight schemas deep';
@@ -7234,8 +7399,8 @@ function limitsSchemaProblem(node, path, depth) {
     const key = keys[i];
     if (LIMITS_SCHEMA_KEYWORDS.indexOf(key) < 0) {
       log.debug("Leaving limitsSchemaProblem(). " + key + ".");
-      return path + ' uses "' + key.slice(0, 60) + '", and a limits schema ' +
-        'may use only ' + LIMITS_SCHEMA_KEYWORDS.join(', ');
+      return path + ' uses "' + key.slice(0, 60) + '", and ' + kind +
+        ' may use only ' + LIMITS_SCHEMA_KEYWORDS.join(', ');
     }
   }
   if (node.type !== undefined) {
@@ -7258,7 +7423,7 @@ function limitsSchemaProblem(node, path, depth) {
     for (let j = 0; j < names.length; j++) {
       const inner = limitsSchemaProblem(node.properties[names[j]],
                                         path + '.properties.' + names[j],
-                                        depth + 1);
+                                        depth + 1, kind);
       if (inner) {
         log.debug("Leaving limitsSchemaProblem(). A property.");
         return inner;
@@ -7266,7 +7431,8 @@ function limitsSchemaProblem(node, path, depth) {
     }
   }
   if (node.items !== undefined) {
-    const items = limitsSchemaProblem(node.items, path + '.items', depth + 1);
+    const items = limitsSchemaProblem(node.items, path + '.items', depth + 1,
+                                      kind);
     if (items) {
       log.debug("Leaving limitsSchemaProblem(). items.");
       return items;
@@ -7481,9 +7647,11 @@ function authorizationDetailsMetadataProblem(values) {
  *
  * @param attribute - the attribute's name
  * @param value - the value written
+ * @param held - optional; the values the entry already holds, which are
+ *   not held to what only a write checks (#2220)
  * @returns the error code and message, or null
  */
-function authorizationDetailsAttributeProblem(attribute, value) {
+function authorizationDetailsAttributeProblem(attribute, value, held) {
   log.debug("Entering authorizationDetailsAttributeProblem(). attribute=" +
             attribute);
   const text = String(value === undefined || value === null ? '' : value)
@@ -7500,11 +7668,26 @@ function authorizationDetailsAttributeProblem(attribute, value) {
   }
   if (attribute === 'oauthAuthorizationDetailsType') {
     const definition = authorizationDetailsTypeOf(text);
+    if (definition.problem) {
+      log.debug("Leaving authorizationDetailsAttributeProblem(). Not a " +
+                "definition.");
+      return { code: 'STS-REG-0112',
+               message: attribute + ': ' + definition.problem + '.' };
+    }
+    // #2220: what a write holds a definition to and a read does not. A
+    // value the entry already holds is not refused, so a definition stored
+    // before the rule survives a save that sends it back unchanged.
+    const already = (held || []).some(function (one) {
+      return String(one == null ? '' : one).trim() === text;
+    });
+    if (definition.schemaProblem && !already) {
+      log.debug("Leaving authorizationDetailsAttributeProblem(). Outside " +
+                "what a write accepts.");
+      return { code: 'STS-REG-0374',
+               message: attribute + ': ' + definition.schemaProblem + '.' };
+    }
     log.debug("Leaving authorizationDetailsAttributeProblem(). A definition.");
-    return definition.problem
-      ? { code: 'STS-REG-0112',
-          message: attribute + ': ' + definition.problem + '.' }
-      : null;
+    return null;
   }
   log.debug("Leaving authorizationDetailsAttributeProblem(). Not asked.");
   return null;
@@ -11851,7 +12034,8 @@ function updateApplication(identifier, change) {
   }
   // RFC 9396's two, on an ADD or a SET that carries a value.
   if ((mode === 'set' || mode === 'add') && value) {
-    const problem = authorizationDetailsAttributeProblem(attribute, value);
+    const problem = authorizationDetailsAttributeProblem(
+      attribute, value, valuesOf(loaded.record.fields[attribute]));
     if (problem) {
       log.debug("Leaving updateApplication(). Not a usable authorization " +
                 "details value.");
@@ -13088,7 +13272,11 @@ const CLIENT_SECRET_SWEEP_SLICE = 50;
 async function sweepClientSecretsInSlices(nowMs) {
   log.debug("Entering sweepClientSecretsInSlices().");
   const at = clientSecretSweepClock(nowMs);
-  const out = { expiring: [], expired: [], cleared: [] };
+  // THE AUTOMATIC ROTATIONS FIRST (#2220), so an application that has just
+  // been given a new secret is not then warned about the old one.
+  const rotation = await autoRotateClientSecrets(at.nowS);
+  const out = { expiring: [], expired: [], cleared: [],
+                rotated: rotation.rotated, rotationFailed: rotation.failed };
   await loopSlices.eachInSlices(list(), function (row) {
     sweepClientSecretOf(row, at, out);
   }, CLIENT_SECRET_SWEEP_SLICE);
@@ -13097,6 +13285,165 @@ async function sweepClientSecretsInSlices(nowMs) {
     expiring: out.expiring.length, expired: out.expired.length,
     cleared: out.cleared.length }));
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// AUTOMATIC ROTATION, OPT-IN PER CLIENT (#2220).
+//
+// A secret that expires and is never replaced leaves the client to notice,
+// and the daily job's warning was all this service did. Now an application
+// named in `oauth2.clientSecretAutoRotate` (a realm setting: each entry is
+// `client_id`, or `client_id=destination/secret-name`) is ROTATED by that
+// job once its primary secret expires within
+// `oauth2.clientSecretAutoRotateDays`: a new secret is added and the old one
+// goes on authenticating for `oauth2.clientSecretOverlapS` (never past its
+// own expiry), exactly as Rotate secret on the console does.
+//
+// **DELIVERY NEEDS THE CLIENT, AND THERE ARE TWO WAYS IT COOPERATES.**
+//
+//   * A SECRET DESTINATION (#221 P3, `common/secret_destinations.ts`): the
+//     new secret is PUSHED to the named secret in the operator's secrets
+//     manager BEFORE it is committed here — the service accounts' rule — so
+//     a push that fails rotates nothing, is audited (STS-REG-0375), and is
+//     tried again at the next run while the old secret still works; the
+//     client reads its secret from that store.
+//   * RFC 7592 CLIENT CONFIGURATION: without a destination the new secret
+//     is the `client_secret` a read of the client's configuration endpoint
+//     returns (with its registration access token), so a client that reads
+//     its configuration inside the overlap picks it up.
+//
+// A client that does neither is not rotated unless it is listed: opt-in,
+// because rotating a secret a client cannot fetch is an outage made on a
+// schedule. Everybody else keeps the existing warning ahead of expiry.
+// `sts-api-client` is never rotated here: its secret is pinned by
+// `adminApi.clientSecret`, which only the operator can change.
+// ---------------------------------------------------------------------------
+/**
+ * Reads `oauth2.clientSecretAutoRotate` in the ambient realm: which
+ * applications are rotated automatically, and the secret destination and
+ * secret name each one's new secret is pushed to, if any.
+ *
+ * @returns a Map from identifier to `{ destination, secretName }`
+ */
+function clientSecretAutoRotation() {
+  log.debug("Entering clientSecretAutoRotation().");
+  const out = new Map();
+  const raw = config.value('oauth2.clientSecretAutoRotate');
+  (Array.isArray(raw) ? raw : String(raw || '').split(',')).forEach(
+    function (entry) {
+      const text = String(entry || '').trim();
+      if (!text) {
+        return;
+      }
+      const eq = text.indexOf('=');
+      const id = (eq < 0 ? text : text.slice(0, eq)).trim();
+      const where = eq < 0 ? '' : text.slice(eq + 1).trim();
+      const slash = where.indexOf('/');
+      out.set(id, {
+        destination: slash < 0 ? where : where.slice(0, slash).trim(),
+        secretName: slash < 0 ? '' : where.slice(slash + 1).trim()
+      });
+    });
+  log.debug("Leaving clientSecretAutoRotation(). " + out.size + ".");
+  return out;
+}
+
+/**
+ * Rotates, in the ambient realm, every listed application whose primary
+ * client secret expires within `oauth2.clientSecretAutoRotateDays`, pushing
+ * the new secret to its destination first where one is named.
+ *
+ * @param nowS - the moment, in seconds
+ * @returns a promise of `{ rotated, failed }`, two lists of identifiers
+ */
+async function autoRotateClientSecrets(nowS) {
+  log.debug("Entering autoRotateClientSecrets().");
+  const out = { rotated: [], failed: [] };
+  const listed = clientSecretAutoRotation();
+  if (!listed.size) {
+    log.debug("Leaving autoRotateClientSecrets(). None listed.");
+    return out;
+  }
+  const days = Number(config.value('oauth2.clientSecretAutoRotateDays'));
+  const leadS = (isFinite(days) && days > 0 ? Math.floor(days) : 30) * 86400;
+  for (const entry of listed) {
+    const identifier = entry[0];
+    const where = entry[1];
+    const loaded = load(identifier);
+    if (!loaded.known || pinnedSecretOf(identifier)) {
+      continue;
+    }
+    const primary = primaryClientSecretOf(loaded.record.fields, nowS);
+    if (!primary || !(primary.expiresAt > 0) ||
+        primary.expiresAt - nowS > leadS) {
+      continue;
+    }
+    const secret = mintClientSecret();
+    if (where.destination) {
+      const pushed = await pushRotatedClientSecret(identifier, where, secret);
+      if (!pushed.ok) {
+        out.failed.push(identifier);
+        continue;
+      }
+    }
+    const done = rotateClientSecret(identifier,
+      { actor: 'scheduler', secret: secret });
+    if (done && done.ok) {
+      out.rotated.push(identifier);
+      audit.audit({ action: 'application.secret-rotated', actor: 'scheduler',
+        protocol: 'console', channel: 'internal', target: String(identifier),
+        summary: 'Application "' + identifier + '": its client secret was ' +
+                 'rotated before it expired' + (where.destination
+                   ? ', and the new one pushed to ' + where.destination
+                   : '; the client reads it from its RFC 7592 configuration'),
+        detail: { identifier: String(identifier), mode: 'auto',
+                  destination: where.destination || '',
+                  overlapUntil: done.overlapUntil || 0 } });
+    } else {
+      out.failed.push(identifier);
+      log.warn(errorCodes.tag('STS-REG-0375') + 'applications: the client ' +
+               'secret of "' + identifier + '" was not rotated: ' +
+               ((done && done.errors) || []).join(' '));
+    }
+  }
+  log.debug("Leaving autoRotateClientSecrets(). " + out.rotated.length +
+            " rotated, " + out.failed.length + " failed.");
+  return out;
+}
+
+// The push before the commit (#2220): never throws; `{ ok }`. The module is
+// required LAZILY, because it requires this one.
+async function pushRotatedClientSecret(identifier, where, secret) {
+  log.debug("Entering pushRotatedClientSecret().");
+  let answer = null;
+  try {
+    answer = await require('./secret_destinations').push(where.destination,
+      where.secretName || identifier,
+      { username: String(identifier), password: secret,
+        realm: realms.currentId(), rotatedAt: new Date().toISOString() });
+  } catch (e) {
+    log.debug("Caught in pushRotatedClientSecret(): " +
+              ((e && e.message) || e));
+    answer = { ok: false, error: String((e && e.message) || e) };
+  }
+  if (!answer || !answer.ok) {
+    log.warn(errorCodes.tag('STS-REG-0375') + 'applications: the new client ' +
+             'secret of "' + identifier + '" could not be pushed to ' +
+             where.destination + ', so it was not rotated; the old one ' +
+             'still authenticates. ' + String((answer && answer.error) || ''));
+    audit.audit({ action: 'application.secret-rotated', actor: 'scheduler',
+      protocol: 'console', channel: 'internal', target: String(identifier),
+      outcome: 'failure', errorCode: 'STS-REG-0375',
+      summary: 'Application "' + identifier + '": the automatic rotation ' +
+               'did not happen, because the new secret could not be pushed ' +
+               'to ' + where.destination,
+      detail: { identifier: String(identifier), mode: 'auto',
+                destination: where.destination } });
+    log.debug("Leaving pushRotatedClientSecret(). Not pushed.");
+    return { ok: false };
+  }
+  log.debug("Leaving pushRotatedClientSecret(). Pushed.");
+  return { ok: true };
 }
 
 // The sweep's clock and warning window, read once per sweep in its realm.
@@ -13528,7 +13875,13 @@ function regenerateClientSecret(identifier, options) {
     log.debug("Leaving regenerateClientSecret(). No such application.");
     return unknownApplication(identifier);
   }
-  if (pinnedSecretOf(identifier)) {
+  // A ROTATION OF THE PINNED SECRET IS ALLOWED (#2220): it adds the new
+  // secret and keeps the pinned one for oauth2.clientSecretOverlapS, which is
+  // the time an operator has to put the new one in adminApi.clientSecret. A
+  // REGENERATION is still refused: it would remove the secret every token
+  // for /admin-api is minted with, at once.
+  const pinned = pinnedSecretOf(identifier);
+  if (pinned && !opts.keepPrevious) {
     log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
     return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
                              '"sts-api-client" is pinned by the ' +
@@ -13569,7 +13922,10 @@ function regenerateClientSecret(identifier, options) {
       'regenerate, which replaces them all.'] }, 'STS-REG-0208');
   }
   const replaced = held.length > 0;
-  const secret = mintClientSecret();
+  // A SECRET MINTED AHEAD (#2220): the automatic rotation pushes the new
+  // secret to its destination BEFORE it is committed here, so it mints it
+  // first and hands it in.
+  const secret = opts.secret ? String(opts.secret) : mintClientSecret();
   const added = newClientSecretRecord(secret);
   try {
     writeClientSecretRecords(record, [added].concat(kept));
@@ -13599,7 +13955,87 @@ function regenerateClientSecret(identifier, options) {
              : replaced
              ? 'A new client secret replaced every secret the application ' +
                'held, which stop authenticating at the token endpoint now.'
-             : 'A client secret was generated.') + mintedSentence(written) };
+             : 'A client secret was generated.') + mintedSentence(written) +
+             (pinned
+               ? ' This client\'s secret is pinned by adminApi.clientSecret ' +
+                 '(ADMIN_API_CLIENT_SECRET): set it to the new secret and ' +
+                 'restart every node before ' + (keeps
+                   ? new Date(overlapUntil).toISOString()
+                   : 'the next token is minted') + ', when the old one ' +
+                 'stops authenticating.'
+               : '') };
+}
+
+// ---------------------------------------------------------------------------
+// THE PINNED SECRET, ADOPTED AT START (#2220).
+//
+// Seeding writes `adminApi.clientSecret` onto a FRESH `sts-api-client` and
+// never over an existing one, so until #2220 a changed setting reached the
+// entry only in a store that kept nothing: on postgres the entry kept the
+// old secret, the new setting authenticated nothing, and "change the setting
+// and restart" locked the management API out. Now every start of the
+// default realm ADOPTS the setting's value where the entry does not hold it:
+// it is added as a new secret, with `oauth2.clientSecretLifetimeDays`, and
+// every other live secret is kept for `oauth2.clientSecretOverlapS` — a
+// rotation, made by the setting. A value the entry already holds (the
+// secret a console rotation minted, copied into the setting) changes
+// nothing, so this is idempotent and safe on every node at once.
+// ---------------------------------------------------------------------------
+/**
+ * Adds the `adminApi.clientSecret` value to `sts-api-client` in the default
+ * realm when the entry does not hold it, keeping its other live secrets for
+ * `oauth2.clientSecretOverlapS`.
+ *
+ * @returns whether the entry changed
+ */
+function adoptPinnedSecret() {
+  log.debug("Entering adoptPinnedSecret().");
+  const pinned = pinnedSecretOf('sts-api-client');
+  if (!pinned) {
+    log.debug("Leaving adoptPinnedSecret(). Nothing pinned.");
+    return false;
+  }
+  const loaded = load('sts-api-client');
+  if (!loaded.known) {
+    log.debug("Leaving adoptPinnedSecret(). No entry.");
+    return false;
+  }
+  const record = loaded.record;
+  const held = clientSecretRecordsOf(record.fields);
+  if (held.some(function (one) { return one.secret === pinned; })) {
+    log.debug("Leaving adoptPinnedSecret(). Already held.");
+    return false;
+  }
+  const at = nowSec();
+  const overlapS = Math.max(0,
+    Math.floor(Number(config.value('oauth2.clientSecretOverlapS')) || 0));
+  const kept = held.filter(function (one) {
+    return !clientSecretExpired(one, at) && overlapS > 0;
+  }).map(function (one) {
+    const until = at + overlapS;
+    return Object.assign({}, one, {
+      expiresAt: one.expiresAt > 0 ? Math.min(one.expiresAt, until) : until });
+  }).slice(0, Math.max(0, clientSecretsMax() - 1));
+  const added = newClientSecretRecord(pinned,
+    { description: 'adminApi.clientSecret' });
+  try {
+    writeClientSecretRecords(record, [added].concat(kept));
+  } catch (e) {
+    log.debug("Caught in adoptPinnedSecret(): " + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-REG-0213') + 'applications: the ' +
+              'adminApi.clientSecret value could not be written to ' +
+              '"sts-api-client": ' + e.message);
+    log.debug("Leaving adoptPinnedSecret(). It would not seal.");
+    return false;
+  }
+  finishClientSecretWrite('sts-api-client', record, { actor: 'startup' },
+    { mode: 'adopt-pinned', secretId: added.id,
+      overlapUntil: kept.length ? (at + overlapS) * 1000 : 0 },
+    'the adminApi.clientSecret value was adopted as a new client secret' +
+    (kept.length ? ', and the ' + kept.length + ' it replaces go on ' +
+                   'authenticating for oauth2.clientSecretOverlapS' : ''));
+  log.debug("Leaving adoptPinnedSecret(). Adopted.");
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -14932,6 +15368,37 @@ function fieldsWithDescription(fields, record) {
 // that grows with use is no restriction. An EMPTY list restricts nothing
 // (rcbj's answer), as for a client_id nobody declared anything about.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE RESPONSE MODES A CLIENT MAY ASK FOR (#2247, ASVS 5.0.0 10.4.12), held
+// by the authorization endpoint in every mode beside the server's own
+// `response_modes_supported`. An EMPTY list restricts nothing, the rule of
+// `oauthResponseType`, so no client that exists today is changed by it.
+// Read by stored name: this module is the application register's codec.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the response modes a client may ask for (`oauthResponseMode`).
+ *
+ * @param clientId - the client id
+ * @returns the list, or null when the client lists none (or is unknown)
+ */
+function allowedResponseModesOf(clientId) {
+  log.debug("Entering allowedResponseModesOf().");
+  const loaded = load(String(clientId || ''));
+  if (!loaded.known) {
+    log.debug("Leaving allowedResponseModesOf(). Not known.");
+    return null;
+  }
+  const modes = valuesOf((loaded.record.fields || {}).oauthResponseMode)
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one, index, all) {
+      return one !== '' && all.indexOf(one) === index;
+    });
+  log.debug("Leaving allowedResponseModesOf(). " + modes.length + ".");
+  return modes.length ? modes : null;
+}
+
 /**
  * Returns the grant and response types a client declares, which the endpoints
  * hold it to in every mode.
@@ -17646,12 +18113,22 @@ const API_PERMISSIONS = Object.freeze({
                           '/admin-api/pep-audit (REMOTE_PEPS)']]) }),
   'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
     permissions: Object.freeze([
-      ['account:manage', 'The person\'s own account, through /account-api']
+      ['account:manage', 'The person\'s own account, through /account-api'],
+      // #2168: what the portal signs in with, a read and nothing else.
+      ['account:read', 'Read the person\'s own account, through ' +
+                       '/account-api, and change nothing'],
+      // The #1955 review: an SSH command line's narrower grant, taken only
+      // by the SSH certificate operations.
+      ['ssh:certificate', 'The person\'s SSH user certificates, through ' +
+                          '/account-api/ssh/certificates']
     ]) }),
   'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
     permissions: Object.freeze([
       ['report:use', 'Reports as a user (REPORT_USE)'],
-      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)']]) }),
+      ['report:admin', 'Reports as an administrator (REPORT_ADMIN)'],
+      // #2168: what the reports application signs in with.
+      ['report:read', 'Read reports, with the report role held ' +
+                      '(REPORT_USE or REPORT_ADMIN), and change nothing']]) }),
   // THE AUTHZEN AUTHORIZATION API (#563). AuthZEN defines no scope (section
   // 11.2 leaves the PEP's authentication to the deployment), so the word is
   // this service's. A client asks for it on client_credentials with
@@ -17961,13 +18438,12 @@ function internalApplications() {
                     oauthMaxAuthAgeS: '28800',
                     oauthRefreshTokenTtlS: '28800',
                     oauthRefreshIdleSeconds: '3600',
-                    oauthDelegatedPermission: delegatedPermissionGrants({
-                      'sts-account-api': ['account:manage'],
-                      'sts-management-api': ['owner:read', 'owner:write'] }),
+                    oauthDelegatedPermission: delegatedPermissionGrants(
+                      PORTAL_GRANTS),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access',
-                                         'account:manage', 'owner:read',
-                                         'owner:write'] },
+                                         'account:manage', 'account:read',
+                                         'owner:read', 'owner:write'] },
       registration: {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
@@ -18025,11 +18501,11 @@ function internalApplications() {
                     oauthMaxAuthAgeS: '3600',
                     oauthRefreshTokenTtlS: '3600',
                     oauthRefreshIdleSeconds: '900',
-                    oauthDelegatedPermission: delegatedPermissionGrants({
-                      'sts-report-api': ['report:use', 'report:admin'] }),
+                    oauthDelegatedPermission: delegatedPermissionGrants(
+                      REPORT_GRANTS),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'report:use',
-                                         'report:admin'] },
+                                         'report:admin', 'report:read'] },
       registration: {
         client_id: 'sts-report',
         client_name: 'Reports',
@@ -18172,7 +18648,13 @@ function internalApplications() {
         client_secret: (realms.isDefault() &&
                         String(config.value('adminApi.clientSecret') || '')) ||
                        randomId(24),
-        client_secret_expires_at: 0,
+        // A LIFETIME, AS EVERY OTHER SECRET HAS (#2220): it expires
+        // oauth2.clientSecretLifetimeDays after it is seeded (0 means
+        // never), the daily client-secret job warns before then, and a
+        // rotation — the console's, or a new adminApi.clientSecret
+        // adopted at start — replaces it. An entry seeded before #2220
+        // keeps the 0 it was written with.
+        client_secret_expires_at: defaultClientSecretExpiry(issued),
         registration_access_token: randomId(24),
         registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
                                  '/oauth2/register/sts-api-client',
@@ -18274,7 +18756,25 @@ function seedInternalApplication(spec) {
 // list names each addition rather than filling every row of the table, so a
 // permission somebody took off before this release does not come back.
 const PERMISSIONS_ADDED_SINCE_SEED = Object.freeze({
-  'sts-management-api': Object.freeze(['xacml:pep-audit'])
+  'sts-management-api': Object.freeze(['xacml:pep-audit']),
+  // #2168: the two read scopes the portal and the reports application now
+  // sign in with.
+  'sts-account-api': Object.freeze(['account:read']),
+  'sts-report-api': Object.freeze(['report:read'])
+});
+
+// THE DELEGATED PERMISSION GRANTS THE PORTAL AND THE REPORTS APPLICATION ARE
+// SEEDED WITH, one table each for the seed and the fill below (#2168): each
+// signs in with a READ scope (`account:read`, `report:read`) and asks a
+// second authorization for the scope that writes the first time it writes,
+// so an entry seeded before 1.2.0 is given the read one on the next start.
+const PORTAL_GRANTS = Object.freeze({
+  'sts-account-api': Object.freeze(['account:manage', 'account:read']),
+  'sts-management-api': Object.freeze(['owner:read', 'owner:write'])
+});
+const REPORT_GRANTS = Object.freeze({
+  'sts-report-api': Object.freeze(['report:use', 'report:admin',
+                                   'report:read'])
 });
 
 // THE DELEGATED PERMISSION GRANTS `sts-remote-pep` IS SEEDED WITH (#1827 and
@@ -18294,6 +18794,18 @@ const REMOTE_PEP_GRANTS = Object.freeze({
 // added — one an administrator took off before this release is added again,
 // which is the cost of a list that cannot tell "never had" from "removed".
 const CLIENT_GRANTS_ADDED_SINCE_SEED = Object.freeze({
+  'sts-user-portal': Object.freeze({
+    grants: Object.freeze({
+      'sts-account-api': Object.freeze(['account:read'])
+    }),
+    consents: Object.freeze(['account:read'])
+  }),
+  'sts-report': Object.freeze({
+    grants: Object.freeze({
+      'sts-report-api': Object.freeze(['report:read'])
+    }),
+    consents: Object.freeze(['report:read'])
+  }),
   'sts-remote-pep': Object.freeze({
     grants: Object.freeze({
       'sts-xacml-pep-api': Object.freeze(['xacml:pep']),
@@ -18568,6 +19080,8 @@ function seedInternalApplications(options) {
   // #1717: the debugger's api is no longer an application of its own.
   if (wanted === 'default') {
     retireDebuggerApiApplication();
+    // #2220: a changed adminApi.clientSecret, adopted as a rotation.
+    adoptPinnedSecret();
   }
   // #825: an entry that already existed is left alone by the seed above.
   // Fill only the bound attributes that are absent, and never a number
@@ -19056,6 +19570,8 @@ module.exports = {
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
   declaredFlowsOf: declaredFlowsOf,
+  allowedResponseModesOf: allowedResponseModesOf,
+  FLOW_RESPONSE_MODES: FLOW_RESPONSE_MODES,
   // #1296: the token response types a client is allowed, and the four.
   allowedTokenResponseTypesOf: allowedTokenResponseTypesOf,
   TOKEN_RESPONSE_TYPES: TOKEN_RESPONSE_TYPES,
@@ -19084,6 +19600,7 @@ module.exports = {
   authorizationDetailsTypeNameProblem: authorizationDetailsTypeNameProblem,
   authorizationDetailsMetadataProblem: authorizationDetailsMetadataProblem,
   authorizationDetailsAttributeProblem: authorizationDetailsAttributeProblem,
+  accessTypeWriteProblem: accessTypeWriteProblem,
   stepUpAttributeProblem: stepUpAttributeProblem,
   stepUpRequirementOf: stepUpRequirementOf,
   audienceNamesEntry: audienceNamesEntry,
@@ -19170,6 +19687,9 @@ module.exports = {
   removeClientSecret: removeClientSecret,
   sweepClientSecrets: sweepClientSecrets,
   sweepClientSecretsInSlices: sweepClientSecretsInSlices,
+  autoRotateClientSecrets: autoRotateClientSecrets,
+  clientSecretAutoRotation: clientSecretAutoRotation,
+  adoptPinnedSecret: adoptPinnedSecret,
   secretExpiryOf: secretExpiryOf,
   clientSecretRecordsOf: clientSecretRecordsOf,
   registrationAccessTokenOf: registrationAccessTokenOf,

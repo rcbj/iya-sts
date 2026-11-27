@@ -1,0 +1,399 @@
+---
+title: Signing out
+nav_order: 9
+---
+
+# Signing out of everything
+
+Every protocol family here that can sign somebody **in** has a sign-out of its
+own, and each one signs them out of itself:
+
+| Endpoint | What it is |
+|---|---|
+| `GET|POST /oauth2/logout` | OpenID Connect RP-Initiated Logout — asks the person to confirm unless a verified `id_token_hint` names the session |
+| `GET|POST /wsfed?wa=wsignout1.0` | WS-Federation 1.2 section 13.2.4 |
+| `GET|POST /saml2/slo` | SAML 2.0 Single Logout |
+
+None of those is the question most people arrive with, which is *what am I still
+signed into, and how do I stop being signed into it*. That question is
+protocol-independent, and so is `/logout`.
+
+## `GET /logout`
+
+Lists everything this service is still holding for one identity — across every
+family — with a checkbox against each.
+
+```
+GET /logout
+    no session cookie -> 302 /authn/login  -> back here signed in
+    a session cookie  -> the list
+
+GET /logout?username=alice        somebody else's list (development mode only)
+GET /logout?format=json           the same thing, for a test
+```
+
+**The page is drawn in your browser** (since 2026-10-12): `/logout` answers a
+small document whose script, `/logout/signout.js`, reads the list from
+`GET /authn-api/logout` and sends what you press to `POST /authn-api/logout`.
+It needs JavaScript; with scripts blocked it says so and shows nothing else.
+The Global logout is at the top, the checkboxes are beside each row, and
+**pressing "End the ticked items" with nothing ticked ends nothing.**
+
+When the sign-out leaves your browser something to do — loading an
+application's Front-Channel Logout page, a WS-Federation cleanup image, a
+SAML `LogoutRequest` link or a partner's sign-out — the page you land on is
+`/logout/signed-out`, drawn by the service with those in it, exactly as the
+sign-out page always drew them. Otherwise the result is drawn in place.
+Either way, the result tells you to close the browser tab when you are done:
+the sign-out ends what this service holds, not the pages the tab has shown.
+
+Signing out may mean signing in first. This service has no other way to know who
+is asking, and the session that creates is listed with everything else. **No
+console role is needed, and that is not an oversight**: signing yourself out
+must not require a role that signing in did not.
+
+**`?username=` naming somebody else works in development mode only.** In product
+mode a password is verified at every door, so an anonymous request naming a
+person would be a way to end their sessions and revoke their tokens with no
+credential at all; there, `/logout` acts only on the signed-in caller (naming
+yourself is fine) and anything else is a 403 pointing at `/admin/logout` and
+`POST /admin-api/logout`, which require an administrator's credential.
+
+## `POST /logout`
+
+Ends what was named, and answers JSON. **A POST that names nothing ends
+everything** — that is the default and the point of the endpoint. The body is
+JSON (or the request asks for JSON with `Accept: application/json`); a form
+posted here ends nothing and is sent to the page with a `303`, because the
+page's own sign-out is `POST /authn-api/logout`, bound to your browser's
+session.
+
+A request from a page of another site is refused with `403`. A program that
+sends no `Origin` or `Sec-Fetch-Site` header is not affected.
+
+**Ending your OTHER sessions needs a recent sign-in** in product mode: one within
+`account.recentAuthMinutes` (15 minutes by default in product, not asked in
+development). A request that names another session of yours is otherwise refused
+with `403` and `"error": "reauthentication_required"`; sign in again at
+`/authn/login` and send it again. The sign-out page (`POST /authn-api/logout`)
+asks the same: it says that ending your other sessions needs a recent sign-in,
+with a link that signs you in again and brings you back to the page, where you
+tick them again. Signing yourself out never needs one, and nor does a Global
+logout, which ends everything, this browser's session included.
+
+```bash
+# global logout for whoever holds this cookie
+curl -k -b cookies.txt -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' -d '{}'
+
+# global logout for somebody named, no cookie needed (development mode)
+curl -k -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","scope":"global"}'
+
+# just two things
+curl -k -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","select":["session:8Qk3…","token:abc…"]}'
+```
+
+Row ids come from the GET. They look like `session:<id>`, `token:<jti>`,
+`wsfed-rp:<session>|<realm>`, `code:<handle>` — and for anything whose natural
+key is a **credential**, the handle is a hash of it rather than the value: an
+authorization code in a form field is an authorization code in a browser
+history.
+
+## What it reaches
+
+| Family | Ending it |
+|---|---|
+| Browser sign-on session | dropped, through the one function every sign-out here uses — so the RFC 9700 refresh-token revocation and the audit row happen once |
+| OpenID Connect relying parties | its `frontchannel_logout_uri` loads in a hidden iframe, with `iss` and `sid` where it asked for them, and its `backchannel_logout_uri` is POSTed a signed Logout Token |
+| WS-Federation realms | `wa=wsignoutcleanup1.0` as a one-pixel image, with the URL printed beside it |
+| SAML 2.0 service providers | the signed `LogoutRequest`, offered as a link |
+| Federation partners (#167) | the identity provider a session was signed in **through**: its own sign-out — a signed `LogoutRequest`, RP-Initiated Logout with the partner's ID Token as `id_token_hint`, or `wsignout1.0` — offered as a link or a form, from `/logout` in the person's own browser only. SAML 1.1 and OAuth 2.0 partners define no sign-out and are not told. See [Federation](federation.md#a-partners-sign-out) |
+| Tokens | the `jti` joins the same revocation set `/oauth2/revoke` writes to, so `/oauth2/introspect` reports it inactive immediately |
+| Authorization codes | discarded, so no more tokens come from that sign-on |
+| Credential Offer pre-authorized codes | the same |
+| Wallet credentials that can sign this person in | **disowned** when an administrator signs the person out of everything (`/admin/logout`, `/admin-api/logout`), when the account is disabled, or when the row is ticked: every credential this realm issued to that wallet key for this person up to now stops signing anybody in at `/authn/wallet`, and its status-list entry is set INVALID so other verifiers learn it too. The credential stays in the wallet and still verifies; one issued afterwards, on a fresh sign-in, works again. **The person's own Global logout on `/logout` leaves the credential valid, and the DID it is bound to with it.** Signing out of one application does not disown it either |
+| Wallet sign-ins not yet collected | withdrawn: a wallet has presented a credential for this person and the browser that started the sign-in has not come back for the session yet, so that browser is told a sign-out ended it and nobody is signed in |
+| Directory connections | the LDAP socket is closed — the bind is the state of a *connection* (RFC 4511 §4.2), so that is the only sign-out LDAP has |
+| Kerberos | a sign-out instant on the principal; a `TGS-REQ` presenting a ticket authenticated before it is refused `KDC_ERR_TGT_REVOKED` (20) |
+
+## What it cannot reach — and lists anyway
+
+**This is the part worth reading before relying on any of it.** A SAML assertion
+already in a service provider's hands, a Kerberos *service* ticket already in a
+cache and an X509-SVID already minted cannot be ended — not by this service and
+not by a real one. The reason is the same in all three cases: **nothing consults
+the issuer when they are presented.** A relying party checks a signature and some
+`Conditions` and asks nobody. A Kerberos service decrypts a ticket with its own
+key. An SVID verifies against a bundle it already has.
+
+So those rows appear on the page with a dash instead of a checkbox and a sentence
+saying why. Hiding them would make a global logout look complete when it is not,
+which is the most misleading thing this endpoint could do.
+
+Three more limits, all honest rather than missing:
+
+* **A Kerberos service ticket keeps working against the service that accepts
+  it.** The sign-out instant is checked at the *KDC*, and accepting a service
+  ticket never contacts the KDC. A fresh `AS-REQ` also succeeds — signing out
+  is not being locked out — but does not lift the instant (#111): its new
+  ticket is accepted, and every ticket-granting ticket from before the
+  sign-out, renewed or not, stays refused until the latest one could still be
+  valid — the sign-out plus the longer of the ticket and renew lifetimes, plus
+  the clock skew — on every node.
+
+  Worth being plain about: **Kerberos itself has no logout, no session and no
+  revocation.** There is no CRL, no status query and no list of issued tickets —
+  a KDC deliberately keeps no state about what it has issued, which is what
+  lets one be replicated read-only. A ticket is valid because it decrypts and
+  hasn't expired, a service accepts one with its own key without contacting
+  the KDC, and short lifetimes are the entire revocation model.
+  `KDC_ERR_TGT_REVOKED` (20) is a registered error code whose text says what is
+  meant (RFC 4120 §7.5.9), but no specification defines a mechanism that emits
+  it. What this service does is an invention using the one lever a real KDC
+  has — the `TGS-REQ`, which is the only moment the KDC is back in the loop,
+  and the same lever that makes disabling an Active Directory account bite
+  within the service-ticket lifetime rather than the TGT's. Do not read it as
+  conformance.
+
+  The check is on the ticket's `authtime`, not its issue time, because a
+  renewed ticket deliberately preserves `authtime`; checking anything else
+  would let a renewal launder a signed-out ticket back into a live one.
+* **An LDAP client sees its connection end mid-conversation.** The connection
+  is the session, so the sign-out is the socket closing, which is what a
+  directory revoking a session looks like from the other end. An *Unsolicited
+  Notice of Disconnection* (RFC 4511 section 4.4.1) would be the polite form,
+  and node-ldapjs has no way to send one.
+* **SPIFFE is not in the list at all.** A SPIFFE identity is a workload, attested
+  per call, holding no session. The registry can end an identity's ability to
+  obtain *another* SVID, which is a ban rather than a logout; that lives at
+  `/admin/cert-issuance#cert-spiffe-overview`.
+
+## Front-channel logout
+
+`/logout` — and `/oauth2/logout`, and the console — perform **OpenID Connect
+Front-Channel Logout 1.0** for any client that registered a
+`frontchannel_logout_uri`:
+
+```bash
+curl -k -X POST https://localhost:8081/oauth2/register \
+  -H 'Content-Type: application/json' -d '{
+    "client_name": "demo",
+    "redirect_uris": ["http://localhost:3000/callback"],
+    "frontchannel_logout_uri": "http://localhost:3000/logout",
+    "frontchannel_logout_session_required": true }'
+```
+
+With that registered, the discovery document says
+`frontchannel_logout_supported: true`, an ID Token issued on a browser session
+carries a `sid` naming that session, and every sign-out renders
+
+```html
+<iframe src="http://localhost:3000/logout?iss=…&sid=…">
+```
+
+plus the same URL as a visible link. The link is not decoration: the
+specification says the provider **cannot know** whether a front-channel
+notification succeeded, so a dead relying party, a certificate your browser will
+not accept and a mistyped URI all look identical to success. Clicking it is the
+only way to see which happened.
+
+`iss` and `sid` are sent only to a client that registered
+`frontchannel_logout_session_required`; the specification says they are otherwise
+omitted. The discovery document says `frontchannel_logout_session_supported:
+true`. `iss` is the issuer that client's ID Token named. For a client of a
+named authorization server (`/tenant1/oauth2/…`), that is the named server's
+issuer, even when you sign out somewhere else.
+
+**The `frontchannel_logout_uri` must be on a redirect URI's origin**: the same
+scheme, host and port as one of the client's `redirect_uris` (section 2). In
+the example above, both are on `http://localhost:3000`. A registration, a
+console edit or an `/admin-api` write that breaks the rule is refused. A stored
+URI that breaks it, for example after the matching redirect URI was removed,
+is not framed, and the sign-out page lists that client with the reason.
+
+**Returning to the application.** After `/oauth2/logout` with a
+`post_logout_redirect_uri`, a page that notifies relying parties returns to
+that address by itself after `oauth2.frontchannelLogoutWaitS` seconds (default
+3). That gives the iframes time to load. The page also shows the address as a
+link. Set the wait to `0` to return only when the link is followed.
+
+## Back-channel logout
+
+A relying party can also be told **without your browser**. Register a
+`backchannel_logout_uri` (and, if you like,
+`backchannel_logout_session_required`) the same way:
+
+```bash
+curl -s -X POST http://localhost:8081/oauth2/register \
+  -H 'Content-Type: application/json' \
+  -d '{"redirect_uris":["http://localhost:3000/cb"],
+       "backchannel_logout_uri": "https://rp.example/bc-logout",
+       "backchannel_logout_session_required": true}'
+```
+
+Discovery then says `backchannel_logout_supported: true` and
+`backchannel_logout_session_supported: true`. Whenever a session that client
+was signed into ends — **any** sign-out: this page, `/oauth2/logout`,
+WS-Federation's `wsignout1.0`, SAML Single Logout, the console or the
+management API — this service POSTs
+`application/x-www-form-urlencoded` with a `logout_token` to that address. The
+token is a JWT typed `logout+jwt`, signed like that client's ID Token, and
+carries `iss`, `aud`, `iat`, `exp`, `jti`, `sub`, `sid` and the
+`http://schemas.openid.net/event/backchannel-logout` event — never a `nonce`.
+
+What to expect:
+
+* **It happens after the sign-out answers.** The result page lists each
+  delivery as `pending`; `/admin/logout` shows whether it was `sent` or became
+  a **dead letter**, and every final outcome is a `logout.backchannel` row on
+  the audit log. The list is the whole service's — every node's deliveries,
+  because they are rows in the shared store — and it is filtered by state,
+  searched and paged.
+* **Answer 200 (or 204).** A 400 is taken as your final refusal and is not
+  retried. A timeout, a refused connection, a 5xx, 408 or 429 is retried a few
+  times with a growing pause — see `oauth2.backchannelLogoutAttempts`,
+  `...TimeoutMs`, `...BackoffMs` and `...TokenTtlS` in
+  [configuration](configuration.md).
+* **The address has to be reachable under the outbound rules**: https with the
+  certificate verified, unless `federation.outboundAllowHttp` or
+  `federation.outboundSkipTlsVerification` is on — the ordinary case on
+  localhost, and development mode only (#171) —
+  nothing at all with `federation.outbound` off, and — in product mode — never
+  a loopback, private or link-local address.
+* **A session that simply EXPIRES sends one too**, while
+  `oauth2.backchannelLogoutOnExpiry` is on (it is by default): the
+  specification lets the provider tell its relying parties whenever its own
+  session ends. Front-channel logout cannot follow an expiry — it needs the
+  browser that is no longer there — so an idle timeout reaches your
+  `backchannel_logout_uri` and nothing else.
+* **A delivery that never lands becomes a DEAD LETTER**, kept with its reason.
+  An administrator sends it again with **Retry** on `/admin/logout`, or `POST
+  /admin-api/logout/retry-backchannel` — a new Logout Token, and your current
+  `backchannel_logout_uri`, which is the point of retrying after correcting
+  it.
+* **A restart or a node failing does not lose it.** The delivery is a row, not
+  a timer: whichever process gets there next picks it up, and exactly one sends
+  each attempt (each is claimed with a lease of its own).
+* **It is ENCRYPTED if you asked for that**: register
+  `id_token_encrypted_response_alg` (and `_enc`) with a public key in an inline
+  `jwks`, and the Logout Token arrives as a Nested JWT, encrypted to that key
+  exactly as your ID Tokens are.
+
+## What the browser is told to clear
+
+When a sign-out leaves no other account signed in to this browser, in this realm
+or any other, the answer carries `Clear-Site-Data: "storage"`. Other accounts and
+other realms share this origin's storage, so while one is signed in the header is
+not sent. The console, the portal and the report
+application also clear their own tab's storage before they leave for `/logout`,
+so a sign-out that never gets an answer still leaves no token behind. The one
+thing a tab keeps is the name of the account it was signed in as, so that its
+next sign-in asks for that account rather than becoming another account still
+signed in to the browser. Cookies
+are expired one by one instead of through `Clear-Site-Data`, which would reach
+every other realm's cookies on the same domain.
+
+## The Sign out button on the console and the portal
+
+This service's own two web surfaces each have a **Sign out** button — at the
+top of every page of `/admin`, and at the top of every page of `/portal`. On
+the console it is in the **account menu**, the drop-down in the head row
+labelled with the name you are signed in as; the menu's other row is a link to
+your own account in the user portal.
+
+| Button | What it ends |
+|---|---|
+| the console's **Sign out** | it goes to `/logout` below: the sign-on session, and with it everything issued on it — the console's own tokens among them |
+| `POST /portal/signout` | the portal's session **and the sign-on session behind it** |
+
+**The portal's ends two sessions, and it has to.** The portal is an ordinary
+OpenID Connect client of this service (`sts-user-portal`), so it holds a
+session of its own on top of the sign-on session you have with the identity
+provider. A button that ended only the application's session would sign nobody
+out: the next page runs the authorization code flow, meets the sign-on session
+that is still live, and lets you back in with nothing typed.
+
+**The console holds no session of its own** (since 2026-10-05): it is a static
+page holding a DPoP-bound access token in the browser's memory, so its Sign
+out is the global one, and its refresh token is refused once the sign-on
+session it was issued on has ended.
+
+**The portal's is the NARROW sign-out.** What it does not touch is anything
+already issued to other applications — access and refresh tokens, Kerberos
+tickets, credential offers, LDAP binds. `/logout` below is the one that ends
+those, and the portal draws a button for it at the foot of its **Overview**
+page.
+
+## The other two doors
+
+| | Who it is for | Difference |
+|---|---|---|
+| `/logout` | a person, about themselves | no console role needed; it is the browser that loads the notifications |
+| `/admin/logout` | an operator, about somebody else | behind the console's two roles; filtered and paged; has two **NON-SPEC** undos — restoring a revoked token, and clearing a Kerberos sign-out instant (development mode only) |
+| `GET|POST /admin-api/logout` | a test | four operations: `global`, `end`, `restore-token`, `restore-kerberos` (refused in product mode) |
+
+All three call one pair of functions, which is what stops them coming to
+disagree about what a live session is.
+
+**What a session IS, in each of the three senses this service uses the word,
+is [Sessions](sessions.md).** This page is about ending one.
+
+## And a fourth, asking it across everybody
+
+The three above are keyed on ONE identity. `/admin/sessions` — with
+`GET /admin-api/sessions` and `POST /admin-api/sessions/revoke` beside it — is
+the same model asked across the whole service: every session it is holding right
+now, in the three protocols that have one, with a Revoke on each row that calls
+the same termination. **End every session in this realm**, below the list
+(`POST /admin-api/sessions/end-all`), ends every sign-on session started before
+that moment, yours included; it revokes no token. See
+[Sessions](sessions.md#how-one-ends).
+
+| Kind | Why it is a session | When it expires |
+|---|---|---|
+| Browser sign-on session | the cookie from `/authn/login`, which OAuth 2.0 / OIDC, WS-Federation, both SAML profiles and the console all read | at an **absolute** instant fixed when it was created (`authn.sessionLifetimeS`) — **using it does not extend it** — or, where `authn.sessionIdleTimeoutS` is set, once it has gone that long unused |
+| Kerberos ticket-granting ticket | a TGT *is* the Kerberos session; a service ticket is one use of it | at the `endtime` the KDC sealed into the ticket, which nothing here can move |
+| LDAP connection | RFC 4511 section 4.2 makes a Bind the authorization state of a *connection* | **never** — it lasts until the next Bind, an Unbind, or the socket closing |
+
+Revoking is not one act across the three, and each row says which it is before
+the button is pressed: a browser session ends with its relying parties notified
+and its refresh tokens revoked; an LDAP row closes a socket; a Kerberos row
+stamps a sign-out instant on the **principal**, refusing every ticket that
+principal authenticated before now, and still reaches no service ticket already
+in a cache.
+
+## A partner ending the session
+
+A federation partner's own sign-out — a SAML `LogoutRequest`, an OpenID
+Connect Back-Channel or Front-Channel logout, a WS-Federation cleanup the
+person confirms — ends the session that partner started, and only that one,
+through this same model: the session and the relying parties riding on it,
+each told as above, with `federation.signout` on the audit log. A partner's
+SAML `SessionNotOnOrAfter` ends the session when it passes, as an expiry. See
+[Federation](federation.md#a-partners-sign-out).
+
+## A session that simply runs out
+
+It ends the same way, and says so the same way. An expiry
+writes the `session.end` audit row and emits CAEP's `session-revoked` like any
+other ending — with `initiating_entity: policy`, because nobody signed out: a
+lifetime ran out. A sweep runs every 30 seconds so that this happens whether or
+not anybody comes back to look, which is the difference between telling a
+receiver and telling it only if somebody happens to return.
+
+## Turning parts of it off
+
+Two of these mechanisms take something away that used to keep working, and every
+refusal in this service is switchable — see [configuration](configuration.md):
+
+| Setting | Off means |
+|---|---|
+| `logout.kerberosSignOut` | the KDC behaves exactly as it did before this existed |
+| `logout.ldapDisconnect` | directory connections are left alone, and listed as untouched rather than hidden |
+| `logout.anyUser` | `?username=` is refused; `/logout` acts only on the caller's own session. **Product mode behaves as if this were off, whatever it says** |
+| `oauth2.frontchannelLogout` | no front-channel advertisement and no iframes; the `sid` claim stays while back-channel logout is on |
+| `oauth2.backchannelLogout` | no back-channel advertisement and no Logout Tokens; with both off, the ID Tokens carry no `sid`, byte-for-byte what this service issued before either |

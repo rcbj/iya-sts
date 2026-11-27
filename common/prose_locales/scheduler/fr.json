@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "Expiration des approbations à deux personnes"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "Fait passer à expiré chaque acte d'administration retenu pour un second administrateur (#2166) dont l'échéance est dépassée, en écrivant sa ligne d'audit, supprime un acte terminé une semaine après sa fin et répare la liste des actes en attente. Une lecture applique elle-même l'échéance : ceci est l'enregistrement et le nettoyage, jamais ce qui décide."
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "Sources d’attributs : actualisation planifiée"
@@ -36,8 +44,8 @@
     "text": "Expiration des demandes d’accès AuthZEN"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "e0a885271868119c",
-    "text": "Fait passer à expired toute demande d’accès AuthZEN (#1180) en attente dont l’expires_at est dépassé — en écrivant sa ligne d’audit et en envoyant son rappel (callback) — et supprime une demande terminée un jour après sa fin, ou une fois son approbation écoulée si c’est plus tard. Une lecture applique elle-même l’échéance ; il s’agit donc de l’enregistrement et du nettoyage, jamais de ce qui décide."
+    "en": "19cf8cda48af4f1e",
+    "text": "Fait passer à expired chaque demande d’accès AuthZEN en attente (#1180) dont l’expires_at est dépassé — en écrivant sa ligne d’audit et en envoyant son rappel —, supprime une demande terminée un jour après sa fin, ou à l’échéance de son approbation si elle est plus tardive, supprime un refus demandable un jour après sa fenêtre, et retente une livraison de rappel ayant échoué par une erreur réseau ou un HTTP 5xx, jusqu’à la limite de tentatives, chaque attente doublant la précédente (#1202). Une demande terminée est conservée tant que son rappel est encore tenté, et une demande en attente dont les approbateurs ne désignent personne passe à failed. Une lecture applique elle-même l’échéance : ceci est l’enregistrement et le nettoyage, jamais ce qui décide."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -78,6 +86,22 @@
   "sched.jobs.cluster.rate-window-purge.describe": {
     "en": "772463775db370a2",
     "text": "Supprime de la table que partagent tous les nœuds les fenêtres de limitation de débit écoulées."
+  },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Relecture des secrets partagés"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Relit les secrets partagés depuis le stockage dans ce processus, afin qu’une rotation effectuée sur n’importe quel nœud soit utilisée ici."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotation des secrets partagés"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Effectue la rotation de chaque secret partagé qui est une clé (les clés CSRF, de nonce ACME, du récepteur Shared Signals, de page OpenID Federation, du résultat de déconnexion et DBSC) tous les cluster.secretRotationDays : une valeur suivante est publiée, devient courante dix minutes plus tard, et l’ancienne reste acceptée pendant cluster.secretOverlapS. Les secrets de sujet pairwise et de nom d’amorçage sont des identifiants et ne changent jamais."
   },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
@@ -143,6 +167,30 @@
     "en": "71471822b228b1b8",
     "text": "Supprime les totaux cumulés conservés pour les limites de chaque autorisation GNAP une fois l’autorisation terminée, lorsqu’aucun de ses jetons ne peut plus être présenté (#432)."
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "Jetons matériels sur les entrées"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "Écrit sur les entrées de leurs titulaires les jetons matériels, OATH et YubiKey OTP dont l’écriture sur l’entrée n’a pas eu lieu et, à sa première exécution dans un processus, copie sur son titulaire chaque jeton enregistré avant qu’ils ne soient conservés sur les entrées."
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "Index des jetons matériels reconstruits"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "Réécrit le registre des jetons matériels et les inventaires OATH et YubiKey OTP à partir des jetons des entrées des personnes, qui font foi : à lancer à la main après une restauration ou quand un index contredit une entrée."
+  },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "Rotation du signataire d’attestations"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "Fait passer la famille de clés de chaque signataire d’attestations dédié à une nouvelle clé dès que sa clé a keys.credentialSignerRotationIntervalDays. La clé remplacée ne signe plus rien et reste publiée, de sorte que chaque attestation qu’elle a signée continue d’être vérifiée."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Décompte des valeurs par clé de chiffrement des données"
@@ -175,6 +223,14 @@
     "en": "a4d23163545ebff6",
     "text": "Effectue maintenant la rotation de chaque clé de chiffrement des données stockée — ou de celles d’un domaine, ou d’une classe ; les clés qu’elles remplacent continuent d’ouvrir ce qu’elles ont scellé jusqu’à ce que ce soit rescellé."
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "Rotation des clés de déchiffrement des requêtes"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "Remplace les clés de chiffrement des objets de requête, la clé de chiffrement des requêtes OpenID4VCI et les clés de déchiffrement KEM dès qu’elles ont keys.encryptionKeyRotationIntervalDays. La nouvelle clé est publiée aussitôt ; celle qu’elle remplace déchiffre encore pendant keys.encryptionKeyOverlapDays."
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "Rotation de la clé de chiffrement de clé, manuelle"
@@ -199,6 +255,14 @@
     "en": "6fffa44535aa160d",
     "text": "Effectue maintenant la rotation de la clé krbtgt du domaine. Avec invalidate, aucune version précédente n’est conservée : chaque TGT émis auparavant est refusé et un événement Shared Signals le signale."
   },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "Rotation des clés de service Kerberos"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "Remplace la clé que ce service a créée pour son propre accepteur par une nouvelle clé aléatoire au kvno suivant dès qu’elle a krb5.serviceKeyRotationIntervalDays, en conservant celle qu’elle remplace aussi longtemps qu’un ticket émis sous elle peut vivre, et jamais tant que cette fenêtre est ouverte. Une clé dont le keytab a été remis est signalée comme due au lieu d’être renouvelée : son service doit installer le nouveau keytab."
+  },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
     "text": "Maintenance du miroir des connexions LDAP"
@@ -206,6 +270,14 @@
   "sched.jobs.ldap.connection-mirror-maintenance.describe": {
     "en": "76f7213ce5e8a506",
     "text": "Supprime les connexions LDAP mises en miroir des nœuds qui ne sont plus membres, ainsi que les instructions de déconnexion arrivées au terme de leur durée de vie."
+  },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "Rappels d’expiration des identifiants"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "Envoie à chaque personne dont un certificat expire dans l’un des délais de mail.expiryReminderDays un rappel nommant chacun de ceux concernés : ce que c’est, le jour de son expiration et comment le renouveler, un message par personne, chaque certificat une fois par étape. Ne lit que les lignes de l’index d’expiration dues aujourd’hui ou dans les trente derniers jours, jamais l’annuaire, sauf une tranche de personnes par exécution jusqu’à ce que les certificats détenus avant l’existence de l’index aient été enregistrés."
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -244,8 +316,8 @@
     "text": "Expiration des secrets client"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Vérifie chaque secret client de chaque application : une ligne d’audit pour une application qui en détient un expirant dans les oauth2.clientSecretExpiryWarningDays, et pour une application dont tous les secrets ont expiré ; et supprime les secrets expirés qu’une application détient à côté d’un secret non expiré — jamais son dernier, qui reste et est refusé en mode produit."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Vérifie chaque secret client de chaque application : une ligne d’audit pour une application qui en détient un expirant dans les oauth2.clientSecretExpiryWarningDays, et pour une application dont tous les secrets ont expiré ; et supprime les secrets expirés qu’une application détient à côté d’un secret non expiré — jamais son dernier, qui reste et est refusé en mode produit. Il renouvelle d’abord le secret de chaque application listée dans oauth2.clientSecretAutoRotate qui expire dans les oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",
@@ -383,6 +455,14 @@
     "en": "98370fb755b4ba95",
     "text": "Dans un service déployé en cellules, supprime de la base de données du niveau global les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention, par les mêmes lots ; son exécution est réclamée dans le niveau global, de sorte qu’une seule cellule exécute chaque créneau. Désactivé dans un service à une seule base de données, où l’autre balayage le couvre."
   },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "Renouvellement des certificats d’AC"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "Renouvelle la racine, puis chaque AC intermédiaire, puis chaque AC émettrice entrée dans son délai d’anticipation (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) avec la même clé et le même sujet, de sorte que tout ce qu’elle a signé est encore vérifié. Une racine renouvelée est publiée à côté de celle qu’elle remplace jusqu’à l’expiration de celle-ci. Une AC importée est à renouveler par son opérateur."
+  },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
     "text": "Audit des certificats épinglés"
@@ -396,8 +476,16 @@
     "text": "Courrier des activités après connexion"
   },
   "sched.jobs.post-login.activity-mail.describe": {
-    "en": "5081eadb5d5abbeb",
-    "text": "Envoie aux personnes qu'atteint une activité après connexion en cours (#1111) un rappel de se connecter, où l'activité leur demande alors d'enregistrer une clé d'accès post-quantique. Lit à chaque exécution une tranche de la population de chaque activité lancée (le domaine, ou l'union de ses groupes) après un curseur, n'écrit qu'aux personnes à qui l'activité est due, jamais dans l'intervalle de rappel ni au-delà de son maximum, et écrit une ligne d'audit par activité lancée et par exécution."
+    "en": "9e62432e54429d50",
+    "text": "Envoie aux personnes qu'atteint une activité après connexion en cours (#1111) un rappel de se connecter, où l'activité leur demande alors de la faire : enregistrer une clé d'accès post-quantique, une clé de chiffrement des e-mails post-quantique ou un nouveau certificat PIV, chaque activité avec son propre message. Lit à chaque exécution une tranche de la population de chaque activité lancée (le domaine, ou l'union de ses groupes) après un curseur, n'écrit qu'aux personnes à qui l'activité est due, jamais dans l'intervalle de rappel ni au-delà de son maximum, et écrit une ligne d'audit par activité lancée et par exécution."
+  },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "Clés OpenPGP classiques conservées, retirées"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "Retire une clé OpenPGP classique que l’activité post-connexion de chiffrement du courrier a conservée à côté de la clé post-quantique qui l’a remplacée (#2009, D3), une fois écoulés les mailKeepClassical jours du profil : de l’entrée de la personne et donc du Web Key Directory. Ne parcourt que les lignes des clés conservées, jamais l’annuaire, et écrit une ligne d’audit par clé retirée. Une clé dont le temps est passé est déjà absente de l’annuaire et de toute page, que cette tâche ait tourné ou non."
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
@@ -655,6 +743,38 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Met en pause, désactive ou supprime un flux dont le récepteur est inactif depuis ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), en annonçant d’abord une pause ou une désactivation par un événement stream-updated, et envoie un événement de vérification à chaque flux activé qui n’en a reçu aucun de ce transmetteur depuis ssf.verificationEveryS (section 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "Certificats utilisateur SSH sur les entrées"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "Écrit sur les entrées de leurs titulaires (stsSshUserCertificate) les certificats utilisateur SSH dont l’écriture sur l’entrée a échoué à la délivrance, retire ceux qui ont expiré et, à sa première exécution dans un processus, copie sur leurs titulaires les certificats délivrés avant qu’ils ne soient conservés sur les entrées."
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Liste de révocation de l’AC utilisateurs SSH"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Actualise la KRL de l’AC utilisateurs OpenSSH de chaque domaine après les révocations de certificats délivrés et supprime les révocations expirées."
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "Renouvellement de la réponse OCSP agrafée"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "Reproduit la réponse OCSP qu'agrafe chaque écouteur de ce processus (le port principal, LDAPS, le débogueur et les écouteurs personnalisés), à partir du propre répondeur de ce service, à chaque quart de pki.crlLifetimeMinutes, afin qu'une réponse agrafée soit toujours bien antérieure à son nextUpdate et qu'une révocation faite ailleurs l'atteigne. S'exécute dans le processus frontal de chaque nœud."
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "Renouvellement du certificat de l’écouteur"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "Renouvelle le certificat que présentent le port principal, LDAPS et le débogueur de ce processus, avec la même clé, dès qu’il reste moins d’un tiers de sa validité ou qu’il entre dans tls.serverCertificateRenewLeadDays, et le place sur chaque socket sans redémarrage. S’exécute dans le processus frontal de chaque nœud, qui transmet le certificat renouvelé à ses workers de requêtes."
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "Rotation de la clé de tickets de session TLS"
@@ -670,6 +790,14 @@
   "sched.jobs.uma.sweep.describe": {
     "en": "167f79e724fe8b34",
     "text": "Supprime chaque ticket de permission, jeton de claims persisté, enregistrement de RPT et approbation de propriétaire en attente de User-Managed Access ayant dépassé sa durée de vie (#1168). Une lecture applique elle-même l’échéance : ceci est donc le nettoyage, jamais ce qui décide."
+  },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Balayage des nonces d’OTP Yubico"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "Écarte les nonces YK-VAL de plus de cinq minutes, et les plus anciens au-delà de dix mille, afin que la carte des nonces ne grandisse pas."
   },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",

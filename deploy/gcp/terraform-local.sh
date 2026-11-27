@@ -19,6 +19,11 @@
 #   deploy/gcp/terraform-local.sh dev plan
 #   IMAGE_TAG=<tag> deploy/gcp/terraform-local.sh testidp apply
 #   TF_STACK=foundation deploy/gcp/terraform-local.sh dev apply   # administrator
+#   TF_STACK=pep-cluster IMAGE_TAG=<tag> [PEP_CLUSTER=aws] [PEP_MODE=shared] \
+#     [PEP_COUNT=2] [PEP_REALM=id] [PEP_AUTOSCALING_MAX=n] [PEP_COMPANION=true] \
+#     [PEP_IDP_URL=https://…] deploy/gcp/terraform-local.sh testpep apply
+#     # a remote PEP cluster, an environment of its own (#1284);
+#     # deploy/gcp/pep-cluster/provision.sh first, and again after the apply
 #
 # CREDENTIALS: your application-default credentials (`gcloud auth
 # application-default login`, in $CLOUDSDK_CONFIG or ~/.config/gcloud), handed
@@ -100,7 +105,7 @@ trap 'rm -f "${CREDS_ENV_FILE}"' EXIT
 printf 'GCP_ADC_B64=%s\n' "$(base64 -w0 < "${GCLOUD_DIR}/application_default_credentials.json")" > "${CREDS_ENV_FILE}"
 
 TF_VARS=()
-if [ "${TF_STACK}" = "environment" ] && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ] || [ "${TF_ACTION}" = "import" ]; };
+if { [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "pep-cluster" ]; } && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ] || [ "${TF_ACTION}" = "import" ]; };
 then
   [ -n "${IMAGE_TAG:-}" ] || { echo "ERROR: ${TF_ACTION} needs IMAGE_TAG." >&2; exit 1; }
   if [ -z "${ALLOWED_CIDR:-}" ];
@@ -120,6 +125,20 @@ then
     TF_VARS+=(-e TF_VAR_bootstrap_admin_username)
 fi
 
+# A REMOTE PEP CLUSTER (#1284, deploy/gcp/pep-cluster/): each knob only when
+# it is set, so the stack's own default (or its envs/<env>.tfvars) stands.
+if [ "${TF_STACK}" = "pep-cluster" ];
+then
+  TF_VARS+=(-e "TF_PEP_CLUSTER=${PEP_CLUSTER:-aws}")
+  [ -z "${PEP_MODE:-}" ] || TF_VARS+=(-e "TF_VAR_credential_mode=${PEP_MODE}")
+  [ -z "${PEP_COUNT:-}" ] || TF_VARS+=(-e "TF_VAR_instance_count=${PEP_COUNT}")
+  [ -z "${PEP_REALM:-}" ] || TF_VARS+=(-e "TF_VAR_realm=${PEP_REALM}")
+  [ -z "${PEP_AUTOSCALING_MAX:-}" ] || TF_VARS+=(-e "TF_VAR_autoscaling_max=${PEP_AUTOSCALING_MAX}")
+  [ -z "${PEP_IMAGE:-}" ] || TF_VARS+=(-e "TF_VAR_pep_image=${PEP_IMAGE}")
+  [ -z "${PEP_COMPANION:-}" ] || TF_VARS+=(-e "TF_VAR_companion=${PEP_COMPANION}")
+  [ -z "${PEP_IDP_URL:-}" ] || TF_VARS+=(-e "TF_VAR_idp_url=${PEP_IDP_URL}")
+fi
+
 for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy TF_IMPORT_ADDRESS TF_IMPORT_ID IYA_STS_DEPLOYER; do
   [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
 done
@@ -129,7 +148,7 @@ echo "==> Building ${IMAGE_NAME}" >&2
   -f "$(hostPath "${REPO_ROOT}/deploy/gcp/Dockerfile")" \
   "$(hostPath "${REPO_ROOT}")" > /dev/null
 
-CONTAINER_NAME="iya-sts-terraform-gcp-${TF_ENV}-$$"
+CONTAINER_NAME="iya-sts-terraform-gcp-${TF_ENV}${PEP_CLUSTER:+-pep-${PEP_CLUSTER}}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" > /dev/null 2>&1 || true

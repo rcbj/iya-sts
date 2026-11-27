@@ -22,7 +22,7 @@ namespace IyaSts.Directory;
   container: "ou=users",
   ownContainer: true,
   authored: true,
-  section: "docs/v1.1.0/ldap-schema.md People",
+  section: "docs/v1.2.0/ldap-schema.md People",
   note: "No SCHEMA export. One person is one entry, RDN uid.",
   objectClasses: #[
     #{
@@ -62,6 +62,16 @@ model Person {
   mail?: (string)[];
   @attr(#{what: "Certificates stored on the person, as userCertificate;binary (base64 DER). A certificate from an outside certificate authority is an identity only as the one entry storing it, byte for byte. Written from the person's console page, /admin-api/users/add-certificate and remove-certificate, or an LDAP modify."})
   userCertificate?: (string)[];
+  @attr(#{what: "The person's S/MIME certificates (RFC 2798), as userSMIMECertificate;binary: base64 DER, or a PKCS #7 bundle. Mail to the person is encrypted to the first that can receive it when they choose S/MIME (stsMailEncryption). Public. Written by /portal/openpgp, /admin-api/users/openpgp and an LDAP modify; never a sign-in credential."})
+  userSMIMECertificate?: (string)[];
+  @attr(#{kind: "multi", what: "The OpenSSH user certificates the realm's SSH user CA issued the person that are live: one JSON value per certificate, its serial, the certificate itself in OpenSSH text form (absent for one issued before #2050, whose text was never kept), the key's type and fingerprint, its principals, when it expires and which authority signed it (#2050). Public. The master: ssh_user_ca.issued is its index. Written by issuance; removed at revocation, at the lost-key retirement of its key and when it expires. Removing a value revokes that certificate; a value the CA did not issue to this person, or one revoked or expired, written here is refused and taken off again."})
+  stsSshUserCertificate?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The hardware tokens the person holds or holds a credential on, one JSON value per token: its key (vendor/serial), vendor, serial, model, firmware, form factor, whether it is FIPS, its status and loss, the attestation evidence, whether this person is its holder, and their credentials on it (#2051). The master: hardware_tokens.register is its index. A serial comes only from attestation. Never a secret."})
+  stsHardwareToken?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The imported OATH tokens assigned to the person, one JSON value each: the inventory key, kind (hotp or totp), vendor, serial, model, key id, status and who assigned it when and how (#2051). The master: oath_tokens.inventory is its index. Never the secret, which is the person's HOTP or TOTP credential."})
+  stsOathToken?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The imported YubiKey OTP tokens assigned to the person, one JSON value each: serial, public identity, credential id, status, and when it was imported and assigned (#2051). The master: yubiotp.inventory and yubiotp.publicIds are its indexes. Never the AES key, which is stsYubiOtpCredential."})
+  stsYubiOtpToken?: (DirectoryJson)[];
   @attr(#{what: "The person's job title, released as the job_title claim and mapped by SCIM."})
   title?: (string)[];
   @attr(#{what: "The person's relationship to the organisation, such as employee or contractor, released as the employee_type claim and mapped by SCIM."})
@@ -135,6 +145,10 @@ model Person {
   userPrincipalName?: string;
   @attr(#{kind: "multi", what: "The person's registered WebAuthn public keys, one JSON value per passkey or security key. Public by design. Written by registration on /portal and the sign-in steps."})
   stsWebauthnCredential?: (DirectoryJson)[];
+  @attr(#{kind: "multi", what: "The FIPS 201 card UUIDs of the person's outside PIV or CAC cards, one lower-case UUID per card (no urn:uuid: prefix). A card certificate from one of the realm's piv.externalIssuers that names one of these in its urn:uuid subjectAltName signs this person in (#1955). Written by an administrator; a reissued card has a new UUID."})
+  stsPivCardUuid?: (string)[];
+  @attr(#{kind: "multi", what: "The person's certificate sign-in bindings, one canonical value each: certificate-sha256:<sha256>, issuer-serial:<issuer spki sha256>:<serial>, issuer-ski:<issuer spki sha256>:<ski>, spki-sha256:<sha256>, issuer-subject:<issuer spki sha256>:<subject DN> or subject:<subject DN>. A client certificate that one of the realm's certSignIn.profiles covers and whose binding matches signs this person in (#2012). Written by an administrator; held unique."})
+  stsCertificateBinding?: (string)[];
   @attr(#{kind: "single", what: "The public half of the person's Kerberos keys, one JSON value: the key version number, the encryption types and when they were derived."})
   stsKrb5KeyInfo?: DirectoryJson;
   @attr(#{kind: "multi", what: "The person's RFC 7486 HOBA client public keys, one value per key as `<kid> <base64 DER>`, registered at /.well-known/hoba/register. Public."})
@@ -161,6 +175,10 @@ model Person {
   stsProfilePhoto?: DirectoryJson;
   @attr(#{kind: "single", what: "The person's RFC 6238 authenticator secret, one JSON value. Sealed under the key-encryption key in product mode, and withheld from every read.", sensitive: true})
   stsTotpCredential?: DirectoryJson;
+  @attr(#{kind: "single", what: "The person's RFC 4226 HOTP credential (#1955), one JSON value: the shared secret, the digits, the next counter the token is expected to show, and for a vendor-provisioned token an administrator imported (PSKC) the token it is. Sealed under the key-encryption key in product mode, and withheld from every read.", sensitive: true})
+  stsHotpCredential?: DirectoryJson;
+  @attr(#{kind: "single", what: "The person's YubiKey OTP credential (#1955 P5), one JSON value: the public identity in the clear, and the AES key and private identity sealed together. The server holds the key, so a sign-in is amr otp and never hwk. Withheld from every read.", sensitive: true})
+  stsYubiOtpCredential?: DirectoryJson;
   @attr(#{kind: "single", what: "The person's app passwords, one JSON value holding each one's name, the doors it is scoped to, its scrypt hash and its last use. Withheld from every read.", sensitive: true})
   stsAppPassword?: DirectoryJson;
   @attr(#{kind: "single", what: "The scrypt hash of a pending password reset link an administrator or the person started. Withheld from every read.", sensitive: true})
@@ -231,6 +249,18 @@ model Person {
   oauthConsentApplied?: (string)[];
   @attr(#{kind: "multi"})
   stsAndroidAttestedCredential?: (string)[];
+  @attr(#{kind: "single", what: "The person's OpenPGP public key, armored: one transferable public key (v4 or v6) whose user id names the entry's mail and which signed a registration challenge (#1955). Public. Written by /portal/openpgp and /admin-api/users/openpgp only."})
+  stsOpenPgpKey?: string;
+  @attr(#{kind: "single", what: "The fingerprint of stsOpenPgpKey, lower-case hex: 40 characters for a v4 key, 64 for a v6 one (#1955). Written with the key."})
+  stsOpenPgpFingerprint?: string;
+  @attr(#{kind: "single", what: "What the portal and console draw about stsOpenPgpKey, one JSON value: its version, algorithms, the user ids that matched, when it was registered and by whom, and whether the person publishes it in the Web Key Directory (#1955). Written with the key and by the publication choice."})
+  stsOpenPgpKeyInfo?: DirectoryJson;
+  @attr(#{kind: "single", what: "The person's CLASSICAL OpenPGP public key, armored, kept beside the post-quantum key that replaced it at the post-login mail-encryption activity (#2009 P2, rcbj's D3): published in the Web Key Directory with the new key until stsOpenPgpClassicalKeyInfo's keptUntil, then removed by the job post-login.mail-classical-retire. Mail from this service is never encrypted to it. Public. Written by common/openpgp_keys.ts only."})
+  stsOpenPgpClassicalKey?: string;
+  @attr(#{kind: "single", what: "What is drawn about stsOpenPgpClassicalKey, one JSON value: its fingerprint, algorithms, when it was replaced and keptUntil, the instant it is removed (#2009 P2). Written and removed with the key."})
+  stsOpenPgpClassicalKeyInfo?: DirectoryJson;
+  @attr(#{kind: "single", what: "How mail to the person is encrypted: none, openpgp (PGP/MIME to stsOpenPgpKey) or smime (S/MIME to userSMIMECertificate), chosen on /portal/openpgp (#1955). Absent is none."})
+  stsMailEncryption?: string;
   @attr(#{kind: "single"})
   stsWebauthnUserHandle?: DirectoryBase64;
   @attr(#{kind: "single"})
@@ -269,6 +299,8 @@ model Person {
   stsAuthzenApplication?: (string)[];
   @attr(#{kind: "multi"})
   stsAuthzenCallbackUri?: (string)[];
+  @attr(#{kind: "single"})
+  stsPepApplication?: string;
   @attr(#{kind: "multi"})
   stsAssertionIssuer?: (string)[];
   @attr(#{kind: "multi"})

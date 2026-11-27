@@ -57,6 +57,10 @@
 
 import WebPage = require('./web_page');
 import WebAccounts = require('./web_accounts');
+import WebI18n = require('./web_i18n');
+import WebMessages = require('./web_messages');
+import WebSafeDom = require('./web_safe_dom');
+import WebDocLinks = require('./web_doc_links');
 
 type Json = any;
 
@@ -75,6 +79,23 @@ interface SpaClientOptions {
   // The sessionStorage key the tab's account is kept under (#561):
   // `sts-console-account`, `sts-portal-account`.
   accountKey?: string;
+  // THE SCOPES A SECOND AUTHORIZATION MAY ADD (#2168): what a write may
+  // need beyond the read scope the application signs in with. A challenge
+  // naming anything else starts no step.
+  writeScopes?: string[];
+  // Those of them that are asked for with a fresh sign-in (`prompt=login`,
+  // `max_age=0`), never silently: `admin:security`.
+  freshScopes?: string[];
+}
+
+/**
+ * One write token (#2168): the access token a second authorization gave for
+ * one resource, when it stops being used, and the scopes it carries.
+ */
+interface WriteGrant {
+  token: string;
+  expiresAt: number;
+  scopes: string[];
 }
 
 /**
@@ -118,6 +139,21 @@ class SpaClient extends WebPage {
   // could abort it.
   protected identity: number;
   protected identityController: Json;
+  // THE WRITE TOKENS (#2168), by the resource each is audienced to, and the
+  // scopes a step may add and those it asks with a fresh sign-in.
+  protected writeGrants: Record<string, WriteGrant>;
+  protected writeScopes: string[];
+  protected freshScopes: string[];
+  // The step in progress (#2168), so two writes pressed together share one
+  // second authorization; null when none is.
+  protected stepping: Json;
+  // THE REALM WHOSE AUTHORIZATION SERVER ISSUED THE TOKENS IN HAND (#1038,
+  // #2200): its prefix, null until a runtime records one. A runtime whose
+  // realm switcher keeps the token while the page moves to another realm
+  // (the console's, the reports application's) goes on asking THIS realm
+  // for every token — a refresh, a second authorization (#2168) — while
+  // the pages and the API calls name the realm on screen.
+  protected issuerPrefix: string | null;
 
   /**
    * Makes the client.
@@ -146,6 +182,11 @@ class SpaClient extends WebPage {
     this.accountChannel = null;
     this.identity = 0;
     this.identityController = null;
+    this.writeGrants = {};
+    this.writeScopes = (options.writeScopes || []).slice(0);
+    this.freshScopes = (options.freshScopes || []).slice(0);
+    this.stepping = null;
+    this.issuerPrefix = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -315,6 +356,7 @@ class SpaClient extends WebPage {
     this.publicJwk = null;
     this.nonce = '';
     this.metadata = null;
+    this.writeGrants = {};
   }
 
   /**
@@ -377,6 +419,185 @@ class SpaClient extends WebPage {
   // `SpaClient.queryOf()` is `WebPage.queryOf()`, inherited.
 
   // --- encoding and crypto -------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // WEBCRYPTO IS ASKED FOR BEFORE ANYTHING ELSE (#2143, ASVS 5.0.0 3.7.5).
+  //
+  // Every sign-in this class makes needs it: the PKCE verifier and the DPoP
+  // `jti` are `getRandomValues()`, the challenge and `ath` are `digest()`,
+  // the key is `generateKey()` and `exportKey()`, every proof is `sign()`,
+  // and a JARM answer is `importKey()` and `verify()`. A browser holds
+  // `crypto.subtle` only in a SECURE CONTEXT, so a page reached over plain
+  // HTTP (or in a browser too old to have it) used to fail at the first
+  // `generateKey()` with an unhandled rejection and a blank page. Each
+  // runtime asks `webCryptoMissing()` before it wires or draws anything, and
+  // where it answers true draws one sentence, in the page's language, from
+  // `noWebCryptoWords()` — and starts no sign-in, because one could not be
+  // finished.
+  // ---------------------------------------------------------------------------
+  /**
+   * The WebCrypto calls a sign-in makes, each a method of `crypto.subtle`.
+   */
+  static readonly WEBCRYPTO_CALLS: string[] = ['digest', 'generateKey',
+    'exportKey', 'importKey', 'sign', 'verify'];
+
+  /**
+   * Whether this browser lacks what a sign-in needs from WebCrypto.
+   *
+   * @param env - the browser's objects; `env.crypto` is asked
+   * @returns true when `crypto`, `crypto.getRandomValues` or any of
+   *   `WEBCRYPTO_CALLS` on `crypto.subtle` is missing
+   */
+  static webCryptoMissing(env: Json): boolean {
+    const c = env ? env.crypto : null;
+    if (!c || typeof c.getRandomValues !== 'function' || !c.subtle) {
+      return true;
+    }
+    return SpaClient.WEBCRYPTO_CALLS.some(function (name) {
+      return typeof c.subtle[name] !== 'function';
+    });
+  }
+
+  /**
+   * The words a page without WebCrypto draws, in the page's language: the
+   * namespace's `noWebCrypto.title` and `noWebCrypto.text`, and the
+   * translator they came from (with the footer's words in it).
+   *
+   * @param namespace - the surface's catalog namespace (`consoleRuntime`,
+   *   `portal`, `report`)
+   * @returns `{ t, title, text }`
+   */
+  async noWebCryptoWords(namespace: string): Promise<Json> {
+    const t = await this.problemTranslator(namespace);
+    const said = function (key: string, english: string): string {
+      const full = namespace + '.' + key;
+      return t.has(full) ? t.text(full) : english;
+    };
+    return {
+      t: t,
+      title: said('noWebCrypto.title', 'This browser cannot open this page'),
+      text: said('noWebCrypto.text', 'This browser cannot run this page ' +
+        'securely: WebCrypto is unavailable, usually because the page was ' +
+        'not opened over HTTPS or the browser is too old.')
+    };
+  }
+
+  /**
+   * The translator a page drawn before sign-in says a problem with: the
+   * namespace's catalogs (and, with every `WebI18n`, the `browser` one), or
+   * none where no catalog can be had, so the English is drawn.
+   *
+   * @param namespace - the surface's catalog namespace
+   * @returns the translator
+   */
+  async problemTranslator(namespace: string): Promise<Json> {
+    let t: Json = null;
+    try {
+      t = await new WebI18n(this.env, this, [namespace]).load();
+    } catch (e) {
+      // No catalog to be had: the English is drawn instead.
+      t = WebMessages.WebTranslator.fromData(null);
+    }
+    return t;
+  }
+
+  // ---------------------------------------------------------------------------
+  // SESSION STORAGE IS ASKED FOR TOO, BESIDE WEBCRYPTO (#2220, ASVS 5.0.0
+  // 3.1.1). A sign-in keeps its PKCE verifier, its `state` and where it
+  // began in `sessionStorage` until the browser comes back from
+  // `/oauth2/authorize`. A browser that blocks it — private browsing, site
+  // data refused — threw at `setItem()` (or, in some, at the bare
+  // `window.sessionStorage`), and the sign-in never finished, with nothing
+  // said. Each entry hands its runtime `storageOf()`, which never throws, and
+  // each runtime asks `sessionStorageMissing()` before anything, beside
+  // `webCryptoMissing()`, and draws `noStorageWords()` in its place.
+  // ---------------------------------------------------------------------------
+  /**
+   * The key a write is tried under, and removed at once.
+   */
+  static readonly STORAGE_PROBE = 'sts-storage-probe';
+
+  /**
+   * The window's `sessionStorage`, or null where reading it throws (a
+   * browser that blocks site data refuses the property itself).
+   *
+   * @param w - the window
+   * @returns the storage, or null
+   */
+  static storageOf(w: Json): Json {
+    try {
+      return (w && w.sessionStorage) || null;
+    } catch (e) {
+      // Refused: the runtime says so at start (`sessionStorageMissing()`).
+      return null;
+    }
+  }
+
+  /**
+   * Whether this browser lacks the `sessionStorage` a sign-in needs: there
+   * is none, or a write to it throws.
+   *
+   * @param env - the browser's objects; `env.sessionStorage` is asked
+   * @returns true when a sign-in could not keep its record
+   */
+  static sessionStorageMissing(env: Json): boolean {
+    const store = env ? env.sessionStorage : null;
+    if (!store || typeof store.setItem !== 'function' ||
+        typeof store.getItem !== 'function' ||
+        typeof store.removeItem !== 'function') {
+      return true;
+    }
+    try {
+      store.setItem(SpaClient.STORAGE_PROBE, '1');
+      const read = store.getItem(SpaClient.STORAGE_PROBE);
+      store.removeItem(SpaClient.STORAGE_PROBE);
+      return read !== '1';
+    } catch (e) {
+      // A quota of nothing, or storage refused: the same for a sign-in.
+      return true;
+    }
+  }
+
+  /**
+   * The words a page without session storage draws, in the page's
+   * language: `browser.noStorage.title` and `browser.noStorage.text`, and
+   * the translator they came from.
+   *
+   * @param namespace - the surface's catalog namespace
+   * @returns `{ t, title, text }`
+   */
+  async noStorageWords(namespace: string): Promise<Json> {
+    const t = await this.problemTranslator(namespace);
+    return {
+      t: t,
+      title: t.has('browser.noStorage.title')
+        ? t.text('browser.noStorage.title')
+        : 'This browser cannot sign you in here',
+      text: t.has('browser.noStorage.text')
+        ? t.text('browser.noStorage.text')
+        : 'This browser does not let this page use session storage, which ' +
+          'signing in needs. Private browsing and some privacy settings ' +
+          'block it: allow site data for this site, then reload the page.'
+    };
+  }
+
+  /**
+   * The link to what this service needs from a browser (#2220), as a
+   * paragraph, in the page's language: what each "this browser cannot"
+   * page carries.
+   *
+   * @param t - the page's translator, or null
+   * @returns the markup
+   */
+  static browserSupportHtml(t: Json): string {
+    const label = t && t.has && t.has('browser.requirements')
+      ? t.html('browser.requirements')
+      : 'What this service needs from a browser';
+    return '<p class="sts-browser-support"><a href="' +
+      WebDocLinks.esc(WebDocLinks.browserSupport()) +
+      '" rel="noopener noreferrer">' + label + '</a></p>';
+  }
+
 
   /**
    * Base64url without padding.
@@ -524,6 +745,31 @@ class SpaClient extends WebPage {
   // --- the authorization server --------------------------------------------
   // (This realm's address for a path, `url()`, is `WebPage`'s.)
 
+  /**
+   * The address of a path at the realm that issued the tokens in hand
+   * (`issuerPrefix`, #2200): the authorization server's endpoints, the
+   * callback a token is redeemed at, and the resource a token is for. The
+   * realm on screen's where none was recorded, or it is that realm.
+   *
+   * @param path - `/oauth2/token`, `/admin/callback`, `/admin-api`
+   * @returns the absolute URL
+   */
+  issuerUrl(path: string): string {
+    if (this.issuerPrefix === null || this.issuerPrefix === this.prefix) {
+      return this.url(path);
+    }
+    // `url()` is a runtime's (the reports application's reads its own
+    // fields), so it is asked with the issuer's prefix in place, and the
+    // prefix put back before anything else can run.
+    const here = this.prefix;
+    this.prefix = this.issuerPrefix;
+    try {
+      return this.url(path);
+    } finally {
+      this.prefix = here;
+    }
+  }
+
   // A token endpoint answer with `error: use_dpop_nonce` is retried once
   // with the nonce it sent (RFC 9449 section 8).
   /**
@@ -533,7 +779,7 @@ class SpaClient extends WebPage {
    * @returns the response's JSON and status
    */
   async tokenRequest(form: Json): Promise<Json> {
-    const endpoint = this.url('/oauth2/token');
+    const endpoint = this.issuerUrl('/oauth2/token');
     // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and an answer
     // that comes back after one is not kept.
     const identity = this.identity;
@@ -594,7 +840,7 @@ class SpaClient extends WebPage {
     let json: Json = {};
     try {
       const res = await this.env.fetch(
-        this.url('/.well-known/oauth-authorization-server'),
+        this.issuerUrl('/.well-known/oauth-authorization-server'),
         { headers: { 'Accept': 'application/json' } });
       json = res.status === 200 ? await res.json() : {};
     } catch (e) {
@@ -606,7 +852,7 @@ class SpaClient extends WebPage {
     // server it was fetched from. One that does not is ignored, as if none had
     // answered.
     const meta = json || {};
-    const expected = String(this.url('')).replace(/\/+$/, '');
+    const expected = String(this.issuerUrl('')).replace(/\/+$/, '');
     this.metadata = meta.issuer && String(meta.issuer) !== expected ? {} : meta;
     return this.metadata;
   }
@@ -635,7 +881,7 @@ class SpaClient extends WebPage {
    * @returns the URL to send the browser to
    */
   async authorizationRequestUrl(params: Json): Promise<string> {
-    const authorize = this.url('/oauth2/authorize');
+    const authorize = this.issuerUrl('/oauth2/authorize');
     const meta = await this.asMetadata();
     // JARM WHERE THE REALM OFFERS NOTHING ELSE (FAPI 2.0 Message Signing,
     // which leaves only the JWT-secured modes in `response_modes_supported`):
@@ -657,7 +903,7 @@ class SpaClient extends WebPage {
       return authorize + '?' + SpaClient.formOf(params);
     }
     const endpoint = String(meta.pushed_authorization_request_endpoint ||
-                            this.url('/oauth2/par'));
+                            this.issuerUrl('/oauth2/par'));
     // NO DPoP PROOF ON THE PUSH: a proof there binds the authorization code
     // to its key (RFC 9449 section 10), and the key is this page load's —
     // the callback is another page load, with another key that cannot
@@ -811,7 +1057,7 @@ class SpaClient extends WebPage {
     let keys: Json[] = [];
     try {
       const res = await this.env.fetch(String(meta.jwks_uri ||
-        this.url('/oauth2/jwks')),
+        this.issuerUrl('/oauth2/jwks')),
         { headers: { 'Accept': 'application/json' } });
       keys = ((await res.json()) || {}).keys || [];
     } catch (e) {
@@ -986,6 +1232,543 @@ class SpaClient extends WebPage {
     if (nonce) {
       this.nonce = nonce;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // A WRITE SCOPE, ASKED FOR WHEN A WRITE NEEDS IT (#2168, ASVS 5.0.0 10.2.3).
+  //
+  // rcbj's decision: the console, the portal and the reports application
+  // sign in with READ scopes only. The first time a write needs a write
+  // scope, the application gets it through a SECOND AUTHORIZATION — silent
+  // (`prompt=none`) while the sign-on session holds, and for a scope in
+  // `freshScopes` (`admin:security`) a FRESH sign-in: silent only if the
+  // session authenticated within FRESH_MAX_AGE_S (`max_age`), a new sign-in
+  // (`prompt=login`, `max_age=0`) otherwise — and keeps the read token for
+  // reading.
+  //
+  //   * THE SERVER SAYS WHICH SCOPE. A 403 carrying RFC 6750 section 3.1's
+  //     `insufficient_scope` challenge names it (`insufficientScopeOf()`);
+  //     the application keeps no table of its own. Only the scopes it may
+  //     ask for (`writeScopes`) start a step, so a refusal no step can mend
+  //     is drawn as it always was.
+  //   * TWO TOKENS. The read token is kept and refreshed as before. A write
+  //     token, per resource, is used for every method but GET while it
+  //     lives, and is NEVER refreshed: the second authorization's refresh
+  //     token is not kept, and the token is dropped at its own expiry or
+  //     after WRITE_HOLD_MS, whichever is first. The next write after that
+  //     steps again, silently while the session holds.
+  //   * IN A POPUP. `/oauth2/authorize` forbids framing on every answer
+  //     (`frame-ancestors 'none'`, which must stay), so the request goes in
+  //     a window of its own, opened straight after the refusal — within the
+  //     click that sent the write, which is what lets a browser open it.
+  //     Its callback hands the code back over STEP_CHANNEL and closes
+  //     (`handBackStepUp()`); this page redeems it with its own verifier and
+  //     DPoP key, so the write token is bound to the same key as the read
+  //     one. A bar over the page says what is happening, and offers the
+  //     button that opens the window where a browser blocked it or a sign-in
+  //     is needed, and Cancel.
+  //   * THE WRITE WAITING ON IT STAYS IN MEMORY: it is the caller's own
+  //     closure, awaiting `stepUp()`, and is sent once more when it answers
+  //     true. Nothing about it is written to storage. Only where the browser
+  //     has no window to open or no channel to hear the answer on does the
+  //     page leave (`leaveForStepUp()`), and that loses the write, which
+  //     each runtime says.
+  // ---------------------------------------------------------------------------
+  /**
+   * The state prefix that marks a second authorization's callback.
+   */
+  static readonly STEP_STATE_PREFIX = 'step.';
+  /**
+   * The channel a second authorization's callback answers on.
+   */
+  static readonly STEP_CHANNEL = 'sts-spa-step';
+  /**
+   * The longest a write token is used, in milliseconds, whatever its own
+   * lifetime.
+   */
+  static readonly WRITE_HOLD_MS = 10 * 60 * 1000;
+  /**
+   * How long before a write token's end it is no longer sent, in
+   * milliseconds.
+   */
+  static readonly WRITE_EARLY_MS = 30 * 1000;
+  /**
+   * How recent a sign-in a scope in `freshScopes` asks for before a person is
+   * asked to sign in again, in seconds (`max_age`).
+   */
+  static readonly FRESH_MAX_AGE_S = 300;
+  /**
+   * The authorization errors a silent step answers that a sign-in in the
+   * window can mend (OpenID Connect Core section 3.1.2.6).
+   */
+  static readonly INTERACTION_ERRORS: string[] = ['login_required',
+    'interaction_required', 'consent_required', 'account_selection_required'];
+
+  /**
+   * The scopes a 403's `insufficient_scope` challenge names (RFC 6750
+   * section 3.1), or none for any other answer.
+   *
+   * @param res - a fetch response
+   * @returns the scope values named
+   */
+  static insufficientScopeOf(res: Json): string[] {
+    if (!res || res.status !== 403 || !res.headers ||
+        typeof res.headers.get !== 'function') {
+      return [];
+    }
+    const challenge = String(res.headers.get('WWW-Authenticate') || '');
+    if (!/error="insufficient_scope"/.test(challenge)) {
+      return [];
+    }
+    const named = /scope="([^"]*)"/.exec(challenge);
+    return named ? named[1].split(/\s+/).filter(Boolean) : [];
+  }
+
+  /**
+   * The write token for a resource while it may still be sent, or ''.
+   *
+   * @param resource - the resource indicator the token is audienced to
+   * @returns the token, or ''
+   */
+  writeTokenFor(resource: string): string {
+    const grant = this.writeGrants[String(resource)];
+    const now = this.env.now ? this.env.now() : Date.now();
+    if (!grant || now > grant.expiresAt - SpaClient.WRITE_EARLY_MS) {
+      delete this.writeGrants[String(resource)];
+      return '';
+    }
+    return grant.token;
+  }
+
+  /**
+   * The token a request is sent with: a GET's is always the read token,
+   * anything else the write token for its resource while one is held.
+   *
+   * @param method - the request's method
+   * @param resource - the resource indicator
+   * @returns the token, or '' where none is held
+   */
+  tokenFor(method: string, resource: string): string {
+    const verb = String(method || 'GET').toUpperCase();
+    if (verb === 'GET' || verb === 'HEAD') {
+      return this.accessToken;
+    }
+    return this.writeTokenFor(resource) || this.accessToken;
+  }
+
+  /**
+   * Stops using a write token: it was refused, or a sign-in replaced it.
+   *
+   * @param resource - the resource indicator, or nothing for every one
+   * @returns nothing
+   */
+  dropWriteToken(resource?: string): void {
+    if (resource === undefined) {
+      this.writeGrants = {};
+      return;
+    }
+    delete this.writeGrants[String(resource)];
+  }
+
+  /**
+   * The scopes a write token for a resource carries, while it is held.
+   *
+   * @param resource - the resource indicator
+   * @returns the scope values
+   */
+  writeScopesHeld(resource: string): string[] {
+    return this.writeTokenFor(resource)
+      ? this.writeGrants[String(resource)].scopes.slice(0) : [];
+  }
+
+  /**
+   * The words of the step's bar, in English. A runtime with a translator
+   * overrides this with its catalog's.
+   *
+   * @returns `{ pending, blocked, signIn, fresh, open, cancel, refused,
+   *   other, failed }`
+   */
+  stepWords(): Json {
+    return {
+      pending: 'Getting permission to make this change…',
+      blocked: 'This change needs your permission. Open the window to ' +
+        'give it.',
+      signIn: 'Sign in to make this change.',
+      fresh: 'This change needs you to sign in again.',
+      open: 'Continue',
+      cancel: 'Cancel',
+      refused: 'Permission to make this change was not given: ',
+      other: 'That sign-in was another account, so nothing was sent.',
+      failed: 'Permission to make this change could not be had.'
+    };
+  }
+
+  // THE RUNTIME'S HALF of a step. Each application has its own client
+  // registration, callback and way of signing in; these are the three
+  // things a step asks of it, and the base answers nothing.
+  /**
+   * The application's authorization request, with `extra` added: `scope`,
+   * `prompt`, `max_age`.
+   *
+   * @param state - the state
+   * @param verifier - the PKCE verifier
+   * @param extra - what this request adds or replaces
+   * @returns the URL
+   */
+  async authorizeUrl(state: string, verifier: string,
+                     extra?: Json): Promise<string> {
+    void state;
+    void verifier;
+    void extra;
+    return '';
+  }
+
+  /**
+   * The application's callback, the step's `redirect_uri`.
+   *
+   * @returns the URL
+   */
+  callbackUrl(): string {
+    return '';
+  }
+
+  /**
+   * Where a browser with no window or no channel goes instead: a sign-in
+   * on this page, asking for `scope`. It loses the write waiting.
+   *
+   * @param scope - the scope to sign in with
+   * @param prompt - `login`, or '' for none
+   * @returns nothing
+   */
+  async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    void scope;
+    void prompt;
+  }
+
+  /**
+   * At the application's callback in a step's window: hands the answer to
+   * the page that opened it and closes, redeeming nothing.
+   *
+   * @param query - the opened authorization response
+   * @param path - the callback's path, which the address is put back to
+   * @returns whether this was a step's callback
+   */
+  handBackStepUp(query: Json, path: string): boolean {
+    const state = String((query && query.state) || '');
+    if (state.indexOf(SpaClient.STEP_STATE_PREFIX) !== 0) {
+      return false;
+    }
+    const win = this.env.window;
+    if (this.env.history) {
+      // The code leaves the address bar at once.
+      this.env.history.replaceState(null, '', path);
+    }
+    const BC = win && win.BroadcastChannel;
+    if (typeof BC === 'function') {
+      const channel = new BC(SpaClient.STEP_CHANNEL);
+      channel.postMessage({ state: state,
+                            code: String(query.code || ''),
+                            iss: String(query.iss || ''),
+                            error: String(query.error || ''),
+                            error_description:
+                              String(query.error_description || '') });
+      channel.close();
+    }
+    if (win && typeof win.close === 'function') {
+      win.close();
+    }
+    return true;
+  }
+
+  /**
+   * Gets a write token carrying the scopes a refusal named, by a second
+   * authorization, and keeps it for its resource.
+   *
+   * @param resource - the resource indicator the write was for
+   * @param named - the scopes the refusal named
+   * @param fresh - whether a fresh sign-in is asked for whatever is named
+   * @returns true when a write token carrying every scope asked for is held
+   *   and the write may be sent again; false otherwise
+   */
+  async stepUp(resource: string, named: string[],
+               fresh?: boolean): Promise<boolean> {
+    const self = this;
+    // ONE AT A TIME: a second write waits for the step in progress, and
+    // then asks again only for what it did not bring.
+    while (this.stepping) {
+      await this.stepping;
+    }
+    const wanted = (named || []).filter(function (one: string): boolean {
+      return self.writeScopes.indexOf(one) >= 0;
+    });
+    if (!wanted.length || !this.subject) {
+      return false;
+    }
+    const held = this.writeScopesHeld(resource);
+    if (!fresh && wanted.every(function (one: string): boolean {
+      return held.indexOf(one) >= 0;
+    })) {
+      return true;
+    }
+    const step = this.stepOnce(resource, wanted, held, !!fresh);
+    this.stepping = step;
+    try {
+      return await step;
+    } finally {
+      this.stepping = null;
+    }
+  }
+
+  /**
+   * One second authorization, the body of `stepUp()`.
+   *
+   * @param resource - the resource indicator
+   * @param wanted - the scopes asked for
+   * @param held - the scopes the write token in hand carries
+   * @param fresh - whether a fresh sign-in is asked for
+   * @returns whether a write token carrying every scope asked for is held
+   */
+  async stepOnce(resource: string, wanted: string[], held: string[],
+                 fresh: boolean): Promise<boolean> {
+    const self = this;
+    // FOUR KINDS OF REQUEST. `silent` (`prompt=none`) for an ordinary write
+    // scope, answered out of the session; `recent` (`prompt=none`,
+    // `max_age=FRESH_MAX_AGE_S`) for a scope in `freshScopes`, answered out
+    // of the session only if it authenticated within that window
+    // (OpenID Connect Core section 3.1.2.1), so a person who has just signed
+    // in is not asked twice; and, where the session cannot answer either,
+    // `signIn` (no prompt) and `fresh` (`prompt=login`, `max_age=0`), which
+    // ask something of the person in the window. A step after RFC 9470's
+    // `insufficient_user_authentication` (#1538) starts at `fresh`: the
+    // server has said the sign-in is too old for its own window.
+    const must = wanted.some(function (one: string): boolean {
+      return self.freshScopes.indexOf(one) >= 0;
+    });
+    // THE READ SCOPES, THE ELEVATION ALREADY HELD AND THE ONE ASKED FOR, so
+    // one write token serves every write on the resource; issuance still
+    // narrows it to the roles held.
+    const scopes: string[] = [];
+    String(this.scope || '').split(/\s+/).concat(held, wanted)
+      .forEach(function (one: string) {
+        if (one && scopes.indexOf(one) < 0) {
+          scopes.push(one);
+        }
+      });
+    const scope = scopes.join(' ');
+    const win = this.env.window;
+    const BC = win && win.BroadcastChannel;
+    if (!win || typeof win.open !== 'function' || typeof BC !== 'function') {
+      await this.leaveForStepUp(scope, must || fresh ? 'login' : '');
+      return false;
+    }
+    const words = this.stepWords();
+    const channel = new BC(SpaClient.STEP_CHANNEL);
+    let request: Json = null;
+    const prepare = async function (kind: string): Promise<void> {
+      const verifier = self.random(32);
+      const state = SpaClient.STEP_STATE_PREFIX + self.random(16);
+      const extra: Json = { scope: scope };
+      if (kind === 'silent' || kind === 'recent') {
+        extra.prompt = 'none';
+      }
+      if (kind === 'recent') {
+        extra.max_age = String(SpaClient.FRESH_MAX_AGE_S);
+      }
+      if (kind === 'fresh') {
+        extra.prompt = 'login';
+        extra.max_age = '0';
+      }
+      request = { verifier: verifier, state: state, kind: kind,
+                  silent: kind === 'silent' || kind === 'recent',
+                  url: await self.authorizeUrl(state, verifier, extra) };
+    };
+    try {
+      await prepare(fresh ? 'fresh' : (must ? 'recent' : 'silent'));
+      let answered: Json = null;
+      for (let round = 0; round < 3 && !answered; round++) {
+        const outcome = await this.awaitStepAnswer(channel, request, words,
+          request.silent ? words.pending
+            : (request.kind === 'fresh' ? words.fresh : words.signIn));
+        if (!outcome || outcome.cancelled) {
+          return false;
+        }
+        if (outcome.error) {
+          // A SILENT STEP THE SESSION CANNOT ANSWER: a sign-in in the
+          // window, which the person opens with the bar's button — a fresh
+          // one where a recent one was asked for.
+          if (request.silent && SpaClient.INTERACTION_ERRORS.indexOf(
+              String(outcome.error)) >= 0) {
+            await prepare(request.kind === 'recent' ? 'fresh' : 'signIn');
+            continue;
+          }
+          this.drawStepBar(words.refused + String(outcome.error_description ||
+            outcome.error), null);
+          return false;
+        }
+        answered = outcome;
+      }
+      if (!answered || !answered.code ||
+          !await this.issuerMatches(answered)) {
+        this.drawStepBar(words.failed, null);
+        return false;
+      }
+      const answer = await this.tokenRequest({
+        grant_type: 'authorization_code', code: String(answered.code),
+        redirect_uri: this.callbackUrl(), client_id: this.clientId,
+        code_verifier: request.verifier, resource: resource });
+      if (answer.aborted) {
+        return false;
+      }
+      if (answer.status !== 200 || !answer.json.access_token ||
+          !await this.nonceMatches(answer.json.id_token, request.verifier)) {
+        this.drawStepBar(words.failed, null);
+        return false;
+      }
+      // THE TAB'S PERSON, AND NOBODY ELSE: a write token for another
+      // account is not kept, and the write waiting is not sent.
+      if (!SpaClient.answerIsFor(this.subject, answer.json.id_token)) {
+        this.drawStepBar(words.other, null);
+        return false;
+      }
+      const granted = String(answer.json.scope || scope).split(/\s+/)
+        .filter(Boolean);
+      const now = this.env.now ? this.env.now() : Date.now();
+      // NO REFRESH TOKEN IS KEPT: the write token ends with its own life.
+      this.writeGrants[String(resource)] = {
+        token: String(answer.json.access_token),
+        expiresAt: Math.min(
+          now + (Number(answer.json.expires_in) || 300) * 1000,
+          now + SpaClient.WRITE_HOLD_MS),
+        scopes: granted };
+      this.removeStepBar();
+      return wanted.every(function (one: string): boolean {
+        return granted.indexOf(one) >= 0;
+      });
+    } finally {
+      channel.close();
+    }
+  }
+
+  /**
+   * Opens the step's window, or offers to, and waits for its callback's
+   * answer or the person's Cancel.
+   *
+   * @param channel - the channel the callback answers on
+   * @param request - `{ state, url }`
+   * @param words - `stepWords()`
+   * @param message - what the bar says meanwhile
+   * @returns the answer `{ code, iss, error, error_description }`, or
+   *   `{ cancelled: true }`
+   */
+  awaitStepAnswer(channel: Json, request: Json, words: Json,
+                  message: string): Promise<Json> {
+    const self = this;
+    return new Promise(function (resolve) {
+      let done = false;
+      const finish = function (value: Json): void {
+        if (done) {
+          return;
+        }
+        done = true;
+        channel.onmessage = null;
+        resolve(value);
+      };
+      channel.onmessage = function (event: Json) {
+        const data = event && event.data;
+        if (!data || String(data.state || '') !== request.state) {
+          return;
+        }
+        finish(data);
+      };
+      const open = function (): boolean {
+        const popup = self.env.window.open(request.url, 'sts-step',
+                                           'popup,width=560,height=760');
+        return !!popup;
+      };
+      // A SILENT STEP IS OPENED AT ONCE, while the click that sent the write
+      // still lets a window open. A sign-in waits for the button: it asks
+      // something of the person, who should see why first.
+      const opened = request.silent ? open() : false;
+      self.drawStepBar(opened ? message
+                              : (request.silent ? words.blocked : message),
+        { open: opened ? null : function () {
+            if (open()) {
+              self.drawStepBar(message, { cancel: function () {
+                finish({ cancelled: true });
+              } });
+            }
+          },
+          cancel: function () {
+            finish({ cancelled: true });
+          } });
+    });
+  }
+
+  /**
+   * Draws the step's bar over the page, which stays as it is under it.
+   *
+   * @param message - what it says
+   * @param actions - `{ open, cancel }`, each a function or null; null for
+   *   a bar that only says something and closes with its button
+   * @returns nothing
+   */
+  drawStepBar(message: string, actions: Json): void {
+    const doc = this.env.document;
+    if (!doc || typeof doc.createElement !== 'function' || !doc.body) {
+      return;
+    }
+    const words = this.stepWords();
+    let bar = doc.getElementById ? doc.getElementById('step-bar') : null;
+    if (!bar) {
+      bar = doc.createElement('div');
+      bar.id = 'step-bar';
+      bar.className = 'reauth';
+      if (typeof bar.setAttribute === 'function') {
+        bar.setAttribute('role', 'alertdialog');
+        bar.setAttribute('aria-live', 'polite');
+      }
+      doc.body.appendChild(bar);
+    }
+    const self = this;
+    const acts = actions || { cancel: function () {
+      self.removeStepBar();
+    } };
+    const esc = WebMessages.WebMessages.esc;
+    WebSafeDom.render(bar, '<span>' + esc(message) + '</span> ' +
+      (acts.open ? '<button type="button" data-step="open">' +
+                   esc(words.open) + '</button> ' : '') +
+      (acts.cancel ? '<button type="button" data-step="cancel">' +
+                     esc(words.cancel) + '</button>' : ''));
+    // THE CLICK OPENS THE WINDOW in its own task, as a browser asks.
+    bar.onclick = function (event: Json) {
+      const target = event && event.target;
+      const which = target && typeof target.getAttribute === 'function'
+        ? String(target.getAttribute('data-step') || '') : '';
+      if (which && typeof acts[which] === 'function') {
+        acts[which]();
+      }
+    };
+    this.stepActions = acts;
+  }
+
+  /**
+   * What the step's bar's buttons do, for a test that presses one.
+   */
+  stepActions: Json = null;
+
+  /**
+   * Takes the step's bar away.
+   *
+   * @returns nothing
+   */
+  removeStepBar(): void {
+    const doc = this.env.document;
+    const bar = doc && doc.getElementById
+      ? doc.getElementById('step-bar') : null;
+    if (bar && bar.parentNode) {
+      bar.parentNode.removeChild(bar);
+    }
+    this.stepActions = null;
   }
 }
 

@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "قيم response_type التي يجوز لهذا العميل طلبها — response_types في القسم 2 من RFC 7591، من تسجيل أو يكتبها المسؤول، وكل قيمة نوع استجابة واحد (\"code\"، \"code id_token\"). ترفض نقطة نهاية التفويض أي غيرها (unauthorized_client)، في كل وضع؛ والقائمة الفارغة لا تقيّد شيئًا. ما طلبه العميل فعلًا هو oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "قيم response_mode التي يجوز لهذا العميل طلبها — query وfragment وform_post وقيم JARM ‏jwt وquery.jwt وfragment.jwt وform_post.jwt — يكتبها مسؤول. ترفض نقطة نهاية التفويض أي قيمة أخرى (unauthorized_client)، ويُحاسَب الطلب الذي لا يسمّي أيًّا منها على الوضع الافتراضي لنوع استجابته (query لـ code وfragment لغيره)، في كل وضع؛ والقائمة الفارغة لا تقيّد شيئًا يتجاوز response_modes_supported الخاص بالخادم. لا يحمله أي عضو من RFC 7591، لذا لا يكتبه التسجيل."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "أنواع الاستجابة التي تصدر رمز وصول من نقطة نهاية التفويض — token وcode token وid_token token وcode id_token token — التي يجوز لهذا العميل استخدامها حيث يسري وضع RFC 9700 (وضع المنتج يسري دائمًا). تُحترم فقط ما دام نطاق الثقة يتنازل عن القسم 2.1.2 من RFC 9700 (oauth2.allowImplicitTokenResponses، وليس أبدًا تحت OAuth 2.1 أو FAPI)؛ وعندئذ يُرفض نوع غير مدرج هنا (unauthorized_client). فارغ افتراضيًا، والفارغ يعني لا شيء. يكتبه المسؤول أو مالك التطبيق ما دام نطاق الثقة يسمح بهذه الأنواع، أو تسجيل ديناميكي ضمن oauth2.dynamicRegistrationTokenResponseTypes. يقول القسم 2.1.2 من RFC 9700 إن العملاء SHOULD NOT يستخدمونها."
@@ -576,8 +580,8 @@
     "text": "النطاقات التي طلبها هذا التطبيق، تتراكم كلما طلب. مُشاهَدة، ولا تُعلَن أبدًا: لا يُسمح بشيء ولا يُرفض بناءً عليها. ما يجوز إصداره للتطبيق هو oauthAllowedScope."
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "النطاقات التي يجوز إصدارها لهذا العميل — `scope` في القسم 2 من RFC 7591، \"القائمة التي يمكن للعميل استخدامها عند طلب رموز الوصول\". رمز نطاق واحد لكل قيمة. ثلاثة أنواع من النطاق تقرؤه على نحو مختلف.\n\n**النطاقات المحمية الخاصة بهذه الخدمة** — admin:read وadmin:write (/admin-api)، وreport:use وreport:admin (/report-api)، ونطاقات SCIM (scim.scopeRead وscim.scopeWrite)، ونطاقات Shared Signals (ssf.authScopeRead وssf.authScopeWrite، ودائمًا ssf.read وssf.manage) وإذن المصحح — تُصدر فقط لعميل يدرجها، في كلا الوضعين. في Shared Signals تشمل الكتابة القراءة: إدراج نطاق كتابة يفوّض نطاق القراءة أيضًا، وإدراج نطاق قراءة فقط لا يفوّض نطاق كتابة. يسأل خادم الموارد خلف كل منها من جديد عند كل استدعاء، فإزالة قيمة هنا تقطع الرموز الصادرة بالفعل. لا يجوز لتسجيل RFC 7591 إعلانها؛ والمسؤول يفعل ذلك هنا.\n\n**كل نطاق آخر**، في وضع المنتج، يُصدر فقط عندما يُدرج هنا — أو، عندما لا يُدرج شيء، إذا كان في المجموعة الافتراضية: openid وprofile وemail وaddress وphone وoffline_access ونطاقات بيانات اعتماد OpenID4VCI لنطاق الثقة هذا. في التطوير يُصدر أي نطاق.\n\n**نطاق يسمّي تطبيقًا أو إذنًا مفوَّضًا** يبقي قواعده الخاصة (الجمهور، وoauthDelegatedPermission) ولا يلزم إدراجه.\n\nيُرفض النطاق الخارج عن القائمة بـ invalid_scope عند نقطتي نهاية التفويض والرمز (القسم 3.3 من RFC 6749)، ويُنزَع عن التحديث أو تبادل الرموز. وهو غير oauthScope، الذي هو فقط ما طلبه العميل."
+    "en": "00c084c993d99663",
+    "text": "النطاقات التي يجوز إصدارها لهذا العميل — `scope` في القسم 2 من RFC 7591، \"القائمة التي يمكن للعميل استخدامها عند طلب رموز الوصول\". رمز نطاق واحد لكل قيمة. ثلاثة أنواع من النطاق تقرؤه على نحو مختلف.\n\n**النطاقات المحمية الخاصة بهذه الخدمة** — admin:read وadmin:write (/admin-api)، وreport:use وreport:admin (/report-api)، ونطاقات SCIM (scim.scopeRead وscim.scopeWrite)، ونطاقات Shared Signals (ssf.authScopeRead وssf.authScopeWrite، ودائمًا ssf.read وssf.manage) وإذن المصحح — تُصدر فقط لعميل يدرجها، في كلا الوضعين. في Shared Signals تشمل الكتابة القراءة: إدراج نطاق كتابة يفوّض نطاق القراءة أيضًا، وإدراج نطاق قراءة فقط لا يفوّض نطاق كتابة. يسأل خادم الموارد خلف كل منها من جديد عند كل استدعاء، فإزالة قيمة هنا تقطع الرموز الصادرة بالفعل. لا يجوز لتسجيل RFC 7591 إعلانها؛ والمسؤول يفعل ذلك هنا.\n\n**كل نطاق آخر**، في وضع المنتج، يُصدر فقط عندما يُدرج هنا — أو، عندما لا يُدرج شيء، إذا كان في المجموعة الافتراضية التي يختارها oauth2.undeclaredClientScopes: openid وحده افتراضيًا منذ 1.2.0 (ASVS 5.0.0 10.4.11)؛ و identity يضيف profile وemail وaddress وphone؛ و legacy، وهو ما يحتفظ به مخزن تمت ترقيته، يضيف أيضًا offline_access ونطاقات بيانات اعتماد OpenID4VCI لنطاق الثقة هذا. في التطوير يُصدر أي نطاق.\n\n**نطاق يسمّي تطبيقًا أو إذنًا مفوَّضًا** يبقي قواعده الخاصة (الجمهور، وoauthDelegatedPermission) ولا يلزم إدراجه.\n\nيُرفض النطاق الخارج عن القائمة بـ invalid_scope عند نقطتي نهاية التفويض والرمز (القسم 3.3 من RFC 6749)، ويُنزَع عن التحديث أو تبادل الرموز. وهو غير oauthScope، الذي هو فقط ما طلبه العميل."
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "رد نداء طلب الوصول في AuthZEN (#1180): عنوان https URL يجوز لهذا العميل، بوصفه AuthZEN PEP، تسميته كـ callback.endpoint لطلب وصول — واحد لكل قيمة، بمطابقة تامة. يُرفض الطلب الذي يسمّي أي عنوان آخر؛ ولا تتصل هذه الخدمة أبداً بعنوان callback URL مأخوذ من الطلب وحده. يعيّنه المسؤول، ولا يعيّنه المستدعي أبداً."
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "إعادة محاولة رد نداء AUTHZEN (#1202): عنوان URL مسجّل لرد النداء، والمحاولات ومهلة التراجع التي تتجاوز authzen.callbackAttempts وauthzen.callbackBackoffS له. القيمة هي العنوان، ثم attempts=N (من 1 إلى 20) وbackoff=S (من 60 إلى 86400)، أحدهما أو كلاهما. يجب أن يكون العنوان أيضًا قيمة appAuthzenCallbackUri. عند الغياب يستخدم هذا العنوان إعدادات نطاق الثقة. يعيّنه المسؤول، ولا يعيّنه المستدعي أبداً."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "تعبير XPATH يحدّد عنصر الشهادة الذي تُشفَّر إليه استجابة WS-TRUST: ds:X509Certificate أو BinarySecurityToken ينتهي ValueType الخاص به بـ #X509v3. المجموعة الجزئية نفسها كما في خرائط العناصر. عندما يُعيَّن ولا يحدّد شيئًا، أو يحدّد عنصرًا ليس أحد هذين، لا يوجد مستلم ولا يُجرَّب المصدر التالي. عنصر الشهادة المحدَّد الذي ليس نصه شهادة هو خطأ تشفير مكتمل، ولا يُجرَّب المصدر التالي. عندما لا يُعيَّن يكون المستلم أول عنصر شهادة موقّع تسميه توقيع WS-Security للطلب — BinarySecurityToken الذي تشير إليه مرجعية ذلك التوقيع، أو ds:X509Certificate في KeyInfo ذلك التوقيع. البصمة أو Subject Key Identifier أو المُصدِر والرقم التسلسلي ليس عنصر شهادة."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE أو FALSE: اشتراط أن يحمل الطلب الذي AppliesTo الخاص به هو هذا التطبيق توقيع رسالة WS-Security، متجاوزًا wstrust.signRequest. عند التفعيل، يكون الطلب الذي لا يحمل توقيعًا مقبولًا FailedCheck، ويجب أن يغطي ذلك التوقيع كل عنصر يختاره wstrustSignRequestElements. يصدّق وضع التطوير التوقيع، كما فعل دائمًا، ومع ذلك يطابق الخريطة بما يشير إليه ذلك التوقيع."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "عناصر طلب WS-TRUST التي يجب أن تكون موقّعة، تعبير XPath 1.0 لكل منها، ضمن المجموعة الجزئية لـ wstrustEncryptRequestElements. يجب أن يختار كل تعبير عنصرًا واحدًا على الأقل، ويجب أن يكون كل عنصر يختاره عنصرًا يشير إليه توقيع WS-Security المقبول للطلب، أو داخل عنصر كهذا؛ وإلا فالطلب FailedCheck. إذا كان فارغًا، فـ SOAP Body، الذي يغطيه التوقيع دائمًا. لا يُقرأ إلا ما دام wstrustSignRequest (أو wstrust.signRequest) مفعّلًا."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE أو FALSE: توقيع استجابة WS-Trust لهذا التطبيق بتوقيع رسالة WS-Security، متجاوزًا wstrust.signResponse. تحمل الاستجابة wsu:Timestamp وds:Signature في ترويسة wsse:Security الخاصة بها، مصنوعًا بمفتاح توقيع XML لنطاق الثقة هذا ويشير إلى شهادته عبر BinarySecurityToken؛ ويغطي التوقيع Timestamp وعناصر wstrustSignResponseElements. يُرسَل الخطأ غير موقّع. عند التشغيل، وتعذّر إنشاء التوقيع، يكون الطلب خطأ في الوضعين."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "عناصر استجابة WS-TRUST التي يغطيها توقيعها إلى جانب wsu:Timestamp، تعبير XPath 1.0 لكل منها، ضمن المجموعة الجزئية لـ wstrustEncryptResponseElements. إذا كان فارغًا، فـ SOAP Body. العنصر الذي لا يحمل wsu:Id يُعطى واحدًا. التعبير الذي لا يطابق شيئًا، أو الذي يختار ترويسة wsse:Security نفسها، هو خطأ."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "الترتيب الذي تُوقَّع به استجابة WS-Trust لهذا التطبيق وتُشفَّر عندما يكون كلاهما مفعّلًا، متجاوزًا wstrust.responseProtectionOrder: sign-then-encrypt (ملخصات التوقيع للنص الواضح، وهو الافتراضي في WS-SecurityPolicy) أو encrypt-then-sign (هي للنص المشفّر). تُكتب ترويسة wsse:Security بالترتيب الذي يعالجها به المستلم."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE أو FALSE: تشفير ds:Signature لاستجابة WS-Trust لهذا التطبيق أيضًا (sp:EncryptSignature في WS-SecurityPolicy)، متجاوزًا wstrust.encryptSignature. لا يُقرأ إلا ما دامت الاستجابة موقّعة ومشفّرة معًا، والتوقيع أولًا؛ ويُشفَّر التوقيع إلى مستلم الاستجابة."
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE أو FALSE: تشفير استجابات WS-Trust لهذا التطبيق لشهادة المستلم أيًّا كان keyUsage الخاص بها، متجاوزًا wstrust.recipientIgnoresKeyUsage. تسمح شهادات توقيع الرسائل في النطاق بـ digitalSignature فقط، لذا تُرفض بدونه الاستجابة المشفرة لشهادة توقيع الطلب. يُتجاوز فحص keyUsage وحده: وتبقى صلاحية الشهادة ومسارها وحالة إلغائها مفحوصة حيث يفحصها وضع PKI المتشدد."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "الشهادة التي يُشفَّر إليها طلب WS-TRUST لهذا التطبيق، بصيغة PEM. ما دامت معيَّنة، يُفك تشفير الطلب الموجَّه إلى هذا التطبيق بمفتاحها الخاص لا بمفتاح النطاق، والطلب الموجَّه إليه المشفَّر إلى مفتاح النطاق هو FailedCheck. عامة: تقدمها صفحة التطبيق و GET /admin-api/applications."
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE عندما يجوز لخادم موارد UMA 2.0 هذا أن يسجّل موارد يملكها بنفسه، عبر رمز واجهة حماية يُحصَّل بـ client_credentials. الغياب أو FALSE، وهو الافتراضي، يعني أن PAT يجب أن يكون لشخص (تدفق code) وأن ذلك الشخص يملك ما يسجّله."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE أو FALSE: هل تُعرض أدوار قابلة للاختيار ديناميكيًا عند تسجيل الدخول إلى هذا التطبيق (#1072)، متجاوزًا roles.dynamicSelection. لا تعرض القيمة FALSE مربع «اختيار الأدوار لتسجيل الدخول هذا»، ولا تعرض أي دور، ولا يحمل رمز هذا التطبيق أي دور مُختار ديناميكيًا."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn، والمالك والوصف القياسيان."
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "PEP البعيد والمسار، بصيغة اسم PEP ثم شرطة مائلة ثم معرّف المسار، اللذان وُلِّدت لهما هذه السياسة باختيار Authorization للمسار (simple أو public) في نماذج مسارات الوكيل العكسي أو بإجراء generate-pep-route-policy (#1760). تُعاد كتابة مثل هذه السياسة عند حفظ المسار، وتُعاد تسميتها مع المسار وتُزال معه؛ وهي ليست الجذر أبدًا. يجوز تحريرها في محرّر السياسات، والحفظ التالي لاختيار simple أو public للمسار يكتبها من جديد — اختر سياسة موجودة على المسار للإبقاء على واحدة مكتوبة يدويًا."
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "الدور (باسمه في ou=roles) الذي يملك هذه السياسة بوصفها سياسة الأهلية الخاصة به (#1072): يقررها PDP وحدها لشخص واحد ليبيّن ما إذا كان يجوز أن يُعرض عليه ذلك الدور القابل للاختيار ديناميكيًا عند تسجيل الدخول. لا تكون هذه السياسة الجذر أبدًا، ولا يُوصل إليها عبر PolicyIdReference من الجذر، ولا تُرسل أبدًا إلى PEP بعيد."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "نقطة إنفاذ سياسة بعيدة واحدة سجّلت لدى نقطة قرار السياسة هذه. الصف سجل وليس إذنًا — فـ PEP لا يسجّل قط يستطيع مع ذلك سحب المستودع والإنفاذ. ما يمنحه الصف هو مكان في وحدة التحكم وعنوان لتنبيه التغيير."
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "ما بلّغه PEP البعيد آخر مرة في نبضة عن كل مستمع لديه (#1760)، أربعة بيئته والمعرَّفة: مستند JSON واحد بالشكل { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }، مع وقت وصوله. تكون state إحدى listening وwaiting وfailed وoff، ويكون reason أحد مجموعة مغلقة، وليس نص نظام التشغيل أبدًا؛ والشهادة هي subject وissuer وserial وsubjectAltName وvalidity وfingerprint للشهادة التي يخدمها. يُسقَط كل عضو آخر. النبضة من دونه تبقيه، والتي تحمله null تمسحه، والتسجيل يسقطه. غائب عن PEP أقدم من المستمعين، وترسمه وحدة التحكم غير مُبلَّغ."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "نوع الـPEP البعيد الذي سجّل (#2026، جزء من #1206): container، أي صورة xacml-pep، أو embedded، أي PEP داخل مكتبة مصادقة عبر حزمة iya-pep. التسجيل الذي لا يذكر نوعًا هو container، فيُقرأ الـPEP الأقدم كما كان دائمًا. ليس للـPEP المضمَّن وكيل عكسي ولا مستمعون ولا حافة AuthZEN."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "التطبيق الذي ذكر الـPEP البعيد المضمَّن أنه مضمَّن فيه عند تسجيله (#2026). لا يُقبل إلا إذا كان التطبيق المرتبط به مُدخله (stsPepApplication، يعيّنه مسؤول)، لذا لا يمكن أن يختلف عن الارتباط إلا حتى نبضة الـPEP التالية، التي تُرفض متى اختلفا. فارغ للحاوية."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "وضع الـPEP البعيد المضمَّن (#2026): central، حيث يُسأل عن كل قرار نقطةَ تقييم AuthZEN في هذه الخدمة، أو local، حيث يجلب سياسات تطبيقه ويقرر داخل العملية. فارغ للحاوية، التي لا يجوز لها إرساله."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "إصدار بروتوكول PEP الذي تتحدثه حزمة الـPEP البعيد، كما ذكره عند تسجيله أو في آخر نبضة (#2026). تدعم هذه الخدمة الإصدار 1 وترفض غيره، فتظهر المكتبة المتأخرة بدل أن تكون خاطئة بصمت. فارغ للـPEP الذي لا يرسل إصدارًا (الحاوية)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "هل يستطيع تدفق التطبيق المضمَّن فيه الـPEP البعيد حمل حدث pep-policies-changed، كما أبلغ الـPEP في آخر نبضة (#2026): none (ليس للمضيف تدفق إشارات، لذا يستعلم الـPEP دوريًا)، أو requested، أو excluded (يستبعده ssfEvents الخاص بالتطبيق)، أو down. فارغ حتى يُبلَّغ."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "ما جلبه الـPEP البعيد آخر مرة من GET /xacml/pep/policies (#2027): repository، أي كل سياسة مفعّلة عدا المحجوبة (جلب الحاوية)، أو bound-application، أي جلب PEP مضمَّن في الوضع local: السياسة الخاصة بتطبيقه، أو جذر النطاق، وإغلاق مراجعها. يُحتفظ به عند إعادة التسجيل؛ ويُدقَّق التغيير باسم xacml.pep.scope. فارغ حتى يجلب."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

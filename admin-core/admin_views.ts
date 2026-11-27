@@ -100,6 +100,7 @@
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
 import configDump = require('./config_dump');
+import CreateForms = require('./create_forms');
 // The policy references a group may make (#1235, rule 3cx): a leaf.
 import PolicySelection = require('../common/policy_selection');
 import DomainClasses = require('../common/domain_classes');
@@ -1503,9 +1504,10 @@ class AdminViews {
    * Describes the gate for a request the management API authenticated.
    *
    * @param caller - the API gate's caller: `kind`, `name`, `realm`, `roles`
+   * @param heldRoles - optional; what its subject holds as well (#2200)
    * @returns the gate state, in `gateStateFor()`'s shape
    */
-  apiGateStateOf(caller) {
+  apiGateStateOf(caller, heldRoles?) {
     const { log, config, realms, rbac } = this.deps;
     log.debug("Entering AdminViews.apiGateStateOf().");
     const identityRealm = String(caller.realm || realms.DEFAULT_ID);
@@ -1514,7 +1516,15 @@ class AdminViews {
     const outsideRealm = authority === 'realm' &&
                          realms.currentId() !== identityRealm;
     // SECURITY_ADMIN is the roster's `security` (#645), which implies read.
-    const roles = (caller.roles || []).map(function (role) {
+    // WHAT THE PERSON HOLDS, NOT WHAT THIS TOKEN CARRIES (#2200, #2168's
+    // `holds`): the console's first token is a read token, and a view draws
+    // the write controls its reader may use — a write is one second
+    // authorization away, and the operation still refuses it without the
+    // scope (`insufficient_scope`). `heldRoles` is the gate's
+    // `adminApiHeldRoles()`, the token's own roles and what its subject
+    // holds; without it, the token's roles as before.
+    const source = Array.isArray(heldRoles) ? heldRoles : (caller.roles || []);
+    const roles = source.map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
         : (role === 'ADMIN_WRITE' ? 'write'
           : (role === 'SECURITY_ADMIN' ? 'security'
@@ -1558,7 +1568,9 @@ class AdminViews {
     log.debug("Entering AdminViews.gateStateFor().");
     if (req && req.adminApiCaller) {
       log.debug("Leaving AdminViews.gateStateFor(). The API's caller.");
-      return this.apiGateStateOf(req.adminApiCaller);
+      return this.apiGateStateOf(req.adminApiCaller,
+        typeof req.adminApiHeldRoles === 'function'
+          ? req.adminApiHeldRoles() : null);
     }
     // THE MODE, since 2026-09-06, where this read `admin.authRequired`. That
     // setting is gone: "is authentication required here" had four answers
@@ -2737,6 +2749,21 @@ class AdminViews {
       field.disabled = !!(field.email && !mailUsable);
       field.disabledWhy = field.disabled ? mailWhy : '';
     });
+    // THE ROWS THAT FOLLOW ANOTHER WHILE UNSET (#2031): what each follows
+    // (a row's label, or a setting's key), and whether it follows now, so
+    // the form can offer the third choice and check it.
+    member.fields.forEach(function (field) {
+      const own = authn.FIELD_BY_KEY[field.key];
+      if (!own || !own.follows) {
+        return;
+      }
+      const target = String(own.follows);
+      const row = authn.FIELD_BY_KEY[target];
+      field.follows = target;
+      field.followsLabel = row ? row.label
+        : target.replace(/^setting:/, '');
+      field.following = authn.following(member.profile, field.key);
+    });
     const profile = member.profile;
     const out = {
       from: profile.from,
@@ -3836,7 +3863,59 @@ class AdminViews {
     // Which of these an application may override, and with which attribute
     // (`applications.js`'s own table): the page's per-client column.
     (json as any).overridable = applications.overridableSettings();
+    // THE REST OF THE GROUP (#2070). `OAuth 2.0 / OIDC per-client` is homed
+    // on this page and holds more than the six rows its table draws: the
+    // refresh chain's cap, consent for public clients and the default
+    // max_age. They are not lifetimes, so they are not rows of that table
+    // (whose columns are a unit and a token count); they are the group's
+    // ordinary settings form, drawn under it from this block — the settings
+    // block every other page answers, the six left out so no setting has
+    // two controls on one page.
+    (json as any).otherSettings = this.withoutKeys(
+      this.settingsBlockOf('/admin/token-lifetimes'), TOKEN_LIFETIME_KEYS);
     return json;
+  }
+
+  // A settings block with some keys taken out of every group, its counts
+  // and its `overridden` list made again; a group left empty goes. Used
+  // where a page draws some of its group's rows in a table of its own.
+  /**
+   * Returns a copy of a settings block without the named keys.
+   *
+   * @param block - the block, as `configSettingsJson()` answers it, or null
+   * @param keys - the setting names to leave out
+   * @returns the narrowed copy, or null for a null block
+   */
+  withoutKeys(block, keys) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.withoutKeys().");
+    if (!block) {
+      log.debug("Leaving AdminViews.withoutKeys(). No block.");
+      return null;
+    }
+    const groups = (block.groups || []).map(function (group) {
+      return Object.assign({}, group, {
+        settings: (group.settings || []).filter(function (setting) {
+          return keys.indexOf(setting.key) < 0;
+        })
+      });
+    }).filter(function (group) { return group.settings.length > 0; });
+    const all = groups.reduce(function (rows, group) {
+      return rows.concat(group.settings);
+    }, []);
+    const out = Object.assign({}, block, {
+      groups: groups,
+      settingCount: all.length,
+      editableCount: all.filter(function (setting) {
+        return setting.editable;
+      }).length,
+      overridden: all.filter(function (setting) {
+        return setting.overridden;
+      }).map(function (setting) { return setting.key; })
+    });
+    log.debug("Leaving AdminViews.withoutKeys(). " + all.length +
+              " setting(s).");
+    return out;
   }
 
   // The setting's value in SECONDS, whatever unit its row is written in. Every
@@ -5113,7 +5192,7 @@ class AdminViews {
   // is the table FILTERED and PAGED, with one column the documentation page
   // cannot have — how many rows in this realm's audit log carry each code right
   // now. That column is what makes the page worth having beside
-  // `docs/v1.1.0/error-codes.md`: the page answers *what does STS-FED-0012
+  // `docs/v1.2.0/error-codes.md`: the page answers *what does STS-FED-0012
   // mean* and
   // *which failures has this service actually been producing*, and only a
   // running service can answer the second.
@@ -5218,7 +5297,7 @@ class AdminViews {
                   seen: wantedSeen || null },
         page: paging.page, pages: paging.pages, perPage: paging.perPage,
         firstRow: paging.firstRow, lastRow: paging.lastRow,
-        documentation: 'docs/v1.1.0/error-codes.md',
+        documentation: 'docs/v1.2.0/error-codes.md',
         neverSentToClients: true,
         subsystems: subsystems,
         unregisteredSeen: unregisteredSeen,
@@ -7625,6 +7704,81 @@ class AdminViews {
   }
 
   /**
+   * Builds `GET /admin-api/truststores` (#2118 phase 4): every truststore
+   * this realm can name with the use cases that trust it, every use case
+   * with what it trusts now, the limits, and node's default store
+   * certificate by certificate for the System truststore tab — WITHOUT PEM,
+   * about 150 roots described in a few tens of kilobytes (rcbj,
+   * 2026-11-24), the shape the `show` action answers with `withPem: false`.
+   * Certificates and sentences only; no private key is anywhere near it.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  namedTruststoresJson(req): IyaApi.AdminAnswer<'getTruststores'> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.namedTruststoresJson().");
+    // Lazily: libraries, and this module is loaded long before any of them.
+    const truststores = require('../common/truststores');
+    const adminActions = require('./admin_actions');
+    const AdminActions = adminActions.AdminActions;
+    const realmId = realms.currentId();
+    const useCases = truststores.useCases(realmId);
+    // WHO TRUSTS EACH STORE, inverted from the use cases' own lists rather
+    // than asked store by store (`truststores.usedBy()`), which would read
+    // every assignment once per store.
+    const users: Record<string, string[]> = {};
+    useCases.forEach(function (row) {
+      if (!row.assignable) {
+        return;
+      }
+      row.names.forEach(function (name) {
+        (users[name] = users[name] || []).push(row.id);
+      });
+    });
+    // A NAMED truststore's certificates come with its row, so the page can
+    // list them and remove one; a realm holds at most 64 named truststores
+    // of at most 96 certificates each. Every other kind is counted only.
+    const described = function (name: string): any[] {
+      return truststores.certificatesOf(realmId, name).map(function (one) {
+        return AdminActions.truststoreCertificate(one, false);
+      });
+    };
+    const stores = truststores.stores(realmId).map(function (row) {
+      const out = AdminActions.truststoreRow(row, users[row.name] || []);
+      if (row.kind === 'named') {
+        out.certificates = described(row.name);
+      }
+      return out;
+    });
+    const roots = described('system').sort(function (a, b) {
+      return String(a.subject).localeCompare(String(b.subject));
+    });
+    const limits = truststores.limits();
+    log.debug("Leaving AdminViews.namedTruststoresJson().");
+    return {
+      realm: realmId,
+      stores: stores,
+      useCases: useCases.map(function (row) {
+        return {
+          id: row.id, title: row.title, scope: row.scope, kind: row.kind,
+          direction: row.direction, names: row.names.slice(),
+          defaults: row.defaults.slice(), fallback: row.fallback.slice(),
+          assigned: !!row.assigned, assignable: !!row.assignable,
+          overridable: !!row.overridable,
+          realmOverride: !!row.realmOverride,
+          sites: row.sites.slice()
+        };
+      }),
+      limits: { maxStores: limits.maxStores, maxAnchors: limits.maxAnchors,
+                maxIntermediates: limits.maxIntermediates,
+                installed: !!limits.installed },
+      system: { count: roots.length, certificates: roots },
+      actions: adminActions.NAMED_TRUSTSTORE_ACTIONS.slice()
+    };
+  }
+
+  /**
    * Builds the client-certificate truststore's JSON; certificates only.
    *
    * @param req - the request
@@ -8949,7 +9103,8 @@ class AdminViews {
              applicationCount: held,
             realm: { id: realms.currentId(), name: realm ? realm.name : '' },
             kinds: applications.KINDS, protocols: applications.PROTOCOLS,
-            declarations: applications.declarationAttributes() };
+            declarations: applications.declarationAttributes(),
+            createFields: CreateForms.fieldsOf('applications') };
     }
     log.debug("Leaving AdminViews.newApplicationJson().");
     return {
@@ -8958,6 +9113,9 @@ class AdminViews {
         max: max,
         applicationCount: held,
         realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+        // THE FORM'S OWN REQUIRED FIELD (#1132): the identifier, which the
+        // create refuses without; the name is optional.
+        createFields: CreateForms.fieldsOf('applications'),
         // The two vocabularies this form is built from, published rather than
         // described: a caller of POST /admin-api/applications/create reads
         // these to learn what it may send, which is what stops a document and a
@@ -9137,6 +9295,33 @@ class AdminViews {
     return out;
   }
 
+  // THE USERS TABLE, AS THIS REALM'S DEFAULT SERVICE-ACCOUNT POLICY HAS IT
+  // (#1132's follow-ups): an owner is required of a new service account
+  // only while `requireOwner` is on, so where the default policy turns it
+  // off the owners field is optional. A create that names another policy
+  // is held to that one's rule, as ever.
+  private newUserFields(): any[] {
+    const { log, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminViews.newUserFields().");
+    let ownerRequired = true;
+    try {
+      ownerRequired = serviceAccountPolicy.requiresOwner();
+    } catch (e) {
+      log.debug("Caught in AdminViews.newUserFields(): " +
+                ((e && e.message) || e));
+      ownerRequired = true;
+    }
+    const out = CreateForms.fieldsOf('users').map(function (row: any) {
+      if (row.name === 'owners' && !ownerRequired) {
+        return { name: row.name, required: false };
+      }
+      return row;
+    });
+    log.debug("Leaving AdminViews.newUserFields(). owner " +
+              (ownerRequired ? 'required' : 'optional') + ".");
+    return out;
+  }
+
   /**
    * Builds `/admin/users/new`'s JSON: the attribute catalogue and credential
    * choices.
@@ -9169,6 +9354,7 @@ class AdminViews {
                 "write to.");
       return { directory: false, container: null,
           realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+          createFields: CreateForms.fieldsOf('users'),
           fields: [], credentials: CREDENTIAL_CHOICES.map(function (one) {
             return { id: one.id, label: one.label };
           }) }
@@ -9178,6 +9364,10 @@ class AdminViews {
       directory: true,
       container: container,
       realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+      // THE FORM'S OWN REQUIRED FIELD (#1132): the username, beside the
+      // grid's, which are the attribute policy's (`requiredAttributes`), and
+      // the service account's, required only with its box ticked.
+      createFields: this.newUserFields(),
       mode: mode.current(),
       // WHETHER THE BUTTON IS THERE, published rather than left to be inferred
       // from `mode`: a caller of GET /admin-api/users/new reading this document
@@ -10113,6 +10303,37 @@ class AdminViews {
       enforced: bcpState.enforced,
       waived: bcpState.waived
     };
+    // THE DEFAULT SET IN FORCE FOR A CLIENT THAT DECLARES NO SCOPES (#1589):
+    // null where `oauthAllowedScope` lists any, so a page draws it only for
+    // the client it governs. `setting` is `oauth2.undeclaredClientScopes`,
+    // `scopes` what that gives (the realm's OpenID4VCI scopes are named by
+    // `credentialScopes`, not listed: they are the OAuth server's to count),
+    // and `enforced` whether this realm is in product, the only mode that
+    // reads it. The scopes the client was SEEN asking for are marked
+    // against that set, as they are against a declared list.
+    let undeclaredClientScopes = null;
+    let defaultScopes: string[] | null = null;
+    if (!declaredScopes) {
+      try {
+        const policy = require('../common/scope_policy');
+        const setting = policy.ScopePolicy.undeclaredSetting(
+          config.value('oauth2.undeclaredClientScopes'));
+        defaultScopes = policy.defaultScopes() || [];
+        undeclaredClientScopes = {
+          setting: setting,
+          scopes: defaultScopes,
+          credentialScopes: setting === 'legacy',
+          enforced: !mode.grantsUndeclaredScopes()
+        };
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationObservedState(): " +
+                  ((e && e.message) || e));
+        // No scope policy built (a view tested on its own): nothing is said
+        // about a default, and nothing is marked against one.
+        undeclaredClientScopes = null;
+        defaultScopes = null;
+      }
+    }
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
@@ -10121,7 +10342,9 @@ class AdminViews {
         nonEmpty(oauth.responseTypes), applications.canonicalResponseType),
       appRedirectUriObserved: marked('appRedirectUriObserved',
                                      declared(oauth.redirectUris)),
-      oauthScope: marked('oauthScope', declaredScopes),
+      oauthScope: marked('oauthScope', declaredScopes ||
+        (defaultScopes && undeclaredClientScopes &&
+         !undeclaredClientScopes.credentialScopes ? defaultScopes : null)),
       appAuthorizationServer: marked('appAuthorizationServer', null),
       samlNameIdFormat: marked('samlNameIdFormat', null),
       samlResponseBinding: marked('samlResponseBinding', null),
@@ -10131,7 +10354,8 @@ class AdminViews {
                           fields.samlAuthnRequestVerification))
         : null,
       samlObservedSigningCertificate: certificate,
-      oauthAllowedTokenResponseTypes: tokenResponseTypes
+      oauthAllowedTokenResponseTypes: tokenResponseTypes,
+      undeclaredClientScopes: undeclaredClientScopes
     };
     log.debug("Leaving AdminViews.applicationObservedState().");
     return out;
@@ -10573,7 +10797,7 @@ class AdminViews {
   // too.
   //
   // **THE LINK IS `/launch/{app}?protocol=…`**, the one URL
-  // docs/v1.1.0/idp-initiated-sso.md gives a person and the portal's Sign in
+  // docs/v1.2.0/idp-initiated-sso.md gives a person and the portal's Sign in
   // link uses (`LaunchLinks.launchUrl()`, built where the sign-in service is
   // advertised, realm prefix included); the protocol's own endpoint
   // (`/saml2/unsolicited/{sp}`, `/saml11/sso/{rp}`) rides beside it, as it
@@ -11036,6 +11260,180 @@ class AdminViews {
            this.groupsListJson(req).json;
   }
 
+  // DIRECTORY → POLICIES → NEW POLICY (#1132): which kinds a named policy
+  // may be made of, and for the kind asked, the create's fields and which
+  // of them the save refuses without. A named policy is a save under a name
+  // the realm does not hold yet, so its fields are the kind's own table
+  // (each module's FIELDS, its `optional` rows the ones a save keeps the
+  // value in force for), behind the name — refused when empty or not a
+  // policy name, where a save with no name at all edits the DEFAULT policy,
+  // which is why the page insists on one — and the precedence, which
+  // defaults to 100. Two kinds are their own: the authentication policy's
+  // named create takes `name`, its mechanisms optional (none allows every
+  // one), and the attribute policy's console form sends its list even when
+  // empty. A boolean is required of an API caller and is never empty on the
+  // console's form, where No is checked when the answer is no. A sent field
+  // whose save takes it EMPTY is not required (`fieldsRefusedEmpty()`).
+  /**
+   * Builds `GET /admin-api/policies/new`: the kinds, and the asked kind's
+   * create fields with which of them are required.
+   *
+   * @param query - the query: `kind`
+   * @returns the JSON
+   */
+  newPolicyJson(query): IyaApi.AdminAnswer<'getNewPolicyForm'> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.newPolicyJson().");
+    const wanted = String((query || {}).kind || '').trim();
+    const kinds = policyKinds.list().filter(function (kind) {
+      return kind.tabbed === true;
+    });
+    const kind = kinds.filter(function (one) {
+      return one.id === wanted;
+    })[0] || null;
+    const out: any = {
+      kinds: kinds.map(function (one) {
+        return { id: one.id, label: one.label };
+      }),
+      kind: kind ? kind.id : null,
+      createFields: []
+    };
+    if (!kind) {
+      log.debug("Leaving AdminViews.newPolicyJson(). No kind, or an " +
+                "unknown one: " + wanted);
+      return out;
+    }
+    if (kind.id === 'authn') {
+      out.createFields = [
+        { name: 'name', required: true },
+        { name: 'description', required: false },
+        { name: 'precedence', required: false },
+        { name: 'mechanisms', required: false },
+        { name: 'secondFactors', required: false }
+      ];
+    } else {
+      const refusedEmpty = this.fieldsRefusedEmpty(kind.module);
+      out.createFields = [
+        { name: 'profile', required: true },
+        { name: 'precedence', required: false },
+        { name: 'description', required: false }
+      ].concat((kind.module.FIELDS || []).map(function (field) {
+        return { name: String(field.key),
+                 required: !field.optional && !!refusedEmpty[field.key] };
+      }));
+    }
+    log.debug("Leaving AdminViews.newPolicyJson(). kind=" + kind.id + ", " +
+              out.createFields.length + " field(s).");
+    return out;
+  }
+
+  // WHICH OF A KIND'S FIELDS ITS SAVE REFUSES EMPTY (#1132's follow-ups). A
+  // row that is not `optional` must be SENT, but several take an empty
+  // value and mean something by it — the passkey policy's sign-in hints
+  // (none), its enterprise serial attribute (off), the attribute policy's
+  // required attributes (none of the realm's own) — and outlining those as
+  // required told the person to fill in what the save accepts blank. So the
+  // kind's own validation is ASKED, not described a second time: the
+  // default profile as it stands, then that with one field emptied; a field
+  // whose emptying adds a problem is required. Read-only — `validate()`
+  // writes nothing — and asked only of this page's answer. A kind whose
+  // validation cannot be asked, or throws, keeps every sent row required.
+  private fieldsRefusedEmpty(module: any): Record<string, boolean> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.fieldsRefusedEmpty().");
+    const fields = (module && module.FIELDS) || [];
+    const out: Record<string, boolean> = {};
+    fields.forEach(function (field) {
+      out[String(field.key)] = true;
+    });
+    if (!module || typeof module.validate !== 'function' ||
+        typeof module.read !== 'function') {
+      log.debug("Leaving AdminViews.fieldsRefusedEmpty(). Not askable.");
+      return out;
+    }
+    try {
+      const current = module.read(module.DEFAULT_PROFILE) || {};
+      const base: Record<string, string> = {};
+      fields.forEach(function (field) {
+        const value = current[field.key];
+        base[field.key] = Array.isArray(value) ? value.join(', ')
+          : value === undefined || value === null ? '' : String(value);
+      });
+      const problemsOf = function (body: Record<string, string>): number {
+        const checked = module.validate(body) || {};
+        return (checked.problems || []).length;
+      };
+      const baseline = problemsOf(base);
+      fields.forEach(function (field) {
+        const emptied = Object.assign({}, base);
+        emptied[field.key] = '';
+        out[String(field.key)] = problemsOf(emptied) > baseline;
+      });
+    } catch (e) {
+      log.debug("Caught in AdminViews.fieldsRefusedEmpty(): " +
+                ((e && e.message) || e));
+      fields.forEach(function (field) {
+        out[String(field.key)] = true;
+      });
+    }
+    log.debug("Leaving AdminViews.fieldsRefusedEmpty().");
+    return out;
+  }
+
+  // DIRECTORY → GROUPS → NEW GROUP (#1132): what the create page draws. No
+  // directory scan: the container is the realm's, asked of the directory,
+  // and the list of groups is the list page's business.
+  /**
+   * Builds `GET /admin-api/groups/new`: the create's fields, which of them
+   * are required, and where the group would land.
+   *
+   * @returns the JSON
+   */
+  newGroupJson(): IyaApi.AdminAnswer<'getNewGroupForm'> {
+    const { log, realms } = this.deps;
+    log.debug("Entering AdminViews.newGroupJson().");
+    const realm = realms.current();
+    const where = { id: realms.currentId(), name: realm ? realm.name : '' };
+    if (!groupReader || !groupWriter) {
+      log.debug("Leaving AdminViews.newGroupJson(). No directory.");
+      return { directory: false, canWrite: false, groupsDn: null,
+               realm: where, createFields: CreateForms.fieldsOf('groups') };
+    }
+    // Inside the function: `ldap/ldap_server.js` registers routes when it is
+    // required, and this file loads before it (rule 1); a request runs
+    // after the stack is up, so the require is a cache hit.
+    const ldapMod = require('../ldap/ldap_server');
+    log.debug("Leaving AdminViews.newGroupJson().");
+    return { directory: true, canWrite: true, groupsDn: ldapMod.groupsDn(),
+             realm: where, createFields: CreateForms.fieldsOf('groups') };
+  }
+
+  // DIRECTORY → ROLES → NEW ROLE (#1132): what the create page draws — the
+  // application menu the list page offers, and the store's container.
+  /**
+   * Builds `GET /admin-api/roles/new`: the create's fields, which of them
+   * are required, where a role is stored and the applications it may be
+   * for.
+   *
+   * @returns the JSON
+   */
+  newRoleJson(): IyaApi.AdminAnswer<'getNewRoleForm'> {
+    const { log, realms, applications } = this.deps;
+    log.debug("Entering AdminViews.newRoleJson().");
+    const realm = realms.current();
+    const storable = !!roles.directoryInstalled();
+    log.debug("Leaving AdminViews.newRoleJson(). storable=" + storable);
+    return {
+      canWrite: storable,
+      container: storable ? 'ou=roles' : '',
+      realm: { id: realms.currentId(), name: realm ? realm.name : '' },
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      }),
+      createFields: CreateForms.fieldsOf('roles')
+    };
+  }
+
   /**
    * Returns a query's view parameters, first value each, without `format`,
    * `notice` and `error`.
@@ -11472,6 +11870,72 @@ class AdminViews {
     return out;
   }
 
+  // The embedded remote PEPs bound to an application (#2025), as usernames;
+  // none where the XACML family is not loaded (a view must still draw).
+  /**
+   * The embedded remote PEPs bound to an application (#2025).
+   *
+   * @param identifier - the application
+   * @returns the PEPs' usernames
+   */
+  // THE LOCAL EMBEDDED PEPS BOUND TO AN APPLICATION THAT WILL NOT HEAR OF A
+  // POLICY CHANGE (#2028, D4): the application's `ssfAllowedEvents` leaves
+  // `pep-policies-changed` out (asked as delivery asks it, through
+  // `ssf_streams.ts`'s `allowedEventsFor()`), or the PEP reported on its
+  // heartbeat that its stream excludes it. Such a PEP converges only on its
+  // fallback poll, which is what the page's warning says. None where the
+  // families are not loaded.
+  /**
+   * The local embedded PEPs bound to an application whose stream cannot
+   * carry `pep-policies-changed` (#2028).
+   *
+   * @param identifier - the application
+   * @param peps - the PEPs bound to it
+   * @returns the PEPs' usernames
+   */
+  pepEventsExcludedOf(identifier, peps) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.pepEventsExcludedOf().");
+    let out = [];
+    try {
+      const registry = require('../xacml/xacml_pep_registry');
+      const uri = require('../ssf/ssf_events').PEP_POLICIES_CHANGED;
+      const restriction = require('../ssf/ssf_streams')
+        .allowedEventsFor(String(identifier || ''));
+      const refused = !!restriction && !restriction.allowed[uri];
+      out = (peps || []).filter(function (name) {
+        const row = registry.read(String(name));
+        return !!row && row.kind === 'embedded' && row.mode === 'local' &&
+          (refused || row.policyEvents === 'excluded');
+      });
+    } catch (e) {
+      log.debug("Caught in AdminViews.pepEventsExcludedOf(): " +
+                ((e && e.message) || e));
+      // A family not loaded here: nothing to warn about.
+      out = [];
+    }
+    log.debug("Leaving AdminViews.pepEventsExcludedOf(). " + out.length);
+    return out;
+  }
+
+  embeddedPepsOf(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.embeddedPepsOf().");
+    let out = [];
+    try {
+      // Lazily: the XACML family is 23c, after this module.
+      out = require('../xacml/xacml_pep_binding').shared()
+        .boundTo(String(identifier || ''));
+    } catch (e) {
+      log.debug("Caught in AdminViews.embeddedPepsOf(): " +
+                ((e && e.message) || e));
+      // No XACML family in this process: no PEP is bound to anything.
+      out = [];
+    }
+    log.debug("Leaving AdminViews.embeddedPepsOf(). " + out.length);
+    return out;
+  }
+
   applicationScopeWarnings(identifier) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationScopeWarnings().");
@@ -11732,6 +12196,12 @@ class AdminViews {
     // which PEP, which route, its path and mechanisms — never what the pull
     // reads off this entry for them.
     (out as any).pepRoutes = self.pepRoutesFronting(row.identifier);
+    // THE EMBEDDED REMOTE PEPS BOUND TO IT (#2025): their usernames.
+    (out as any).embeddedPeps = self.embeddedPepsOf(row.identifier);
+    // AND THOSE IN `local` MODE THAT WILL NOT HEAR OF A POLICY CHANGE
+    // (#2028): the page warns.
+    (out as any).pepEventsExcluded = self.pepEventsExcludedOf(row.identifier,
+      (out as any).embeddedPeps);
     // Closed to its owners, and why (#607).
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
@@ -14137,6 +14607,11 @@ class AdminViews {
           personFieldCount: vcClaims.personFields().length,
           newUserContainer: self.newUserContainer(),
           registryKeeps: stats.MAX_USERS,
+          // THE PAGE'S SETTINGS TAB (#2070): the `Profile photos` group,
+          // which SETTING_HOMES homes here — what a person may set about
+          // themselves, beside the people it is about. It was homed here
+          // and drawn nowhere, so none of the six could be changed.
+          settings: self.settingsBlockOf('/admin/users'),
           // Each row with its live sign-on sessions, the column beside it,
           // and its entry's DN (#461) — what an application's `appMayAct`
           // names a person by, so the console's search there can store it.
@@ -14776,7 +15251,11 @@ class AdminViews {
     const version = credentials.directoryPeopleVersion();
     let entry = populationHeld.get(realmId);
     if (!entry) {
-      entry = { version: null, at: 0, value: null, building: null };
+      // `subjects`: the register subjects' names the last build asked,
+      // which the next one reads rather than asking again (#790,
+      // `stats.withSubjectsResolvedAsync()`'s memo).
+      entry = { version: null, at: 0, value: null, building: null,
+                subjects: { names: null, at: 0, generation: -1 } };
       populationHeld.set(realmId, entry);
     }
     const age = Date.now() - entry.at;
@@ -14808,24 +15287,26 @@ class AdminViews {
   private rebuildPopulation(realmId, entry, version) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.rebuildPopulation().");
-    entry.building = this.buildPeopleAndCensusAsync().then((value) => {
-      entry.value = value;
-      entry.version = version;
-      entry.at = Date.now();
-      entry.building = null;
-      return value;
-    }, (e) => {
-      log.debug("Caught in AdminViews.rebuildPopulation(): " +
-                ((e && e.message) || e));
-      entry.building = null;
-      throw e;
-    });
+    entry.building = this.buildPeopleAndCensusAsync(entry.subjects)
+      .then((value) => {
+        entry.value = value;
+        entry.version = version;
+        entry.at = Date.now();
+        entry.building = null;
+        return value;
+      }, (e) => {
+        log.debug("Caught in AdminViews.rebuildPopulation(): " +
+                  ((e && e.message) || e));
+        entry.building = null;
+        throw e;
+      });
     log.debug("Leaving AdminViews.rebuildPopulation().");
     return entry.building;
   }
 
-  // The build `peopleAndCensusAsync()` keeps.
-  private async buildPeopleAndCensusAsync() {
+  // The build `peopleAndCensusAsync()` keeps. `subjects` is the realm's
+  // memo of the register subjects' names (#790), refilled by each build.
+  private async buildPeopleAndCensusAsync(subjects?: any) {
     const { log, credentials } = this.deps;
     log.debug("Entering AdminViews.buildPeopleAndCensusAsync().");
     // The first names and the people count together (#616, #798): the
@@ -14857,8 +15338,15 @@ class AdminViews {
       return this.peopleRows(Object.assign({ seen: stats.userRows() },
                                             rowOpts));
     };
+    //
+    // **AND ASKED ONLY ONCE A WHILE (#790, 2026-11-20).** Every build asked
+    // every held subject again — up to 20,000 tokens a process holds and
+    // every artifact — to draw fifty rows. The names the last build asked
+    // are handed back in (`subjects`), and only a subject it did not meet is
+    // asked; the memo is dropped whole after two minutes and on a rename or
+    // a delete made here (admin_stats.js says why that is the bound).
     const population = typeof stats.withSubjectsResolvedAsync === 'function'
-      ? await stats.withSubjectsResolvedAsync(build)
+      ? await stats.withSubjectsResolvedAsync(build, undefined, subjects)
       : this.peopleRows(rowOpts);
     const census = await this.peopleCensusAsync(population, population.rows);
     log.debug("Leaving AdminViews.peopleAndCensusAsync().");
@@ -15913,6 +16401,15 @@ class AdminViews {
       totp: mech.totp,
       totpUsable: mech.totpUsable,
       totpDetail: mech.totpDetail,
+      // #1955 P4: the one-time code token, three facts as the app's are.
+      hotp: !!mech.hotp,
+      hotpUsable: !!mech.hotpUsable,
+      hotpDetail: mech.hotpDetail || null,
+      // #1955 P5: a YubiKey OTP, three facts as the token's are. Never
+      // the AES key.
+      yubi: !!mech.yubi,
+      yubiUsable: !!mech.yubiUsable,
+      yubiDetail: mech.yubiDetail || null,
       // THE RECOVERY CODES AS A STATUS AND NEVER AS CODES — see the block
       // above. `credentials.backupCodeStatus()` is what fills it and it
       // carries none, so there is no shape of this reply in which a caller
@@ -15967,6 +16464,13 @@ class AdminViews {
                  // (#532), or null.
                  deviceSerial: (one.attestation &&
                                 one.attestation.deviceSerial) || null,
+                 // ITS CREDPROTECT LEVEL (#1955 P7), 1 to 3 as the key
+                 // reported it at registration, or null; and the legacy U2F
+                 // AppID it was imported under, or null for a key
+                 // registered here.
+                 credProtect: typeof one.credProtect === 'number'
+                   ? one.credProtect : null,
+                 appid: credentials.appIdOf(one) || null,
                  // A LATER REGISTRATION MAY HAVE REPLACED IT ON ITS
                  // AUTHENTICATOR (#1101): the newer key's id and when, or
                  // null.
@@ -15999,7 +16503,10 @@ class AdminViews {
                 webauthnEnabled: keyLive.enabled,
                 primaryAllowed: keyLive.primaryAllowed,
                 mfaAllowed: keyLive.mfaAllowed,
-                maxKeysPerPerson: keyLive.maxKeysPerPerson }
+                maxKeysPerPerson: keyLive.maxKeysPerPerson,
+                // THE LEGACY U2F APPIDS THIS REALM PERMITS (#1955 P7): the
+                // page draws the import form only where there is one.
+                legacyAppIds: webauthnPolicy.legacyAppIds() }
     };
   }
 
@@ -16736,6 +17243,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   logoutInventoryFor: slot.forward('logoutInventoryFor'),
   pepRoutesFronting: slot.forward('pepRoutesFronting'),
+  // The local embedded PEPs bound to an application that will not hear of a
+  // policy change (#2028).
+  pepEventsExcludedOf: slot.forward('pepEventsExcludedOf'),
   logoutFamilies: slot.forward('logoutFamilies'),
   logoutJson: slot.forward('logoutJson'),
   mfaRosterJson: slot.forward('mfaRosterJson'),
@@ -16797,6 +17307,9 @@ export = {
   setGroupReader: slot.forward('setGroupReader'),
   setGroupWriter: slot.forward('setGroupWriter'),
   groupsListJson: slot.forward('groupsListJson'),
+  newGroupJson: slot.forward('newGroupJson'),
+  newPolicyJson: slot.forward('newPolicyJson'),
+  newRoleJson: slot.forward('newRoleJson'),
   asDriftRows: slot.forward('asDriftRows'),
   asTruthRequest: slot.forward('asTruthRequest'),
   asDetailJson: slot.forward('asDetailJson'),
@@ -16916,6 +17429,7 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   pkiTrustJson: slot.forward('pkiTrustJson'),
+  namedTruststoresJson: slot.forward('namedTruststoresJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
   kerberosTrustsJson: slot.forward('kerberosTrustsJson'),
   krbtgtView: slot.forward('krbtgtView'),

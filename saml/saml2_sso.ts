@@ -450,7 +450,7 @@ function maxArtifacts(): number {
   return Number(config.value('saml2.maxArtifacts'));
 }
 
-// Described to `/admin/caches` (#614, rule 3ap), in `docs/v1.1.0/caches.md`'s
+// Described to `/admin/caches` (#614, rule 3ap), in `docs/v1.2.0/caches.md`'s
 // other protocols. A one-time value made to work once, so a `replay` store: its
 // entries cannot be rebuilt. The key shown is the stored digest, clipped
 // again by `digestKey()` so the page shows the same short form every other
@@ -1694,8 +1694,8 @@ class Saml2Sso {
   // Getting either wrong produces a document that verifies and that a strict
   // parser rejects, which is the worst of both.
   private signDocument(xml, rootLocalName, id, placement) {
-    const { documentSettings, stsCrypto } = this.deps;
-    const { STS, log } = this.deps.helpers;
+    const { stsCrypto } = this.deps;
+    const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.signDocument(). root=" + rootLocalName +
               ", placement=" +
               placement);
@@ -1709,8 +1709,35 @@ class Saml2Sso {
     // `saml.signatureAlgorithm` and `saml.canonicalizationAlgorithm`, through
     // `document_settings.ts` so every signer in this directory reads one
     // answer.
+    const signed = stsCrypto.signXml(xml, this.signDocumentOptions(
+      rootLocalName, id, placement));
+    log.debug("Leaving Saml2Sso.signDocument(). " + signed.length +
+              " characters.");
+    return signed;
+  }
+
+  // `signDocument()` with a realm key in the HSM signing off the event loop
+  // (#1955 P8 follow-up): `stsCrypto.signXmlOffLoop()`, which for a software
+  // key is `signXml()` itself, called in place — the same bytes.
+  private async signDocumentAsync(xml, rootLocalName, id, placement) {
+    const { stsCrypto } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.signDocumentAsync(). root=" + rootLocalName);
+    const signed = await stsCrypto.signXmlOffLoop(xml,
+      this.signDocumentOptions(rootLocalName, id, placement));
+    log.debug("Leaving Saml2Sso.signDocumentAsync(). " + signed.length +
+              " characters.");
+    return signed;
+  }
+
+  // What both document signers hand `signXml()`.
+  private signDocumentOptions(rootLocalName, id, placement) {
+    const { documentSettings, stsCrypto } = this.deps;
+    const { STS, log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.signDocumentOptions().");
     const how = documentSettings.signatureOptions();
-    const signed = stsCrypto.signXml(xml, {
+    log.debug("Leaving Saml2Sso.signDocumentOptions().");
+    return {
       // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
       // `STS.xmlSigner`, the one for the configured algorithm (#68).
       privateKeyPem: STS.xmlSigner.privateKeyPem,
@@ -1729,10 +1756,7 @@ class Saml2Sso {
       // value.
       refUri: id ? ('#' + id) : '',
       what: 'SAML 2.0 ' + rootLocalName
-    });
-    log.debug("Leaving Saml2Sso.signDocument(). " + signed.length +
-              " characters.");
-    return signed;
+    };
   }
 
   // The HTTP Redirect binding's DETACHED signature (section 3.4.4.1). It is a
@@ -1758,6 +1782,19 @@ class Saml2Sso {
                                                 signer.privateKeyPem, sigAlg,
                                                 signer.privateKey);
     log.debug("Leaving Saml2Sso.signQueryString().");
+    return signature;
+  }
+
+  // `signQueryString()` off the event loop for a realm key in the HSM (#1955
+  // P8 follow-up); a software key's signature is the synchronous door's.
+  private async signQueryStringAsync(queryString, sigAlg) {
+    const { stsCrypto } = this.deps;
+    const { STS, log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.signQueryStringAsync().");
+    const signer = STS.xmlSigner;
+    const signature = await stsCrypto.signQueryStringOffLoop(queryString,
+      signer.privateKeyPem, sigAlg, signer.privateKey);
+    log.debug("Leaving Saml2Sso.signQueryStringAsync().");
     return signature;
   }
 
@@ -2286,9 +2323,58 @@ class Saml2Sso {
   // service provider). Passing the issuer here would find no application
   // entry under it, and silently use the service-wide default every time.
   private buildResponse(opts) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.buildResponse(). status=" + opts.status);
+    const draft = this.responseDraft(opts);
+    if (!draft.signs) {
+      log.debug("Leaving Saml2Sso.buildResponse(). Unsigned.");
+      return draft.unsigned();
+    }
+    try {
+      const signed = this.signDocument(draft.xml, 'Response', draft.id,
+                                       'after-issuer');
+      log.debug("Leaving Saml2Sso.buildResponse().");
+      return draft.signedAs(signed);
+    } catch (e) {
+      log.debug("Caught in Saml2Sso.buildResponse(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Sso.buildResponse(). Unsigned.");
+      return draft.failed(e);
+    }
+  }
+
+  // `buildResponse()` with a realm key in the HSM signing off the event
+  // loop (#1955 P8 follow-up): the same Response, and the same answer to a
+  // signature that failed. A software key signs in place, as before.
+  private async buildResponseAsync(opts) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.buildResponseAsync(). status=" +
+              opts.status);
+    const draft = this.responseDraft(opts);
+    if (!draft.signs) {
+      log.debug("Leaving Saml2Sso.buildResponseAsync(). Unsigned.");
+      return draft.unsigned();
+    }
+    let signed;
+    try {
+      signed = await this.signDocumentAsync(draft.xml, 'Response', draft.id,
+                                            'after-issuer');
+    } catch (e) {
+      log.debug("Caught in Saml2Sso.buildResponseAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Sso.buildResponseAsync(). Unsigned.");
+      return draft.failed(e);
+    }
+    log.debug("Leaving Saml2Sso.buildResponseAsync().");
+    return draft.signedAs(signed);
+  }
+
+  // Everything `buildResponse()` does but the signature: the document, and
+  // what is answered once it is signed, unsigned, or failed to sign.
+  private responseDraft(opts) {
     const { errorCodes } = this.deps;
     const { genId, iso, log, logArtifact, xmlEscape } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.buildResponse(). status=" + opts.status);
+    log.debug("Entering Saml2Sso.responseDraft().");
     const id = genId();
     // The attributes and children in the model's order (#1579).
     const xml =
@@ -2304,37 +2390,43 @@ class Saml2Sso {
           assertion: opts.assertion || '' }) +
       '</samlp:Response>';
     logArtifact('SAML 2.0 Response', 'before signing', xml);
-    if (!this.settingFor(opts.sp || '', 'saml2.signResponse')) {
-      log.debug("Leaving Saml2Sso.buildResponse(). Unsigned: " +
-                "saml2.signResponse is off.");
-      return { xml: SamlModel.hold('saml2.Response', xml,
-                                   'SAML 2.0 Response'),
-               id: id, signed: false };
-    }
-    try {
-      const signed = this.signDocument(xml, 'Response', id, 'after-issuer');
-      logArtifact('SAML 2.0 Response', 'after signing', signed);
-      log.debug("Leaving Saml2Sso.buildResponse(). Signed.");
-      return { xml: SamlModel.hold('saml2.Response', signed,
-                                   'SAML 2.0 Response'),
-               id: id, signed: true };
-    } catch (e) {
-      log.debug("Caught in Saml2Sso.buildResponse(): " +
-                ((e && e.message) || e));
-      // Reported and returned unsigned rather than thrown, exactly as
-      // buildSamlAssertion() does: an unsigned response that a service provider
-      // rejects is a diagnosable failure, and an exception here is a 500 that
-      // says nothing about SAML at all.
-      log.error(errorCodes.tag('STS-SAML-0013') + 'the SAML 2.0 Response ' +
-                                                  'could not be signed, ' +
-                                                  'sending it unsigned: ' +
-                                                    e.message);
-      log.debug("Leaving Saml2Sso.buildResponse(). Unsigned after a signing " +
-                "failure.");
-      return { xml: SamlModel.hold('saml2.Response', xml,
-                                   'SAML 2.0 Response'),
-               id: id, signed: false };
-    }
+    const signs = !!this.settingFor(opts.sp || '', 'saml2.signResponse');
+    log.debug("Leaving Saml2Sso.responseDraft(). signs=" + signs);
+    return {
+      xml: xml, id: id, signs: signs,
+      unsigned: function () {
+        log.debug("Entering Saml2Sso.responseDraft.unsigned().");
+        log.debug("Saml2Sso.responseDraft(): unsigned, saml2.signResponse " +
+                  "is off.");
+        log.debug("Leaving Saml2Sso.responseDraft.unsigned().");
+        return { xml: SamlModel.hold('saml2.Response', xml,
+                                     'SAML 2.0 Response'),
+                 id: id, signed: false };
+      },
+      signedAs: function (signed) {
+        log.debug("Entering Saml2Sso.responseDraft.signedAs().");
+        logArtifact('SAML 2.0 Response', 'after signing', signed);
+        log.debug("Leaving Saml2Sso.responseDraft.signedAs().");
+        return { xml: SamlModel.hold('saml2.Response', signed,
+                                     'SAML 2.0 Response'),
+                 id: id, signed: true };
+      },
+      failed: function (e) {
+        log.debug("Entering Saml2Sso.responseDraft.failed().");
+        // Reported and returned unsigned rather than thrown, exactly as
+        // buildSamlAssertion() does: an unsigned response that a service
+        // provider rejects is a diagnosable failure, and an exception here
+        // is a 500 that says nothing about SAML at all.
+        log.error(errorCodes.tag('STS-SAML-0013') + 'the SAML 2.0 Response ' +
+                                                    'could not be signed, ' +
+                                                    'sending it unsigned: ' +
+                                                      e.message);
+        log.debug("Leaving Saml2Sso.responseDraft.failed().");
+        return { xml: SamlModel.hold('saml2.Response', xml,
+                                     'SAML 2.0 Response'),
+                 id: id, signed: false };
+      }
+    };
   }
 
   // The assertion, from the one builder. Everything the Web Browser SSO profile
@@ -2343,6 +2435,37 @@ class Saml2Sso {
     const { log } = this.deps.helpers;
     const { buildSamlAssertion } = this.deps.saml2;
     log.debug("Entering Saml2Sso.buildAssertionFor(). sp=" + spEntityId);
+    const asked = this.assertionAskFor(request, session, spEntityId,
+                                       idpEntityId, acsUrl);
+    const assertion = buildSamlAssertion(asked.subject, spEntityId,
+                                         asked.lifetimeMin, asked.opts);
+    log.debug("Leaving Saml2Sso.buildAssertionFor(). " + assertion.length +
+              " characters.");
+    return assertion;
+  }
+
+  // `buildAssertionFor()` through the builder's async twin (#1955 P8
+  // follow-up): a realm key in the HSM signs off the event loop.
+  private async buildAssertionForAsync(request, session, spEntityId,
+                                       idpEntityId, acsUrl) {
+    const { log } = this.deps.helpers;
+    const { buildSamlAssertionAsync } = this.deps.saml2;
+    log.debug("Entering Saml2Sso.buildAssertionForAsync(). sp=" +
+              spEntityId);
+    const asked = this.assertionAskFor(request, session, spEntityId,
+                                       idpEntityId, acsUrl);
+    const assertion = await buildSamlAssertionAsync(asked.subject,
+      spEntityId, asked.lifetimeMin, asked.opts);
+    log.debug("Leaving Saml2Sso.buildAssertionForAsync(). " +
+              assertion.length + " characters.");
+    return assertion;
+  }
+
+  // What the builder is asked for this service provider's assertion.
+  private assertionAskFor(request, session, spEntityId, idpEntityId,
+                          acsUrl) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.assertionAskFor().");
     const user = session.user;
     const context = this.authnContextFor(session);
     // The asked EAP class, when the session earned it (#736). '' keeps the
@@ -2353,8 +2476,8 @@ class Saml2Sso {
     const lifetimeMin = Number(this.settingFor(spEntityId,
                                                'saml2.assertionLifetimeMin'));
     const format = this.nameIdFormatFor(request, spEntityId);
-    const assertion = buildSamlAssertion(user.username, spEntityId, lifetimeMin,
-                                         {
+    log.debug("Leaving Saml2Sso.assertionAskFor().");
+    return { subject: user.username, lifetimeMin: lifetimeMin, opts: {
       issuer: idpEntityId,
       authnContextClassRef: askedClass || context.classRef,
       nameIdFormat: format,
@@ -2379,10 +2502,7 @@ class Saml2Sso {
                              1000).toISOString(),
       attributes: this.attributesFor(user),
       sign: this.signsAssertionFor(spEntityId)
-    });
-    log.debug("Leaving Saml2Sso.buildAssertionFor(). " + assertion.length +
-              " characters.");
-    return assertion;
+    } };
   }
 
   // ---------------------------------------------------------------------------
@@ -2483,9 +2603,43 @@ class Saml2Sso {
   // when this service signs its responses — the detached signature of section
   // 3.4.4.1 over the octet string in the order that section fixes.
   private redirectUrlFor(destination, field, xml, relayState, spEntityId) {
-    const { documentSettings } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.redirectUrlFor(). field=" + field);
+    const query = this.redirectQueryFor(field, xml, relayState, spEntityId);
+    const qs = query.sigAlg
+      ? query.qs + '&Signature=' +
+        encodeURIComponent(this.signQueryString(query.qs, query.sigAlg))
+      : query.qs;
+    const url = destination + (destination.indexOf('?') >= 0 ? '&' : '?') + qs;
+    log.debug("Leaving Saml2Sso.redirectUrlFor(). " + url.length +
+              " characters.");
+    return url;
+  }
+
+  // `redirectUrlFor()` with a realm key in the HSM signing the query string
+  // off the event loop (#1955 P8 follow-up); the same URL.
+  private async redirectUrlForAsync(destination, field, xml, relayState,
+                                    spEntityId) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.redirectUrlForAsync(). field=" + field);
+    const query = this.redirectQueryFor(field, xml, relayState, spEntityId);
+    const qs = query.sigAlg
+      ? query.qs + '&Signature=' +
+        encodeURIComponent(await this.signQueryStringAsync(query.qs,
+                                                           query.sigAlg))
+      : query.qs;
+    const url = destination + (destination.indexOf('?') >= 0 ? '&' : '?') + qs;
+    log.debug("Leaving Saml2Sso.redirectUrlForAsync(). " + url.length +
+              " characters.");
+    return url;
+  }
+
+  // The query string a redirect carries up to its Signature, and the SigAlg
+  // to sign it with (none where the response is not signed).
+  private redirectQueryFor(field, xml, relayState, spEntityId) {
+    const { documentSettings } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.redirectQueryFor().");
     // THE ENVELOPED SIGNATURE COMES OFF (saml-bindings-2.0-os section
     // 3.4.4.1): on this binding the query string is what is signed, below. It
     // was left on until #192, and a LogoutRequest from here then reached
@@ -2502,13 +2656,11 @@ class Saml2Sso {
       // signQueryString().
       const sigAlg = documentSettings.signatureOptions().sigAlg;
       qs += '&SigAlg=' + encodeURIComponent(sigAlg);
-      qs += '&Signature=' + encodeURIComponent(this.signQueryString(qs,
-                                                                    sigAlg));
+      log.debug("Leaving Saml2Sso.redirectQueryFor(). Signed.");
+      return { qs: qs, sigAlg: sigAlg };
     }
-    const url = destination + (destination.indexOf('?') >= 0 ? '&' : '?') + qs;
-    log.debug("Leaving Saml2Sso.redirectUrlFor(). " + url.length +
-              " characters.");
-    return url;
+    log.debug("Leaving Saml2Sso.redirectQueryFor(). Unsigned.");
+    return { qs: qs, sigAlg: '' };
   }
 
   // THE SimpleSign FORM (#37 follow-up): the message base64'd as the POST
@@ -2532,7 +2684,9 @@ class Saml2Sso {
       '$1');
   }
 
-  private simpleSignFields(field, xml, relayState, spEntityId) {
+  // Async since #1955 P8 follow-up: the form's signature is made off the
+  // event loop for a realm key in the HSM.
+  private async simpleSignFields(field, xml, relayState, spEntityId) {
     const { documentSettings } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.simpleSignFields().");
@@ -2548,7 +2702,8 @@ class Saml2Sso {
         (relayState ? '&RelayState=' + relayState : '') +
         '&SigAlg=' + sigAlg;
       extra.push(['SigAlg', sigAlg]);
-      extra.push(['Signature', this.signQueryString(octets, sigAlg)]);
+      extra.push(['Signature', await this.signQueryStringAsync(octets,
+                                                                sigAlg)]);
     }
     log.debug("Leaving Saml2Sso.simpleSignFields(). signed=" +
               (extra.length > 0));
@@ -2674,7 +2829,10 @@ class Saml2Sso {
   // asked for. One function for the sign-in response and the logout response
   // alike, because the four bindings are a property of SAML and not of the
   // message.
-  private deliver(res, opts) {
+  // Async since #1955 P8 follow-up: a detached signature (HTTP-Redirect,
+  // SimpleSign) is made off the event loop for a realm key in the HSM. Every
+  // caller awaits it, so the response is sent before the caller's next line.
+  private async deliver(res, opts) {
     const { config } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.deliver(). binding=" + opts.binding);
@@ -2719,9 +2877,10 @@ class Saml2Sso {
       return;
     }
     if (opts.binding === BINDING_REDIRECT) {
-      const url = this.redirectUrlFor(opts.destination, opts.field, opts.xml,
-                                      opts.relayState,
-                                      opts.spEntityId);
+      const url = await this.redirectUrlForAsync(opts.destination,
+                                                 opts.field, opts.xml,
+                                                 opts.relayState,
+                                                 opts.spEntityId);
       const warnAt = Number(config.value('saml2.redirectWarnLength'));
       if (url.length > warnAt) {
         // Not refused — reported. Section 4.1.2 says the Redirect binding MUST
@@ -2753,8 +2912,9 @@ class Saml2Sso {
                                opts.note.words ? opts.note.words(t) : {},
                                { t: t });
     if (opts.binding === BINDING_SIMPLESIGN) {
-      const form = this.simpleSignFields(opts.field, opts.xml,
-                                         opts.relayState, opts.spEntityId);
+      const form = await this.simpleSignFields(opts.field, opts.xml,
+                                               opts.relayState,
+                                               opts.spEntityId);
       this.sendPostBinding(res, note.title,
                            this.postBindingPage(opts.destination, opts.field,
                                                 form.message, opts.relayState,
@@ -2914,7 +3074,10 @@ class Saml2Sso {
     return null;
   }
 
-  private singleSignOnChecked(req, res, claimed) {
+  // Async since #1955 P8 follow-up: every Response it delivers is signed
+  // off the event loop for a realm key in the HSM. singleSignOn() returns
+  // its promise to the express guard.
+  private async singleSignOnChecked(req, res, claimed) {
     const { applications, audit, config, errorCodes, gate, mode,
             returnAddress } = this.deps;
     const { beginAuthentication, notePresented, sessionOf } = this.deps.authn;
@@ -3312,7 +3475,7 @@ class Saml2Sso {
                'saml2.spInitiatedSso is off for it.');
       pendingRequests.delete(String(params.rid || ''));
       errorCodes.mark(res, 'STS-SAML-0111');
-      const closed = this.buildResponse({
+      const closed = await this.buildResponseAsync({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
@@ -3321,7 +3484,7 @@ class Saml2Sso {
                        'this service provider starts (saml2.spInitiatedSso ' +
                        'is off for it).'
       });
-      this.deliver(res, {
+      await this.deliver(res, {
              binding: wanted.binding, destination: acsUrl,
              field: 'SAMLResponse', xml: closed.xml,
              relayState: relayState, issuer: idpEntityId,
@@ -3345,14 +3508,14 @@ class Saml2Sso {
                '" with InvalidNameIDPolicy.');
       pendingRequests.delete(String(params.rid || ''));
       errorCodes.mark(res, 'STS-SAML-0071');
-      const refusal = this.buildResponse({
+      const refusal = await this.buildResponseAsync({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_REQUESTER,
         subStatus: STATUS_INVALID_NAMEID_POLICY,
         statusMessage: policyProblem
       });
-      this.deliver(res, {
+      await this.deliver(res, {
              binding: wanted.binding, destination: acsUrl,
              field: 'SAMLResponse', xml: refusal.xml,
              relayState: relayState, issuer: idpEntityId,
@@ -3381,7 +3544,7 @@ class Saml2Sso {
       log.debug("The sign-in did not complete: " + params.authn_error);
       pendingRequests.delete(String(params.rid || ''));
       errorCodes.mark(res, 'STS-SAML-0009');
-      const refusal = this.buildResponse({
+      const refusal = await this.buildResponseAsync({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
@@ -3389,7 +3552,7 @@ class Saml2Sso {
         statusMessage: String(params.authn_error_description ||
                                    params.authn_error)
       });
-      this.deliver(res, {
+      await this.deliver(res, {
              binding: wanted.binding, destination: acsUrl,
                field: 'SAMLResponse',
              xml: refusal.xml,
@@ -3429,7 +3592,13 @@ class Saml2Sso {
                         !readNow.multiFactor);
     const eapUnmet = !!(session && !PhishingResistance.eapDemandMet(
       session, request.requestedAuthnContexts));
-    const stale = mfaUnmet || eapUnmet;
+    // A REQUIRED DYNAMIC ROLE THE SESSION CHOSE NOTHING FOR (#1072): single
+    // sign-on carries no new choice, so the person signs in again, where the
+    // role step is drawn — once, as a ForceAuthn is (`returned` below).
+    const roleOwed = !!session &&
+      typeof this.deps.authn.roleChoiceOwed === 'function' &&
+      this.deps.authn.roleChoiceOwed(session, spEntityId);
+    const stale = mfaUnmet || eapUnmet || roleOwed;
     // ---------------------------------------------------------------------
     // ONE TRIP TO THE SIGN-IN SCREEN PER REQUEST, AND NEVER A SECOND
     // (2026-09-14).
@@ -3491,7 +3660,7 @@ class Saml2Sso {
             'NoPassive was answered (IsPassive)');
         }
         errorCodes.mark(res, 'STS-SAML-0008');
-        const refusal = this.buildResponse({
+        const refusal = await this.buildResponseAsync({
           issuer: idpEntityId, sp: spEntityId,
           destination: acsUrl, inResponseTo: request.id,
           status: STATUS_RESPONDER, subStatus: STATUS_NO_PASSIVE,
@@ -3507,7 +3676,7 @@ class Saml2Sso {
               : 'There is no browser session here, and IsPassive forbids ' +
                 'asking for one.')
         });
-        this.deliver(res, {
+        await this.deliver(res, {
                binding: wanted.binding, destination: acsUrl,
                  field: 'SAMLResponse',
                xml: refusal.xml,
@@ -3640,12 +3809,12 @@ class Saml2Sso {
           : STATUS_NO_AUTHN_CONTEXT;
         errorCodes.mark(res, unmet === 'authn' ? 'STS-SAML-0055'
           : (unmet === 'eap' ? 'STS-SAML-0116' : 'STS-SAML-0056'));
-        const refusal = this.buildResponse({
+        const refusal = await this.buildResponseAsync({
           issuer: idpEntityId, sp: spEntityId,
           destination: acsUrl, inResponseTo: request.id,
           status: STATUS_RESPONDER, subStatus: subStatus, statusMessage: why
         });
-        this.deliver(res, {
+        await this.deliver(res, {
                binding: wanted.binding, destination: acsUrl,
                  field: 'SAMLResponse',
                xml: refusal.xml,
@@ -3778,14 +3947,14 @@ class Saml2Sso {
           ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0107'
                                                : 'STS-SAML-0100')
           : 'STS-SAML-0010'));
-      const denied = this.buildResponse({
+      const denied = await this.buildResponseAsync({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
         subStatus: STATUS_REQUEST_DENIED,
         statusMessage: roleAnswer.why
       });
-      this.deliver(res, {
+      await this.deliver(res, {
              binding: wanted.binding, destination: acsUrl,
                field: 'SAMLResponse',
              xml: denied.xml, relayState: relayState, issuer: idpEntityId,
@@ -3840,7 +4009,7 @@ class Saml2Sso {
       pendingRequests.delete(String(params.rid || ''));
       errorCodes.mark(res, consentStep.passive ? 'STS-SAML-0119'
                                                 : 'STS-SAML-0120');
-      const declined = this.buildResponse({
+      const declined = await this.buildResponseAsync({
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
@@ -3848,7 +4017,7 @@ class Saml2Sso {
           : STATUS_REQUEST_DENIED,
         statusMessage: consentStep.why
       });
-      this.deliver(res, {
+      await this.deliver(res, {
              binding: wanted.binding, destination: acsUrl,
              field: 'SAMLResponse',
              xml: declined.xml, relayState: relayState, issuer: idpEntityId,
@@ -3862,7 +4031,7 @@ class Saml2Sso {
 
     pendingRequests.delete(String(params.rid || ''));
     notePresented(session, 'SAML 2.0', req, spEntityId);
-    this.issueSignInResponse(res, {
+    await this.issueSignInResponse(res, {
            request: request, session: session, spEntityId: spEntityId,
            idpEntityId: idpEntityId,
            acsUrl: acsUrl, binding: wanted.binding, relayState: relayState
@@ -3930,7 +4099,8 @@ class Saml2Sso {
   // on the held request (`forcedAt`) because it holds one anyway; there is
   // no request here to hold.
   // ---------------------------------------------------------------------------
-  private unsolicitedSignOn(req, res) {
+  // Async since #1955 P8 follow-up (singleSignOnChecked()'s reason).
+  private async unsolicitedSignOn(req, res) {
     const { applications, errorCodes, gate, mode,
             returnAddress } = this.deps;
     const { beginAuthentication, notePresented, sessionOf } = this.deps.authn;
@@ -4032,12 +4202,25 @@ class Saml2Sso {
     const relayState = String(params.target || params.RelayState || '');
 
     const session = sessionOf(req);
-    if (!session) {
-      const query = this.rawQueryOf(req);
+    // A LINK THAT ASKS FOR A FRESH SIGN-IN (#1072): `forceAuthn=true`, the
+    // link's spelling of an AuthnRequest's ForceAuthn, which the portal's
+    // "Sign in again" adds so a person may choose dynamic roles for this
+    // service provider. STRIPPED from the return address, so the return
+    // lands here with the new sign-in and goes on rather than forcing again.
+    const forced = String(params.forceAuthn || '').toLowerCase() === 'true';
+    // And a required dynamic role the session chose nothing for (#1072).
+    const roleOwed = !!session && !forced &&
+      typeof this.deps.authn.roleChoiceOwed === 'function' &&
+      this.deps.authn.roleChoiceOwed(session, spEntityId);
+    if (!session || forced || roleOwed) {
+      const kept = new URLSearchParams(this.rawQueryOf(req));
+      kept.delete('forceAuthn');
+      const query = kept.toString();
       const where2 = beginAuthentication({
         returnTo: req.path + (query ? '?' + query : ''),
         application: spEntityId,
         protocol: 'SAML 2.0',
+        accountChoice: forced ? 'never' : '',
         details: [
           { label: 'Service provider', value: spEntityId,
             note: 'named by the link — an identity-provider-initiated ' +
@@ -4149,13 +4332,13 @@ class Saml2Sso {
           ? (roleAnswer.mechanism.secondFactor ? 'STS-SAML-0107'
                                                : 'STS-SAML-0100')
           : (steppedUp ? 'STS-SAML-0112' : 'STS-SAML-0010')));
-      const denied = this.buildResponse({
+      const denied = await this.buildResponseAsync({
         issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
         inResponseTo: '', status: STATUS_RESPONDER,
         subStatus: STATUS_REQUEST_DENIED,
         statusMessage: roleAnswer.why
       });
-      this.deliver(res, {
+      await this.deliver(res, {
         binding: binding, destination: acsUrl, field: 'SAMLResponse',
         xml: denied.xml, relayState: relayState, issuer: idpEntityId,
         spEntityId: spEntityId, inResponseTo: '',
@@ -4194,13 +4377,13 @@ class Saml2Sso {
     }
     if (consentStep.action === 'refuse') {
       errorCodes.mark(res, 'STS-SAML-0120');
-      const declined = this.buildResponse({
+      const declined = await this.buildResponseAsync({
         issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
         inResponseTo: '', status: STATUS_RESPONDER,
         subStatus: STATUS_REQUEST_DENIED,
         statusMessage: consentStep.why
       });
-      this.deliver(res, {
+      await this.deliver(res, {
         binding: binding, destination: acsUrl, field: 'SAMLResponse',
         xml: declined.xml, relayState: relayState, issuer: idpEntityId,
         spEntityId: spEntityId, inResponseTo: '',
@@ -4211,7 +4394,7 @@ class Saml2Sso {
       return;
     }
     notePresented(session, 'SAML 2.0', req, spEntityId);
-    this.issueSignInResponse(res, {
+    await this.issueSignInResponse(res, {
       request: { id: '', nameIdFormat: '', requestedAuthnContexts: [] },
       session: session, spEntityId: spEntityId, idpEntityId: idpEntityId,
       acsUrl: acsUrl, binding: binding, relayState: relayState
@@ -4280,7 +4463,10 @@ class Saml2Sso {
     logArtifact('SAML 2.0 AttributeQuery', 'as received over SOAP', raw);
     let inResponseTo = '';
     let spEntityId = '';
-    const answer = function (code, status, subStatus, message, assertion) {
+    // Async since #1955 P8 follow-up: the Response is signed off the
+    // event loop for a realm key in the HSM; every caller returns it.
+    const answer = async function (code, status, subStatus, message,
+                                   assertion) {
       log.debug("Entering answer().");
       if (code) {
         errorCodes.mark(res, code);
@@ -4292,7 +4478,7 @@ class Saml2Sso {
         summary: 'An AttributeQuery from "' + (spEntityId || '(unnamed)') +
                  '": ' + (code ? 'refused — ' + message : 'answered')
       });
-      const response = self.buildResponse({
+      const response = await self.buildResponseAsync({
         issuer: self.idpEntityId(),
         sp: spEntityId, destination: '', inResponseTo: inResponseTo,
         status: status,
@@ -4357,15 +4543,21 @@ class Saml2Sso {
     const namedEl = firstByLocal(query, 'NameID');
     const named = namedEl ? String(namedEl.textContent || '').trim() : '';
     log.debug("Leaving Saml2Sso.attributeQuery(). Finding the session.");
+    // The answer is made AFTER the placement's own failure is handled, so a
+    // failure answering (a signature) is not reported as sessions that
+    // could not be read: it reaches the route's guard, as it does in
+    // single-cell mode (#1955 P8 follow-up).
     return samlCells.sessionHolder(req, 'saml2', spEntityId, named)
       .then(function (holder: string) {
         if (cellPlacement.relayToCell(req, res, holder,
                                       'a SAML 2.0 attribute query')) {
-          return undefined;
+          return false;
         }
-        return self.answerAttributeQuery(req, res, query, spEntityId,
-                                         answer);
-      }).catch(function (e) {
+        return true;
+      }).then(function (here: boolean) {
+        return here ? self.answerAttributeQuery(req, res, query, spEntityId,
+                                                answer) : undefined;
+      }, function (e) {
         log.error(errorCodes.tag('STS-AUTHN-0338') +
                   'saml2: an AttributeQuery could not be placed because ' +
                   'the sessions could not be read: ' +
@@ -4380,10 +4572,12 @@ class Saml2Sso {
 
   // The attribute query, once it is known to be answered HERE: the caller,
   // the session, the issuance policy and the answer (see attributeQuery()).
-  private answerAttributeQuery(req, res, query, spEntityId, answer) {
+  // Async since #1955 P8 follow-up: the assertion is signed off the event
+  // loop for a realm key in the HSM.
+  private async answerAttributeQuery(req, res, query, spEntityId, answer) {
     const { gate, mode } = this.deps;
     const { firstByLocal, log } = this.deps.helpers;
-    const { buildSamlAssertion } = this.deps.saml2;
+    const { buildSamlAssertionAsync } = this.deps.saml2;
     log.debug("Entering Saml2Sso.answerAttributeQuery().");
     const caller = this.authenticateQueryCaller(req, query, spEntityId);
     if (caller.refuse) {
@@ -4467,7 +4661,7 @@ class Saml2Sso {
     // Read as it stands (#39): the row's `min: 1` bounds it.
     const lifetimeMin = Number(this.settingFor(spEntityId,
                                                'saml2.assertionLifetimeMin'));
-    const built = buildSamlAssertion(
+    const built = await buildSamlAssertionAsync(
       String((session.user || {}).username || ''), spEntityId, lifetimeMin, {
         issuer: idpEntityId, nameIdFormat: nameIdFormat, nameIdValue: nameId,
         // The query's qualifiers, repeated: the answer's Subject must STRONGLY
@@ -4552,9 +4746,62 @@ class Saml2Sso {
    *   why }` — `policy` true for the issuance policy's refusal
    */
   pepProxyResponse(opts: any): any {
-    const { mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.pepProxyResponse(). sp=" + opts.spEntityId);
+    const draft = this.pepProxyDraft(opts);
+    if (draft.answer) {
+      log.debug("Leaving Saml2Sso.pepProxyResponse(). Refused by policy.");
+      return draft.answer;
+    }
+    const built = this.buildAssertionFor(draft.request, draft.session,
+      draft.spEntityId, draft.idpEntityId, draft.acsUrl);
+    const sealed = this.pepProxySeal(draft, built);
+    if (sealed.answer) {
+      log.debug("Leaving Saml2Sso.pepProxyResponse(). Not sealed.");
+      return sealed.answer;
+    }
+    const response = this.buildResponse(sealed.response);
+    log.debug("Leaving Saml2Sso.pepProxyResponse(). Built.");
+    return this.pepProxyAnswer(response, sealed.expiry);
+  }
+
+  /**
+   * `pepProxyResponse()`, with the assertion and the Response signed off the
+   * event loop for a realm key in the HSM (#1955 P8 follow-up). The PEP
+   * proxy awaits this one; the synchronous one stays for in-place readers.
+   * The two share every step but the two signatures (`pepProxyDraft()`,
+   * `pepProxySeal()`, `pepProxyAnswer()`), so they cannot drift.
+   *
+   * @param opts - as `pepProxyResponse()`'s
+   * @returns a promise of `pepProxyResponse()`'s answer
+   */
+  async pepProxyResponseAsync(opts: any): Promise<any> {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxyResponseAsync(). sp=" +
+              opts.spEntityId);
+    const draft = this.pepProxyDraft(opts);
+    if (draft.answer) {
+      log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Refused by " +
+                "policy.");
+      return draft.answer;
+    }
+    const built = await this.buildAssertionForAsync(draft.request,
+      draft.session, draft.spEntityId, draft.idpEntityId, draft.acsUrl);
+    const sealed = this.pepProxySeal(draft, built);
+    if (sealed.answer) {
+      log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Not sealed.");
+      return sealed.answer;
+    }
+    const response = await this.buildResponseAsync(sealed.response);
+    log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Built.");
+    return this.pepProxyAnswer(response, sealed.expiry);
+  }
+
+  // The PEP proxy's Response before anything is signed: who it is about and
+  // for, and the issuance policy's answer (`answer` set when it refused).
+  private pepProxyDraft(opts: any): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxyDraft().");
     const session = opts.session;
     const spEntityId = String(opts.spEntityId || '');
     const acsUrl = String(opts.acsUrl || '');
@@ -4570,12 +4817,23 @@ class Saml2Sso {
       session: session
     });
     if (!roleAnswer.allowed) {
-      log.debug("Leaving Saml2Sso.pepProxyResponse(). Refused by policy.");
-      return { ok: false, policy: true, why: roleAnswer.why };
+      log.debug("Leaving Saml2Sso.pepProxyDraft(). Refused by policy.");
+      return { answer: { ok: false, policy: true, why: roleAnswer.why } };
     }
-    const built = this.buildAssertionFor({ id: '', requestedAuthnContexts: [] },
-                                         session, spEntityId, idpEntityId,
-                                         acsUrl);
+    log.debug("Leaving Saml2Sso.pepProxyDraft().");
+    return { session: session, spEntityId: spEntityId, acsUrl: acsUrl,
+             idpEntityId: idpEntityId,
+             request: { id: '', requestedAuthnContexts: [] } };
+  }
+
+  // The signed assertion encrypted where the application asks, and the
+  // Response's options; `answer` set where encryption was required and not
+  // possible.
+  private pepProxySeal(draft: any, built: string): any {
+    const { mode } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxySeal().");
+    const spEntityId = draft.spEntityId;
     const expiry = /NotOnOrAfter="([^"]+)"/.exec(built);
     const wantsEncryption = !!this.settingFor(spEntityId,
                                               'saml2.encryptAssertion') ||
@@ -4587,30 +4845,38 @@ class Saml2Sso {
       : { xml: built, encrypted: false };
     if (wantsEncryption && !sealed.encrypted &&
         (sealed.refused || !mode.sendsWeakerThanAsked())) {
-      log.debug("Leaving Saml2Sso.pepProxyResponse(). Encryption required " +
-                "and not possible.");
-      return { ok: false, policy: false,
+      log.debug("Leaving Saml2Sso.pepProxySeal(). Encryption required and " +
+                "not possible.");
+      return { answer: { ok: false, policy: false,
                why: 'the assertion for "' + spEntityId + '" is configured ' +
                     'to be encrypted and could not be (' +
-                    (sealed.why || 'unknown') + ')' };
+                    (sealed.why || 'unknown') + ')' } };
     }
-    const response = this.buildResponse({
-      issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
-      inResponseTo: '', status: STATUS_SUCCESS, assertion: sealed.xml
-    });
-    log.debug("Leaving Saml2Sso.pepProxyResponse(). Built.");
-    return { ok: true, xml: response.xml,
-             notOnOrAfter: expiry ? expiry[1] : '' };
+    log.debug("Leaving Saml2Sso.pepProxySeal().");
+    return { expiry: expiry ? expiry[1] : '',
+             response: { issuer: draft.idpEntityId, sp: spEntityId,
+                         destination: draft.acsUrl, inResponseTo: '',
+                         status: STATUS_SUCCESS, assertion: sealed.xml } };
   }
 
-  private issueSignInResponse(res, ctx) {
+  // The PEP proxy's answer around a built Response.
+  private pepProxyAnswer(response: any, expiry: string): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxyAnswer().");
+    log.debug("Leaving Saml2Sso.pepProxyAnswer().");
+    return { ok: true, xml: response.xml, notOnOrAfter: expiry };
+  }
+
+  // Async since #1955 P8 follow-up: the assertion and the Response are
+  // signed off the event loop for a realm key in the HSM.
+  private async issueSignInResponse(res, ctx) {
     const { errorCodes, mode } = this.deps;
     const { noteSessionChanged } = this.deps.authn;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.issueSignInResponse(). sp=" + ctx.spEntityId);
     const session = ctx.session;
-    const built = this.buildAssertionFor(ctx.request, session, ctx.spEntityId,
-                                        ctx.idpEntityId, ctx.acsUrl);
+    const built = await this.buildAssertionForAsync(ctx.request, session,
+      ctx.spEntityId, ctx.idpEntityId, ctx.acsUrl);
     // SIGNED FIRST, THEN ENCRYPTED, and that order is the specification's
     // rather than a preference: the signature lives INSIDE the ciphertext, so
     // what a service provider verifies is what it decrypted. Encrypting first
@@ -4656,7 +4922,7 @@ class Saml2Sso {
                (sealed.why || 'unknown') + '). Development mode would have ' +
                                            'sent it anyway.');
       errorCodes.mark(res, 'STS-SAML-0011');
-      const refusal = this.buildResponse({
+      const refusal = await this.buildResponseAsync({
         issuer: ctx.idpEntityId, sp: ctx.spEntityId,
         destination: ctx.acsUrl, inResponseTo: ctx.request.id,
         status: STATUS_RESPONDER,
@@ -4667,7 +4933,7 @@ class Saml2Sso {
                             'certificate for it (samlEncryptionCertificate, ' +
                             'or its metadata).'
       });
-      this.deliver(res, {
+      await this.deliver(res, {
              binding: ctx.binding, destination: ctx.acsUrl,
                field: 'SAMLResponse',
              xml: refusal.xml, relayState: ctx.relayState,
@@ -4683,7 +4949,7 @@ class Saml2Sso {
       return;
     }
     const assertion = sealed.xml;
-    const response = this.buildResponse({
+    const response = await this.buildResponseAsync({
       issuer: ctx.idpEntityId, sp: ctx.spEntityId,
       destination: ctx.acsUrl, inResponseTo: ctx.request.id,
       status: STATUS_SUCCESS, assertion: assertion
@@ -4729,7 +4995,7 @@ class Saml2Sso {
     // `authn.noteSessionChanged()` carries the argument.
     noteSessionChanged(session);
 
-    this.deliver(res, {
+    await this.deliver(res, {
            binding: ctx.binding, destination: ctx.acsUrl, field: 'SAMLResponse',
            xml: response.xml,
            relayState: ctx.relayState, issuer: ctx.idpEntityId,
@@ -5221,8 +5487,10 @@ class Saml2Sso {
     return { url: '', from: '' };
   }
 
-  private buildLogoutResponse(idpEntityId, destination, inResponseTo, status,
-                               message, sp, subStatus?) {
+  // Async since #1955 P8 follow-up: signed off the event loop for a realm
+  // key in the HSM (`signDocumentAsync()`); in place for a software key.
+  private async buildLogoutResponse(idpEntityId, destination, inResponseTo,
+                                    status, message, sp, subStatus?) {
     const { errorCodes } = this.deps;
     const { genId, iso, log, logArtifact, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.buildLogoutResponse(). status=" + status);
@@ -5248,8 +5516,8 @@ class Saml2Sso {
                             'SAML 2.0 LogoutResponse');
     }
     try {
-      const signed = this.signDocument(xml, 'LogoutResponse', id,
-                                       'after-issuer');
+      const signed = await this.signDocumentAsync(xml, 'LogoutResponse', id,
+                                                  'after-issuer');
       logArtifact('SAML 2.0 LogoutResponse', 'after signing', signed);
       log.debug("Leaving Saml2Sso.buildLogoutResponse(). Signed.");
       return SamlModel.hold('saml2.LogoutResponse', signed,
@@ -5300,9 +5568,60 @@ class Saml2Sso {
 
   private buildLogoutRequest(idpEntityId, destination, nameId, nameIdFormat,
                               sessionIndex, sp) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.buildLogoutRequest(). to=" + destination);
+    const draft = this.logoutRequestDraft(idpEntityId, destination, nameId,
+                                          nameIdFormat, sessionIndex, sp);
+    if (!draft.signs) {
+      log.debug("Leaving Saml2Sso.buildLogoutRequest(). Unsigned.");
+      return draft.unsigned();
+    }
+    try {
+      const signed = this.signDocument(draft.xml, 'LogoutRequest', draft.id,
+                                       'after-issuer');
+      log.debug("Leaving Saml2Sso.buildLogoutRequest(). Signed.");
+      return draft.signedAs(signed);
+    } catch (e) {
+      log.debug("Caught in Saml2Sso.buildLogoutRequest(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Sso.buildLogoutRequest(). Unsigned.");
+      return draft.failed(e);
+    }
+  }
+
+  // `buildLogoutRequest()` with a realm key in the HSM signing off the event
+  // loop (#1955 P8 follow-up).
+  private async buildLogoutRequestAsync(idpEntityId, destination, nameId,
+                                        nameIdFormat, sessionIndex, sp) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.buildLogoutRequestAsync(). to=" +
+              destination);
+    const draft = this.logoutRequestDraft(idpEntityId, destination, nameId,
+                                          nameIdFormat, sessionIndex, sp);
+    if (!draft.signs) {
+      log.debug("Leaving Saml2Sso.buildLogoutRequestAsync(). Unsigned.");
+      return draft.unsigned();
+    }
+    let signed;
+    try {
+      signed = await this.signDocumentAsync(draft.xml, 'LogoutRequest',
+                                            draft.id, 'after-issuer');
+    } catch (e) {
+      log.debug("Caught in Saml2Sso.buildLogoutRequestAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Sso.buildLogoutRequestAsync(). Unsigned.");
+      return draft.failed(e);
+    }
+    log.debug("Leaving Saml2Sso.buildLogoutRequestAsync(). Signed.");
+    return draft.signedAs(signed);
+  }
+
+  // A LogoutRequest up to its signature, and its three endings.
+  private logoutRequestDraft(idpEntityId, destination, nameId, nameIdFormat,
+                             sessionIndex, sp) {
     const { errorCodes } = this.deps;
     const { genId, iso, log, logArtifact, xmlEscape } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.buildLogoutRequest(). to=" + destination);
+    log.debug("Entering Saml2Sso.logoutRequestDraft().");
     const id = genId();
     const xml =
       '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
@@ -5324,31 +5643,38 @@ class Saml2Sso {
             : '' }) +
       '</samlp:LogoutRequest>';
     logArtifact('SAML 2.0 LogoutRequest', 'before signing', xml);
-    if (!this.settingFor(sp || '', 'saml2.signResponse')) {
-      log.debug("Leaving Saml2Sso.buildLogoutRequest(). Unsigned.");
-      return SamlModel.hold('saml2.LogoutRequest', xml,
-                            'SAML 2.0 LogoutRequest');
-    }
-    try {
-      const signed = this.signDocument(xml, 'LogoutRequest', id,
-                                       'after-issuer');
-      log.debug("Leaving Saml2Sso.buildLogoutRequest(). Signed.");
-      return SamlModel.hold('saml2.LogoutRequest', signed,
-                            'SAML 2.0 LogoutRequest');
-    } catch (e) {
-      log.debug("Caught in Saml2Sso.buildLogoutRequest(): " +
-                ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-SAML-0013') + 'the LogoutRequest could ' +
-                                                  'not be signed, sending it ' +
-                                                  'unsigned: ' + e.message);
-      log.debug("Leaving Saml2Sso.buildLogoutRequest(). Unsigned after a " +
-                "signing failure.");
-      return SamlModel.hold('saml2.LogoutRequest', xml,
-                            'SAML 2.0 LogoutRequest');
-    }
+    const signs = !!this.settingFor(sp || '', 'saml2.signResponse');
+    log.debug("Leaving Saml2Sso.logoutRequestDraft(). signs=" + signs);
+    return {
+      xml: xml, id: id, signs: signs,
+      unsigned: function () {
+        log.debug("Entering Saml2Sso.logoutRequestDraft.unsigned().");
+        log.debug("Leaving Saml2Sso.logoutRequestDraft.unsigned().");
+        return SamlModel.hold('saml2.LogoutRequest', xml,
+                              'SAML 2.0 LogoutRequest');
+      },
+      signedAs: function (signed) {
+        log.debug("Entering Saml2Sso.logoutRequestDraft.signedAs().");
+        log.debug("Leaving Saml2Sso.logoutRequestDraft.signedAs().");
+        return SamlModel.hold('saml2.LogoutRequest', signed,
+                              'SAML 2.0 LogoutRequest');
+      },
+      failed: function (e) {
+        log.debug("Entering Saml2Sso.logoutRequestDraft.failed().");
+        log.error(errorCodes.tag('STS-SAML-0013') + 'the LogoutRequest ' +
+                                                    'could not be signed, ' +
+                                                    'sending it unsigned: ' +
+                                                    e.message);
+        log.debug("Leaving Saml2Sso.logoutRequestDraft.failed().");
+        return SamlModel.hold('saml2.LogoutRequest', xml,
+                              'SAML 2.0 LogoutRequest');
+      }
+    };
   }
 
-  private singleLogout(req, res) {
+  // Async since #1955 P8 follow-up: an EncryptedID is opened, and the
+  // LogoutResponse signed, off the event loop for a realm key in the HSM.
+  private async singleLogout(req, res) {
     const { applications, errorCodes, mode, validation } = this.deps;
     const { endSession } = this.deps.authn;
     const { STS, baseUrlOf, firstByLocal, log, logArtifact, textByLocal,
@@ -5538,7 +5864,7 @@ class Saml2Sso {
     let decrypted = null;
     if (encryptedIdEl && !nameIdEl) {
       // Any of this realm's RSA keys, every live generation (#42).
-      decrypted = this.deps.helpers.decryptOwnElement(
+      decrypted = await this.deps.helpers.decryptOwnElementOffLoop(
         new XMLSerializer().serializeToString(encryptedIdEl),
         { logArtifact: this.deps.helpers.logArtifact });
       if (!decrypted.ok) {
@@ -5683,16 +6009,17 @@ class Saml2Sso {
         '</a>' + t.html('handoff.saml2.slo.fixAfter') + '</p>', t);
     }
 
-    const response = this.buildLogoutResponse(idpEntityId, back.url, requestId,
-                                              status, message, spEntityId,
-                                              subStatus);
+    const response = await this.buildLogoutResponse(idpEntityId, back.url,
+                                                    requestId, status,
+                                                    message, spEntityId,
+                                                    subStatus);
     log.info('saml2: ' + spEntityId + ' logged out' +
              (nameId ? ' ' + nameId : '') +
              (sessionIndex ? ' (session index ' + sessionIndex + ')' : '') +
              '; the LogoutResponse goes to ' + back.url + ', from ' +
                back.from +
              '.');
-    this.deliver(res, {
+    await this.deliver(res, {
            binding: back.binding || arrivedBy, destination: back.url,
            field: 'SAMLResponse',
            xml: response,
@@ -5835,6 +6162,72 @@ class Saml2Sso {
     return out;
   }
 
+  /**
+   * Where each service provider one session signed into would be sent a
+   * LogoutRequest, with nothing built or signed (#1955 P8 follow-up): what
+   * `logout/logout.ts` lists before anything is ended, which never needed
+   * the signed request `logoutTargetsFor()` builds.
+   *
+   * @param session - the sign-on session
+   * @returns `{ entityId, from, destination }` per service provider, in
+   * `logoutTargetsFor()`'s order
+   */
+  logoutAddressesFor(session) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.logoutAddressesFor().");
+    const signedInto = (session && session.saml2ServiceProviders) || {};
+    const out = Object.keys(signedInto).map((name) => {
+      const back = this.logoutReturnAddressFor(name);
+      return { entityId: name, from: back.from, destination: back.url };
+    });
+    log.debug("Leaving Saml2Sso.logoutAddressesFor(). " + out.length + ".");
+    return out;
+  }
+
+  /**
+   * `logoutTargetsFor()`, with each LogoutRequest and its query string signed
+   * off the event loop for a realm key in the HSM (#1955 P8 follow-up): the
+   * same rows in the same order. Every service caller awaits this one; the
+   * synchronous one stays for the tests that read it in place.
+   *
+   * @param session - the sign-on session
+   * @returns a promise of `logoutTargetsFor()`'s rows
+   */
+  async logoutTargetsForAsync(session) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.logoutTargetsForAsync().");
+    const signedInto = (session && session.saml2ServiceProviders) || {};
+    const username = (session && session.user && session.user.username) || '';
+    const names = Object.keys(signedInto);
+    const out = [];
+    // One at a time, in the synchronous door's order: each row's ids and
+    // instants are minted as they were.
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      const back = this.logoutReturnAddressFor(name);
+      const idpEntityId = signedInto[name].idpEntityId ||
+                          this.idpEntityId();
+      const given = signedInto[name] || {};
+      const request = await this.buildLogoutRequestAsync(idpEntityId,
+        back.url, given.nameId !== undefined ? given.nameId : username,
+        String(given.nameIdFormat ||
+               this.settingFor(name, 'saml2.nameIdFormat')),
+        (session && session.id) || '', name);
+      out.push({
+        entityId: name,
+        from: back.from,
+        destination: back.url,
+        url: back.url
+          ? await this.redirectUrlForAsync(back.url, 'SAMLRequest', request,
+                                           '', name)
+          : ''
+      });
+    }
+    log.debug("Leaving Saml2Sso.logoutTargetsForAsync(). " + out.length +
+              " service provider(s).");
+    return out;
+  }
+
   // Identity-provider-initiated logout. The session ends and every service
   // provider it signed into is NAMED, with a LogoutRequest built for each.
   //
@@ -5846,12 +6239,14 @@ class Saml2Sso {
   // would produce a page that claims a federation-wide logout it cannot
   // observe. Naming them, with the message ready to send, is what this service
   // can honestly do.
-  private identityProviderInitiatedLogout(req, res, base, params) {
+  private async identityProviderInitiatedLogout(req, res, base, params) {
     const { endSession } = this.deps.authn;
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.identityProviderInitiatedLogout().");
     const session = endSession(req, res);
-    const targets = this.logoutTargetsFor(session);
+    // Signed off the event loop for a realm key in the HSM (#1955 P8
+    // follow-up).
+    const targets = await this.logoutTargetsForAsync(session);
     const names = targets.map(function (one) { return one.entityId; });
     const username = (session && session.user && session.user.username) || '';
     // In the person's language (#539). No language chooser: the GET that
@@ -5925,11 +6320,58 @@ class Saml2Sso {
    * @returns the metadata document, unsigned only when signing failed
    */
   metadataFor(base, spEntityId, withWsFederation?) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.metadataFor(). sp=" +
+              (spEntityId || '(unscoped)'));
+    const draft = this.metadataDraft(base, spEntityId, withWsFederation);
+    try {
+      const signed = this.signDocument(draft.xml, 'EntityDescriptor',
+                                       draft.id, 'prepend');
+      log.debug("Leaving Saml2Sso.metadataFor(). Signed.");
+      return draft.signedAs(signed);
+    } catch (e) {
+      log.debug("Caught in Saml2Sso.metadataFor(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Sso.metadataFor(). Unsigned.");
+      return draft.failed(e);
+    }
+  }
+
+  /**
+   * `metadataFor()`, signed off the event loop for a realm key in the HSM
+   * (#1955 P8 follow-up): the same document. Every service caller awaits
+   * this one; the synchronous one stays for the tests that read it in place.
+   *
+   * @param base - as `metadataFor()`'s
+   * @param spEntityId - as `metadataFor()`'s
+   * @param withWsFederation - as `metadataFor()`'s
+   * @returns a promise of the metadata document
+   */
+  async metadataForAsync(base, spEntityId, withWsFederation?) {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.metadataForAsync(). sp=" +
+              (spEntityId || '(unscoped)'));
+    const draft = this.metadataDraft(base, spEntityId, withWsFederation);
+    let signed;
+    try {
+      signed = await this.signDocumentAsync(draft.xml, 'EntityDescriptor',
+                                            draft.id, 'prepend');
+    } catch (e) {
+      log.debug("Caught in Saml2Sso.metadataForAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Sso.metadataForAsync(). Unsigned.");
+      return draft.failed(e);
+    }
+    log.debug("Leaving Saml2Sso.metadataForAsync(). Signed.");
+    return draft.signedAs(signed);
+  }
+
+  // The metadata document up to its signature, and its two endings.
+  private metadataDraft(base, spEntityId, withWsFederation?) {
     const { documentSettings, errorCodes, listenerKeys,
             requestSignature } = this.deps;
     const { STS, genId, log, logArtifact, xmlEscape } = this.deps.helpers;
-    log.debug("Entering Saml2Sso.metadataFor(). sp=" +
-              (spEntityId || '(unscoped)'));
+    log.debug("Entering Saml2Sso.metadataDraft().");
     const id = genId();
     // At the base the document is built for — the request's in every route,
     // and the one a caller hands in otherwise — so the entityID and the
@@ -6150,26 +6592,30 @@ class Saml2Sso {
           organization: documentSettings.organizationElement(base) }) +
       '</md:EntityDescriptor>';
     logArtifact('SAML IdP metadata', 'before signing', xml);
-    try {
-      const signed = this.signDocument(xml, 'EntityDescriptor', id, 'prepend');
-      logArtifact('SAML IdP metadata', 'after signing', signed);
-      log.debug("Leaving Saml2Sso.metadataFor(). Signed.");
-      return SamlModel.hold('md.EntityDescriptor', signed,
-                            'SAML identity provider metadata');
-    } catch (e) {
-      log.debug("Caught in Saml2Sso.metadataFor(): " +
-                ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-SAML-0014') + 'the SAML 2.0 metadata ' +
-                                                  'could not be signed, ' +
-                                                  'serving it unsigned: ' +
-                                                    e.message);
-      log.debug("Leaving Saml2Sso.metadataFor(). Unsigned.");
-      return SamlModel.hold('md.EntityDescriptor', xml,
-                            'SAML identity provider metadata');
-    }
+    log.debug("Leaving Saml2Sso.metadataDraft().");
+    return {
+      xml: xml, id: id,
+      signedAs: function (signed) {
+        log.debug("Entering Saml2Sso.metadataDraft.signedAs().");
+        logArtifact('SAML IdP metadata', 'after signing', signed);
+        log.debug("Leaving Saml2Sso.metadataDraft.signedAs().");
+        return SamlModel.hold('md.EntityDescriptor', signed,
+                              'SAML identity provider metadata');
+      },
+      failed: function (e) {
+        log.debug("Entering Saml2Sso.metadataDraft.failed().");
+        log.error(errorCodes.tag('STS-SAML-0014') + 'the SAML 2.0 metadata ' +
+                                                    'could not be signed, ' +
+                                                    'serving it unsigned: ' +
+                                                      e.message);
+        log.debug("Leaving Saml2Sso.metadataDraft.failed().");
+        return SamlModel.hold('md.EntityDescriptor', xml,
+                              'SAML identity provider metadata');
+      }
+    };
   }
 
-  private serveMetadata(req, res) {
+  private async serveMetadata(req, res) {
     const { errorCodes } = this.deps;
     const { baseUrlOf, log } = this.deps.helpers;
     log.debug("Entering the SAML 2.0 metadata endpoint.");
@@ -6198,10 +6644,13 @@ class Saml2Sso {
     // key is regenerated on every start, so a cached copy describes a key that
     // is gone and the failure looks like a broken signature rather than a stale
     // document.
+    // Signed off the event loop for a realm key in the HSM (#1955 P8
+    // follow-up).
+    const document = await this.metadataForAsync(base, scoped.entityId);
     res.status(200)
        .type('application/samlmetadata+xml')
        .set('Cache-Control', 'no-store')
-       .send(this.metadataFor(base, scoped.entityId));
+       .send(document);
     log.debug("Leaving the SAML 2.0 metadata endpoint. sp=" +
               (scoped.entityId || '(unscoped)'));
   }
@@ -6411,10 +6860,14 @@ export = {
   artifactCount: slot.forward('artifactCount'),
   pendingRequestCount: slot.forward('pendingRequestCount'),
   metadataFor: slot.forward('metadataFor'),
+  metadataForAsync: slot.forward('metadataForAsync'),
   // The LogoutRequests one session is owed. Read by ../logout/logout.ts so that
   // a global sign-out names exactly what Single Logout names — see the block
   // above logoutTargetsFor().
   logoutTargetsFor: slot.forward('logoutTargetsFor'),
+  logoutTargetsForAsync: slot.forward('logoutTargetsForAsync'),
+  logoutAddressesFor: slot.forward('logoutAddressesFor'),
   // A remote PEP's proxy, for a route forwarding a SAML Response (#1760).
+  pepProxyResponseAsync: slot.forward('pepProxyResponseAsync'),
   pepProxyResponse: slot.forward('pepProxyResponse')
 };

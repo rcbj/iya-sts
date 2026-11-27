@@ -70,7 +70,12 @@ const NO_INLINE_STYLE =
   '.level-LOW{background:#e6f4ea;color:#137333}' +
   '.level-MEDIUM{background:#fef7e0;color:#b06000}' +
   '.level-HIGH{background:#fce8e6;color:#a50e0e}' +
-  '.level-UNSCORED{background:#f1f3f4;color:#3c4043}';
+  '.level-UNSCORED{background:#f1f3f4;color:#3c4043}' +
+  // THE BAR A SECOND AUTHORIZATION DRAWS (#2168, `SpaClient.drawStepBar()`),
+  // the console's session-ended bar: over the page, which stays under it.
+  '.reauth{position:fixed;left:0;right:0;top:0;z-index:60;' +
+  'background:#fff4e5;border-bottom:2px solid #f0a020;padding:10px ' +
+  '16px;display:flex;flex-wrap:wrap;gap:.5em 1em;align-items:center}';
 
 const STYLE_AS_WRITTEN =
   'body{font-family:system-ui,-apple-system,"Segoe ' +
@@ -353,11 +358,26 @@ const STYLE_AS_WRITTEN =
   'ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75em;' +
   'color:#555;background:#fafafa;border:1px solid #eee;border-radius:6px;' +
   'padding:8px}' +
+  // A PEM BOX AND ITS FILE CHOOSER ON ONE ROW (#2299, the PIV form): the
+  // box takes the room, the chooser sits beside its top, and the row wraps
+  // to two lines on a narrow screen.
+  '.pem-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-start}' +
+  '.pem-row textarea{flex:1 1 320px;min-width:0}' +
+  '.pem-file{display:flex;flex-direction:column;gap:4px;font-size:.9em}' +
   'ol.steps{margin:6px 0 0 1.2em;padding:0;font-size:.9em}' +
   'ol.steps li{margin:0 0 4px}' +
   '.state-valid{color:#1b7a3a;font-weight:600}' +
   '.state-revoked,.state-superseded{color:#b00020;font-weight:600}' +
-  '.state-expired{color:#8a8a96;font-weight:600}';
+  '.state-expired{color:#8a8a96;font-weight:600}' +
+  // A PAGE OF TABS (#2053): each tab a fragment, the panel it names shown
+  // by `:target` and the first while none is named, no script involved.
+  '.ptabbar{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 12px}' +
+  '.ptabbar a{padding:6px 12px;border:1px solid #c8c8d2;border-radius:4px;' +
+  'text-decoration:none}' +
+  '.ptabs>.ptabpanel{display:none}' +
+  '.ptabs>.ptabpanel:target,.ptabs>.ptabpanel:has(:target){display:block}' +
+  '.ptabs:not(:has(>.ptabpanel:target,>.ptabpanel :target))>' +
+  '.ptabpanel.first{display:block}';
 
 const NAV = [
   // `key` names the section in the `portal` catalog (#539): its title and
@@ -453,6 +473,15 @@ const NAV = [
       // every kind, security keys included; the path is unchanged.
       { path: BASE + '/keys', label: 'Passkeys',
         heading: 'Passkeys' },
+      // TOKENS AND KEYS (#2053): one page, a tab per kind a person
+      // registers — hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH
+      // user certificates, OpenPGP and S/MIME. Security keys
+      // (`/portal/tokens`) and OpenPGP and mail encryption
+      // (`/portal/openpgp`) drew those same cards and left the column in
+      // #2308. Their addresses open this page's tabs, and their forms
+      // still post where they did. Drawn by `web_tokens_and_keys.ts`.
+      { path: BASE + '/tokens-and-keys', label: 'Tokens and keys',
+        heading: 'Your tokens, certificates and keys' },
       // THE AUTHENTICATOR APP (2026-09-10). Its own page beside the keys
       // rather than a card on that one, for the reason this column exists at
       // all: the enrolment is a QR code, a transcribable secret, a code field
@@ -532,6 +561,12 @@ const NAV = [
       // named, never as its subject. Drawn by `portal_access_requests.ts`.
       { path: BASE + '/access-requests', label: 'Access requests',
         heading: 'Access requests waiting for you' },
+      // REQUEST ACCESS (#1204), beside the approvers' page and never part
+      // of it: the person's OWN requests — an AuthZEN denial's hosted form
+      // (`form_url`) and a request's ticket (`links.ticket`). Drawn by
+      // `portal_access_request.ts`.
+      { path: BASE + '/access-request', label: 'Your access requests',
+        heading: 'Your access requests' },
       // SIGN IN A DEVICE (#150, 2026-09-26), for CIBA's reason: the code a
       // television or a command line shows is typed here, and an approval
       // signs this person in on it (RFC 8628). Drawn by `portal_device.ts`.

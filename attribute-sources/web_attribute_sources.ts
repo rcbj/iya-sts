@@ -38,6 +38,9 @@ const esc = kit.esc;
  */
 const PAGE = '/admin/attribute-sources';
 
+// Directory → Attribute sources → Add a source (#1132): the one create form.
+const NEW = '/admin/attribute-sources/new';
+
 /**
  * Draws Attribute sources from the answer of `GET
  * /admin-api/attribute-sources`: the SQL databases this realm reads people's
@@ -57,6 +60,93 @@ class AttributeSourcesPage {
    */
   static render(view: Json, ctx?: Json): string {
     return AttributeSourcesPage.body(ctx || kit.context(), view);
+  }
+
+  /**
+   * Draws Directory → Attribute sources → Add a source (#1132) from the
+   * answer of `GET /admin-api/attribute-sources/new`: the one create form,
+   * its required fields called out as New user's are, and every optional
+   * one starting at the default the create applies when it is absent.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer, with `state` after a refused create
+   * @returns the body as HTML
+   */
+  static newBody(ctx: Json, json: Json): string {
+    const t = ctx.t;
+    const listed = function (values: string[]): Json[] {
+      return (values || []).map(function (one: string): Json {
+        return { value: one, label: one };
+      });
+    };
+    return kit.note(t.html('consoleAttributeSources.intro')) +
+      (json.hostPatterns ? '' :
+        kit.warn(t.html('consoleAttributeSources.anyHost'))) +
+      kit.createForm(json, {
+        post: NEW, action: 'add-source',
+        heading: t.html('consoleAttributeSources.addSource'),
+        button: t.html('consoleAttributeSources.add'),
+        words: {
+          id: { label: t.html('consoleAttributeSources.id'),
+                placeholder: 'hr-db' },
+          dialect: { label: t.html('consoleAttributeSources.database'),
+                     type: 'select', choices: listed(json.dialects),
+                     value: 'postgres' },
+          host: { label: t.html('consoleAttributeSources.host'),
+                  placeholder: 'db.example.com' },
+          port: { label: t.html('consoleAttributeSources.port'),
+                  placeholder: t.text('consoleAttributeSources.portHint') },
+          database: { label: t.html('consoleAttributeSources.databaseName') },
+          user: { label: t.html('consoleAttributeSources.user') },
+          passwordProvider: {
+            label: t.html('consoleAttributeSources.passwordFrom'),
+            type: 'select', choices: listed(json.passwordProviders),
+            value: 'none' },
+          passwordRef: {
+            label: t.html('consoleAttributeSources.passwordAt'),
+            placeholder: t.text('consoleAttributeSources.passwordRefHint') },
+          passwordField: {
+            label: t.html('consoleAttributeSources.passwordField'),
+            placeholder: t.text('consoleAttributeSources.optional') },
+          caFile: { label: t.html('consoleAttributeSources.caFile'),
+                    placeholder: t.text('consoleAttributeSources.caFileHint') },
+          serverName: {
+            label: t.html('consoleAttributeSources.serverName'),
+            placeholder: t.text('consoleAttributeSources.serverNameHint') },
+          caCertificates: {
+            label: t.html('consoleAttributeSources.caCertificates'),
+            type: 'long', placeholder: '-----BEGIN CERTIFICATE-----' },
+          trustPublicRoots: {
+            label: t.html('consoleAttributeSources.trustPublicRoots'),
+            type: 'checkbox', checkedValue: 'true',
+            uncheckedValue: 'false',
+            boxLabel: t.text('consoleAttributeSources.newSource.yes'),
+            uncheckedLabel: t.text('consoleAttributeSources.newSource.no') },
+          table: { label: t.html('consoleAttributeSources.table'),
+                   placeholder: 'schema.table' },
+          keyColumn: { label: t.html('consoleAttributeSources.keyColumn') },
+          keyAttribute: {
+            label: t.html('consoleAttributeSources.keyAttribute'),
+            value: 'uid' },
+          columns: { label: t.html('consoleAttributeSources.columnsLabel'),
+                     type: 'long', placeholder: 'cost_center=costCenter' },
+          refresh: { label: t.html('consoleAttributeSources.readLabel'),
+                     type: 'checks', choices: listed(json.modes),
+                     value: ['sign-in'] },
+          scheduleS: {
+            label: t.html('consoleAttributeSources.everySeconds'),
+            value: 3600 },
+          timeoutMs: { label: t.html('consoleAttributeSources.timeoutMs'),
+                       value: 2000 },
+          onFailure: { label: t.html('consoleAttributeSources.onFailure'),
+                       type: 'select', choices: listed(json.onFailure),
+                       value: 'keep' },
+          // `true` and `false` are the values posted, so they are not words.
+          enabled: { label: t.html('consoleAttributeSources.enabled'),
+                     type: 'select', choices: listed(['true', 'false']),
+                     value: 'true' }
+        }
+      }, t);
   }
 
   // The fields of a source's form, filled with `source` (empty for a new
@@ -107,11 +197,18 @@ class AttributeSourcesPage {
       t.html('consoleAttributeSources.caCertificates') +
       ' <textarea name="caCertificates" rows="4" ' +
       'cols="64" placeholder="-----BEGIN CERTIFICATE-----">' +
-      esc(s.caCertificates || '') + '</textarea></label><label><input ' +
-      'type="checkbox" name="trustPublicRoots" value="true"' +
+      esc(s.caCertificates || '') + '</textarea></label>' +
+      '<span role="radiogroup">' +
+      t.html('consoleAttributeSources.trustPublicRoots') + ' ' +
+      '<label class="fg-radio"><input type="radio" ' +
+      'name="trustPublicRoots" value="true"' +
       (s.trustPublicRoots ? ' checked' : '') + '> ' +
-      t.html('consoleAttributeSources.trustPublicRoots') +
-      '</label></div><div class="formrow">' +
+      t.html('consoleAttributeSources.newSource.yes') + '</label> ' +
+      '<label class="fg-radio"><input type="radio" ' +
+      'name="trustPublicRoots" value="false"' +
+      (s.trustPublicRoots ? '' : ' checked') + '> ' +
+      t.html('consoleAttributeSources.newSource.no') +
+      '</label></span></div><div class="formrow">' +
       text('table', t.text('consoleAttributeSources.table'), s.table,
            'schema.table') +
       text('keyColumn', t.text('consoleAttributeSources.keyColumn'),
@@ -280,15 +377,13 @@ class AttributeSourcesPage {
                t.html('consoleAttributeSources.noSource') +
                '</span></td></tr>') +
       '</tbody></table>' + nav.foot) +
+      // THE ADD TAB IS THE WAY TO THE CREATE PAGE (#1132): Add a source
+      // draws the one create form, its required fields called out as New
+      // user's are.
       '<h3 id="add" data-tab="add">' +
       t.html('consoleAttributeSources.addSource') +
-      '</h3>' + kit.frame('<form method="post" action="' + PAGE +
-      '"><input type="hidden" name="action" value="add-source">' +
-      '<div class="formrow"><label>' + t.html('consoleAttributeSources.id') +
-      ' <input type="text" name="id" ' +
-      'placeholder="hr-db" required></label></div>' +
-      this.fields(t, json, null) + '<button type="submit">' +
-      t.html('consoleAttributeSources.add') + '</button></form>') +
+      '</h3>' + kit.frame(kit.createLink(NEW,
+        t.html('consoleAttributeSources.newSource.button'))) +
       '<h3 id="person" data-tab="person">' +
       t.html('consoleAttributeSources.readOnePerson') +
       '</h3>' + kit.frame('<form method="post" ' +

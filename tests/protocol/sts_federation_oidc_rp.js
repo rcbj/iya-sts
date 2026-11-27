@@ -58,6 +58,9 @@
 // OWNED HERE (local: true). Its realms are removed only on a private probe.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const K = require("./oauth_wire_kit.js").kit("sts_federation_oidc_rp");
@@ -505,8 +508,7 @@ async function initiation(CODE) {
   K.check("5c. the partner's own issuer starts the sign-in, its login_hint " +
           "passed on and a foreign target dropped", function () {
     assert.strictEqual(r.status, 302, K.shown(r));
-    assert.strictEqual(r.location.indexOf(OP.base + "authorize?"), 0,
-                       r.location);
+    assert.ok(urls.isAt(r.location, OP.base + "authorize"), r.location);
     assert.strictEqual(sent.searchParams.get("login_hint"),
                        "frp@example.org");
     assert.ok(r.location.indexOf("elsewhere.example") < 0, r.location);
@@ -828,11 +830,11 @@ async function webfinger(DYN) {
   K.check("8d. continuing signs in at that issuer, registering there first",
           function () {
             assert.strictEqual(r.status, 302, K.shown(r));
-            assert.strictEqual(r.location.indexOf(OP.base +
-                                                  "disco-authorize"), 0);
+            assert.ok(urls.isAt(r.location, OP.base + "disco-authorize"),
+                      r.location);
             assert.strictEqual(op.registrations, before + 1);
-            assert.ok(JSON.stringify(after.json).indexOf(OP.base +
-                                                         "tenant7") >= 0);
+            assert.ok(urls.namesAddress(JSON.stringify(after.json),
+                                        OP.base + "tenant7"));
           });
   op.scenario.webfingerIssuer = "https://elsewhere.example/";
   got = await K.coded(SP, "STS-FED-0217", function () {

@@ -59,6 +59,9 @@ const ROOT = path.join(__dirname, '..');
 // rule (root CLAUDE.md, *Code style*).
 function childMain() {
   const ROOT = process.env.TEA_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.TEA_OUT;
   const http = require('http');
   const crypto = require('crypto');
@@ -316,7 +319,7 @@ function childMain() {
       const forwarded = lastExchange();
       note(r.status === 200 && subOf(r) === aliceSub && forwarded &&
            /FORWARDED/.test(JSON.stringify(forwarded.consumed)),
-           [].concat(claimsOf(r.json.access_token).aud).indexOf(FRONT) >= 0,
+           urls.holds(claimsOf(r.json.access_token).aud, FRONT),
            '4b. any-declared-relying-party: the same assertion is exchanged ' +
            'by that relying party, for its own audience, and the act says ' +
            'it was FORWARDED',

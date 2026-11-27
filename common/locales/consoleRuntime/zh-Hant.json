@@ -5,6 +5,7 @@
   "reauth.here": "在此頁面登入",
   "reauth.hereInstead": "改為在此頁面登入",
   "reauth.noPopup": "此瀏覽器無法從另一個視窗傳回登入結果，請在此頁面登入。",
+  "reauth.popupBlocked": "登入視窗遭到封鎖。請允許此網站的彈出式視窗，或在此頁面登入。",
   "reauth.finish": "請在已開啟的視窗中完成登入。",
   "otherPerson.waiting": "登入的是另一個人，因此此頁面上等待送出的內容並未送出。",
   "otherPerson.typed": "登入的是另一個人，因此先前在此頁面上輸入的內容並未放回。",
@@ -17,5 +18,17 @@
   "accounts.unsaved": "此頁面有尚未儲存的變更。仍要切換帳戶嗎？這些變更將會遺失。",
   "accounts.otherAccount": "該登入屬於另一個帳戶，因此此分頁沒有採用。請以 {user} 的身分重新登入，或從帳戶選單中切換帳戶。",
   "accounts.refused.title": "主控台不會為此帳戶開啟",
-  "accounts.refused.text": "管理 API 對此分頁所登入的帳戶回應了 {status}。"
+  "accounts.refused.text": "管理 API 對此分頁所登入的帳戶回應了 {status}。",
+  "policyName.required": "名稱為必填項。",
+  "noWebCrypto.title": "此瀏覽器無法開啟此頁面",
+  "noWebCrypto.text": "此瀏覽器無法安全地執行此頁面：WebCrypto 無法使用，通常是因為頁面未透過 HTTPS 開啟，或瀏覽器版本過舊。",
+  "step.pending": "正在取得進行此變更的權限…",
+  "step.blocked": "此變更需要您的許可。請開啟視窗進行授權。",
+  "step.signIn": "請登入以進行此變更。",
+  "step.fresh": "此變更需要您重新登入。",
+  "step.open": "繼續",
+  "step.cancel": "取消",
+  "step.refused": "未獲得進行此變更的權限：",
+  "step.other": "該登入屬於另一個帳戶，因此未傳送任何內容。",
+  "step.failed": "無法取得進行此變更的權限。"
 }

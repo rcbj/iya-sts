@@ -101,6 +101,9 @@ import InstanceSlot = require('../common/instance_slot');
 // order exactly as it was.
 require('./xacml_model');
 import xml = require('./xacml_xml');
+// The save's bound on a regexp-match pattern (#2220); `xacml_xml.js` has
+// already loaded it, so the require moves nothing.
+import validate = require('./xacml_validate');
 
 // The directory functions this module calls, installed by
 // `ldap/ldap_server.js`.
@@ -131,6 +134,8 @@ interface PolicyRow {
   // The reverse-proxy route the policy was generated for (#1760), as
   // `<pep>/<route>`, or null for a policy somebody wrote.
   pepRoute: string | null;
+  // The dynamic role whose eligibility policy this is (#1072), or null.
+  role: string | null;
 }
 
 // What `write()` is told besides the document.
@@ -143,6 +148,8 @@ interface WriteOptions {
   orphanedAt?: string | null;
   // #1760. Absent means "keep what the entry already says", as above.
   pepRoute?: string | null;
+  // #1072. Absent means "keep what the entry already says", as above.
+  role?: string | null;
 }
 
 // What `write()` answers.
@@ -161,6 +168,7 @@ interface XacmlStoreDeps {
     mark<T>(target: T, code: string): T;
   };
   xml: { parsePolicy(document: string): any };
+  patternProblemsIn(policy: any): string[];
   sha256Hex(text: string): string;
 }
 
@@ -399,6 +407,24 @@ class XacmlStore {
     deps.log.debug("Leaving XacmlStore.constructor().");
   }
 
+  // -------------------------------------------------------------------------
+  // AN OWNED POLICY (#564, #1072): one an application owns as its
+  // fine-grained policy (`xacmlApplication`), or a dynamic role owns as its
+  // eligibility policy (`xacmlRole`). Either is decided ALONE by the module
+  // that owns it, so it is never the root, never in the PolicyIdReference
+  // map and never sent to a remote PEP. One test, so the next kind of owner
+  // is added in one place rather than at every filter.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether a policy row is owned by an application or a role.
+   * @param row - the row, as `all()` answers it
+   * @returns true for an owned policy
+   */
+  static owned(row: { application?: string | null;
+                      role?: string | null } | null): boolean {
+    return !!row && (!!row.application || !!row.role);
+  }
+
   // The deps the composition root builds this class from: the real modules,
   // and the SHA-256 this module has always keyed its parse cache by.
   /**
@@ -412,6 +438,7 @@ class XacmlStore {
       log: helpers.log,
       errorCodes: errorCodes,
       xml: xml,
+      patternProblemsIn: validate.patternProblemsIn,
       sha256Hex: function (text: string): string {
         return crypto.digest('sha256', text, 'hex');
       }
@@ -614,7 +641,8 @@ class XacmlStore {
         document: policy.document || '',
         application: policy.application || null,
         orphanedAt: policy.orphanedAt || null,
-        pepRoute: policy.pepRoute || null
+        pepRoute: policy.pepRoute || null,
+        role: policy.role || null
       };
     });
     log.debug('Leaving XacmlStore.all(). ' + rows.length + ' policy(ies).');
@@ -737,7 +765,7 @@ class XacmlStore {
     const { log } = this.deps;
     log.debug('Entering XacmlStore.root().');
     const enabled = this.all().filter(function (row) {
-      return row.enabled && !row.application && !row.pepRoute;
+      return row.enabled && !XacmlStore.owned(row) && !row.pepRoute;
     });
     const roots = enabled.filter(function (row) {
       return row.isRoot;
@@ -781,15 +809,24 @@ class XacmlStore {
    * Builds the map a `PolicyIdReference` is resolved against: every enabled
    * policy that parses, keyed by its PolicyId. A policy that does not parse
    * is left out and logged, and so is every policy an application owns.
+   * @param withhold - policy NAMES (compared without case) left out as
+   *   well: an embedded PEP's closure leaves out the access and issuance
+   *   policies (#2027), and AuthZEN's decision about an application that
+   *   enforces fine-grained authorization resolves against the same set,
+   *   so the two modes answer alike (#1206)
    * @returns PolicyId to parsed policy model
    */
-  repository(): Record<string, any> {
+  repository(withhold?: string[]): Record<string, any> {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug('Entering XacmlStore.repository().');
+    const left = (withhold || []).map(function (one) {
+      return String(one).toLowerCase();
+    });
     const map = {};
     this.all().forEach(function (row) {
-      if (!row.enabled || !row.id || row.application) {
+      if (!row.enabled || !row.id || XacmlStore.owned(row) ||
+          left.indexOf(String(row.name).toLowerCase()) >= 0) {
         return;
       }
       try {
@@ -867,6 +904,27 @@ class XacmlStore {
                problems: (error.xacmlDetail && error.xacmlDetail.problems) ||
                          null }, 'STS-XACML-0028');
     }
+    // A REGEXP-MATCH PATTERN OF THE EXPONENTIAL SHAPE IS REFUSED AT THE
+    // SAVE (#2220, ASVS 5.0.0 1.3.12) — `xacml_validate.js`'s
+    // `patternProblemsIn()`, argued there. Only a document that CHANGED: the
+    // doors that rewrite a stored policy unchanged (enable, disable, the
+    // root demotion) must still work on one stored before the rule, which
+    // goes Indeterminate at the evaluation rather than refusing a toggle.
+    const stored = this.all().filter(function (row) {
+      return row.name === name;
+    })[0] || null;
+    if (!stored || stored.document !== document) {
+      const patterns = this.deps.patternProblemsIn(
+        this.parseDocument(document));
+      if (patterns.length) {
+        log.debug('Leaving XacmlStore.write(). An unsafe pattern.');
+        return errorCodes.mark({ ok: false,
+                 why: 'The policy "' + described.id + '" carries a regular ' +
+                      'expression this service does not evaluate: ' +
+                      patterns.join(' '),
+                 problems: patterns }, 'STS-XACML-0338');
+      }
+    }
     // THE OWNER AND THE ORPHAN MARK ARE KEPT UNLESS THE CALLER SAYS
     // OTHERWISE (#564). `writePolicy()` REPLACES the entry, and every door
     // that rewrites a policy — the editor's save, enable and disable, the
@@ -876,9 +934,7 @@ class XacmlStore {
     // an ordinary policy, eligible as the root and sent to every remote PEP.
     // They are facts about the deployment, as `xacmlEnabled` is, so they
     // live beside it and not in the document.
-    const before = this.all().filter(function (row) {
-      return row.name === name;
-    })[0] || null;
+    const before = stored;
     const application = settings.application !== undefined
       ? (settings.application ? String(settings.application) : null)
       : (before ? before.application : null);
@@ -888,6 +944,18 @@ class XacmlStore {
     const pepRoute = settings.pepRoute !== undefined
       ? (settings.pepRoute ? String(settings.pepRoute) : null)
       : (before ? before.pepRoute : null);
+    const role = settings.role !== undefined
+      ? (settings.role ? String(settings.role) : null)
+      : (before ? before.role : null);
+    if (settings.isRoot && role) {
+      log.debug('Leaving XacmlStore.write(). A role\'s policy as the root.');
+      return errorCodes.mark({ ok: false,
+               why: 'Policy "' + name + '" belongs to the role "' + role +
+                    '" (xacmlRole) and decides who may be offered that ' +
+                    'dynamic role at sign-in. It cannot be the root of ' +
+                    'this repository; make an ordinary policy the root ' +
+                    'instead.' }, 'STS-XACML-0310');
+    }
     if (settings.isRoot && pepRoute) {
       log.debug('Leaving XacmlStore.write(). A route\'s policy as the root.');
       return errorCodes.mark({ ok: false,
@@ -945,6 +1013,9 @@ class XacmlStore {
     }
     if (pepRoute) {
       attributes.xacmlPepRoute = pepRoute;
+    }
+    if (role) {
+      attributes.xacmlRole = role;
     }
     const written = directory.writePolicy(name, attributes);
     if (written) {
@@ -1073,6 +1144,7 @@ export = {
   read: slot.forward('read'),
   fgaPolicies: slot.forward('fgaPolicies'),
   fgaPolicyFor: slot.forward('fgaPolicyFor'),
+  owned: XacmlStore.owned,
   root: slot.forward('root'),
   repository: slot.forward('repository'),
   write: slot.forward('write'),

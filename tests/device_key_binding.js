@@ -224,9 +224,12 @@ async function body(t) {
           '3b. a bound ID Token needs a proof from the key it names');
 
   t.log.info('=== 4. Key Binding turned off (#315) ===');
+  // The default set holds bound_key under `identity` and `legacy`; since
+  // #1589 the default is `openid` alone, so the check names `identity`.
+  config.setOverride('oauth2.undeclaredClientScopes', 'identity');
   t.check(server.keyBindingOn() === true &&
           scopePolicy.defaultScopes().indexOf('bound_key') >= 0,
-          '4a. on by default, and bound_key is in the default scope set');
+          '4a. on by default, and bound_key is in the identity default set');
   config.setOverride('oauth2.keyBinding', false);
   try {
     t.check(server.keyBindingOn() === false &&
@@ -238,6 +241,7 @@ async function body(t) {
             '4c. off: a grant naming bound_key needs no c_s256');
   } finally {
     config.clearOverride('oauth2.keyBinding');
+    config.clearOverride('oauth2.undeclaredClientScopes');
   }
   log.debug("Leaving body().");
 }

@@ -39,6 +39,20 @@
 // certificate: rcbj's decision, and `tests/paranoid_settings.js` reads this
 // file to hold it.
 //
+// **ONE DELIBERATE EXCEPTION (rcbj, 2026-11-24, #2046)**: an application may
+// waive the keyUsage check — that check alone — on the certificate a WS-Trust
+// response is encrypted to (`wstrustRecipientIgnoresKeyUsage`, over the
+// realm's `wstrust.recipientIgnoresKeyUsage`, both off by default). The
+// realm's message-signing certificates permit digitalSignature only, so
+// without it an answer encrypted to the request's signing certificate is
+// always refused, and real requesters sign and decrypt with one key. The
+// caller reads the setting and passes `ignoreKeyUsage`; the door reads no
+// entry. Validity, the path and revocation are asked as always, and the
+// verdict names the check `waived-by-administrator`, never `passed`. The
+// option is honoured for `encryption-recipient` only, and
+// `tests/paranoid_settings.js` holds that ws-trust/ws_encryption.ts is the
+// one caller that passes it.
+//
 // **A LEAF ACCEPTED SELF-SIGNED MAY CARRY cA=TRUE.** Every `openssl req -x509`
 // certificate does; `pki.verifySignerChain()`'s `pinned` branch argued that on
 // 2026-09-13, and a use case the specification defines as certificate equality
@@ -67,6 +81,8 @@ import pki = require('./pki');
 import revocationStatus = require('./revocation_status');
 import signerTruststore = require('./signer_truststore');
 import certificateSubject = require('./certificate_subject');
+import truststores = require('./truststores');
+import UseCases = require('./truststore_use_cases');
 
 type Json = any;
 type CheckId = import('../types/certificate_trust').CheckId;
@@ -112,7 +128,7 @@ function leaf(keyUsage: string[], oids?: string[], required?: boolean): Json {
            mayBeCa: false };
 }
 
-// THE PURPOSE TABLE. One row per use case; `docs/v1.1.0/pki-use-cases.md` is
+// THE PURPOSE TABLE. One row per use case; `docs/v1.2.0/pki-use-cases.md` is
 // written from it, and `tests/paranoid_settings.js` holds it to
 // `common/config.js`.
 const PURPOSES: Purpose[] = [
@@ -360,6 +376,37 @@ const PURPOSES: Purpose[] = [
     leaf: leaf(SIGNS, [EKU.pkinitClientAuth, EKU.msSmartCardLogon], true),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0254', phase: 5 },
+  // #1955 P2. The leaf is the slot's attestation certificate, which certifies
+  // the attested key and signs nothing — a 9d key-management key cannot —
+  // so no keyUsage is asked of it; the f9 certificate above it is a CA.
+  { id: 'piv-attestation', setting: 'pki.paranoidPivAttestation',
+    title: 'A YubiKey PIV key attestation chain',
+    covers: 'The slot attestation certificate and the f9 attestation ' +
+      'certificate a PIV enrolment carries, in a request\'s id-aa-attestation ' +
+      'attribute or on the enrolment form.',
+    adds: 'The validity window at now; the path to the realm\'s PIV ' +
+      'attestation anchors (Yubico\'s roots by default) through the shipped ' +
+      'intermediates; revocation where the chain names a list.',
+    sites: ['common/piv_attestation.ts verify'],
+    anchors: ['caller'],
+    leaf: leaf([]),
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    exemptions: [], baseline: 'caller-path', code: 'STS-PIV-0002',
+    phase: 5 },
+  // #1955 P2, D8: an outside PIV or CAC card's certificate, held to the
+  // issuing CAs a realm listed for mapping by its FIPS 201 card UUID.
+  { id: 'piv-card', setting: 'pki.paranoidPivCard',
+    title: 'An outside PIV or CAC card\'s certificate mapped by its card UUID',
+    covers: 'A client certificate from an issuing CA in piv.externalIssuers, ' +
+      'mapped to the person whose stsPivCardUuid is its urn:uuid ' +
+      'subjectAltName.',
+    adds: 'keyUsage digitalSignature on the leaf and the validity window, ' +
+      'beside the handshake\'s own checks.',
+    sites: ['common/piv_attestation.ts cardIdentityOf'],
+    anchors: ['caller'],
+    leaf: leaf(SIGNS),
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    exemptions: [], baseline: 'direct', code: 'STS-PIV-0003', phase: 5 },
   { id: 'enrollment-credential', setting: 'pki.paranoidEnrollmentCredential',
     title: 'A certificate presented to enroll or renew',
     covers: 'The client certificate an EST request presents, and the signer ' +
@@ -889,7 +936,8 @@ class CertificateTrust {
     const pathOpts = { now: opts.now, skewMs: opts.skewMs,
                        allowCritical: opts.allowCritical, realmId: realmId,
                        purpose: purpose.id, allowSha1: opts.allowSha1,
-                       policy: opts.policy };
+                       policy: opts.policy, variant: opts.variant,
+                       trustContext: opts.trustContext };
     const sources = opts.anchorSources || purpose.anchors;
     let failure: Json = null;
     const note = function (result: Json): void {
@@ -949,13 +997,22 @@ class CertificateTrust {
               }) };
         }
       } else if (source === 'caller') {
+        // What the site hands in (a dynamic set: an authenticator's MDS
+        // roots, this realm's own IACA) AND what the use case's truststores
+        // hold (#2118): the site no longer reads an anchor setting itself.
+        // A purpose that also names `signer-truststore` reaches the
+        // assigned list there, under that name, next.
+        const assigned = sources.indexOf('signer-truststore') >= 0 ?
+          { anchors: [], intermediates: [] } :
+          CertificateTrust.assignedAnchors(purpose.id,
+            Object.assign({}, opts, { realmId: realmId }));
         const roots = (opts.anchors || []).map(CertificateTrust.derOf)
           .filter(Boolean).map(function (der: Buffer) {
             return pki.certificateFromDer(der);
-          });
+          }).concat(assigned.anchors);
         if (roots.length) {
-          result = await pki.verifyPathToAnchors(certs.leaf, certs.chain,
-                                                 roots, pathOpts);
+          result = await pki.verifyPathToAnchors(certs.leaf,
+            certs.chain.concat(assigned.intermediates), roots, pathOpts);
         }
       }
       if (result && result.ok) {
@@ -994,11 +1051,22 @@ class CertificateTrust {
           verdict.checks[check] = 'passed';
         }
       });
-    problems.forEach(function (one: Json) {
+    // THE ONE WAIVER (see the header): keyUsage, on an encryption
+    // recipient, when the caller's application says so. Whatever keyUsage
+    // says is not a refusal, and the verdict says it was waived.
+    const waives = opts.ignoreKeyUsage === true &&
+      verdict.purpose === 'encryption-recipient';
+    const kept = problems.filter(function (one: Json) {
+      return !(waives && one.check === 'key-usage');
+    });
+    if (waives) {
+      verdict.checks['key-usage'] = 'waived-by-administrator';
+    }
+    kept.forEach(function (one: Json) {
       verdict.checks[one.check] = 'failed';
     });
     helpers.log.debug("Leaving CertificateTrust.fieldChecks().");
-    return problems;
+    return kept;
   }
 
   // Does this certificate carry the name the caller expected?
@@ -1126,12 +1194,17 @@ class CertificateTrust {
         refuse('path', errorCodes.codeOf(result) || purpose.code, result.why);
       }
     } else if (purpose.baseline === 'caller-path') {
+      // EVERY MODE (#2118, D4): the use case's truststores are consulted
+      // whether or not paranoid mode applies; it decides what is CHECKED.
+      const assigned = CertificateTrust.assignedAnchors(purpose.id,
+        Object.assign({}, opts, { realmId: realmId }));
       const roots = (opts.anchors || []).map(CertificateTrust.derOf)
         .filter(Boolean).map(function (der: Buffer) {
           return pki.certificateFromDer(der);
-        });
-      const result = await pki.verifyPathToAnchors(certs.leaf, certs.chain,
-        roots, { now: opts.now, skewMs: opts.skewMs });
+        }).concat(assigned.anchors);
+      const result = await pki.verifyPathToAnchors(certs.leaf,
+        certs.chain.concat(assigned.intermediates), roots,
+        { now: opts.now, skewMs: opts.skewMs });
       if (result.ok) {
         verdict.checks.path = 'passed';
         verdict.anchor = 'caller';
@@ -1139,7 +1212,12 @@ class CertificateTrust {
         refuse('path', purpose.code, result.reason);
       }
     } else if (purpose.baseline === 'direct') {
-      const result = pki.verifyIssuedDirectly(certs.leaf, opts.anchors || [],
+      const result = pki.verifyIssuedDirectly(certs.leaf,
+        (opts.anchors || []).concat(CertificateTrust.assignedAnchors(
+          purpose.id, Object.assign({}, opts, { realmId: realmId }))
+          .anchors.map(function (one: Json) {
+            return one.der;
+          })),
         { now: opts.now, skewMs: opts.skewMs });
       if (result.ok) {
         verdict.checks.path = 'passed';
@@ -1836,6 +1914,42 @@ class CertificateTrust {
   }
 
   /**
+   * What the truststores a purpose's use case is assigned hold (#2118), as
+   * the path builder takes them: anchors as `pki.certificateFromDer()`
+   * entries, intermediates as DER. Empty where the purpose has no use case
+   * that takes truststores (a pin, this service's own hierarchy).
+   *
+   * @param id - the purpose
+   * @param options - `{ realmId, variant, trustContext }`; `trustContext`
+   *   is what a dynamic built-in reads (`fidoMdsRoots`, `ownIaca`,
+   *   `trustDomain`)
+   * @returns `{ anchors, intermediates, names }`
+   */
+  static assignedAnchors(id: string, options?: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.assignedAnchors(). " + id);
+    const opts = options || {};
+    const row = UseCases.forPurpose(id, opts.variant);
+    if (!row || !UseCases.assignable(row)) {
+      helpers.log.debug("Leaving CertificateTrust.assignedAnchors(). None.");
+      return { anchors: [], intermediates: [], names: [] };
+    }
+    const resolved = truststores.resolve(row.id, {
+      realmId: opts.realmId || realms.currentId(), expandSystem: true,
+      context: Object.assign({ purpose: id }, opts.trustContext || {})
+    });
+    const anchors = resolved.anchors.map(function (pem: string) {
+      return pki.certificateFromDer(pki.pemToDer(pem));
+    }).filter(Boolean);
+    const intermediates = resolved.intermediates.map(function (pem: string) {
+      return pki.pemToDer(pem);
+    });
+    helpers.log.debug("Leaving CertificateTrust.assignedAnchors(). " +
+                      anchors.length + " anchor(s).");
+    return { anchors: anchors, intermediates: intermediates,
+             names: resolved.names };
+  }
+
+  /**
    * Is there anything a site could build a path to? Its own configured anchors,
    * or under paranoid the realm's signer truststore where its use case may
    * reach it. A site asks this where it would otherwise refuse for having no
@@ -1850,10 +1964,10 @@ class CertificateTrust {
                           options?: Json): boolean {
     helpers.log.debug("Entering CertificateTrust.anchorsAvailable(). " + id);
     const realmId = (options && options.realmId) || realms.currentId();
+    // The use case's truststores, in every mode (#2118, D4).
     const available = anchors.length > 0 ||
-      (CertificateTrust.applies(id, realmId) &&
-       CertificateTrust.purpose(id).anchors.indexOf('signer-truststore') >= 0 &&
-       signerTruststore.anchorsFor(realmId, id).anchors.length > 0);
+      CertificateTrust.assignedAnchors(id, Object.assign({}, options || {},
+        { realmId: realmId })).anchors.length > 0;
     helpers.log.debug("Leaving CertificateTrust.anchorsAvailable(). " +
                       available);
     return available;
@@ -1879,8 +1993,13 @@ class CertificateTrust {
     helpers.log.debug("Entering CertificateTrust.path(). " + id);
     const opts = options || {};
     if (!CertificateTrust.applies(id, opts.realmId)) {
+      // EVERY MODE (#2118, D4): the use case's truststores beside the
+      // site's own anchors.
+      const assigned = CertificateTrust.assignedAnchors(id, opts);
       helpers.log.debug("Leaving CertificateTrust.path(). The baseline.");
-      return pki.verifyPathToAnchors(leaf, intermediates, anchors,
+      return pki.verifyPathToAnchors(leaf,
+        (intermediates || []).concat(assigned.intermediates),
+        (anchors || []).concat(assigned.anchors),
         { now: opts.now, skewMs: opts.skewMs,
           allowCritical: opts.allowCritical });
     }
@@ -1915,7 +2034,12 @@ class CertificateTrust {
                 options?: Json): Json {
     helpers.log.debug("Entering CertificateTrust.direct(). " + id);
     const opts = options || {};
-    const answer = pki.verifyIssuedDirectly(leaf, authorities,
+    // The use case's truststores beside the site's own authorities (#2118).
+    const all = (authorities || []).concat(CertificateTrust.assignedAnchors(
+      id, opts).anchors.map(function (one: Json) {
+      return one.der;
+    }));
+    const answer = pki.verifyIssuedDirectly(leaf, all,
       { now: opts.now, skewMs: opts.skewMs,
         allowCritical: opts.allowCritical });
     if (!CertificateTrust.applies(id, opts.realmId) ||
@@ -1924,7 +2048,7 @@ class CertificateTrust {
       return answer;
     }
     const verdict = CertificateTrust.assessSync(id, { leaf: leaf },
-      Object.assign({}, opts, { anchors: authorities }));
+      Object.assign({}, opts, { anchors: all }));
     if (!verdict.ok) {
       helpers.log.debug("Leaving CertificateTrust.direct(). " + verdict.code);
       return { ok: false, check: answer.check || 'paranoid',
@@ -2107,8 +2231,13 @@ class CertificateTrust {
       }
       verdict.checks.path = 'exempt-by-spec';
     } else {
-      const held = signerTruststore.anchorsFor(realmId, id);
-      issuers = held.anchors.concat(held.intermediates);
+      // The use case's truststores (#2118), the signer truststore among them
+      // by default.
+      const held = CertificateTrust.assignedAnchors(id,
+        Object.assign({}, opts, { realmId: realmId }));
+      issuers = held.anchors.map(function (one: Json) {
+        return one.der;
+      }).concat(held.intermediates);
       const direct = opts.named ? { ok: true, reason: '' } :
         pki.verifyIssuedDirectly(der, issuers.map(function (one) {
           return { raw: one };
@@ -2116,8 +2245,8 @@ class CertificateTrust {
       if (!direct.ok) {
         verdict.checks.path = 'failed';
         codes.path = purpose.code;
-        whys.path = 'it chains to nothing in this realm\'s signer truststore: ' +
-                    direct.reason;
+        whys.path = 'it chains to nothing in the truststores ' + id +
+                    ' trusts in this realm: ' + direct.reason;
         helpers.log.debug("Leaving CertificateTrust.pinnedSync(). No path.");
         return done();
       }
@@ -2605,7 +2734,7 @@ class CertificateTrust {
    * The published table of use cases, generated from the purpose table so the
    * documentation and the code cannot disagree.
    *
-   * @returns the whole of `docs/v1.1.0/pki-use-cases.md`
+   * @returns the whole of `docs/v1.2.0/pki-use-cases.md`
    */
   static docsPage(): string {
     helpers.log.debug("Entering CertificateTrust.docsPage().");
@@ -2660,7 +2789,7 @@ class CertificateTrust {
     helpers.log.debug("Leaving CertificateTrust.docsPath().");
     // The latest documentation version's folder; the frozen releases
     // beside it are never regenerated (docs/CLAUDE.md).
-    return path.join(__dirname, '..', 'docs', 'v1.1.0', 'pki-use-cases.md');
+    return path.join(__dirname, '..', 'docs', 'v1.2.0', 'pki-use-cases.md');
   }
 }
 

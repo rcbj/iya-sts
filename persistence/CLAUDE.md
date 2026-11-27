@@ -17,7 +17,7 @@ the driver, because a change of key is a step between two versions.
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
 | **`directory_merge.js`** | **One directory entry written by two nodes** (2026-09-14, #46 section 3): the three-way merge (base = the shadow, mine = live, theirs = the row under `FOR UPDATE`) the postgres driver writes a directory upsert through, and `persistence.js` applies again to a write that raced the flush or a replicated row. A LEAF with no requires. See *Several nodes writing one row* below. |
 | **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
-| **`bulk_import.js`**, **`ldif_stream.js`** | **The bulk directory import** (#629, 2026-10-14): people from an LDIF file straight into `sts_ldap_entries`, offline, thousands a second. A TOOL — no route, nothing requires it. See *THE BULK IMPORT* below; `docs/v1.1.0/bulk-import.md` is the operator's page. |
+| **`bulk_import.js`**, **`ldif_stream.js`** | **The bulk directory import** (#629, 2026-10-14): people from an LDIF file straight into `sts_ldap_entries`, offline, thousands a second. A TOOL — no route, nothing requires it. See *THE BULK IMPORT* below; `docs/v1.2.0/bulk-import.md` is the operator's page. |
 
 ## THE METRICS SURFACE, AND THE PROCESS EXIT IT EXPOSED (2026-09-11)
 
@@ -386,7 +386,26 @@ connection comes from. What carried over, rule by rule:
   `KnexTimeoutError` ("Timeout acquiring a connection"), which
   `timedOutWaiting()` recognises for the maintenance retry — `pg-pool`'s was
   "timeout exceeded when trying to connect". `min` is 0: nothing is dialled
-  until something asks.
+  until something asks. **Since #2220 the three are settings**
+  (`persistence.connectTimeoutMs`, `persistence.poolWaitMs` — the wait for a
+  slot, passed as `acquireTimeoutMillis` — and `persistence.idleTimeoutMs`),
+  read by `persistence.js` when the store is opened and passed in, so the
+  driver still reads no setting; 5 s, 5 s and 30 s are their defaults.
+  `persistence.poolSize` replaces `poolMax()`'s automatic size when it is
+  not 0 (never below two), and the scheduler's cap reads the same.
+* **The statement bound (#2220).** `StorePool.boundStatements(ms)` sets
+  `statement_timeout` (MariaDB `max_statement_time`) as a pooled
+  connection's SESSION default, once, the first time it is lent after the
+  bound is set or changed (`__stsStatementMs` on the connection; one
+  statement per connection, not per query). `persistence.js` sets it from
+  `persistence.statementTimeoutMs` (5 minutes) in `coordinate()`, the last
+  step of the start, so the schema, its migrations and every restore read
+  run unbounded; `dedicated()` connections (online index builds, LISTEN,
+  liveness, the bridge) are never under it, and `bulk_import.js` never binds
+  its pools. A borrower that resets its session (the metrics page's `RESET
+  ALL`) calls `sessionReset()` so the bound is set again before the next
+  lend. A cancelled statement is logged STS-STORE-0178 and passed on to the
+  caller's own failure path.
 * **TLS decided in one place.** `dialOptions()` still decides it, and its
   `{ connectionString, ssl }` is what the pool's Knex instance is built from.
   **The hooks it installs are `knex_store.js`'s** (`hostCheck()`,
@@ -765,6 +784,18 @@ is STS-STORE-0174 and that realm keeps its old shadow; and every other
 shadow is the stored row less what the live realm left out
 (`heldShadowRowOf()`), bar what this process cleared and has not written.
 `tests/realm_replicated_overrides.js`.
+
+**The process-wide overrides took the same check on 2026-11-24** (GitHub
+Actions run 45454368120): `config.applyPersistedOverrides()`, at a start and
+at every change-log apply, ran `checkOverride()` with the rules between
+settings, one key at a time in the order the store answered, against what
+this process held before the set. MariaDB's one-second poll handed three
+request workers `listeners.custom` and `listeners.applications` in one
+change; the mapping was judged first, against a listener list without its
+listener, refused STS-CORE-0008 and never asked again, and those workers
+refused every request on the listener (STS-TLS-0047), so
+`sts_openpgp_card_mail`'s Web Key Directory answered gpg 404. It is
+`checkStoredOverride()` now. `tests/stored_override_order.js`.
 
 ## When the flush happens
 
@@ -1191,6 +1222,10 @@ REPORTED — `audit.js`'s `list()` and `summary()`, `admin_stats.js`'s
 `snapshot()`, `xacml_monitor.js`'s. The test for `own` is one question: **is a
 write to this store an ASSIGNMENT or an INCREMENT?**
 
+**SINCE #1616 (2026-11-24) THE AUDIT EVENTS ARE NOT A MINTED STORE AT
+ALL** — see *The audit log, append-only* below. `audit.nums` keeps what this
+paragraph says; `audit.events` is the OLD ring, read once to be copied.
+
 **THE AUDIT LOG'S FAN-IN IS READ WHEN A PAGE ASKS, NOT AT EACH CHANGE
 (2026-10-21, #820).** `audit.events` and `audit.nums` are declared
 `contributionsOnRead`. Every event rewrote a sealed segment of up to 32
@@ -1412,9 +1447,30 @@ interaction reference the approval wrote (STS-GNAP-0135). A non-covering take
 now chains until its held keys have gone out, and a chain that finds the
 journal empty with saves still out (another caller's save took its key)
 waits for them, as does `flush()` with nothing journalled beside an unsent
-batch. Those are the rare paths; a covering take still waits only for its
-own save. `tests/minted_flush_order.js` section 3a. `stop()` still waits for every save already sent,
+batch. Those are the rare paths. `tests/minted_flush_order.js` section 3a. `stop()` still waits for every save already sent,
 including an older disjoint one a covering second batch did not.
+
+**AND A COVERING TAKE WAITS FOR THE OLDER SAVES THAT TOOK AFTER ITS CALLER
+ARRIVED (#1923, 2026-11-20).** A covering take emptied the journal at its own
+generation, so a key journalled at or below the target that is not in it is
+committed or in an OLDER save still out — and one request journals across
+several turns. The token endpoint notes the access token's
+`oauth2.grantIssued` row, awaits the refresh token and the ID Token, then
+writes the grant; another request on the worker answering in between flushed
+the token rows, the grant went out in a second save that covered the answer,
+that save committed first, and the answer and its ticket were released
+(`announceAnswered()` names the ticket at the answer). The worker that served
+the DELETE caught up to a store holding the grant and none of its tokens:
+"0 token(s) revoked with it", `sts_grant_management` in run #532's mariadb
+mode, where a minted flush is a locking, retryable transaction that outlasts
+a later one. `flushThrough(target, since)` now also waits for every save still
+out whose take (a non-covering one's read) is above `since` and below the
+chosen save's; `persistence.commitThrough(target, since)` passes the minted
+half of `since`, and `cluster/cluster_barrier.js` passes the request's
+arrival position, so a save taken before the work arrived — #877's case, the
+queue a sign-in paid — is still not waited for. A caller with no arrival
+waits for every older save still out, which is only slower.
+`tests/cluster_barrier_throughput.js` section 2b.
 **Two different processes writing one key is untouched** and is still
 last-writer-wins, as above.
 
@@ -1434,6 +1490,56 @@ STS-STORE-0039 naming one directory row "for" ever-growing milliseconds) for
 44 minutes, until the suite restarted the cluster. The handler now deletes an
 emptied handle, and `flush()` answers "nothing journalled" when a take finds
 nothing and no save or batch is out. `tests/minted_removed_realm_flush.js`.
+
+**AND THE WAIT ON ONE'S OWN FLUSH IS BOUNDED, WHATEVER HOLDS THE FLUSH
+(#1934).** #1933 fixed that cause; any other flush that never settles would
+wedge the pull the same way, silently. `applyDirectoryChange()` now waits
+through `waitForOwnFlush()`:
+
+* **The bound is `workers.readBarrierTimeoutMs`**, read at each wait. No save
+  has a timeout of its own to borrow — the driver bounds a connection and a
+  pool slot, never a transaction — so the bound is the point past which the
+  wait has already cost every read-your-write request its whole wait: a
+  flush still out then is the wedge, not a slow save.
+* **Past it the apply rejects with `STS-STORE-0176`, and the PAGE fails, not
+  the row.** Every other applier failure is the row's (STS-STORE-0042) and
+  that row is never applied again; `persistence_replication.js` rethrows
+  this one, so `highest` does not move and the next pull reads the same rows
+  (a row held for its realm is held again). If the flush has settled by
+  then, they apply. One error line a flush, however many pulls wait it out;
+  the pull's own STS-STORE-0038 is debug for this code.
+* **A request worker asks to be replaced**, once, over the worker channel
+  (`{ replaceWorker }`, `reportLag()`'s arrangement); `common/CLAUDE.md` has
+  the front process's half. The replacement restores from the store and
+  follows the log from there, so the rows this worker could not apply reach
+  it. The front process has nobody to replace it: its pulls go on failing a
+  bound at a time, and the line says so.
+* **SLOW IS NOT STUCK (the #1934 follow-up, 2026-11-23).** The ask waited
+  for nothing but the first bound, and the front ended the worker 8 s after
+  it: a flush whose statement was only slow (a lock held for a minute, a
+  failover) was killed mid-commit, and this worker's unflushed writes — a
+  revocation among them, which rcbj's rule says is never lost — with it.
+  So the ask (STS-STORE-0177) waits until the flush has been out
+  `OWN_FLUSH_STUCK_FACTOR` (4) bounds since it began (`flushingSince`), and
+  carries `flushing: { since, giveUpAt }`, `giveUpAt` being
+  `OWN_FLUSH_HARD_FACTOR` (10) bounds after it began. The worker's drain
+  waits for that flush to land or fail before it exits
+  (`settleOwnFlush()`, called by `request_worker.ts`'s `releaseThenExit()`,
+  which until then exited 2 s after its listener closed whatever was in
+  flight), and the front does not end it before `giveUpAt` plus its own
+  8 s. Past that the flush has had no answer from the driver for 5 minutes
+  by default and is abandoned, said as STS-WORKER-0057. Factors of the
+  bound rather than settings, so a stack that shortens the bound shortens
+  them with it.
+* **The STS-STORE-0039 line says it**: the directory applier carries
+  `ownFlushWait()` beside itself (the `prepare` arrangement), and the line
+  names the entry, how long the apply has waited on this process's own flush
+  and the bound — or, between two pulls, that the latest apply ran out and
+  the flush is still out.
+
+`tests/own_flush_wait_bound.js` holds a flush open at its COMMIT over
+`cluster_lww_stores.js`'s double and asserts all four, then lets the flush go
+and shows the other node's row applied.
 
 **`stop()` WAITS TOO, AND THAT MOVED A TEST ORDERING.**
 `appconfig_persistence.js` calls `persistence.stop()` without awaiting it, and
@@ -1578,7 +1684,68 @@ line says whether it was a prepare or another task taking the loop at a
 turn, which the old line could not. `tests/read_barrier_slow_apply.js`
 holds the split.
 
-**`audit.events` IS STORED IN SEGMENTS OF 32** (`realms.arr({ segment })`,
+## The audit log, append-only (#1616, 2026-11-24; ASVS 5.0.0 16.4.2)
+
+**Every audit event is ONE sealed row of `sts_audit`, where the application
+role holds INSERT and SELECT and nothing else.** Until then the ring was the
+segments below, in `sts_minted`, which that role may UPDATE and DELETE like
+any minted row: the keyed chain on each row (`common/CLAUDE.md`, audit) said
+a row had changed, and nothing prevented it. rcbj's decisions are on the
+ticket; what a reader of this directory needs:
+
+* **`audit_store.js` is the store; `audit_portable.js` its MariaDB
+  statements.** `common/audit.js`'s ring is now this process's events in
+  memory (`realms.arr()` with no `persist`), each one also queued by
+  `audit_store.append()` and written a turn later with the rest of its
+  burst, `INSERT … ON CONFLICT DO NOTHING` (`INSERT IGNORE` on MariaDB): a
+  retried write or a second copy needs no UPDATE. A refused write is kept
+  for the next, to a bound (`STS-AUDIT-0018`). `audit.fresh()` reads the
+  realm's newest `audit.maxEvents` rows, every process's, and `merged()`
+  shows them beside this process's own, each once by (origin, seq).
+* **ACTIVE EXACTLY WHERE MINTED STATE PERSISTS** (`persistence_minted`'s
+  `enabled()`), on a driver with the `audit*` methods. Memory and LDIF stores
+  have neither, and the ring is the process's own, as before.
+* **ROWS LEAVE THROUGH THE OWNER'S TWO SECURITY DEFINER FUNCTIONS** (MariaDB:
+  SQL SECURITY DEFINER procedures), never a DELETE of this role's:
+  `sts_audit_retain(realm, keep)`, which keeps at least 1000 whatever it is
+  asked because the caller is the role the table is protected from, and
+  `sts_audit_purge_realm(realm)`, which deletes only a realm gone from
+  `sts_realms` or retiring, never the default one. The `audit.retain` cluster
+  job (service scope, ten minutes) calls the first for every live realm and
+  the second for every realm the table holds and the service does not.
+* **A ROW IS NEVER RE-SEALED.** `sts_audit` is in `EXTRA_SEALED` marked
+  `countOnly`: counted against its data key and skipped by the re-seal pass.
+  A key is destroyed only on a count of zero (`common/data_key_rotation.ts`),
+  so a retired key stays while an audit row names it, and goes when
+  retention has removed them.
+* **THE SERVICE CREATES THE TABLE LIKE ANY OTHER, WHICH ONLY A ROLE THAT
+  COULD ALSO ALTER IT CAN DO.** Every process asks `auditPrivileges()` at its
+  start (`has_table_privilege`, which an owner always has; on MariaDB
+  `information_schema`'s grants on the table, the database and globally);
+  where the role can change the table, the front process logs
+  `STS-AUDIT-0019` and `/admin/mode`'s `audit-append-only` row is reported
+  not met. The service runs (rcbj's decision 7). The ordinary case — a role
+  without CREATE — refuses to start without the table (`STS-STORE-0029`), so
+  `upgrade-1.1.0.sql` runs first.
+* **MARIADB'S GRANTS ARE PER TABLE SINCE SCHEMA 33** (`--@grant-tables` in
+  the template, one line per table of the model): MariaDB cannot take one
+  table out of a database grant. A new table is granted with the model.
+* **THE OLD RING IS COPIED AT EVERY START OF THE FRONT PROCESS**
+  (`audit.js`'s `migrateLegacy()`): `legacyEvents`, declared under the old
+  handle and shape so the minted restore and the fan-in still read it, is
+  written into `sts_audit` with its chain checksums, and only then are the
+  `audit.events` rows of `sts_minted` deleted (`auditDropLegacy()`). Asked
+  every start, so a node still on 1.1 during a rolling upgrade is caught.
+* **A PROCESS TAKES ITS OWN NEWEST ROWS BACK** into its ring at its start
+  (`restoreFromStore()`), because `audit_export.ts` walks `localEvents()`
+  with a cursor per origin, and the segments used to restore them.
+* Tests: `tests/audit_append_only.js` (the store against a stand-in
+  driver), `tests/postgres_schema.js` and `tests/mariadb_schema.js` (the
+  grants, the functions, the upgrade's statements). The role's refusals were
+  run against PostgreSQL 18 and MariaDB 11 when this was written.
+
+**`audit.events` IS STORED IN SEGMENTS OF 32 — UNTIL #1616, ABOVE**
+(`realms.arr({ segment })`,
 `common/CLAUDE.md`): a whole-array `merge: 'own'` row was 2.3 MB sealed and
 written per flush and read back by every other process. Another origin's
 segments are put back together by `persistence_replication.remoteSegmentedRows()`;
@@ -1668,6 +1835,22 @@ directory and everything it had minted. Now:
   `liveRealmRow()` through the same `realmChangeOf()` the flush uses, and an
   unchanged row is counted and skipped (`tests/realm_replicated_overrides.js`
   B5).
+  **A realm list read that this process's own realm write overtook is read
+  again (GitHub run 45732176952).** The list is read whole while this
+  process's flush may commit a realm row and advance `realmShadow`; the
+  answer then predates the write it is judged against, and a realm created
+  HERE a moment before was in the shadow and not in the answer — "removed by
+  another node". In `single-node` worker 5 created `p644-…`, its flush
+  landed while a pull it was late with had the list out, and the stale
+  answer removed the realm from worker 5 and, through the keystore's purge,
+  its signing keys and data keys from the store: `sts_pseudonyms` got
+  express's `Cannot POST` from worker 5, and every other process met
+  entries sealed under destroyed keys (STS-KEYS-0092). `advanceRealmShadow()`
+  counts its moves; `applyRealmsRead()` reads again while the count moved
+  under it (up to four reads), and past that applies the answer with no
+  realm removed whose shadow changed during the read (STS-STORE-0182).
+  `tests/realm_replicated_overrides.js` B6 holds a read open across a flush
+  here.
   **The directory applier's base is what a RUNNING flush sent for that key,
   not the shadow (2026-09-23)**: the shadow advances only when the flush
   settles, so a change made while it was out that UNDID the flush's own change
@@ -1787,6 +1970,45 @@ service deployed as cells each tier has its own sweep since #1313 — see
 "nodes'" drivers share, and `persistence.js` itself over it; five mutants
 caught (the wholesale realm delete, `removedHere` ignored, the tombstone guard,
 the list merge, the session rank).
+
+### The front process catches up on a settings write (#2019; rcbj, 2026-11-23)
+
+**A realm row or a setting a request worker wrote reached the front process
+only at its next change-log pull**, and the front decides some things before
+dispatch on its own copy (the RFC 9440 proxy's pins and ranges,
+`common/forwarded_client_certificate.ts`). On PostgreSQL that pull is the
+LISTEN/NOTIFY nudge, sent after the COMMIT and coalesced 25 ms; on MariaDB
+the one-second poll; so `tests/protocol/sts_cert_sign_in_profiles.js` E3,
+sending the proxy's request the moment `/admin-api/realms/set` answered, met
+the replaced range in single-node and mariadb. rcbj chose **catch up on
+change**, with no per-request store round trip. `persistence.js`'s header
+block *THE SETTINGS GENERATION* argues it; the facts:
+
+* **`settingsGeneration()`** moves in `realmsChanged()` and
+  `configChanged()`, where a realm row or a process-wide setting is marked
+  dirty — every create, update, removal and override, nothing else.
+* **The answer carries it.** A worker marks an answer during which it moved
+  (`x-sts-pool-settings`, set in `writeHead()`, which on every database store
+  runs after the commit, `cluster/cluster_barrier.js` rule 2), and the front
+  forwards none of it until `syncSettingsNow()` — this module's log and the
+  global tier's, where a realm's row lives in a service of cells — has
+  pulled. One catch-up in flight and at most one queued behind it, shared.
+* **The commit nudges.** After a worker's `saveRealms()` or
+  `saveOverrides()` commits, `announceSettingsCommitted()` posts
+  `{ settingsCommitted }` on the worker channel and the front wakes its
+  pulls (`nudgeSettingsPull()`, which `wake()` coalesces) — for a write
+  with no answer to ride on, a cluster job's body.
+* **Every store mode**: memory and ldif have no request workers (dispatch
+  without coordination is refused), so the front is the writer; postgres,
+  mariadb and each cell's front catch up as above.
+* **What it does not cover: another NODE.** In cluster mode a write on node
+  A reaches node B's front only by the log's own nudge (NOTIFY, or MariaDB's
+  poll), because no answer from A passes through B. That is why E1/E3's
+  retry stays: the balancer may send the proxy's request to B.
+* A catch-up that runs out (syncNow()'s own deadline) forwards the answer
+  anyway, logged once a minute under STS-WORKER-0058.
+* `tests/front_settings_catch_up.js`; it is not periodic work
+  (`tests/no_periodic_timers.js` sees no timer).
 
 ### What still does not coordinate
 
@@ -2013,6 +2235,14 @@ postgres driver writes and reads every entry through it.
 ### The `grantinggroup` keys of rows written before #1306 (#1311)
 
 `granting_index_backfill.js` argues it; this is what a maintainer looks for.
+
+* **AND A SECOND WALK SINCE #2012.** The candidates are the rows naming one of
+  `directory_codec.BACKFILL_ATTRIBUTES` — the six granting attributes and
+  `userPrincipalName` / `stsCertificateBinding`, which the `certificatebinding`
+  key is derived from — and each candidate's whole `valueKeys` is recomputed,
+  so one walk keys both. A store that finished #1311's walk runs again under
+  the new mark and cursor (`$index-complete-2$`, `$cursor-2$`, same handle);
+  the old two rows are left. Same job id, same budget.
 
 * **A CLUSTER SCHEDULER JOB, `persistence.granting-key-backfill`, NOT A STEP
   OF THE START.** The session index's backfill (#350) is a start step because
@@ -2263,7 +2493,7 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   overlap. **Mixing builds is NOT safe**: an older import takes the table
   lock, does not take this one, and checks before it inserts, so it and a
   new one over overlapping files could both admit a name.
-  `docs/v1.1.0/bulk-import.md` (*Several imports at once*) is the operator's half.
+  `docs/v1.2.0/bulk-import.md` (*Several imports at once*) is the operator's half.
 * **WHAT ELSE SEVERAL IMPORTS SHARE, AND WHY EACH IS SAFE** (read for #637):
   `sts_change_readers` — an import never reports there (only
   `persistence_replication.js` does, and the import does not start it), so
@@ -2558,7 +2788,9 @@ never earlier than the store would drop the row, holds. `cluster/CLAUDE.md`,
 *The scheduler*, argues it. Rows written before #338 carry NULL and are read
 until the history walk has deleted the ones it holds.
 
-**What is still read whole, and why.** The `merge: 'own'` accumulators —
+**What is still read whole, and why.** (Since #1616 `audit.events` is the
+old ring, emptied at the first start; what follows describes it before.)
+The `merge: 'own'` accumulators —
 `audit.events` above all — carry no expiry: a row is a process's share of a
 ring or a counter, not a record with a lifetime. `audit.events` is one row per
 32-event segment, per realm, per ORIGIN, up to `audit.maxEvents` (5000) events
@@ -3358,6 +3590,58 @@ rather than read there: that module takes its url and its logger as options and 
 nothing, which is what lets a test construct one against any database without
 this file's settings existing.
 
+### A CLIENT CERTIFICATE, PRESENTED BY EVERY DIALLER (#2254, ASVS 5.0.0 12.3.5)
+
+The server was authenticated (above) and this service was authenticated by a
+password only. `persistence.databaseTlsClientCertFile` and `…KeyFile` name a
+PEM certificate (leaf first) and its unencrypted key, and
+`databaseTlsClient()` reads them through `OutboundTls.readNamedFile()`
+(`security.fileRoots` in product, #2247) and checks them as a pair through
+`crypto.tlsClientKeyPairProblem()` (rule 3r). The pair is TEXT and goes where
+`tlsCa` goes: `dialOptions(url, verifyTls, ca, engine, client)` puts it on
+`ssl` as node's `cert` and `key`, which `pg` and `mysql2` both hand to TLS
+as they are; `create()`'s `tlsClient` reaches both tiers' pools (and so every
+dedicated connection, which is the pools' own), the read pool, the bridge's
+thread (`postableSsl()`/`restoredSsl()` carry it), and
+`databaseConnection()`/`globalDatabaseConnection()` hand it to the tools
+(risk loader, bulk import, cell conversion).
+
+* **Files, not a provider reference, and argued in `persistence.js`'s
+  header of `databaseTlsClient()`**: the CA beside it and the secret-store
+  client identity (`keys.vaultClient*`) are files, and a client certificate
+  is issued and renewed into files by an agent, cert-manager or a CSI
+  driver; the provider mechanism reads one string, and a pair renewed
+  together and checked against each other is not that shape.
+* **Nothing requires a password once a certificate is given**: the string
+  is dialled as written, and whether the certificate alone (`cert`,
+  `REQUIRE X509`) or the certificate and the password
+  (`clientcert=verify-full`) are asked for is the database's decision.
+  `refuseDefaultDatabasePassword()` never asks about an empty password.
+* **Unusable is FATAL at start**, `STS-STORE-0180`, inside `openStore()`'s
+  `try` like `STS-STORE-0079`: one setting without the other, unreadable,
+  no certificate, an encrypted or unparseable key, or not the certificate's
+  key. An EXPIRED certificate is a warning only: the database decides, and
+  a renewal may be on its way to the file.
+* **Read again by #2220's job** (`persistence.database-password-refresh`,
+  every `persistence.databasePasswordRefreshS`, and on a refused login),
+  not a job of its own: one credential, one interval, and the job's
+  translated title stays. `refreshDatabaseCertificate()` compares the PEM
+  text with what it last handed out and gives a changed pair to every
+  driver in `certificateDrivers` (this process's database and, in a cell,
+  the global tier's — whose password is still read only at start). The
+  driver's `useClientCertificate()` decides the options again and
+  `StorePool.setSsl()` replaces Knex's `connectionSettings` the way
+  `setConnectionString()` does: a NEW ssl object each time, which matters
+  for MariaDB — `mysql2` caches its secure context by the ssl object. A
+  failed re-read is `STS-STORE-0181` and keeps the pair held. The bridge's
+  thread keeps the pair it was started with.
+* **Said**: `describeDatabase()` answers `clientCertificate` and
+  `clientCertificateFile` and adds a sentence to `tls`;
+  `databaseCredential()` answers `/admin/mode`'s *Database credential*.
+* **Tested against a real PostgreSQL** by
+  `tests/database_client_certificate.js` F when `STS_TEST_PG_CLIENT_CERT_URL`
+  names one (`postgres/CLAUDE.md` says how to start one).
+
 ### The upgrade to 18, and the mount that changed with it
 
 `postgres:16-alpine` became `postgres:18` — Debian rather than alpine, because
@@ -4064,7 +4348,7 @@ is underneath: LUKS or an encrypted ZFS dataset under `PGDATA`, a cloud disk
 with a customer-managed key, or one of the forks that has TDE — community
 PostgreSQL has none.
 
-`docs/v1.1.0/encryption-at-rest.md` is the whole argument, including what column-level
+`docs/v1.2.0/encryption-at-rest.md` is the whole argument, including what column-level
 encryption misses that block-level does not (the WAL, spilled sorts, `pg_dump`
 output, replicas, query logs) and why a key-encryption key kept in a file
 must not sit on the same unencrypted disk as the database (the compose stack
@@ -4134,6 +4418,23 @@ calls this rather than copying the injection**, because the encoding above is
 exactly the kind of detail a copy gets wrong. Requiring this module does not
 open anything (only `start()` does), so a CLI may load it.
 
+
+**READ AGAIN WHILE RUNNING SINCE #2220.** A password rotated in the secret store
+used to need a restart of every node. Now each process reads it again every
+`persistence.databasePasswordRefreshS` (the per-process job
+`persistence.database-password-refresh`, registered by `start()`) and at once
+when the database refuses a login (28P01, 28000, MariaDB's 1045 — seen as
+tarn's `createFail` on the writer's pools, at most every 30 s), and a changed
+string is handed to the driver's `useConnectionString()`. **That replaces
+Knex's `client.connectionSettings` on the writer's pools** (`StorePool.
+setConnectionString()`), which Knex dials every new connection with — pooled
+and dedicated alike — and leaves open sessions alone. Not a connection
+FUNCTION: Knex resolves a function lazily in the pool only, and
+`acquireRawConnection()` (the LISTEN and liveness connections) would read an
+unset value. Rotating the password AT the database stays the operator's or the
+secret store's job (OpenBao's database engine), and the old one must outlive a
+refresh interval there. The global tier's password is still read at start
+only.
 ## THE `ldif` STORE HAD STOPPED WRITING THE DIRECTORY (fixed 2026-09-12)
 
 The journalled flush (2026-09-08) hands the driver `all: null` when it knows

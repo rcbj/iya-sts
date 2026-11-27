@@ -11,6 +11,15 @@
   "by.administratorConsoleLogout": "en administratör (administrationskonsolen, /admin/logout)",
   "act.credentialCompromised": "autentiseringsuppgift markerad som komprometterad",
   "act.accountDisabled": "kontot inaktiverat",
+  "signIn.kind": "{kind, select, new-device {en enhet eller webbläsare som inte setts förut} new-country {ett land som inte setts förut} anonymiser {ett anonymiseringsnätverk som Tor} after-refusals {nekade lösenord strax innan} unusual {en risknivå som är ovanlig för kontot} other {{kind}}}",
+  "signIn.method": "{kind, select, password {ett lösenord} webauthn {en passkey eller säkerhetsnyckel} fido {en passkey eller säkerhetsnyckel} federation {en annan identitetsleverantör} kerberos {Kerberos} x509 {ett certifikat} totp {en autentiseringsapp} backup-code {en återställningskod} wallet {en digital plånbok} yubico-otp {en YubiKey OTP} ssh {en SSH-nyckel} other {en annan metod}}",
+  "signIn.device": "{browser} på {os}",
+  "signIn.deviceUnknown": "en webbläsare eller enhet som inte angav vad den var",
+  "signIn.placeUnknown": "okänt",
   "rights.access": "åtkomst",
-  "address.none": "(ingen)"
+  "address.none": "(ingen)",
+  "credentialChange.item": "{kind, select, passkey {passkey eller säkerhetsnyckel} totp {autentiseringsapp} app-password {applösenord} hotp {engångskodstoken} yubiotp {YubiKey OTP} recovery-codes {återställningskoder} certificate {certifikat} certificate-binding {certifikatkoppling för inloggning} smime {S/MIME-certifikat} openpgp {OpenPGP-nyckel} other {inloggningsuppgift}}: {change, select, added {tillagd} generated {genererade} removed {borttagen} other {ändrad}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {passkey eller säkerhetsnyckel} totp {autentiseringsapp} app-password {applösenord} hotp {engångskodstoken} yubiotp {YubiKey OTP} recovery-codes {återställningskoder} certificate {certifikat} certificate-binding {certifikatkoppling för inloggning} smime {S/MIME-certifikat} openpgp {OpenPGP-nyckel} other {inloggningsuppgift}} ”{label}”: {change, select, added {tillagd} generated {genererade} removed {borttagen} other {ändrad}}",
+  "credentialChange.by": "{entity, select, user {av dig, i portalen eller vid inloggning} other {av en administratör}}",
+  "expiry.item": "{kind, select, certificate {certifikatet} piv {PIV-smartkortscertifikatet} smime {S/MIME-certifikatet} tls-client {TLS-klientcertifikatet} signin-certificate {inloggningscertifikatet} other {inloggningsuppgiften}} ”{label}”, som upphör att gälla {date} (UTC): {renew, select, certificates {förnya det på sidan Certifikat i din portal} tokens {förnya det på sidan Token och nycklar i din portal, på PIV} openpgp {ersätt det på sidan Token och nycklar i din portal, på OpenPGP och S/MIME} signing-key {förnya det på sidan Signeringsnycklar i din portal} other {be din administratör att förnya det}}"
 }

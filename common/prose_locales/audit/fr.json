@@ -231,6 +231,54 @@
     "en": "228f7d738861aa3c",
     "text": "Une modification d’application d’authentification a été refusée pour un jeton CSRF invalide"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "Un nouveau secret de jeton de codes à usage unique a été montré à quelqu’un"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "Quelqu’un a configuré un jeton de codes à usage unique sur son propre compte"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "La configuration d’un jeton de codes à usage unique n’a pas été confirmée"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "Quelqu’un a supprimé le jeton de codes à usage unique de son propre compte"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "Quelqu’un a resynchronisé son jeton de codes à usage unique"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "Un jeton de codes à usage unique n’a pas été resynchronisé"
+  },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "Une ligne de programmation d’un OTP YubiKey a été montrée à quelqu’un"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "Quelqu’un a configuré un OTP YubiKey sur son propre compte"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "La configuration d’un OTP YubiKey n’a pas été confirmée"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "Quelqu’un a supprimé l’OTP YubiKey de son propre compte"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "Quelqu’un a revendiqué un OTP YubiKey importé"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "Un OTP YubiKey n’a pas été revendiqué"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "Un secret d’application d’authentification a été affiché pendant l’utilisation d’un lien d’activation"
@@ -354,6 +402,34 @@
   "audit.actions.keys.retire.label": {
     "en": "04a39be278dba264",
     "text": "Des clés de signature retirées dont le délai de grâce est écoulé ont été supprimées"
+  },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "Le certificat d'une autorité de certification a été renouvelé sur sa propre clé"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "Le certificat de l'écouteur a été renouvelé"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "Les clés du signataire dédié des attestations ont été renouvelées"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "Les clés de chiffrement des objets de requête, KEM et des requêtes d'attestation ont été renouvelées"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "Un secret partagé du cluster a été renouvelé"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "Le secret client d'une application a été renouvelé automatiquement"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "Le mot de passe de la base de données a été relu et a changé"
   },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
@@ -486,6 +562,138 @@
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "L’attestation d’une clé de sécurité n’est plus fiable : la liste de statut d’attestation Android de Google révoque sa chaîne"
+  },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "Un jeton matériel a été enregistré à partir de son attestation"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "Un identifiant a été ajouté à un jeton matériel"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "Un jeton matériel a été enregistré par une autre personne que son détenteur"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "Un jeton matériel a été déclaré perdu et ses identifiants retirés"
+  },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "Un jeton matériel a été retiré de l’entrée d’une personne, et ses identifiants sur ce jeton ont quitté le registre"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "Un jeton écrit sur l’entrée d’une personne a été refusé et rétabli tel qu’il était enregistré"
+  },
+  "audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "Le fichier de semences PSKC d’un fournisseur a été importé, ou refusé"
+  },
+  "audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "Un jeton OATH importé a été attribué à une personne, ou réclamé par elle"
+  },
+  "audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "La réclamation d’un jeton OATH importé par une personne a été refusée"
+  },
+  "audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "Un jeton OATH non attribué a été supprimé de l’inventaire"
+  },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "Un jeton OATH attribué a été retiré parce qu’il a été supprimé de l’entrée de son titulaire"
+  },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "Un CSV d’OTP YubiKey a été importé, ou refusé"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "Un OTP YubiKey importé a été attribué à une personne"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "Une personne a revendiqué un OTP YubiKey importé, ou la revendication a été refusée"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "Un OTP YubiKey non attribué a été retiré de l’inventaire"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "Un YubiKey OTP attribué a été retiré parce qu’il a été supprimé de l’entrée de son titulaire"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "Un client YK-VAL a été créé"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "Un client YK-VAL a été retiré"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "Un client YK-VAL a demandé si un OTP YubiKey est valide"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Une clé PIV de gestion de clés séquestrée a été récupérée"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "Un défi d'enregistrement de clé OpenPGP a été émis"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "Une clé OpenPGP a été enregistrée sur preuve de possession"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "Une clé OpenPGP n'a pas été enregistrée"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "Une clé OpenPGP a été supprimée"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "Une clé OpenPGP a été publiée dans le Web Key Directory, ou en a été retirée"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "La façon dont les messages adressés à une personne sont chiffrés a été modifiée"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "Le certificat S/MIME d'une personne a été défini ou supprimé"
+  },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "Un défi de preuve de possession S/MIME ML-KEM a été émis"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "Un certificat S/MIME ML-KEM n'a pas été délivré"
+  },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "Une clé OpenPGP classique a été conservée à côté de la clé post-quantique qui l’a remplacée"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "Une clé OpenPGP classique conservée a été supprimée"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "Un certificat PIV a été réémis après la connexion"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "Un certificat PIV a été révoqué une fois que son remplaçant a servi à se connecter"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -667,6 +875,14 @@
     "en": "478c7ee15248637f",
     "text": "Un opérateur a effacé l’application d’authentification de quelqu’un"
   },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "Un opérateur a effacé le jeton de codes à usage unique de quelqu’un"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "Un opérateur a effacé le YubiKey OTP de quelqu’un"
+  },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",
     "text": "Un opérateur a retiré la clé de sécurité de quelqu’un"
@@ -674,6 +890,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "Un opérateur a renommé la passkey de quelqu’un"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "Un opérateur a importé une clé de sécurité U2F pour quelqu’un"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -802,6 +1022,10 @@
   "audit.actions.admin.pki.trust.change.label": {
     "en": "ab34b1a9778d5c8e",
     "text": "Le magasin de confiance des signataires ou un réglage de PKI paranoïaque a été modifié"
+  },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Un magasin de confiance nommé ou l'affectation de magasins de confiance d'un cas d'usage a été modifié"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -991,6 +1215,46 @@
     "en": "432e877d55af1913",
     "text": "Le rappel (callback) d’une demande d’accès AuthZEN a été envoyé ou a échoué"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Une demande d'accès AuthZEN a échoué"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "Le magasin des refus AuthZEN pouvant faire l'objet d'une demande était plein"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "Un acte d'administration a été retenu pour un second administrateur"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "Un acte d'administration retenu a été approuvé et exécuté"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "Un acte d'administration retenu a été refusé"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "Un acte d'administration retenu a été retiré par son demandeur"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "Un acte d'administration retenu a expiré sans décision"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "Un acte d'administration retenu a été approuvé et non exécuté"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "Quelqu'un s'est vu refuser la décision d'un acte d'administration retenu"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "Un acte d'administration à haut risque s'est exécuté sans second administrateur"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Le PEP d’émission a refusé de laisser ce service émettre quelque chose"
@@ -1014,6 +1278,14 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "La clé d’assertion d’un PEP distant a été certifiée à partir de sa demande"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "Un PEP distant intégré a été lié à son application, ou délié"
+  },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "Un PEP distant a commencé à récupérer une autre portée de politiques"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -1230,6 +1502,10 @@
   "audit.actions.persistence.minted-drop.label": {
     "en": "065f403ac7419f76",
     "text": "Une ligne frappée qui ne pouvait jamais être validée a été abandonnée"
+  },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "Le certificat client de la base de données a été relu et a changé"
   },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
@@ -1643,6 +1919,18 @@
     "en": "55c1155d5daa1c68",
     "text": "Une personne a révoqué l’une de ses paires de clés de signature"
   },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "Un certificat utilisateur SSH a été délivré à une personne"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "Une personne a révoqué l’un de ses certificats utilisateur SSH"
+  },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Un certificat utilisateur SSH écrit sur l’entrée d’une personne a été refusé : l’AC ne le lui a pas délivré, ou il est révoqué ou expiré"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "Une personne a publié son propre did:web"
@@ -1778,6 +2066,34 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "La description, le nom d’affichage ou les types de membres d’un rôle ont été définis"
+  },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Un rôle a été rendu statique ou dynamique sélectionnable"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "La manière de choisir un rôle dynamique à la connexion a été définie"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "L’éligibilité d’une personne à un rôle dynamique a été décidée"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Des rôles dynamiques ont été proposés lors d’une connexion"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Des rôles dynamiques ont été choisis lors d’une connexion"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "Le choix de rôles dynamiques d’une connexion a été refusé"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "Un rôle dynamique choisi a été retiré d’un jeton"
   },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
@@ -2118,6 +2434,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "Le niveau de risque d’un appareil enregistré a été défini"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Les administrateurs du domaine ont désormais besoin d'un appareil enregistré conforme"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

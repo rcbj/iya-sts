@@ -104,8 +104,8 @@
     "text": "क्लाइंट जो भी स्कोप माँगता है वह जारी किया जाता है, उसकी `oauthAllowedScope` सूची में कुछ भी हो। दोनों मोड में admin:read, admin:write, SCIM और Shared Signals स्कोप तथा डीबगर अनुमति केवल उस क्लाइंट को जारी किए जाते हैं जिसकी `oauthAllowedScope` उन्हें सूचीबद्ध करती है।"
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "क्लाइंट की `oauthAllowedScope` से बाहर का स्कोप प्राधिकरण, पुश किए गए प्राधिकरण और टोकन एंडपॉइंट पर invalid_scope के रूप में अस्वीकार किया जाता है (STS-OAUTH-0578) और रिफ़्रेश या एक्सचेंज से हटा दिया जाता है। जो क्लाइंट कुछ भी सूचीबद्ध नहीं करता उसे प्रलेखित डिफ़ॉल्ट मिलता है: openid, profile, email, address, phone, offline_access और इस क्षेत्र के OpenID4VCI स्कोप। किसी अनुप्रयोग या प्रत्यायोजित अनुमति का नाम लेने वाला स्कोप अपने नियम रखता है।"
+    "en": "dcdd1cbadd143bd7",
+    "text": "क्लाइंट की `oauthAllowedScope` से बाहर का स्कोप प्राधिकरण, पुश किए गए प्राधिकरण और टोकन एंडपॉइंट पर invalid_scope के रूप में अस्वीकार किया जाता है (STS-OAUTH-0578) और रिफ़्रेश या एक्सचेंज से हटा दिया जाता है। जो क्लाइंट कुछ भी सूचीबद्ध नहीं करता उसे वही मिलता है जो oauth2.undeclaredClientScopes कहता है: डिफ़ॉल्ट रूप से केवल openid (ASVS 5.0.0 10.4.11); identity में profile, email, address और phone जुड़ते हैं; legacy, जो अपग्रेड किया गया स्टोर बनाए रखता है, offline_access और इस क्षेत्र के OpenID4VCI स्कोप भी जोड़ता है। किसी अनुप्रयोग या प्रत्यायोजित अनुमति का नाम लेने वाला स्कोप अपने नियम रखता है।"
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",
@@ -118,6 +118,18 @@
   "mode.requirements.declared-protocols.product": {
     "en": "01bf0ea288cde1c4",
     "text": "जारीकरण नीति का protocol-not-declared नियम ऐसे प्रोटोकॉल परिवार के माध्यम से जारीकरण अस्वीकार करता है जिसके लिए अनुप्रयोग घोषित नहीं है (STS-XACML-0084): केवल OAuth 2.0 के लिए घोषित अनुप्रयोग को ID Token, OpenID Connect के लिए घोषित अनुप्रयोग को SAML अभिकथन। जो अनुप्रयोग किसी चीज़ के लिए घोषित नहीं है, उसे अस्वीकार नहीं किया जाता।"
+  },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "किसी एक्सेस टाइप का JSON Schema एक उपसमुच्चय तक सीमित है, और उसका हर पैटर्न एक सीमा तक"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "कंसोल या प्रबंधन API से लिखी गई परिभाषा अपने स्कीमा को उन कीवर्ड तक सीमित रखती है जिनका उपयोग एक limits स्कीमा कर सकता है, और हर पैटर्न को रेगुलर एक्सप्रेशन की सीमा तक; बाकी सब अस्वीकार किया जाता है (STS-REG-0374)। उस नियम से पहले सहेजी गई परिभाषा अब भी सहेजे गए रूप में उपयोग होती है, और यह पंक्ति उसके लिए ASVS 5.0.0 1.3.12 को पूरा नहीं हुआ बताती है।"
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "वही।"
   },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
@@ -344,8 +356,8 @@
     "text": "GNAP पुश समापन, SSF पुश डिलीवरी, फ़ेडरेशन के बैक चैनल और XACML PEP नज अपनी …SkipTlsVerification सेटिंग का सम्मान करते हैं (सत्यापन बंद, प्रत्येक अनुरोध पर चेतावनी) और अपनी …AllowHttp सेटिंग का (किसी भी होस्ट पर सादा http)। SPIRE की spiffe.k8sSkipKubeletVerification का भी सम्मान होता है।"
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "प्रत्येक …SkipTlsVerification सेटिंग, और spiffe.k8sSkipKubeletVerification, अनदेखी की जाती है — अपने कोड के साथ एक बार लॉग होती है — और /admin तथा /admin-api के माध्यम से लेखन पर अस्वीकार की जाती है (STS-CORE-0103); निजी CA तक परिवार की …CaFile से सत्यापन चालू रखकर पहुँचा जाता है। सादा http SSF, फ़ेडरेशन और XACML के लिए अस्वीकार है, …AllowHttp कुछ भी कहे, और GNAP पुश समापन के लिए केवल लूपबैक पते पर अनुमत है (RFC 9635 अनुभाग 2.5.2.1)।"
+    "en": "32e402ebc2350105",
+    "text": "प्रत्येक …SkipTlsVerification सेटिंग, और spiffe.k8sSkipKubeletVerification, अनदेखी की जाती है — अपने कोड के साथ एक बार लॉग होती है — और /admin तथा /admin-api के माध्यम से लेखन पर अस्वीकार की जाती है (STS-CORE-0103); निजी CA तक परिवार की …CaFile से सत्यापन चालू रखकर पहुँचा जाता है। सादा http SSF, फ़ेडरेशन और XACML के लिए अस्वीकार है, …AllowHttp कुछ भी कहे, और GNAP पुश समापन के लिए केवल लूपबैक पते पर अनुमत है (RFC 9635 अनुभाग 2.5.2.1) — जिसे आउटबाउंड पता नियम अस्वीकार करते हैं, इसलिए कोई सादा-http पुश वितरित नहीं होता (#1614)।"
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",
@@ -551,6 +563,30 @@
     "en": "9dc455e8deb093a6",
     "text": "अनुरोध लॉग हर स्तर पर क्रेडेंशियल और मुख्य भाग छोड़ देते हैं, हस्ताक्षरित टोकन या अभिकथन केवल अपने आकार और डाइजेस्ट से लॉग होता है, और डिफ़ॉल्ट डेटाबेस पासवर्ड सेवा को रोक देता है जब तक persistence.allowDefaultDatabasePassword चालू न हो।"
   },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "विक्रेता की टोकन सीड फ़ाइल एन्क्रिप्ट होनी चाहिए"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "जिस PSKC सीड फ़ाइल के टोकन सीक्रेट सादे पाठ में हैं, वह एन्क्रिप्ट की गई फ़ाइल की तरह आयात होती है।"
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "जिस PSKC सीड फ़ाइल के टोकन सीक्रेट सादे पाठ में हैं, वह तब तक अस्वीकार की जाती है जब तक pskc.allowPlaintextImport चालू न हो; एन्क्रिप्ट की गई फ़ाइल अपलोड के साथ दी गई कुंजी या पासवर्ड से खोली जाती है, जो कभी संग्रहीत नहीं होता।"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "YubiKey OTP सीड फ़ाइल AES कुंजियों की सूची नहीं होनी चाहिए"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "सीरियल, सार्वजनिक पहचान, निजी पहचान और AES कुंजी की CSV किसी भी अन्य सूची फ़ाइल की तरह आयात होती है।"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "वह CSV अस्वीकार होती है जब तक yubiotp.allowPlaintextImport चालू न हो। फ़ाइल स्वीकार होते ही कुंजियाँ सील हो जाती हैं, और फ़ाइल स्वयं नहीं रखी जाती।"
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "एकल साइन-ऑन किसी व्यक्ति को अनुप्रयोग में साइन इन करने से पहले पूछता है"
@@ -562,6 +598,18 @@
   "mode.requirements.sso-consent.product": {
     "en": "0a4ee080bb81a76f",
     "text": "SAML 2.0, SAML 1.1 या WS-Federation द्वारा व्यक्ति को अनुप्रयोग में साइन इन करने से पहले प्रति अनुप्रयोग एक बार पूछा जाता है, और उत्तर रखा जाता है। saml2.ssoConsent, saml11.ssoConsent और wsfed.ssoConsent इसे प्रति प्रोटोकॉल बंद करते हैं, और अनुप्रयोग का अपना मान उन्हें अधिलेखित करता है।"
+  },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "सटीक बिल्ड केवल व्यवस्थापकों को दिखाया जाता है"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "हर पृष्ठ फ़ुटर, साइन-इन, पोर्टल और रिपोर्ट API और उनके OpenAPI दस्तावेज़ संस्करण, बिल्ड संख्या, बिल्ड समय और commit रखते हैं, और इस सेवा के हर अनुरोध का User-Agent संस्करण बताता है।"
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "इनमें से कोई भी बिल्ड नहीं रखता: फ़ुटर में संस्करण की पंक्ति नहीं होती, OpenAPI दस्तावेज़ API का अपना संस्करण बताता है, और User-Agent केवल उत्पाद का नाम होता है। कंसोल और प्रबंधन API अब भी बिल्ड दिखाते हैं। security.publishBuildInfo को on करने पर यह फिर दिखता है।"
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
@@ -586,6 +634,18 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "एक ऑडिट निर्यात गंतव्य जोड़ें, ताकि लॉग की एक प्रति यहाँ के भंग की पहुँच से बाहर रहे। जब तक एक मौजूद न हो, सेवा उस क्षेत्र के लिए चेतावनी लॉग करती है।"
+  },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "ऑडिट लॉग को सेवा के अपने डेटाबेस क्रेडेंशियल से बदला नहीं जा सकता"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "जहाँ जारी की गई स्थिति सुरक्षित रहती है (रिक्वेस्ट वर्कर या कई नोड, या keys.source=persisted) वहाँ लॉग प्रोडक्ट की तरह लिखा जाता है। अन्यथा वह मेमोरी में रहता है और प्रक्रिया के साथ चला जाता है।"
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "हर घटना sts_audit की एक सीलबंद पंक्ति है, जहाँ सेवा की डेटाबेस भूमिका पंक्तियाँ जोड़ और पढ़ सकती है, और कुछ नहीं; पुरानी पंक्तियाँ केवल तालिका स्वामी के रिटेंशन फ़ंक्शन से जाती हैं, जो हर क्षेत्र में कम से कम 1000 रखता है। जहाँ भूमिका तालिका बदल सकती है — वह उसकी स्वामी है, या उस पर UPDATE, DELETE या TRUNCATE रखती है — वहाँ इसे अपूर्ण बताया जाता है (STS-AUDIT-0019) और सेवा चलती रहती है।"
   },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
@@ -620,8 +680,8 @@
     "text": "उत्पन्न पासवर्ड सेवा लॉग में लिखा जाता है।"
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "यह ऐसी फ़ाइल में लिखा जाता है जिसे केवल यह सेवा पढ़ सकती है, और लॉग बताता है कि कहाँ, जब तक admin.logBootstrapPassword चालू न हो।"
+    "en": "f6a1cd8269e19c3e",
+    "text": "यह ऐसी फ़ाइल में लिखा जाता है जिसे केवल यह सेवा पढ़ सकती है, और लॉग बताता है कि कहाँ, जब तक admin.logBootstrapPassword चालू न हो। किसी विश्वास क्षेत्र की फ़ाइल उस नाम में एक हाइफ़न और क्षेत्र आईडी जोड़ती है। बाद वाला प्रारंभ किसी फ़ाइल को तब हटा देता है जब उसमें रखा पासवर्ड उसका खाता अब नहीं खोलता।"
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",
@@ -646,6 +706,18 @@
   "mode.requirements.jwe-cbc.product": {
     "en": "b8bdc8b82bb08a9e",
     "text": "केवल AES-GCM प्रदान या स्वीकार किया जाता है, और जहाँ क्लाइंट कोई enc नाम नहीं लेता वहाँ वही उपयोग होता है, जब तक crypto.allowCbcJwe चालू न हो।"
+  },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "S/MIME मेल प्रमाणीकृत एन्क्रिप्शन है"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "S/MIME प्रमाणपत्र के लिए एन्क्रिप्ट किया गया मेल AES-256-GCM के अंतर्गत AuthEnvelopedData होता है, जब तक कि mail.smimeContentEncryption aes256-cbc न हो; तब AES-256-CBC के अंतर्गत बिना अखंडता सुरक्षा वाला EnvelopedData भेजा जाता है। किसी भी स्थिति में कुछ सूचित नहीं किया जाता।"
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "वही, और जब तक mail.smimeContentEncryption aes256-cbc है, यह पंक्ति ASVS 5.0.0 11.3.3 को पूरा न हुआ बताती है।"
   },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
@@ -1234,6 +1306,30 @@
   "mode.requirements.paranoid-pki.product": {
     "en": "1ddc02b9b0701d2a",
     "text": "चालू (pki.paranoid=auto): common/certificate_trust.ts हर प्रमाणपत्र को — किसी भी दिशा के TLS हैंडशेक पर, किसी हस्ताक्षर के नीचे, एन्क्रिप्शन प्राप्तकर्ता के रूप में, किसी अटेस्टेशन में — उस एंकर तक के पथ पर रखता है जिसके बारे में इस सेवा को बताया गया था (क्लाइंट या signer ट्रस्टस्टोर, विश्वास क्षेत्र का CA, किसी परिवार की अपनी सेटिंग), अभी की वैधता पर, निरस्तीकरण पर, और basicConstraints, keyUsage तथा extendedKeyUsage पर जिनकी उसकी उपयोग-स्थिति माँग करे; जिस जाँच को उपयोग-स्थिति ने कभी नहीं चलाया वह अस्वीकृति है। प्रति उपयोग-स्थिति एक pki.paranoid<UseCase> पंक्ति, off होने पर, उस उपयोग-स्थिति का पूर्व व्यवहार बहाल करती है, और /admin/pki/trust पर लाल दर्शाई जाती है (STS-PKI-0239)।"
+  },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "प्रशासनिक सतह (कंसोल, admin:* स्कोप) के लिए किसी व्यक्ति के क्रेडेंशियल को एक अनुपालक पंजीकृत डिवाइस चाहिए"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "बंद (devices.requireCompliantDeviceForAdmin=auto): व्यवस्थापक पहले की तरह किसी भी ब्राउज़र से कंसोल में साइन इन करता है। यहाँ नियम आज़माने के लिए इसे on करें।"
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "चालू (devices.requireCompliantDeviceForAdmin=auto): जारी नीति का device-required-admin नियम टोकन एंडपॉइंट पर हर कंसोल टोकन और किसी व्यक्ति के हर admin:* टोकन को अस्वीकार करता है जो उसके अपने अनुपालक पंजीकृत डिवाइस से नहीं आया (STS-DEVICE-0054)। यह प्रति विश्वास क्षेत्र तब सक्रिय होता है जब पहली बार किसी कंसोल व्यवस्थापक को अनुपालक डिवाइस से ऐसा टोकन मिलता है, और तब तक हर व्यवस्थापक को प्रवेश मिलता है, इसलिए बिना अनुपालक डिवाइस वाला इंस्टॉल कभी लॉक आउट नहीं होता; एक बार सक्रिय होने पर यह सक्रिय रहता है, और एक प्रोग्राम (परिनियोजन का प्रबंधन क्रेडेंशियल) वापसी का रास्ता है। निर्देशिका > डिवाइस बताता है कि यह विश्वास क्षेत्र सक्रिय है या नहीं।"
+  },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "हर TLS लिसनर अपने प्रस्तुत प्रमाणपत्र के लिए एक OCSP प्रतिक्रिया स्टेपल करता है"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "बंद (tls.ocspStapling=auto): प्रमाणपत्र की स्थिति पूछने वाले क्लाइंट को पहले की तरह कुछ नहीं मिलता, और यदि वह जाँच करता है तो प्रमाणपत्र में नामित रिस्पॉन्डर से स्वयं पूछता है। यहाँ स्टेपल करने के लिए tls.ocspStapling=on सेट करें।"
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "चालू (tls.ocspStapling=auto): मुख्य पोर्ट, LDAPS, डीबगर और हर कस्टम लिसनर वह उत्तर स्टेपल करते हैं जो इस सेवा का अपना OCSP रिस्पॉन्डर उनके प्रमाणपत्र के लिए देता है, सॉकेट रखने वाली प्रक्रिया में बनाया गया और उसके nextUpdate से पहले ताज़ा किया गया। किसी बाहरी प्राधिकरण का प्रमाणपत्र स्टेपल नहीं किया जाता, और जो स्टेपल नहीं बनाया जा सकता वह हैंडशेक को उसके बिना छोड़ देता है (STS-TLS-0079), कभी विफल नहीं करता।"
   },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",

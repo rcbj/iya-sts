@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "isang signature na nakita na, kaya tinanggihan ang request"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Rehistro ng mga hardware token"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Isang row bawat pisikal na hardware token (isang YubiKey, isang smart card) sa realm na ito, naka-key ayon sa vendor at serial: sino ang may hawak, ang modelo nito at ang mga credential dito. Naitatala lamang ang serial mula sa attestation. Hindi kailanman isang lihim."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "b2eadcf654a8cb28",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; ang register mismo ay may hangganan ayon sa mga credential na nakalista rito (webauthn.maxKeysPerPerson para sa FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Hanggang maalis ang token; ang nawalang token ay pinananatili, minarkahang nawala."
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "Mga RFC 9278 key identifier"
@@ -702,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "isang mensaheng pinigil bilang duplicate ng isang naka-queue na para sa parehong aksyon sa loob ng mail.dedupWindowS"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "Inventory ng OATH token"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "Isang row bawat HOTP o TOTP key na in-import ng administrator mula sa PSKC seed file ng vendor (RFC 6030), naka-key ayon sa vendor, serial at key id: hindi naka-assign (naka-seal ang secret nito), naka-assign sa isang tao (inalis ang secret, nasa entry na niya ngayon) o retirado."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "c93f702fb2bd8e60",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; ang imbentaryo ay may hangganan ayon sa ini-import ng mga administrator, hanggang 2,000 key bawat file."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Hanggang alisin ang isang hindi naka-assign na token; itinatabi ang naka-assign o retiradong token."
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
@@ -1106,6 +1138,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "Hanggang mag-expire ang chain (ang pinakamaliit nitong exp, 10.4), at hindi hihigit sa oidfed.resolveCacheS."
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "Mga challenge sa pagrehistro ng OpenPGP"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "Isang challenge bawat taong nagrerehistro ng OpenPGP key: ang text na pinipirmahan niya gamit ang gpg --clearsign, ang nonce nito at kung kailan ito mag-e-expire. Isang beses lang ginagamit, sa pamamagitan ng cluster claim sa nonce."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "bcb019b421b3e33e",
+    "text": "Ipinapatupad: ang mga challenge na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; may hawak ang store na isa bawat tao (naka-key sa entryUUID), bawat isa ay para sa openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Mga paglalathala sa Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Kung aling OpenPGP key ang isinasagot ng Web Key Directory para sa bawat hashed address: ang may hawak (isang entryUUID) at ang fingerprint na inilathala niya. Isang pointer: ang key mismo ay binabasa mula sa entry. Hindi kailanman secret."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "67c6603e0b96fd95",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; may hawak ang register na isang row bawat taong pumayag."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Hanggang itigil ng tao ang paglalathala o alisin ang key."
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
@@ -1623,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "may natagpuang ticket sa pamamagitan ng digest nito"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Inventory ng Yubico OTP"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "Isang row bawat YubiKey OTP na in-import ng administrator mula sa isang CSV, naka-key ayon sa serial: hindi naka-assign (naka-seal ang AES key nito), naka-assign sa isang tao (inalis ang secret, nasa entry na niya ngayon) o retirado."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "1b2409611ca2ae53",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Hanggang alisin ang isang hindi naka-assign na token; itinatabi ang naka-assign o retiradong token."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Isang may-hangganang cache na naka-ayos ayon sa least-recently-used."
@@ -1710,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "stale: na-disown na ang credential"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "Mga inisyung SSH user certificate"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "Isang hilera bawat OpenSSH user certificate na inisyu ng SSH user CA ng realm na ito, ayon sa serial: kanino ito (urn:uuid), ang fingerprint ng key, ang mga principal nito, ang tagal nito at kung na-revoke ito. Kailanman ay hindi isang key."
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "e9eaf8f07040a227",
+    "text": "Ipinapatupad: ang mga hanay na hawak ng isang proseso ay isang on-demand na window ng 5,000 bawat realm; umaalis ang isang hanay sa store kapag nag-expire ang sertipiko nito."
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "Hanggang mag-expire ang certificate."
   }
 }

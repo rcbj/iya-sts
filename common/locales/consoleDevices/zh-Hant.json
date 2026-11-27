@@ -153,6 +153,7 @@
   "registrationHtml.signalsNote": "CAEP：{caep}。RISC，針對人員的裝置遭入侵或被移除：{risc}。主體是 {subject}。只有當接收方可得知的內容有所改變時，才會發出合規性變更：CAEP 只知道 compliant 和 not-compliant，unknown 會以 not-compliant 傳送。",
   "registrationHtml.decidesHeading": "由什麼決定裝置",
   "registrationHtml.decidesNote": "風險評分：訊號 {signals}——最後兩個會降低分數；unregistered-device {expect, select, yes {對此處的任何人都會觸發（devices.expectRegistered）} other {只對註冊過裝置的人員觸發}}。簽發原則（{policy}）：已遭入侵的裝置{refuse, select, yes {會被<strong>拒絕</strong>} other {只是一個風險訊號}}；合規的已註冊裝置{require, select, yes {是<strong>必要的</strong>} attested {是<strong>必要的</strong>，且須經證明} other {不是必要的（預設關閉）}}。acr 為 <code>{acr}</code>，宣告為 {claim}。",
+  "registrationHtml.adminDeviceNote": "管理主控台與個人的 admin:* 權杖：{state, select, armed {每位管理員都<strong>必須</strong>使用符合規範的已註冊裝置（devices.requireCompliantDeviceForAdmin），自 {armedAt} 起已啟用。} pending {<strong>尚未生效</strong>：還沒有管理員從符合規範的已註冊裝置登入，因此每位管理員都會獲准進入。請在使用者入口網站的「裝置」頁面註冊您的裝置，在裝置清單中將其標示為符合規範，然後使用其上的通行金鑰或憑證登入：這次登入會啟用該要求，而且它會保持啟用。} other {不要求裝置（此處 devices.requireCompliantDeviceForAdmin 已關閉；在產品模式下預設開啟）。}}",
   "registrationHtml.settings": "設定",
   "monitorHtml.devices": "裝置",
   "monitorHtml.keys": "金鑰",
@@ -187,5 +188,8 @@
   "monitorHtml.thRegistered": "已註冊",
   "monitorHtml.thRemoved": "已移除",
   "monitorHtml.thEvicted": "已逐出",
-  "monitorHtml.thCompliance": "合規性：{source}"
+  "monitorHtml.thCompliance": "合規性：{source}",
+  "newDevice.button": "註冊裝置",
+  "newDevice.key": "第一個金鑰",
+  "newDevice.keyHint": "僅在指定類型時記錄"
 }

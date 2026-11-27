@@ -939,21 +939,43 @@ class ClaimsProviders {
     return { ok: true, json: json };
   }
 
-  // The provider's key set, fetched from its configured jwks_uri.
+  // The provider's key set: by default fetched from its configured jwks_uri,
+  // as before; the `claims-provider-jwt` use case's list may add a key set
+  // bound to this provider, or leave the configured jwks_uri out (#2149).
   private async keysOf(provider: Provider): Promise<Json[]> {
-    const { log, http } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering ClaimsProviders.keysOf().");
-    const got = await http().requestConfigured(provider.jwksUri,
-                                               { method: 'GET' });
+    const sources: Json = require('../common/truststores').keySources(
+      'claims-provider-jwt', { kind: 'claims-provider', id: provider.id });
+    let keys: Json[] = sources.registered ?
+      await this.keysAt(provider.jwksUri) : [];
+    for (const set of sources.sets) {
+      keys = keys.concat(set.uri ? await this.keysAt(String(set.uri)) :
+        (set.keys || []));
+    }
+    log.debug("Leaving ClaimsProviders.keysOf(). " + keys.length + ".");
+    return keys;
+  }
+
+  // The key set at one jwks_uri, under the outbound policy; [] where it
+  // cannot be had.
+  private async keysAt(uri: string): Promise<Json[]> {
+    const { log, http } = this.deps;
+    log.debug("Entering ClaimsProviders.keysAt().");
+    if (!uri) {
+      log.debug("Leaving ClaimsProviders.keysAt(). No URL.");
+      return [];
+    }
+    const got = await http().requestConfigured(uri, { method: 'GET' });
     let keys: Json[] = [];
     try {
       keys = got.ok ? (JSON.parse(got.body.toString('utf8')).keys || []) : [];
     } catch (e: any) {
-      log.debug("Caught in ClaimsProviders.keysOf(): " +
+      log.debug("Caught in ClaimsProviders.keysAt(): " +
                 ((e && e.message) || e));
       keys = [];
     }
-    log.debug("Leaving ClaimsProviders.keysOf(). " + keys.length + ".");
+    log.debug("Leaving ClaimsProviders.keysAt(). " + keys.length + ".");
     return Array.isArray(keys) ? keys : [];
   }
 

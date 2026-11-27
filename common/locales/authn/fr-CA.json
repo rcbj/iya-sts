@@ -7,5 +7,8 @@
   "backupCode.back": "Revenir en arrière et utiliser finalement {factor, select, passkey {votre clé d’accès} code {le code envoyé par courriel} link {le lien envoyé par courriel} other {votre application d’authentification}}",
   "secondFactor.emailCodeInstead": "M’envoyer plutôt un code par courriel",
   "secondFactor.emailLinkInstead": "M’envoyer plutôt un lien de connexion par courriel",
-  "mfaSetup.scanHeading": "Balayez ceci avec votre application d’authentification"
+  "mfaSetup.scanHeading": "Balayez ceci avec votre application d’authentification",
+  "postLogin.mailHeading": "Passer le chiffrement de vos courriels à une clé post-quantique",
+  "postLogin.mailSubNone": "{name}, les courriels qui vous sont adressés ne sont pas chiffrés. Enregistrez une clé post-quantique et ils le seront.",
+  "postLogin.mailKeep": "Votre clé actuelle reste publiée à côté de la nouvelle pendant {days} jour(s), pour qu’un correspondant qui ne peut pas utiliser la nouvelle la trouve encore. Les nouveaux courriels de ce service vont à la nouvelle clé dès maintenant."
 }

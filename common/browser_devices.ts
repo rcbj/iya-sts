@@ -190,10 +190,18 @@ class BrowserDevices {
       // while the roster is empty. Found lazily, because
       // `admin-ui/admin_rbac.ts` requires the console and a library here
       // must not; a process with no console has no administrators.
+      // THE ROSTER OF THE REALM THE BROWSER SIGNS IN TO, named (#2236):
+      // unnamed, `rolesOf()` read the DEFAULT realm's, so a trust realm's own
+      // administrator could skip the second factor on a remembered browser,
+      // and a person of the same name on the default roster could not. The
+      // question is about the person signing in here, so it is not the
+      // service roster's: a service administrator signs in through the
+      // default realm, which is then the realm named.
       consoleRolesOf: function (username: string): Json {
         try {
           const rbac = require('../admin-ui/admin_rbac');
-          const groups = (rbac.rolesOf(username) || {}).groups;
+          const groups = (rbac.rolesOf(username, realms.currentId()) ||
+                          {}).groups;
           const list = Array.isArray(groups) ? groups : [];
           return {
             read: list.some(function (g: Json): boolean {

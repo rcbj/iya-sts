@@ -1188,6 +1188,12 @@ class SpiffeAuth {
       if (foreign.trustDomain === ca.trustDomain()) {
         return;
       }
+      // Only the bundles `spiffe-svid` is assigned, where it is (#2118).
+      const truststores = require('../common/truststores');
+      if (!truststores.trustsSpiffeDomain('spiffe-svid',
+                                          foreign.trustDomain)) {
+        return;
+      }
       ((foreign.document || {}).keys || []).forEach(function (key) {
         if (key.use !== 'x509-svid') return;
         (key.x5c || []).forEach(function (b64) {

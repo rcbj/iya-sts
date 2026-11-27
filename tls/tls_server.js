@@ -196,6 +196,8 @@ const authn = require('../authn/authn');
 // ordinary routes and mark the response.
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
+// The sign-in screen's certificate refusals as catalog sentences (#2006).
+const Sentence = require('../common/sentence');
 // #507: the master-secret digest a TLS 1.2 ticket's name is kept under is
 // `stsCrypto.sha256Hex()` (every digest goes through common/crypto.js,
 // tests/crypto_centralised.js), and this is the room-maker for its
@@ -2278,8 +2280,14 @@ function describePem(pem) {
   // `readable` is the one fact the management door refuses on — see
   // `addAnchors()` — and it is recorded here so that a caller never has to
   // parse a certificate twice to learn whether the first parse worked.
+  // `spkiSha256` (#2080): the SHA-256 of the anchor's SubjectPublicKeyInfo,
+  // which is what a certificate sign-in profile names a CA by
+  // (`certSignIn.profiles`' `issuers`), so the profile editor on
+  // Protocols → PIV can offer the anchors by subject and write the value.
+  // Computed by `crypto.js`, as every digest is; '' where it cannot read the
+  // key.
   let details = { issuer: '', serial: '', notBefore: '', notAfter: '',
-                  ca: false, readable: false };
+                  ca: false, readable: false, spkiSha256: '' };
   try {
     const parsed = stsCrypto.parseCertificate(pem);
     details = {
@@ -2288,7 +2296,8 @@ function describePem(pem) {
       notBefore: new Date(parsed.validFrom).toISOString(),
       notAfter: new Date(parsed.validTo).toISOString(),
       ca: !!parsed.ca,
-      readable: true
+      readable: true,
+      spkiSha256: ''
     };
   } catch (e) {
     // OpenSSL cannot read it, so it is not an anchor OpenSSL will use either.
@@ -2297,6 +2306,17 @@ function describePem(pem) {
     // and `readable: false` says why the rest is blank.
     log.debug('describePem(): OpenSSL could not read the certificate: ' +
               e.message);
+  }
+  if (details.readable) {
+    try {
+      details.spkiSha256 = String(
+        stsCrypto.certificateFacts(pem).spkiSha256 || '');
+    } catch (e) {
+      // A key the facts reader cannot take (a composite, say) is still an
+      // anchor OpenSSL reads; the row says so by an empty digest.
+      log.debug('Caught in describePem(): ' + ((e && e.message) || e));
+      details.spkiSha256 = '';
+    }
   }
   log.debug('Leaving describePem(). subject=' + subject);
   return Object.assign({ pem: pem, subject: subject,
@@ -2326,21 +2346,39 @@ function describePem(pem) {
 // secure context is built, which can be before the certificate authority has
 // started, and a truststore must never be the thing that fails to build.
 // ---------------------------------------------------------------------------
+// The Root, and since #2292 every realm's Intermediate and client Issuing CAs
+// beneath it (`tls_client_certificates.issuerPems()`, which argues why that
+// trusts nothing more): node names each in the CertificateRequest, so a
+// client holding only its leaf finds its issuer there. An anchor somebody
+// added with the same PEM is not added twice.
 function issuedClientCertificateAnchor(trust) {
   log.debug("Entering issuedClientCertificateAnchor().");
-  let pem = '';
+  let pems = [];
   try {
-    pem = require('../common/tls_client_certificates').trustAnchorPem(trust);
+    const issued = require('../common/tls_client_certificates');
+    const root = issued.trustAnchorPem(trust);
+    pems = root ? [root].concat(issued.issuerPems(trust)) : [];
   } catch (e) {
     log.debug("Caught in issuedClientCertificateAnchor(): " +
               ((e && e.message) || e));
-    pem = '';
+    pems = [];
   }
-  const already = !!pem && anchors.some(function (anchor) {
-    return String(anchor.pem).trim() === String(pem).trim();
+  const out = pems.filter(function (pem) {
+    return !anchors.some(function (anchor) {
+      return String(anchor.pem).trim() === String(pem).trim();
+    });
   });
-  log.debug("Leaving issuedClientCertificateAnchor().");
-  return pem && !already ? [pem] : [];
+  log.debug("Leaving issuedClientCertificateAnchor(). " + out.length);
+  return out;
+}
+
+// What the issued anchors are now, as one string, so that a change of them
+// re-applies the listeners (#2292).
+function issuedAnchorsSignature() {
+  log.debug("Entering issuedAnchorsSignature().");
+  const out = issuedClientCertificateAnchor().join('');
+  log.debug("Leaving issuedAnchorsSignature().");
+  return out;
 }
 
 // What the truststore report says about the Root added above, or null in a
@@ -2432,6 +2470,38 @@ function listenerFileAnchors(file) {
   return listenerFileCache.get(file);
 }
 
+// ---------------------------------------------------------------------------
+// THE `tls-client` USE CASE, WHERE IT IS ASSIGNED (#2118).
+//
+// Unassigned, a listener trusts what it always did — the client truststore,
+// its own file where it names one, and the service Root where
+// `trustIssuedClientCertificates` says so — and `common/truststores.ts`'s
+// default list for `tls-client` describes exactly that. Assigned, it trusts
+// what the assignment resolves to, beside its own file where it names one: a
+// listener's file is that listener's, and stays its own override. Required
+// lazily and answered null on any failure, `issuedClientCertificateAnchor()`'s
+// reason: a truststore must never be the thing that fails to build.
+// ---------------------------------------------------------------------------
+function assignedClientCa(policy) {
+  log.debug("Entering assignedClientCa().");
+  let out = null;
+  try {
+    const truststores = require('../common/truststores');
+    if (truststores.namesFor('tls-client').assigned) {
+      const resolved = truststores.resolve('tls-client',
+        { expandSystem: true });
+      out = resolved.anchors.concat(resolved.intermediates)
+        .concat(policy && policy.trustAnchorsFile
+          ? listenerFileAnchors(policy.trustAnchorsFile) : []);
+    }
+  } catch (e) {
+    log.debug("Caught in assignedClientCa(): " + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug("Leaving assignedClientCa(). " + (out ? out.length : 'default'));
+  return out;
+}
+
 function secureContextOptions(policy) {
   log.debug('Entering secureContextOptions(). anchors=' + anchors.length);
   log.debug('Leaving secureContextOptions().');
@@ -2452,7 +2522,7 @@ function secureContextOptions(policy) {
     // listener shares (/admin/tls/trust), the anchors of its OWN file where it
     // names one — replacing the service's file anchors for it — and the
     // service Root where its trustIssuedClientCertificates says so.
-    ca: anchors.filter(function (anchor) {
+    ca: assignedClientCa(policy) || anchors.filter(function (anchor) {
       return !(policy && policy.trustAnchorsFile) || anchor.source !== 'file';
     }).map(function (anchor) { return anchor.pem; })
       .concat(policy && policy.trustAnchorsFile
@@ -3048,6 +3118,271 @@ async function reconcileWithHierarchy(options) {
   return true;
 }
 
+// ===========================================================================
+// THE LISTENER CERTIFICATE IS RENEWED WHILE THE PROCESS RUNS (#2220, ASVS
+// 5.0.0 L3, key-management.md's Known gaps).
+//
+// `pki.start()` re-issues the listener certificate over the same key when
+// less than a third of its validity is left, and the console's Renew does the
+// same — so a node that ran past that point without a restart presented a
+// certificate nobody renewed until a client saw it expire. The per-process job
+// `tls.server-certificate-renew` asks the same question every hour, of the
+// certificates THIS process's sockets present, and re-issues through the same
+// `pki.certifyRegistered()`, so `takeIssuedCertificate()` puts the new leaf on
+// every socket in the same act (main port, LDAPS, the debugger, the custom
+// listeners' truststores) WITHOUT A RESTART, and the key does not change.
+//
+// **PER PROCESS, AND ONLY THE FRONT PROCESS DOES ANYTHING**, for this file's
+// rule that a socket is held by one process: every node's front process
+// presents a leaf over its OWN listener key (*THE LISTENER KEY IS KEPT PER
+// NODE*), so a cluster job — one node — would renew one node's listener and
+// leave the others. A request worker owns no socket and certified nothing
+// (`certifyServerCertificateUnderPki()`); its run is off, and it is handed the
+// renewed bundle by the front process's pass (`request_pool.js`,
+// `reconcileTheListener({ renew: true })`), the path a rebuilt hierarchy
+// already takes. An operator's `tls.certificateFile` is the operator's to
+// renew, as before.
+//
+// **ON BY DEFAULT, IN BOTH MODES**: it does at the third of the validity what
+// every restart already did, over the same key, so a pin on the key
+// (SubjectPublicKeyInfo) holds across it. `tls.serverCertificateRenewal` off
+// is the way back to "at start and on the console's Renew";
+// `tls.serverCertificateRenewLeadDays` renews earlier than the third.
+// ===========================================================================
+const LISTENER_RENEW_JOB = 'tls.server-certificate-renew';
+const LISTENER_RENEW_EVERY_MS = 3600 * 1000;
+let lastListenerRenewal = null;
+
+// The lead `tls.serverCertificateRenewLeadDays` asks for, in milliseconds; 0
+// leaves the third of the validity alone.
+function listenerRenewLeadMs() {
+  log.debug("Entering listenerRenewLeadMs().");
+  const days = Number(config.value('tls.serverCertificateRenewLeadDays'));
+  log.debug("Leaving listenerRenewLeadMs().");
+  return days > 0 ? days * 86400000 : 0;
+}
+
+/**
+ * The listener certificates this process presents that are due for renewal
+ * at `nowMs`: less than a third of the validity left, or inside
+ * `tls.serverCertificateRenewLeadDays`. Pure in its reading of each record.
+ *
+ * @param nowMs - the time, in epoch milliseconds; now when omitted
+ * @returns `{ algorithm, notAfter, why }` per certificate due
+ */
+function listenerCertificatesDue(nowMs) {
+  log.debug("Entering listenerCertificatesDue().");
+  const now = Number(nowMs) || Date.now();
+  const lead = listenerRenewLeadMs();
+  const out = [];
+  listenerCertificatesOwned().forEach(function (one) {
+    if (!one.certPem || one.selfSigned !== false) {
+      return;
+    }
+    let from = 0;
+    let to = 0;
+    try {
+      const read = stsCrypto.parseCertificate(one.certPem);
+      from = new Date(read.validFrom).getTime();
+      to = new Date(read.validTo).getTime();
+    } catch (e) {
+      // Unreadable is not "due": the hierarchy reconcile is what replaces a
+      // certificate this process cannot read back.
+      log.debug("Caught in listenerCertificatesDue(): " +
+                ((e && e.message) || e));
+      return;
+    }
+    const third = !(to - now > (to - from) / 3);
+    const inLead = lead > 0 && !(to - now > lead);
+    if (third || inLead) {
+      out.push({ algorithm: one.algorithm,
+                 notAfter: new Date(to).toISOString(),
+                 why: third ? 'less than a third of its validity remains'
+                            : 'it expires within ' +
+                              'tls.serverCertificateRenewLeadDays' });
+    }
+  });
+  log.debug("Leaving listenerCertificatesDue(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Why the listener renewal job is off in this process, or ''.
+ *
+ * @returns the reason
+ */
+function listenerRenewalOffReason() {
+  log.debug("Entering listenerRenewalOffReason().");
+  let why = '';
+  if (process.env.STS_REQUEST_WORKER) {
+    why = 'a request worker holds no listener; the front process renews ' +
+          'the certificate and hands it here';
+  } else if (config.value('tls.serverCertificateRenewal') === false) {
+    why = 'tls.serverCertificateRenewal is off';
+  } else if (!SERVER_CERTIFICATE ||
+             SERVER_CERTIFICATE.algorithm === 'supplied') {
+    why = 'the certificate is the operator\'s (tls.certificateFile), and ' +
+          'renewing it is theirs';
+  } else if (SERVER_CERTIFICATE.handedIn) {
+    why = 'this process was handed its certificate and holds no listener';
+  }
+  log.debug("Leaving listenerRenewalOffReason(). " + (why || 'on'));
+  return why;
+}
+
+/**
+ * Renews the listener certificates this process presents that are due,
+ * over the same keys, and puts them on every socket without a restart.
+ * Never rejects. The front process's `request_pool.reconcileTheListener()`
+ * calls it inside its one pass at a time, and hands the result to every
+ * request worker.
+ *
+ * @param nowMs - the time; now when omitted
+ * @returns a promise of `{ renewed, due, why }`
+ */
+async function renewListenerCertificate(nowMs) {
+  log.debug("Entering renewListenerCertificate().");
+  const off = listenerRenewalOffReason();
+  if (off) {
+    lastListenerRenewal = { renewed: false, due: [], why: off };
+    log.debug("Leaving renewListenerCertificate(). Off.");
+    return lastListenerRenewal;
+  }
+  const due = listenerCertificatesDue(nowMs);
+  if (!due.length) {
+    lastListenerRenewal = { renewed: false, due: [], why: 'not due' };
+    log.debug("Leaving renewListenerCertificate(). Not due.");
+    return lastListenerRenewal;
+  }
+  const mine = listenerCertificatesOwned();
+  const was = mine.map(function (one) {
+    return one.fingerprint256;
+  }).join(',');
+  try {
+    // NEVER BUILDS A BRANCH: one stale since this process adopted it is the
+    // hierarchy reconcile's to wait for (`buildBranch: false`'s rule).
+    await require('../common/pki').certifyRegistered({
+      repairBranch: false, renewWithinMs: listenerRenewLeadMs() });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-TLS-0078') + 'tls: the listener ' +
+              'certificate could not be renewed: ' + e.message + '. It ' +
+              'goes on presenting the one it has, which expires ' +
+              due[0].notAfter + '.');
+    audit.record({ action: 'tls.server-certificate.renew',
+                   protocol: 'TLS', channel: 'scheduler',
+                   outcome: 'failure', errorCode: 'STS-TLS-0078',
+                   summary: 'The listener certificate could not be renewed',
+                   detail: { due: due, why: String(e.message || e) } });
+    lastListenerRenewal = { renewed: false, due: due,
+                            why: String(e.message || e) };
+    log.debug("Leaving renewListenerCertificate(). Failed.");
+    return lastListenerRenewal;
+  }
+  const now = mine.map(function (one) {
+    return one.fingerprint256;
+  }).join(',');
+  if (now === was) {
+    log.warn(errorCodes.tag('STS-TLS-0078') + 'tls: the listener ' +
+             'certificate is due for renewal (' + due[0].why + ') and was ' +
+             'not re-issued, so it goes on presenting the one that expires ' +
+             due[0].notAfter + '; see the pki lines above for why.');
+    audit.record({ action: 'tls.server-certificate.renew',
+                   protocol: 'TLS', channel: 'scheduler',
+                   outcome: 'failure', errorCode: 'STS-TLS-0078',
+                   summary: 'The listener certificate is due for renewal ' +
+                            'and was not re-issued',
+                   detail: { due: due } });
+    lastListenerRenewal = { renewed: false, due: due,
+                            why: 'not re-issued' };
+    log.debug("Leaving renewListenerCertificate(). Not re-issued.");
+    return lastListenerRenewal;
+  }
+  audit.record({ action: 'tls.server-certificate.renew',
+                 protocol: 'TLS', channel: 'scheduler', outcome: 'success',
+                 summary: due.length + ' listener certificate(s) renewed ' +
+                          'over the same key',
+                 detail: { due: due,
+                           notAfter: SERVER_CERTIFICATE.notAfter || '' } });
+  log.info('tls: the listener certificate was renewed over the same key (' +
+           due[0].why + ') and is on every socket of this process now; it ' +
+           'expires ' + (SERVER_CERTIFICATE.notAfter || 'later') + '.');
+  lastListenerRenewal = { renewed: true, due: due, why: '' };
+  log.debug("Leaving renewListenerCertificate(). Renewed.");
+  return lastListenerRenewal;
+}
+
+// The job, registered at this module's load in EVERY process
+// (cluster/CLAUDE.md: every process registers the same jobs) and off in a
+// request worker. Its run goes through the front process's one pass at a
+// time, so a renewal never races a hierarchy reconcile on the socket.
+function registerListenerRenewalJob() {
+  log.debug("Entering registerListenerRenewalJob().");
+  let scheduler = null;
+  try {
+    scheduler = require('../cluster/scheduler');
+  } catch (e) {
+    log.debug("Caught in registerListenerRenewalJob(): " +
+              ((e && e.message) || e));
+    scheduler = null;
+  }
+  if (!scheduler || typeof scheduler.register !== 'function' ||
+      scheduler.job(LISTENER_RENEW_JOB)) {
+    log.debug("Leaving registerListenerRenewalJob(). None, or already " +
+              "there.");
+    return false;
+  }
+  scheduler.register({
+    id: LISTENER_RENEW_JOB,
+    title: 'Listener certificate renewal',
+    describe: 'Renews the certificate this process\'s main port, LDAPS and ' +
+              'debugger listeners present, over the same key, once less ' +
+              'than a third of its validity is left or it is inside ' +
+              'tls.serverCertificateRenewLeadDays, and puts it on every ' +
+              'socket without a restart. Runs in every node\'s front ' +
+              'process, which hands the renewed certificate to its request ' +
+              'workers.',
+    owner: 'tls/tls_server.js',
+    kind: 'per-process',
+    everyMs: function () {
+      return LISTENER_RENEW_EVERY_MS;
+    },
+    off: function () {
+      return listenerRenewalOffReason();
+    },
+    manual: true,
+    run: function () {
+      let pass = null;
+      try {
+        pass = require('../common/request_pool')
+          .reconcileTheListener({ renew: true });
+      } catch (e) {
+        // No pool in this process: the renewal alone.
+        log.debug("Caught in a callback in registerListenerRenewalJob(): " +
+                  ((e && e.message) || e));
+        pass = renewListenerCertificate();
+      }
+      return Promise.resolve(pass).then(function () {
+        const done = lastListenerRenewal || { renewed: false, due: [],
+                                              why: 'not run' };
+        return { summary: done.renewed ? 'renewed'
+                                       : (done.due.length ? 'due, not renewed'
+                                                          : 'not due'),
+                 why: done.why || undefined };
+      });
+    }
+  });
+  log.debug("Leaving registerListenerRenewalJob().");
+  return true;
+}
+
+registerListenerRenewalJob();
+
+// THE OCSP STAPLE REFRESH (#2254) is registered by its module's load, here so
+// that every process that loads this one registers it (cluster/CLAUDE.md:
+// every process registers the same jobs). A library that requires nothing
+// of this module at load; it reaches back lazily, at a handshake.
+require('./ocsp_stapling');
+
 // ---------------------------------------------------------------------------
 // WHAT THE FRONT PROCESS HANDS A WORKER, AND WHAT A WORKER DOES WITH A SECOND
 // ONE (2026-09-12).
@@ -3220,36 +3555,93 @@ function refusedCurveKey(cert) {
 
 // The trust anchors a listener's context holds, parsed once per PEM.
 const parsedAnchors = new Map();
+
+function parsedAnchor(pem) {
+  log.debug("Entering parsedAnchor().");
+  const text = String(pem || '');
+  if (!parsedAnchors.has(text)) {
+    let parsed = null;
+    try {
+      parsed = text ? stsCrypto.parseCertificate(text) : null;
+    } catch (e) {
+      log.debug("Caught in parsedAnchor(): " + ((e && e.message) || e));
+      // An anchor node cannot parse completes no chain; it is skipped.
+      parsed = null;
+    }
+    parsedAnchors.set(text, parsed);
+  }
+  log.debug("Leaving parsedAnchor().");
+  return parsedAnchors.get(text);
+}
+
 function anchorCertificates() {
   log.debug("Entering anchorCertificates().");
   const out = [];
   (secureContextOptions().ca || []).forEach(function (pem) {
-    const text = String(pem);
-    if (!parsedAnchors.has(text)) {
-      let parsed = null;
-      try {
-        parsed = stsCrypto.parseCertificate(text);
-      } catch (e) {
-        log.debug("Caught in anchorCertificates(): " +
-                  ((e && e.message) || e));
-        // An anchor node cannot parse completes no chain; it is skipped.
-        parsed = null;
-      }
-      parsedAnchors.set(text, parsed);
-    }
-    if (parsedAnchors.get(text)) {
-      out.push(parsedAnchors.get(text));
+    const parsed = parsedAnchor(pem);
+    if (parsed) {
+      out.push(parsed);
     }
   });
   log.debug("Leaving anchorCertificates(). " + out.length);
   return out;
 }
 
+// The anchor PEM the leaf IS, by SHA-256 of the DER, or ''. OpenSSL's issuer
+// lookup is by subject name, so a fingerprint is the only comparison that
+// tells two same-subject anchors apart (#1242).
+function anchorPemOf(leaf, pems) {
+  log.debug("Entering anchorPemOf().");
+  const wanted = normalisedFingerprint(leaf && leaf.fingerprint256);
+  if (wanted.length !== 64) {
+    log.debug("Leaving anchorPemOf(). No fingerprint.");
+    return '';
+  }
+  const list = pems || secureContextOptions().ca || [];
+  const found = list.find(function (pem) {
+    const parsed = parsedAnchor(pem);
+    return !!parsed &&
+      normalisedFingerprint(parsed.fingerprint256) === wanted;
+  });
+  log.debug("Leaving anchorPemOf(). " + !!found);
+  return found ? String(found) : '';
+}
+
+// Whether an anchor is self-signed, by fingerprint, read once. Only an
+// installed anchor is ever asked, so the memo is bounded by what was ever
+// installed, as `parsedAnchors` is. `crypto.js`'s `certificateSelfSigned()`
+// and not node's `checkIssued(self)`, which refuses a self-signed end
+// entity whose keyUsage lacks keyCertSign — that function says why.
+const anchorSelfSigned = new Map();
+
+function selfSignedAnchor(leaf) {
+  log.debug("Entering selfSignedAnchor().");
+  const key = normalisedFingerprint(leaf && leaf.fingerprint256);
+  if (!anchorSelfSigned.has(key)) {
+    anchorSelfSigned.set(key, stsCrypto.certificateSelfSigned(leaf));
+  }
+  log.debug("Leaving selfSignedAnchor(). " + anchorSelfSigned.get(key));
+  return anchorSelfSigned.get(key) === true;
+}
+
 // The peer's chain as X509Certificate objects, leaf first: what the client
 // sent, then issuers from the anchors, stopping at a self-issued top.
 // `selfIssuedTop` says whether the last one issued itself.
-function peerChainOf(leaf) {
+// `pems` is that listener's `ca` list, when the caller has it.
+function peerChainOf(leaf, pems) {
   log.debug("Entering peerChainOf().");
+  // THE LEAF IS A SELF-SIGNED ANCHOR (#1242). OpenSSL can set
+  // issuerCertificate to the OTHER certificate of the same subject, and
+  // holdToPathRules then refuses that non-CA above the leaf. The chain of a
+  // self-signed anchor presented as itself is the certificate alone, its
+  // own issuer. Only self-signed: an anchor that is not — an Intermediate,
+  // an outside authority's end entity — has an issuer that is not itself,
+  // and calling it its own would mislead the path rules, the revocation
+  // check and the curve check below. It walks like any other leaf.
+  if (anchorPemOf(leaf, pems) && selfSignedAnchor(leaf)) {
+    log.debug("Leaving peerChainOf(). The leaf is a self-signed anchor.");
+    return { chain: [leaf], selfIssuedTop: true };
+  }
   const chain = [leaf];
   const seen = new Set([leaf.fingerprint256]);
   let next = leaf.issuerCertificate;
@@ -3260,9 +3652,11 @@ function peerChainOf(leaf) {
   }
   let top = chain[chain.length - 1];
   let selfIssuedTop = top.checkIssued(top);
-  const anchors = selfIssuedTop ? [] : anchorCertificates();
+  const held = selfIssuedTop ? [] : (pems
+    ? pems.map(parsedAnchor).filter(Boolean)
+    : anchorCertificates());
   while (!selfIssuedTop && chain.length < 16) {
-    const issuer = anchors.find(function (one) {
+    const issuer = held.find(function (one) {
       return !seen.has(one.fingerprint256) && top.checkIssued(one);
     });
     if (!issuer) {
@@ -3302,7 +3696,7 @@ function legacyPeerCertificate(read, detailed) {
 
 // The first certificate of the peer's chain on a refused curve, described,
 // or '' — and the chain, for the replacement reader.
-function readPeerChain(socket) {
+function readPeerChain(socket, pems) {
   log.debug("Entering readPeerChain().");
   const leaf = typeof socket.getPeerX509Certificate === 'function'
     ? socket.getPeerX509Certificate() : undefined;
@@ -3310,7 +3704,7 @@ function readPeerChain(socket) {
     log.debug("Leaving readPeerChain(). No certificate.");
     return null;
   }
-  const read = peerChainOf(leaf);
+  const read = peerChainOf(leaf, pems);
   read.problem = '';
   read.chain.some(function (cert, depth) {
     const why = refusedCurveKey(cert);
@@ -3323,6 +3717,123 @@ function readPeerChain(socket) {
   });
   log.debug("Leaving readPeerChain(). " + (read.problem || 'accepted'));
   return read;
+}
+
+// The `ca` list the listener verifies against. The process-wide list is what
+// a listener with no policy of its own uses, and what a policy that throws
+// falls back to so recognition is not skipped.
+function caPemsFor(server) {
+  log.debug("Entering caPemsFor().");
+  const entry = externalServers.find(function (one) {
+    return one.server === server;
+  });
+  let pems = [];
+  try {
+    const policy = entry ? policyFor(entry.kind, entry.realm) : undefined;
+    pems = secureContextOptions(policy).ca || [];
+  } catch (e) {
+    log.debug("Caught in caPemsFor(): " + ((e && e.message) || e));
+    pems = secureContextOptions().ca || [];
+  }
+  log.debug("Leaving caPemsFor(). " + pems.length);
+  return pems;
+}
+
+// What OpenSSL reports when it checked a self-signed certificate against the
+// wrong same-subject anchor. UNABLE_TO_VERIFY_LEAF_SIGNATURE is NOT this: it
+// is what a certificate with no issuer anywhere gets — an Intermediate
+// installed alone, an outside authority's end entity — and promoting it made
+// any such anchor an identity when its holder presented it (#1242's review).
+const ANCHOR_NAME_COLLISION = new Set([
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'CERT_SIGNATURE_FAILURE'
+]);
+
+// The purpose a client certificate is verified for. node's TLS server
+// verifies a peer for OpenSSL's sslclient purpose on every listener this
+// module configures, so every one needs it: keyUsage, when present, holding
+// digitalSignature or keyAgreement, and extendedKeyUsage, when present,
+// naming clientAuth (`check_purpose_ssl_client()`; anyExtendedKeyUsage does
+// not stand in for it there).
+const CLIENT_PURPOSE = Object.freeze({
+  keyUsage: ['digitalSignature', 'keyAgreement'],
+  eku: stsCrypto.EKU.clientAuth
+});
+
+// A presented certificate that IS an installed anchor, which OpenSSL refused
+// because another anchor holds its subject. The handshake then says verified,
+// and only when every one of these holds:
+//
+//   * OpenSSL's error is one a same-subject lookup produces (above);
+//   * the certificate is self-signed — its names equal and its signature
+//     verifies under its own key — because only a self-signed anchor is
+//     its own issuer, and an anchor that is not proves nothing by itself;
+//   * another anchor of this listener has the same subject, compared as
+//     OpenSSL compares it, and a different fingerprint, because without one
+//     the refusal is not the collision this exists for;
+//   * the certificate holds to the client purpose, its validity and its
+//     critical extensions: node reports ONE error of a chain OpenSSL
+//     continued through, so an INVALID_PURPOSE or an unhandled critical
+//     extension beside the signature failure is asked again here rather
+//     than trusted to be the one reported.
+//
+// A certificate that anchor issued is a different fingerprint and stays
+// refused (#1242). A resumed session with no peer certificate is left alone.
+function recogniseInstalledAnchor(socket, pems, label) {
+  log.debug("Entering recogniseInstalledAnchor().");
+  if (!socket || socket.authorized === true) {
+    log.debug("Leaving recogniseInstalledAnchor(). Already verified.");
+    return;
+  }
+  const raw = /** @type {any} */ (socket.authorizationError);
+  const error = String((raw && raw.code) || raw || '');
+  if (!ANCHOR_NAME_COLLISION.has(error)) {
+    log.debug("Leaving recogniseInstalledAnchor(). Not a name collision.");
+    return;
+  }
+  let leaf = null;
+  try {
+    leaf = typeof socket.getPeerX509Certificate === 'function'
+      ? socket.getPeerX509Certificate() : null;
+  } catch (e) {
+    log.debug("Caught in recogniseInstalledAnchor(): " +
+              ((e && e.message) || e));
+    // A peer certificate that cannot be read is not an anchor this listener
+    // installed. The handshake stays as OpenSSL left it.
+    leaf = null;
+  }
+  const pem = leaf ? anchorPemOf(leaf, pems) : '';
+  if (!pem) {
+    log.debug("Leaving recogniseInstalledAnchor(). Not an anchor.");
+    return;
+  }
+  const mine = lookupNamesOf(pem);
+  const rival = !!mine.subject && (pems || []).some(function (one) {
+    const other = lookupNamesOf(one);
+    return other.subject === mine.subject &&
+      other.fingerprint !== mine.fingerprint;
+  });
+  if (!rival) {
+    log.debug("Leaving recogniseInstalledAnchor(). No other anchor holds " +
+              "its subject.");
+    return;
+  }
+  const problem = stsCrypto.presentedAnchorProblem(leaf, CLIENT_PURPOSE);
+  if (problem) {
+    // OpenSSL's verdict stands. Per connection, so at debug: a client that
+    // retries is not a state change worth a line each time.
+    log.debug("Leaving recogniseInstalledAnchor(). Not promoted on " + label +
+              ": " + problem + ".");
+    return;
+  }
+  socket.authorized = true;
+  socket.authorizationError = null;
+  log.info(errorCodes.tag('STS-TLS-0064') + 'tls: a presented certificate ' +
+           'on ' + label + ' is an installed anchor whose subject another ' +
+           'anchor holds, so OpenSSL reported ' + error + '. It is verified ' +
+           'by its fingerprint (#1242).');
+  log.debug("Leaving recogniseInstalledAnchor(). Recognised.");
 }
 
 // Kept for callers that only want the verdict.
@@ -3352,7 +3863,13 @@ function refuseNonNistCurveCertificatesOn(server, label) {
   server.prependListener('secureConnection', function (socket) {
     let read = null;
     try {
-      read = readPeerChain(socket);
+      // BEFORE the curve is read (#1242). Two anchors with one subject make
+      // OpenSSL refuse the later certificate even though it is in `ca`.
+      // Matching the leaf to an anchor by fingerprint is what verifies it,
+      // and the chain read below must see that certificate as itself.
+      const pems = caPemsFor(server);
+      recogniseInstalledAnchor(socket, pems, label);
+      read = readPeerChain(socket, pems);
     } catch (e) {
       // A chain X509Certificate itself cannot walk is not one this guard
       // can judge; the socket is left exactly as node made it.
@@ -3485,8 +4002,14 @@ function forgetListener(server) {
 // owns. Existing connections keep the context they were made under — node says
 // so and it is the behaviour worth having, since a connection judged under one
 // truststore should not silently change its mind halfway through.
+// What the listeners were last handed by `applyAnchors()` (#2292). A `var`,
+// because `applyAnchors()` may run while this module is still loading.
+// eslint-disable-next-line no-var
+var issuedAnchorsApplied = null;
+
 function applyAnchors() {
   log.debug('Entering applyAnchors(). anchors=' + anchors.length);
+  issuedAnchorsApplied = issuedAnchorsSignature();
   // EVERY listener is an external one since 2026-09-16: this module creates
   // none of its own any more, so the list that was "our two, plus theirs" is
   // now just theirs — the main HTTPS port and the debugger's.
@@ -3620,6 +4143,36 @@ if (typeof config.onOverridesChanged === 'function') {
 }
 realms.onChange(function () {
   reapplyPolicy();
+});
+
+// THE CLIENT CA NAMES FOLLOW THE HIERARCHIES (#2292). A realm's branch is
+// built, adopted from another process or node, reissued or dropped long
+// after the listeners were created, and `issuedClientCertificateAnchor()`
+// names its Intermediate and client Issuing CAs, so the keystore's held
+// hierarchies are observed. A build writes several of them in one turn, so
+// the re-application is put off to the next turn (a debounce, not periodic
+// work) and made only when what the listeners would be handed changed.
+let issuedAnchorsQueued = false;
+
+function reapplyIssuedAnchors() {
+  log.debug("Entering reapplyIssuedAnchors().");
+  issuedAnchorsQueued = false;
+  const now = issuedAnchorsSignature();
+  if (now !== issuedAnchorsApplied && externalServers.length) {
+    log.info('tls: this service\'s certificate authorities changed, so ' +
+             'the listeners name ' + issuedClientCertificateAnchor().length +
+             ' of them to clients and were re-applied.');
+    applyAnchors();
+  }
+  log.debug("Leaving reapplyIssuedAnchors().");
+}
+
+require('../common/keystore').onPkiChange(function () {
+  if (issuedAnchorsQueued) {
+    return;
+  }
+  issuedAnchorsQueued = true;
+  setImmediate(reapplyIssuedAnchors);
 });
 
 // ---------------------------------------------------------------------------
@@ -4693,7 +5246,8 @@ function listenerPolicies() {
  * @param options - `source` (default `runtime`), `strict` (refuse the whole
  * bundle if any block cannot be read) and `addedBy`
  * @returns `{ added, duplicates, total }`, or with `error` and `errorCode` when
- * nothing was added
+ * nothing was added. `warning` names a same-subject collision that was kept
+ * (#1242); it is not a refusal
  */
 // Whether this process's truststore holds to the admission rule. The MODE IS
 // ASKED IN THE DEFAULT REALM, `truststoreOpenToAnybody()`'s reason: these are
@@ -4729,6 +5283,174 @@ function admissionProblemOf(row, rows) {
     .anchorProblemSync(row.pem, { heldAnchors: held });
   log.debug("Leaving admissionProblemOf(). " + (problem ? problem.code : 'ok'));
   return problem;
+}
+
+// ---------------------------------------------------------------------------
+// TWO ANCHORS, ONE SUBJECT (#1242).
+//
+// OpenSSL looks an issuer up by subject name — compared canonically, so case,
+// spacing and the string type do not tell two names apart — and narrows the
+// candidates by the authority key identifier only when the certificate BEING
+// VERIFIED carries one. A certificate whose issuer name two anchors hold, and
+// whose authority key identifier (if any) does not rule one of them out, may
+// be checked against either, and OpenSSL does not try the next one when the
+// signature does not match: it refuses with CERT_SIGNATURE_FAILURE.
+//
+// Which of the two it finds first is not something this service can promise.
+// The order of `ca` is the order of the rows today, and a restart rebuilds it
+// from the file, the directory and the Root in an order a store need not keep.
+// So nothing here says "earlier" or "later": an anchor SHARES A SUBJECT with
+// another, the question is symmetric, and when several share it the one named
+// is the lowest fingerprint, so the answer is the same after a restart.
+//
+// Two anchors that each carry a subject key identifier, and different ones,
+// are a CA key rollover: a certificate either issued names its issuer's key in
+// its authority key identifier, which rules the other out. Not a collision.
+//
+// The candidates are every anchor any listener verifies against: the runtime
+// and `tls.trustAnchorsFile` rows, each listener's own `trustAnchorsFile`
+// (#429) and the service Root where a listener trusts it — not only the rows
+// this page lists. The names and key ids are read by `common/crypto.js`
+// (`certificateLookupNames()`) and cached by PEM like `parsedAnchors`, so the
+// cache grows only with what was ever installed.
+// ---------------------------------------------------------------------------
+/** @type {Map<string, { subject: string, ski: string, fingerprint: string,
+ *   fingerprint256: string }>} */
+const anchorLookupNames = new Map();
+
+function lookupNamesOf(pem) {
+  log.debug("Entering lookupNamesOf().");
+  const text = String(pem || '');
+  const cached = anchorLookupNames.get(text);
+  if (cached) {
+    log.debug("Leaving lookupNamesOf(). Cached.");
+    return cached;
+  }
+  let read = { subject: '', ski: '', fingerprint: '', fingerprint256: '' };
+  try {
+    const parsed = stsCrypto.parseCertificate(text);
+    const names = stsCrypto.certificateLookupNames(parsed);
+    read = {
+      // An empty subject names nothing a lookup could collide on.
+      subject: names.subject.length ? JSON.stringify(names.subject) : '',
+      ski: names.subjectKeyIdentifier,
+      fingerprint: normalisedFingerprint(parsed.fingerprint256),
+      fingerprint256: String(parsed.fingerprint256 || '')
+    };
+  } catch (e) {
+    log.debug("Caught in lookupNamesOf(): " + ((e && e.message) || e));
+    // An unreadable name is not a collision: OpenSSL cannot have found the
+    // certificate by it either.
+    read = { subject: '', ski: '', fingerprint: '', fingerprint256: '' };
+  }
+  anchorLookupNames.set(text, read);
+  log.debug("Leaving lookupNamesOf().");
+  return read;
+}
+
+// True when a certificate one of the two issued could be checked against the
+// other. A certificate's authority key identifier is its issuer's subject key
+// identifier, so the test is on the two anchors' subject key identifiers:
+// absent on either, nothing rules the other out; present on both, they must
+// differ for a rollover.
+function keyIdsCollide(a, b) {
+  log.debug("Entering keyIdsCollide().");
+  const collide = !a.ski || !b.ski || a.ski === b.ski;
+  log.debug("Leaving keyIdsCollide(). " + collide);
+  return collide;
+}
+
+// Every anchor some listener verifies against, once each. `atLoad` is the
+// anchors file being read as this module loads: no listener is registered
+// yet, and the Root is asked of `common/pki.js`, which must not be loaded
+// from here at that moment — the rows alone are the candidates then, and
+// the page asks again with the rest when it is drawn.
+function collisionCandidates(atLoad) {
+  log.debug("Entering collisionCandidates().");
+  const lists = [anchors.map(function (one) {
+    return one.pem;
+  })];
+  if (!atLoad) {
+    lists.push(secureContextOptions().ca || []);
+    listenerPolicies().forEach(function (row) {
+      try {
+        lists.push(secureContextOptions(row.policy).ca || []);
+      } catch (e) {
+        log.debug("Caught in collisionCandidates(): " +
+                  ((e && e.message) || e));
+        // A listener whose policy cannot be built verifies with the
+        // process-wide list, which is already in `lists`.
+      }
+    });
+  }
+  const seen = new Set();
+  const out = [];
+  lists.forEach(function (list) {
+    list.forEach(function (pem) {
+      const read = lookupNamesOf(pem);
+      if (read.subject && read.fingerprint && !seen.has(read.fingerprint)) {
+        seen.add(read.fingerprint);
+        out.push(read);
+      }
+    });
+  });
+  log.debug("Leaving collisionCandidates(). " + out.length);
+  return out;
+}
+
+// The other anchor this one shares a subject with, or null: the lowest
+// fingerprint among those the key identifiers do not tell apart.
+function sameSubjectAnchor(described, candidates) {
+  log.debug("Entering sameSubjectAnchor().");
+  if (!described || described.readable === false || !described.pem) {
+    log.debug("Leaving sameSubjectAnchor(). Unreadable.");
+    return null;
+  }
+  const mine = lookupNamesOf(described.pem);
+  if (!mine.subject) {
+    log.debug("Leaving sameSubjectAnchor(). No name.");
+    return null;
+  }
+  const others = (candidates || collisionCandidates(false))
+    .filter(function (one) {
+      return one.subject === mine.subject &&
+        one.fingerprint !== mine.fingerprint && keyIdsCollide(mine, one);
+    }).sort(function (a, b) {
+      return a.fingerprint < b.fingerprint ? -1
+        : (a.fingerprint > b.fingerprint ? 1 : 0);
+    });
+  log.debug("Leaving sameSubjectAnchor()." +
+            (others.length ? " Shared." : ""));
+  return others[0] || null;
+}
+
+// The add's warning. It names the caller's own subject and fingerprints, so
+// it is not fixed help text and carries no error code: STS-TLS-0064 goes on
+// the log line `recordSubjectCollision()` writes (the root CLAUDE.md, *Every
+// failure has an error code*).
+function collisionWarning(described, other) {
+  log.debug("Entering collisionWarning().");
+  log.debug("Leaving collisionWarning().");
+  return 'The subject of ' + described.fingerprint256 + ' (' +
+    described.subject + ') is shared by ' + other.fingerprint256 +
+    '. OpenSSL looks an issuer up by that name and may check a ' +
+    'certificate against either, so a certificate one of them issued may ' +
+    'not verify while both are installed. Presenting either certificate ' +
+    'itself is recognised by its fingerprint.';
+}
+
+function recordSubjectCollision(anchor, where, atLoad) {
+  log.debug("Entering recordSubjectCollision().");
+  const other = sameSubjectAnchor(anchor, collisionCandidates(!!atLoad));
+  if (!other) {
+    log.debug("Leaving recordSubjectCollision(). None.");
+    return '';
+  }
+  const warning = collisionWarning(anchor, other);
+  log.warn(errorCodes.tag('STS-TLS-0064') + 'tls: ' + where + ': ' +
+           warning);
+  log.debug("Leaving recordSubjectCollision(). Shared.");
+  return warning;
 }
 
 function addAnchors(text, options) {
@@ -4778,6 +5500,7 @@ function addAnchors(text, options) {
   }
   let added = 0;
   let duplicates = 0;
+  const warnings = [];
   for (const one of described) {
     const already = anchors.some(function (anchor) {
       return anchor.fingerprint256 === one.fingerprint256;
@@ -4787,14 +5510,20 @@ function addAnchors(text, options) {
       continue;
     }
     if (anchors.length >= MAX_ANCHORS) {
-      if (added) applyAnchors();
+      if (added) {
+        applyAnchors();
+      }
       log.debug('Leaving addAnchors(). The truststore is full.');
-      return { added: added, duplicates: duplicates, total: anchors.length,
-        errorCode: 'STS-TLS-0014',
+      const full = { added: added, duplicates: duplicates,
+        total: anchors.length, errorCode: 'STS-TLS-0014',
         error: 'This truststore holds at most ' + MAX_ANCHORS + ' anchors; ' +
           added + ' were added before it filled up. Remove one first — ' +
           'POST /admin-api/tls/trust/remove, or the row button on ' +
           '/admin/tls/trust.' };
+      if (warnings.length) {
+        full.warning = warnings.join(' ');
+      }
+      return full;
     }
     const pushed = Object.assign(one, {
       source: opts.source === 'file' ? 'file' : 'runtime',
@@ -4810,13 +5539,24 @@ function addAnchors(text, options) {
     }
     anchors.push(pushed);
     added += 1;
+    const collision = recordSubjectCollision(pushed, 'a runtime add');
+    if (collision) {
+      warnings.push(collision);
+    }
     log.info('tls: trusting client certificates issued by ' +
              one.subject + ' (' + one.fingerprint256 + ')');
   }
-  if (added) applyAnchors();
+  if (added) {
+    applyAnchors();
+  }
   log.debug('Leaving addAnchors(). added=' + added + ' duplicates=' +
             duplicates);
-  return { added: added, duplicates: duplicates, total: anchors.length };
+  const result = { added: added, duplicates: duplicates,
+                   total: anchors.length };
+  if (warnings.length) {
+    result.warning = warnings.join(' ');
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -4887,14 +5627,18 @@ function removeAnchor(fingerprint) {
 // private key of anybody's — and the record is COPIED, because the array is
 // the listeners' and a caller that mutated a row it was handed would change
 // what a page says without changing what a handshake reads.
-function publicAnchor(anchor) {
+// `candidates` is `collisionCandidates()` when the caller lists every row
+// and has read it once; omitted, it is read here.
+function publicAnchor(anchor, candidates) {
   log.debug("Entering publicAnchor().");
-  log.debug("Leaving publicAnchor().");
-  return {
+  const row = {
     subject: anchor.subject, issuer: anchor.issuer, serial: anchor.serial,
     notBefore: anchor.notBefore, notAfter: anchor.notAfter,
     fingerprint256: anchor.fingerprint256, ca: !!anchor.ca,
     readable: !!anchor.readable,
+    // What a certificate sign-in profile names this CA by (#2080,
+    // `describePem()`).
+    spkiSha256: anchor.spkiSha256 || '',
     source: anchor.source === 'file' ? 'file' : 'runtime',
     // Admitted once and refused by the rule now (#1360): kept, and reported.
     unadmittable: anchor.unadmittable || '',
@@ -4905,13 +5649,28 @@ function publicAnchor(anchor) {
     persisted: anchor.source === 'file' ? true : !!anchor.stored,
     addedAt: anchor.addedAt || '', pem: anchor.pem
   };
+  // Another anchor that shares this subject, which OpenSSL's lookup by name
+  // cannot tell from this one (#1242): on BOTH rows, because which of the
+  // two it finds first is not promised. The name is kept for the API's
+  // sake; it means "shares a subject with". Omitted when no anchor does, or
+  // when the key identifiers tell the two apart.
+  const other = sameSubjectAnchor(anchor, candidates);
+  if (other) {
+    row.shadowedBy = other.fingerprint256;
+  }
+  log.debug("Leaving publicAnchor().");
+  return row;
 }
 
 function listAnchors() {
   log.debug("Entering listAnchors().");
+  // Read once for every row: the listeners' lists and the Root.
+  const candidates = collisionCandidates(false);
   log.debug("Leaving listAnchors().");
   return {
-    anchors: anchors.map(publicAnchor),
+    anchors: anchors.map(function (one) {
+      return publicAnchor(one, candidates);
+    }),
     max: MAX_ANCHORS,
     file: anchorsFileReport.file || '',
     loadedFromFile: anchorsFileReport.loaded,
@@ -5106,6 +5865,8 @@ function reloadStoredAnchors() {
                'is one the admission rule refuses, and it is kept: ' +
                refused.why);
     }
+    recordSubjectCollision(anchors[anchors.length - 1],
+                           'a stored anchor restored');
     added += 1;
   });
   if (added || removed) {
@@ -5364,6 +6125,33 @@ function certificateRefusal(socket, mode, revocation, identity) {
                   '(pki.revocationCheck is ' + revocation.policy + '): ' +
                   revocation.why } };
   }
+  // A VERIFIED STATUS, WHERE THE REALM ASKS FOR ONE (#2012,
+  // `certSignIn.requireRevocation`): `auto` in product mode, `on` in every
+  // mode. A status soft-fail let through — unknown, or not consulted at all —
+  // signs nobody in under it, and the refusal is reported as the revocation
+  // refusal above is, which is what it is: the screen's STS-AUTHN-0464.
+  let unverified = '';
+  try {
+    unverified = require('../common/certificate_binding')
+      .revocationRefusal(revocation);
+  } catch (e) {
+    log.debug('Caught in certificateRefusal(): ' + ((e && e.message) || e));
+    // FAIL CLOSED (the #2012 review): a check that could not answer is a
+    // status nobody verified.
+    unverified = 'the revocation requirement could not be asked (' +
+      String((e && e.message) || e) + ')';
+  }
+  if (unverified) {
+    log.info(errorCodes.tag('STS-TLS-0071') + 'tls: a verified client ' +
+             'certificate on the ' + mode + ' listener started no session: ' +
+             unverified + '.');
+    log.debug('Leaving certificateRefusal(). No verified status.');
+    return { gated: null, refusal: { started: false,
+                                     refusedOnRevocation: true,
+                                     revocationRequired: true,
+             why: 'the certificate verified and its revocation status was ' +
+                  'NOT VERIFIED: ' + unverified } };
+  }
   // NOT AN IDENTITY (2026-09-13): a chain through this service's own Root from
   // an authority that does not issue TLS client identities. See
   // `issuedClientCertificateAnchor()` for why that Root is trusted at all and
@@ -5495,6 +6283,14 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   const cert = peer.cert;
   const subject = peer.subject;
   const username = peer.username;
+  // A PIV CARD AUTHENTICATION CERTIFICATE (#1955 P2) works without a PIN
+  // and signs nobody in unless the realm says (`piv.cardAuthSignIn`).
+  const cardAuth = cardAuthRefusalOf(cert);
+  if (cardAuth) {
+    errorCodes.mark(res, 'STS-PIV-0013');
+    log.debug('Leaving startCertificateSessionIn(). A card-auth key.');
+    return { started: false, why: cardAuth };
+  }
   // A PERSON AT A BROWSER OWES THE SECOND FACTOR THE SCREEN WOULD ASK FOR
   // (#1516), so product mode starts no one-factor
   // session here for somebody who needs one; the sign-in screen's certificate
@@ -5514,8 +6310,14 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // added.
   const held = several ? certificateAccountHeld(req, username) : null;
   let session = null;
+  // WHAT THE CERTIFICATE'S KEY EARNS (#1955 P1): `swk` as always, `hwk`
+  // where a hardware token's attestation covers the key, with `sc` where
+  // it says the key is on a smart card. Never inferred here.
+  const amr = certificateAmrOf(cert, username);
+  // A SMART CARD OR NOT (#2031), for the authentication policy's two rows.
+  const card = smartCardOf(cert, gated, amr);
   try {
-    session = authn.startSession(res, username, ['swk'], '1',
+    session = authn.startSession(res, username, amr, '1',
                                  'a client certificate on the ' + mode +
                                  '-client-certificate listener',
                                  // Which certificate, as a thumbprint the
@@ -5529,9 +6331,17 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                                    protocol: 'TLS',
                                    method: 'client certificate (GET ' +
                                            '/tls/sign-in)',
-                                   credential: {
+                                   // And its serial, which the hardware
+                                   // token register files it by (#1955).
+                                   credential: Object.assign({
                                      kind: 'certificate',
-                                     id: cert.fingerprint256 || '' } });
+                                     id: cert.fingerprint256 || '',
+                                     serial: String(cert.serialNumber ||
+                                                    '') },
+                                     card.smartCard ? { smartCard: true }
+                                                    : {},
+                                     card.cardAuth ? { cardAuth: true }
+                                                   : {}) });
   } catch (e) {
     // Bookkeeping must never break a connection that has already been
     // accepted — the same rule recordClientCertificate() states.
@@ -5595,6 +6405,78 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     answer.account = held ? 'reauthenticated' : 'added';
   }
   return answer;
+}
+
+// WHETHER A CLIENT CERTIFICATE IS A SMART CARD (#2031), from evidence this
+// service holds and never from what the certificate claims of itself: the
+// hardware token register's attestation says its key is on a smart card
+// (`amr` carries `sc`, `certificateAmrOf()`); it was enrolled here under a
+// PIV slot profile (`piv_attestation.enrolledPivOf()`); it is an outside PIV
+// or CAC card mapped by its card UUID (the identity's `pivCard`, #1955 D8);
+// or it is covered by a `certSignIn.profiles` profile marked `smartCard`
+// (#2012). `cardAuth` is the PIV card authentication key, slot 9e. Asked by
+// both sign-in doors, which put the answer on the session's credential for
+// the authentication policy's `smartCard` row.
+function smartCardOf(cert, gated, amr) {
+  log.debug('Entering smartCardOf().');
+  let enrolled = null;
+  try {
+    enrolled = require('../common/piv_attestation').enrolledPivOf(
+      String((cert && cert.serialNumber) || ''),
+      String((cert && cert.fingerprint256) || ''));
+  } catch (e) {
+    log.debug('Caught in smartCardOf(): ' + ((e && e.message) || e));
+    // No register to ask: the other evidence still answers.
+    enrolled = null;
+  }
+  const smartCard = (Array.isArray(amr) && amr.indexOf('sc') >= 0) ||
+    !!enrolled ||
+    !!(gated && gated.accepted && (gated.pivCard === true ||
+                                   gated.smartCard === true));
+  const out = { smartCard: smartCard,
+                cardAuth: !!(enrolled && enrolled.cardAuth) };
+  log.debug('Leaving smartCardOf(). ' + JSON.stringify(out));
+  return out;
+}
+
+// Why a client certificate may not sign in for the PIV profile it was
+// enrolled under (#1955 P2: piv-card-auth, without `piv.cardAuthSignIn`),
+// or '' when it may. `common/piv_attestation.ts` argues it.
+function cardAuthRefusalOf(cert) {
+  log.debug('Entering cardAuthRefusalOf().');
+  let refusal = null;
+  try {
+    refusal = require('../common/piv_attestation').signInRefusal(
+      String((cert && cert.serialNumber) || ''),
+      String((cert && cert.fingerprint256) || ''));
+  } catch (e) {
+    log.debug('Caught in cardAuthRefusalOf(): ' + ((e && e.message) || e));
+    refusal = null;
+  }
+  log.debug('Leaving cardAuthRefusalOf().');
+  return refusal ? String(refusal.why || '') : '';
+}
+
+// The RFC 8176 amr a client certificate's sign-in earns (#1955 P1): what
+// the hardware token register's evidence says of its key, `swk` when it
+// says nothing or cannot be asked. `common/hardware_tokens.ts` argues it.
+// The certificate is named by its thumbprint and serial, and earns only
+// the person it signs in, when they are its holder (the #1955 review).
+function certificateAmrOf(cert, username) {
+  log.debug('Entering certificateAmrOf().');
+  let amr = ['swk'];
+  try {
+    amr = require('../common/hardware_tokens').certificateAmr({
+      der: cert && cert.raw ? cert.raw : undefined,
+      thumbprint: String((cert && cert.fingerprint256) || ''),
+      serial: String((cert && cert.serialNumber) || ''),
+      username: String(username || '') });
+  } catch (e) {
+    log.debug('Caught in certificateAmrOf(): ' + ((e && e.message) || e));
+    amr = ['swk'];
+  }
+  log.debug('Leaving certificateAmrOf(). ' + amr.join(','));
+  return amr;
 }
 
 // THE CERTIFICATE ON THE CONNECTION AND WHOM IT NAMES (#1051: moved out of
@@ -5761,10 +6643,7 @@ function screenCertificateHolder(req) {
   log.debug('Entering screenCertificateHolder().');
   const socket = req && req.socket;
   const none = { ok: false, code: 'STS-AUTHN-0463',
-                 why: 'No verified client certificate arrived on this ' +
-                      'connection, so there is nobody to continue as. ' +
-                      'Choose the certificate when your browser asks, or ' +
-                      'sign in another way.' };
+                 why: Sentence.say('refusals.authn.certificateNone') };
   if (!socket || socket.authorized !== true) {
     log.debug('Leaving screenCertificateHolder(). Nothing verified.');
     return Promise.resolve(none);
@@ -5792,22 +6671,16 @@ function screenCertificateHolder(req) {
                 'certificate, not stored on one entry.');
       return checked.error === 'STORED_TWICE'
         ? { ok: false, code: 'STS-AUTHN-0469',
-            why: 'Your certificate is stored on more than one account ' +
-                 'here, so it cannot say which one is yours. Ask an ' +
-                 'administrator to store it on yours alone.' }
+            why: Sentence.say('refusals.authn.certificateStoredTwice') }
         : { ok: false, code: 'STS-AUTHN-0468',
-            why: 'Your certificate is not stored on any account here, so ' +
-                 'it cannot sign you in. Ask an administrator to store it ' +
-                 'on your account (a renewed certificate is stored again), ' +
-                 'or sign in another way.' };
+            why: Sentence.say('refusals.authn.certificateNotStored') };
     }
     if (checked && !checked.ok && checked.error === 'OTHER_REALM') {
       log.info('tls: the sign-in screen refused a client certificate from ' +
                'another realm: ' + checked.why);
       log.debug('Leaving screenCertificateHolder(). Another realm\'s.');
       return { ok: false, code: 'STS-AUTHN-0465',
-               why: 'Your certificate was issued in another realm, so it ' +
-                    'cannot sign you in here.' };
+               why: Sentence.say('refusals.authn.certificateOtherRealm') };
     }
     const pre = certificateRefusal(socket, 'optional', revocation,
                                    checked ? checked.identity : undefined);
@@ -5818,18 +6691,16 @@ function screenCertificateHolder(req) {
       log.debug('Leaving screenCertificateHolder(). Refused.');
       if (r.refusedOnRevocation) {
         return { ok: false, code: 'STS-AUTHN-0464',
-                 why: 'Your certificate has been revoked, or its revocation ' +
-                      'could not be confirmed, so it cannot sign you in.' };
+                 why: Sentence.say('refusals.authn.certificateRevoked') };
       }
       if (r.refusedAsIdentity) {
         return { ok: false, code: 'STS-AUTHN-0465',
-                 why: 'This certificate is not a TLS client certificate ' +
-                      'for a person here, so it cannot sign you in.' };
+                 why: Sentence.say('refusals.authn.certificateNotAPerson') };
       }
       if (r.application) {
         return { ok: false, code: 'STS-AUTHN-0466',
-                 why: 'This certificate was issued to an application, and ' +
-                      'an application\'s certificate signs nobody in.' };
+                 why: Sentence.say(
+                   'refusals.authn.certificateOfApplication') };
       }
       return none;
     }
@@ -5840,16 +6711,40 @@ function screenCertificateHolder(req) {
       log.debug('Leaving screenCertificateHolder(). ' + peer.why);
       return none;
     }
+    // A PIV CARD AUTHENTICATION CERTIFICATE (#1955 P2): see
+    // `startCertificateSessionIn()`.
+    const cardAuth = cardAuthRefusalOf(peer.cert);
+    if (cardAuth) {
+      log.info('tls: the sign-in screen refused a PIV card authentication ' +
+               'certificate: ' + cardAuth);
+      log.debug('Leaving screenCertificateHolder(). A card-auth key.');
+      return { ok: false, code: 'STS-PIV-0013', why: cardAuth };
+    }
     const revocationSaid = revocation && revocation.checked
       ? 'its revocation was consulted (' + revocation.policy + '): ' +
         revocation.why
       : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)';
+    const amr = certificateAmrOf(peer.cert, peer.username);
+    // A SMART CARD OR NOT (#2031): the screen's act asks the policy's row
+    // for the kind it is.
+    const card = smartCardOf(peer.cert, pre.gated, amr);
     log.debug('Leaving screenCertificateHolder(). ' + peer.username);
     return {
       ok: true,
       username: peer.username,
+      smartCard: card.smartCard,
+      cardAuth: card.cardAuth,
       credentialId: String(peer.cert.fingerprint256 || ''),
+      // Its serial, which the hardware token register files it by (#1955).
+      serial: String(peer.cert.serialNumber || ''),
+      // What the certificate's key earns (#1955 P1), for the screen's
+      // session: `GET /tls/sign-in`'s answer, from the same evidence.
+      amr: amr,
       revocationSaid: revocationSaid,
+      // What the certificate says of its holder (#127's facts), kept by the
+      // certificate sign-in handoff (#2012), which rebuilds the
+      // verification below from them once the sign-in completes.
+      verificationFacts: certificateFacts(peer.cert),
       // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
       // its session has started, recorded by the screen at the same point.
       recordVerification: function recordVerification() {
@@ -6192,6 +7087,8 @@ let anchorsFileReport = { file: '', loaded: 0 };
       // row from here comes back at the next start however it is removed.
       anchors.push(Object.assign(described, {
         source: 'file', addedAt: new Date().toISOString() }));
+      recordSubjectCollision(anchors[anchors.length - 1],
+                             'tls.trustAnchorsFile', true);
     }
   });
   if (found.length > MAX_ANCHORS) {
@@ -6746,7 +7643,10 @@ function answerCertificateSignIn(req, res) {
       // writes the refusal's row in the realm this request named, as it
       // does for STS-TLS-0054 above. The answer is unchanged: 200,
       // `session.refusedOnRevocation`.
-      if (session.refusedOnRevocation) {
+      if (session.revocationRequired) {
+        // #2012: no verified status where the realm requires one.
+        errorCodes.mark(res, 'STS-TLS-0071');
+      } else if (session.refusedOnRevocation) {
         errorCodes.mark(res, errorCodes.codeOf(revocation) ||
           (revocation && revocation.status === 'revoked' ? 'STS-PKI-0118'
                                                          : 'STS-PKI-0119'));
@@ -7140,6 +8040,11 @@ function connectionView(req) {
       encrypted: !!socket.encrypted,
       protocol: tlsFact('protocol'),
       cipher: tlsFact('cipher'),
+      // THE KEY EXCHANGE THIS CONNECTION NEGOTIATED (#2220), read off the
+      // session the server holds — tls/key_exchange.ts. Lazily: a library
+      // that requires nothing of this module.
+      keyExchange: socket.encrypted
+        ? require('./key_exchange').negotiatedOn(socket) : null,
       peerAddress: clientAddress.normalise(socket.remoteAddress) || null,
       clientAddress: clientAddress.clientAddressOf(req)
     },
@@ -7378,6 +8283,9 @@ module.exports = {
   // (ou=trustAnchors) and calls the reload when another process changes it.
   setTrustAnchorStore: setTrustAnchorStore,
   reloadStoredAnchors: reloadStoredAnchors,
+  // Re-applies every listener's truststore (#2118): a named truststore or
+  // an assignment `tls-client` resolves through changed.
+  applyTruststores: applyAnchors,
   // The main HTTPS listener is created in server.js and registers here so that
   // a truststore change reaches it too — see the block above
   // trustClientCertificatesOn().
@@ -7529,6 +8437,11 @@ module.exports = {
   // The three the request-worker pool uses. See their headers: the hierarchy
   // can be rebuilt in a process that does not own this socket.
   reconcileWithHierarchy: reconcileWithHierarchy,
+  // The listener certificate's renewal while the process runs (#2220).
+  renewListenerCertificate: renewListenerCertificate,
+  listenerCertificatesDue: listenerCertificatesDue,
+  listenerRenewalOffReason: listenerRenewalOffReason,
+  LISTENER_RENEW_JOB: LISTENER_RENEW_JOB,
   // Whether the listener is waiting for a process branch another process is
   // building (2026-09-13) — `common/request_pool.js` arms its fallback on it.
   listenerAwaitsBranch: listenerAwaitsBranch,
@@ -7566,10 +8479,20 @@ module.exports = {
   connectionView: connectionView,
   // Exported for tests/tls_handshake_alerts.js (#225).
   handshakeFailureOf: handshakeFailureOf,
+  // #1242: the fingerprint recognition of a same-subject anchor, exported
+  // for tests/tls_same_subject_anchors.js, which hands it the errors this
+  // OpenSSL does not produce for the shapes it can mint (a purpose hidden
+  // behind a later signature failure) on a socket of its own making.
+  recogniseInstalledAnchor: recogniseInstalledAnchor,
   // #201: the path rules asked of a chain OpenSSL verified; exported for
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
   holdToPathRules: holdToPathRules,
   anchorCertificates: anchorCertificates,
+  // #2012: a certificate a TLS-terminating proxy forwarded is held to what the
+  // listener the proxy reached holds a handshake's to — its own `ca` list and
+  // #212's curve guard (common/forwarded_client_certificate.ts).
+  caPemsFor: caPemsFor,
+  refusedCurveKey: refusedCurveKey,
   holdConnectionsOn: holdConnectionsOn,
   settledRequest: settledRequest
 };

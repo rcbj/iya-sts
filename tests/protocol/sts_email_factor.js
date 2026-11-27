@@ -41,6 +41,9 @@
 // 1–3 SKIP and say so; section 0 runs everywhere.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -48,6 +51,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const nodeCrypto = require("crypto");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -247,15 +251,23 @@ function browser(name) {
   return self;
 }
 
+// Temporary, then the person's own (#2160, `own_password.js`): every
+// sign-in here uses PASSWORD.
 async function person(who) {
   log.debug("Entering person().");
+  const temporary = ownPassword.temporaryFor(PASSWORD);
   await ok(realmBase() + "/admin-api/users/create",
            { username: who, invent: false,
              attributes: { mail: who + "@" + DOMAIN, givenName: "Emf",
                            sn: who, cn: "Emf " + who },
-             credential: "password", password: PASSWORD,
-             passwordConfirm: PASSWORD },
+             credential: "password", password: temporary,
+             passwordConfirm: temporary },
            "created " + who);
+  await ownPassword.ownPassword(realmBase(), who, PASSWORD,
+    function (one, value) {
+      return call("POST", realmBase() + "/admin-api/users/set-password",
+                  { user: one, password: value });
+    });
   log.debug("Leaving person().");
   return who + "@" + DOMAIN;
 }
@@ -587,8 +599,15 @@ async function aCodeAsTheFirstFactor() {
   const got = await arrived(address, /sign-in code/, seen);
   r = await stepAct(b, step2, "email/code", { code: codeIn(got.message) });
   await finish(b, r);
+  // THE CODE'S SESSION, NOT THE PASSWORD'S. `person()` gives the person
+  // their own password by signing in with it (#2238, `own_password.js`), so
+  // a `["pwd"]` session of theirs is already listed, and the first row was
+  // that one in the cells and mariadb runs of 2026-11-25. The row wanted is
+  // the one an emailed code made; that it holds ONLY `otp` is the check.
   const session = await until("the session", function () {
-    return sessionOf(who);
+    return sessionOf(who, function (row) {
+      return row.amr.indexOf("otp") >= 0;
+    });
   }, 10000);
   check("2. a username and the mailed code sign in: amr [\"otp\"], acr \"1\"",
         function () {
@@ -637,8 +656,8 @@ async function aLink() {
     // product (#1454, `mode.hidesStepIds()`).
     assert.ok(/^[?#]/.test(link.slice((base + "/realm/" + REALM +
               "/authn/email-link/open").length)) &&
-              link.indexOf(base + "/realm/" + REALM +
-                           "/authn/email-link/open") === 0, link);
+              urls.isAt(link, base + "/realm/" + REALM +
+                        "/authn/email-link/open"), link);
   });
   const other = browser("elsewhere");
   r = await openStep(other, link);

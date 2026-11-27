@@ -20,5 +20,11 @@ roxmltree.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
+# The embedded PEP corpus (tests/pep_corpus.rs, #2024): its files are JSON
+# and its manifest carries a SHA-256.
+[dev-dependencies]
+serde_json.workspace = true
+sha2.workspace = true
+
 [lints]
 workspace = true

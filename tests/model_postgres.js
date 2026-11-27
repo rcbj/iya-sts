@@ -113,8 +113,8 @@ function run(t) {
   const model = PostgresImport.read(ROOT);
   sameText(t, PostgresImport.emit(model), sql,
     'emit() is postgres/schema.sql byte for byte');
-  t.equal(model.version, 32, 'schema version 32');
-  t.equal(driver.SCHEMA_VERSION, 32, 'the driver reports 32');
+  t.equal(model.version, 33, 'schema version 33');
+  t.equal(driver.SCHEMA_VERSION, 33, 'the driver reports 33');
   const creates = PostgresImport.statements(sql).filter(
     function (statement) {
       return /^CREATE TABLE\b/i.test(statement);
@@ -278,7 +278,7 @@ function run(t) {
   t.check(tableClass.indexOf('z.strictObject') >= 0,
     'the table class parses with strictObject');
   sameText(t, ModelEmit.persistenceDocs(model),
-    fs.readFileSync(path.join(ROOT, 'docs', 'v1.1.0',
+    fs.readFileSync(path.join(ROOT, 'docs', 'v1.2.0',
       'data-model-persistence.md'), 'utf8'),
     'the persistence reading page matches the model');
   log.debug("Leaving run().");

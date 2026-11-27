@@ -75,6 +75,7 @@ const portalSignin = require("./portal_signin.js");
 // THE SIGN-OUT PAGE (#577): a static surface over /authn-api/logout, which
 // `authn_signin.js`'s `signOut()` walks as the page does.
 const authnSignin = require("./authn_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -291,12 +292,18 @@ async function ensurePerson(who) {
   }
   const r = await post("/users/create", {
     username: who, invent: false, attributes: personAttributes(who),
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   });
   assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
     "POST /admin-api/users/create should create " + who + " with a password " +
     "before they sign in; it answered " + r.status + " " +
     String(r.raw).slice(0, 300));
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+    return post("/users/set-password", { user: one, password: value });
+  });
   createdPeople[who] = true;
   log.debug("Leaving ensurePerson(). Created " + who + ".");
 }
@@ -505,6 +512,11 @@ async function portalAuthorize(b) {
 async function theConsoleSignInCreatesASession() {
   log.debug("Entering theConsoleSignInCreatesASession().");
   log.info("=== the admin console: sign in, and the session is listed ===");
+  // THE PERSON EXISTS BEFORE THE COUNT (#2258): giving them their own
+  // password (#2160, `own_password.js`) signs them in once at the screen in
+  // product, and that sign-on session is live in a jar nobody keeps. Counted
+  // after it, the one this sign-in makes is the only one added.
+  await ensurePerson(OPERATOR);
   const before = (await liveSessions(OPERATOR)).length;
   const b = await signInToConsole(OPERATOR);
   const id = signOnIdOf(b);
@@ -644,6 +656,8 @@ async function theConsoleSignOutEndsIt(b, who) {
 async function thePortalSignInCreatesASession() {
   log.debug("Entering thePortalSignInCreatesASession().");
   log.info("=== the user portal: sign in, and the session is listed ===");
+  // Created first, for the console's reason above (#2258).
+  await ensurePerson(OWNER);
   const before = (await liveSessions(OWNER)).length;
   const b = await signInToPortal(OWNER);
   const id = signOnIdOf(b);

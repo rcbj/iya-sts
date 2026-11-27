@@ -48,8 +48,12 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const zlib = require("zlib");
@@ -523,13 +527,24 @@ async function createPerson(realm, withPassword) {
                                   givenName: "Signout", sn: PERSON,
                                   mail: PERSON + "@" + IDP_MAIL },
                     credential: withPassword ? "password" : "none" };
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product and the sign-in at the identity provider would stop at the
+  // change step, so a temporary one is set and the person chooses PASSWORD
+  // (`own_password.js`; in development it is simply set).
   if (withPassword) {
-    payload.password = PASSWORD;
+    payload.password = ownPassword.temporaryFor(PASSWORD);
   }
   const r = await api(realm, "POST", "/users/create", payload);
   must(r.status === 200 && r.body && r.body.ok,
        "creating " + PERSON + " in " + realm + " answered " + r.status + " " +
        r.text.slice(0, 300));
+  if (withPassword) {
+    await ownPassword.ownPassword(realmBase(realm), PERSON, PASSWORD,
+      function (who, value) {
+        return api(realm, "POST", "/users/set-password",
+                   { user: who, password: value });
+      });
+  }
   log.debug("Leaving createPerson().");
 }
 
@@ -712,6 +727,9 @@ async function setUp() {
     oauthRedirectUri: [view.endpoints.assertionConsumerService],
     oauthTokenEndpointAuthMethod: "none",
     oauthGrantType: ["implicit"], oauthResponseType: ["id_token"],
+    // The relationship's `fedScope`, declared (#2169): in product a client
+    // that declares none is issued `openid` alone (#1589).
+    oauthAllowedScope: ["openid", "profile", "email"],
     oauthFrontchannelLogoutUri: view.endpoints.frontchannelLogout,
     oauthFrontchannelLogoutSessionRequired: "TRUE" });
   const partnerView = await api(IDP, "GET", "/users?user=" +
@@ -796,7 +814,7 @@ async function samlRealmToRealm(world) {
                 "session here and is answered with a signed LogoutResponse " +
                 "to the partner's SingleLogoutService", async function () {
       assert.strictEqual(answered.status, 303, squash(answered.body));
-      assert.ok(answered.location.indexOf(world.idpSlo) === 0,
+      assert.ok(urls.isAt(answered.location, world.idpSlo),
                 answered.location);
       const said = messageIn(answered.location, "SAMLResponse");
       assert.ok(said.signed && said.codes[0] === "Success",
@@ -836,7 +854,7 @@ async function samlRealmToRealm(world) {
                 "with a LogoutResponse to this relationship's " +
                 "SingleLogoutService", async function () {
       assert.strictEqual(atPartner.status, 303, squash(atPartner.body));
-      assert.ok(atPartner.location.indexOf(world.samlSlo) === 0,
+      assert.ok(urls.isAt(atPartner.location, world.samlSlo),
                 atPartner.location);
     });
     if (atPartner.location) {
@@ -950,7 +968,7 @@ async function samlPartnerWrittenHere(world) {
               "LogoutResponse, Requester/UnknownPrincipal, and ends nothing",
               async function () {
     assert.strictEqual(unknown.status, 303, squash(unknown.body));
-    assert.ok(unknown.location.indexOf(PARTNER_SLO) === 0, unknown.location);
+    assert.ok(urls.isAt(unknown.location, PARTNER_SLO), unknown.location);
     const said = messageIn(unknown.location, "SAMLResponse");
     assert.ok(said.signed && said.codes.indexOf("Requester") >= 0 &&
               said.codes.indexOf("UnknownPrincipal") >= 0 &&

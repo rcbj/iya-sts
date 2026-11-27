@@ -77,6 +77,9 @@
 
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+// The policy's refusals as catalog sentences (#2006), so the sign-in pages
+// and the portal draw them in their own language.
+import Sentence = require('../common/sentence');
 import InstanceSlot = require('../common/instance_slot');
 import webauthn = require('./webauthn');
 // The error codes. A LEAF that requires nothing, so it cannot close a cycle
@@ -97,6 +100,7 @@ import passkeyPolicy = require('../common/passkey_policy');
 // The ambient realm's name, which the passkey policy may append to rp.name
 // (#533). A leaf here: `config` and `helpers` already require it.
 import realms = require('../common/realms');
+import truststores = require('../common/truststores');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -205,6 +209,8 @@ const FAILED_CHECK_CODES = {
   'challenge matches': 'STS-AUTHN-0029',
   'origin matches': 'STS-AUTHN-0030',
   'rpIdHash is SHA-256 of the RP ID': 'STS-AUTHN-0031',
+  // The same check against a legacy U2F AppID (#1955 P7).
+  'rpIdHash is SHA-256 of the AppID (the appid extension)': 'STS-AUTHN-0031',
   'user presence': 'STS-AUTHN-0032',
   'user verification': 'STS-AUTHN-0033',
   'attested credential data present': 'STS-AUTHN-0034',
@@ -356,6 +362,13 @@ class WebauthnPolicy {
       // only while the passkey policy enforces one, so a realm that does not
       // sends exactly the options it always did.
       minPinLength: passkeyPolicy.pinLengthRule(passkeys).enforce,
+      // WHAT A REGISTRATION ASKS OF A SECURITY KEY'S CREDENTIAL PROTECTION
+      // (#1955 P7): the passkey policy's credProtect, `''` for none, and
+      // whether the browser is asked to enforce it. credProtect is a
+      // policy extension. The signature algorithms stay
+      // `webauthn.algorithms`, which already offers ML-DSA.
+      credProtect: passkeyPolicy.credProtectRule(passkeys).policy,
+      enforceCredProtect: passkeyPolicy.credProtectRule(passkeys).enforce,
       mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
       // The two algorithm flags (2026-10-01).
       insecureAlgorithms: this.insecureAlgorithmsAllowed(),
@@ -436,8 +449,10 @@ class WebauthnPolicy {
     const out = {
       configured: configured,
       policy: policy,
-      trustAnchorsPem: String(config.value('webauthn.attestationTrustAnchors')
-                              || ''),
+      // What `webauthn-attestation`'s truststores hold, or unassigned what
+      // webauthn.attestationTrustAnchors names (#2118).
+      trustAnchorsPem: truststores.configuredPems('webauthn-attestation')
+        .join('\n'),
       allowedAaguids: allowedAaguids,
       minCertificationLevel: minCertificationLevel,
       requireFips: requireFips,
@@ -533,6 +548,295 @@ class WebauthnPolicy {
     helpers.log.debug('Leaving WebauthnPolicy.enterpriseRpIdsOf(). ' +
                       out.length);
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE LEGACY U2F APPIDS (#1955 P7, rcbj's reversal of the issue's D5).
+  //
+  // A FIDO U2F relying party scoped its credentials to an AppID — an https
+  // URL — and a U2F authenticator signs over SHA-256 of that URL, not of an
+  // RP ID. WebAuthn Level 3 section 10.1.1's `appid` extension lets such a
+  // credential be ASSERTED through WebAuthn, and section 10.1.2's
+  // `appidExclude` lets a registration refuse an authenticator already
+  // holding one. Both need the credentials to exist here, which is what the
+  // import (`credentials.importU2fKey()`, `POST /admin-api/users/
+  // import-u2f-key`) gives; `webauthn.u2fAppIds` is the switch, EMPTY BY
+  // DEFAULT, and nothing here does anything while it is.
+  //
+  // WHICH APPIDS MAY BE USED AT AN RP ID. The client decides whether the
+  // caller's origin may use an AppID by the FIDO AppID and Facet
+  // Specification's algorithm (section 3.1.2), which WebAuthn hands it to: an
+  // AppID on the origin's own host needs nothing more, and one elsewhere in
+  // the same registrable domain needs a TrustedFacets list served at the
+  // AppID's URL naming the origin. This service has no public suffix list,
+  // so it asks the conservative half of that: the AppID's host is the RP ID,
+  // or one of the two is a dot-separated suffix of the other. An AppID that
+  // fails it is never SENT for that RP ID (the browser would refuse the whole
+  // ceremony with a SecurityError), and its keys cannot sign in there. The
+  // TrustedFacets list, where the host differs, is the legacy relying
+  // party's to keep serving; this service does not fetch it.
+  // ---------------------------------------------------------------------------
+  /**
+   * The U2F AppIDs a setting value lists, trimmed, each once (#1955 P7).
+   *
+   * @param raw - the setting's value, a list or comma-separated text
+   * @returns the AppIDs as written
+   */
+  static u2fAppIdsOf(raw: unknown): string[] {
+    helpers.log.debug('Entering WebauthnPolicy.u2fAppIdsOf().');
+    const out: string[] = [];
+    (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .forEach(function (one) {
+        const id = String(one || '').trim();
+        if (id && out.indexOf(id) < 0) {
+          out.push(id);
+        }
+      });
+    helpers.log.debug('Leaving WebauthnPolicy.u2fAppIdsOf(). ' + out.length);
+    return out;
+  }
+
+  /**
+   * What is wrong with an AppID as a U2F AppID (#1955 P7), or null: it must
+   * be an absolute https URL with a host, no user name or password and no
+   * fragment, at most 2048 characters (FIDO AppID and Facet Specification
+   * section 3.1.1; WebAuthn Level 3 section 10.1.1 refuses anything but
+   * https).
+   *
+   * @param appid - the AppID
+   * @returns the problem, or null
+   */
+  static appIdProblem(appid: unknown): string | null {
+    helpers.log.debug('Entering WebauthnPolicy.appIdProblem().');
+    const text = String(appid == null ? '' : appid);
+    let url: URL | null = null;
+    try {
+      url = text.length <= 2048 ? new URL(text) : null;
+    } catch (e) {
+      helpers.log.debug('Caught in WebauthnPolicy.appIdProblem(): ' +
+                        ((e && e.message) || e));
+      url = null;
+    }
+    const problem = !url
+      ? 'is not an absolute URL of at most 2048 characters'
+      : (url.protocol !== 'https:' ? 'is not an https URL'
+        : (!url.hostname ? 'names no host'
+          : (url.username || url.password ? 'carries a user name or ' +
+                                            'password'
+            : (url.hash || /#/.test(text) ? 'carries a fragment' : ''))));
+    helpers.log.debug('Leaving WebauthnPolicy.appIdProblem(). ' +
+                      (problem || 'none'));
+    return problem ? '"' + text.slice(0, 200) + '" ' + problem : null;
+  }
+
+  /**
+   * Whether an AppID may be used at an RP ID (#1955 P7): its host is the RP
+   * ID, or one of the two is a dot-separated suffix of the other — see the
+   * header above.
+   *
+   * @param appid - the AppID
+   * @param rpId - the RP ID of the ceremony
+   * @returns true where it may
+   */
+  static appIdRelatesTo(appid: unknown, rpId: unknown): boolean {
+    helpers.log.debug('Entering WebauthnPolicy.appIdRelatesTo().');
+    if (WebauthnPolicy.appIdProblem(appid)) {
+      helpers.log.debug('Leaving WebauthnPolicy.appIdRelatesTo(). Not an ' +
+                        'AppID.');
+      return false;
+    }
+    const host = new URL(String(appid)).hostname.toLowerCase();
+    const id = String(rpId || '').trim().toLowerCase();
+    const out = !!id && (host === id || host.endsWith('.' + id) ||
+                         id.endsWith('.' + host));
+    helpers.log.debug('Leaving WebauthnPolicy.appIdRelatesTo(). ' + out);
+    return out;
+  }
+
+  /**
+   * The U2F AppIDs this realm permits (`webauthn.u2fAppIds`, #1955 P7);
+   * empty, the default, is the feature off.
+   *
+   * @returns the AppIDs, each a valid one
+   */
+  legacyAppIds(): string[] {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.legacyAppIds().');
+    const out = WebauthnPolicy.u2fAppIdsOf(config.value('webauthn.u2fAppIds'))
+      .filter(function (one) {
+        return !WebauthnPolicy.appIdProblem(one);
+      });
+    log.debug('Leaving WebauthnPolicy.legacyAppIds(). ' + out.length);
+    return out;
+  }
+
+  /**
+   * Whether this realm permits an AppID at an RP ID (#1955 P7): listed in
+   * `webauthn.u2fAppIds`, and related to the RP ID.
+   *
+   * @param appid - the AppID
+   * @param rpId - the RP ID of the ceremony
+   * @returns true where it is
+   */
+  legacyAppIdPermitted(appid: unknown, rpId: unknown): boolean {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.legacyAppIdPermitted().');
+    const out = this.legacyAppIds().indexOf(String(appid || '')) >= 0 &&
+      WebauthnPolicy.appIdRelatesTo(appid, rpId);
+    log.debug('Leaving WebauthnPolicy.legacyAppIdPermitted(). ' + out);
+    return out;
+  }
+
+  /**
+   * The AppID a registration at an RP ID names in `appidExclude` (#1955
+   * P7): the first permitted AppID related to it, or `''`.
+   *
+   * @param rpId - the RP ID of the ceremony
+   * @returns the AppID, or `''`
+   */
+  legacyAppIdFor(rpId: unknown): string {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.legacyAppIdFor().');
+    const out = this.legacyAppIds().filter(function (one) {
+      return WebauthnPolicy.appIdRelatesTo(one, rpId);
+    })[0] || '';
+    log.debug('Leaving WebauthnPolicy.legacyAppIdFor(). ' +
+              (out ? 'One.' : 'None.'));
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY CEREMONY THAT ASSERTS A KEY THE PERSON HOLDS, ONE BUILDER AND ONE
+  // SET OF EXPECTATIONS (#1955 P7). A legacy U2F key can be asked for at
+  // every surface that names a person's keys — the sign-in screen's passkey
+  // step (which is also how the portal, the account API, consent, GNAP's
+  // interaction, step-up and every re-authentication reach a passkey: each
+  // goes back through `authn/`), a post-login upgrade's proof, the console's
+  // upgrade proof (`credentials.proveKeyUpgrade()`, the one verifier for
+  // both) and the portal's device link (`device_enrolment.ts`). Each builds
+  // its request options with `assertionOptions()` and hands the verifier
+  // `assertionExpectations()`, so the rule cannot differ between them. The
+  // usernameless sign-in is not among them: it names no key, and a U2F key
+  // holds no user handle to be found by.
+  // ---------------------------------------------------------------------------
+  /**
+   * The legacy U2F AppID a stored key was imported under (#1955 P7), `''`
+   * for a key registered through WebAuthn.
+   *
+   * @param key - a stored key
+   * @returns the AppID, or `''`
+   */
+  static keyAppId(key: any): string {
+    helpers.log.debug('Entering WebauthnPolicy.keyAppId().');
+    helpers.log.debug('Leaving WebauthnPolicy.keyAppId().');
+    return key && typeof key.appid === 'string' ? key.appid : '';
+  }
+
+  /**
+   * The request options of a ceremony asserting one of `keys` (#1955 P7):
+   * `requestOptions()`, with the `appid` extension where one of them is a
+   * legacy U2F key whose AppID is permitted at the RP ID, and then
+   * `userVerification` `preferred` where the realm asks `required` — a U2F
+   * authenticator cannot verify the person, and a client asked to require
+   * it never offers one. The verifier still requires the UV flag of every
+   * other key (`assertionExpectations()`). With no such key the options are
+   * `requestOptions()`'s, byte for byte.
+   *
+   * @param rpId - the relying party id
+   * @param keys - the stored keys the ceremony may name
+   * @returns the request options
+   */
+  assertionOptions(rpId, keys?: any[]) {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.assertionOptions().');
+    const appid = (keys || []).map(function (one) {
+      return WebauthnPolicy.keyAppId(one);
+    }).filter((one) => {
+      return !!one && this.legacyAppIdPermitted(one, rpId);
+    })[0] || '';
+    const out = this.requestOptions(rpId, appid || undefined);
+    if (out.appid && out.userVerification === 'required') {
+      out.userVerification = 'preferred';
+    }
+    log.debug('Leaving WebauthnPolicy.assertionOptions(). ' +
+              (out.appid ? 'With an AppID.' : 'Plain.'));
+    return out;
+  }
+
+  /**
+   * What the verifier is held to for an assertion by `key` (#1955 P7), and
+   * the refusal of a legacy U2F key where it may not answer: at a
+   * passwordless step (it cannot verify the person), or once its AppID is
+   * no longer permitted at the RP ID (STS-AUTHN-0565). For such a key the
+   * rpIdHash is SHA-256 of its AppID only where the client's extension
+   * outputs say `appid: true`, and the UV flag is not required; every other
+   * key is held to the RP ID and to `requireUserVerification()` as before.
+   *
+   * @param key - the stored key the assertion names
+   * @param rpId - the relying party id
+   * @param posted - the credential's JSON form, with
+   *   `clientExtensionResults`
+   * @param passwordless - whether the assertion is a way in on its own
+   * @param requireUv - the UV requirement for any other key; the realm's
+   *   `requireUserVerification()` when omitted
+   * @returns `{ refusal, expectedAppId, appidUsed, requireUserVerification }`
+   */
+  assertionExpectations(key: any, rpId: string, posted: any,
+                        passwordless?: boolean, requireUv?: boolean) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering WebauthnPolicy.assertionExpectations().');
+    const appid = WebauthnPolicy.keyAppId(key);
+    const results = (posted && posted.clientExtensionResults) || {};
+    const uv = typeof requireUv === 'boolean' ? requireUv
+                                              : this.requireUserVerification();
+    let refusal: { code: string; why: string | Sentence } | null = null;
+    if (appid && passwordless) {
+      refusal = { code: 'STS-AUTHN-0565',
+        why: Sentence.say('refusals.passkey.u2fNotAlone') };
+    } else if (appid && !this.legacyAppIdPermitted(appid, rpId)) {
+      refusal = { code: 'STS-AUTHN-0565',
+        why: Sentence.say('refusals.passkey.u2fNotAccepted') };
+    }
+    log.debug('Leaving WebauthnPolicy.assertionExpectations(). ' +
+              (refusal ? 'Refused.' : (appid ? 'A U2F key.' : 'Plain.')));
+    return { refusal: refusal ? errorCodes.mark(refusal, refusal.code) : null,
+             expectedAppId: appid || undefined,
+             appidUsed: results.appid === true,
+             requireUserVerification: !appid && uv };
+  }
+
+  // THE RULE ON `webauthn.u2fAppIds` (#1955 P7), handed to `config.js`'s
+  // `addWriteRule()` as the enterprise rule is: every entry an https AppID,
+  // so the list never holds one the browser would refuse the ceremony over.
+  /**
+   * Refuses a write of `webauthn.u2fAppIds` naming something that is not a
+   * U2F AppID.
+   *
+   * @param key - the setting being written
+   * @param parsed - its parsed value
+   * @returns `{ problem, code }`, or null
+   */
+  static u2fAppIdWriteRule(key: string, parsed: unknown) {
+    helpers.log.debug('Entering WebauthnPolicy.u2fAppIdWriteRule(). ' + key);
+    if (key !== 'webauthn.u2fAppIds') {
+      helpers.log.debug('Leaving WebauthnPolicy.u2fAppIdWriteRule().');
+      return null;
+    }
+    const problems = WebauthnPolicy.u2fAppIdsOf(parsed).map(function (one) {
+      return WebauthnPolicy.appIdProblem(one);
+    }).filter(Boolean);
+    if (!problems.length) {
+      helpers.log.debug('Leaving WebauthnPolicy.u2fAppIdWriteRule().');
+      return null;
+    }
+    helpers.log.debug('Leaving WebauthnPolicy.u2fAppIdWriteRule(). ' +
+                      'Refused.');
+    return { code: 'STS-AUTHN-0566',
+             problem: '"webauthn.u2fAppIds" lists what is not a U2F AppID: ' +
+                      problems.join('; ') + '. An AppID is the https URL ' +
+                      'the legacy U2F relying party registered its keys ' +
+                      'under (FIDO AppID and Facet Specification section ' +
+                      '3.1.1).' };
   }
 
   private oneOf(value, allowed, dflt) {
@@ -727,42 +1031,32 @@ class WebauthnPolicy {
       // a client rule this refusal stops (`common/passkey_clients.ts`).
       return errorCodes.mark({ ok: false,
                reason: 'registrationMode pq-only',
-               why: 'The passkey policy offers post-quantum (ML-DSA) ' +
-                    'passkeys only here (registrationMode is pq-only), so ' +
-                    'a classical one cannot be made instead. Use a device ' +
-                    'or a security key that can make an ML-DSA passkey.' },
+               why: Sentence.say('refusals.passkey.retryPqOnlyProfile') },
                'STS-AUTHN-0420');
     }
     if (this.requestsPostQuantumOnly()) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). PQC only.');
       return errorCodes.mark({ ok: false,
                reason: 'webauthn.pqcOnly',
-               why: 'This realm requests post-quantum (ML-DSA) passkeys ' +
-                    'only (webauthn.pqcOnly), so a classical one cannot be ' +
-                    'made instead. Use a device or a security key that can ' +
-                    'make an ML-DSA passkey.' }, 'STS-AUTHN-0420');
+               why: Sentence.say('refusals.passkey.retryPqcOnly') },
+               'STS-AUTHN-0420');
     }
     if (this.requiresPostQuantumAt('registration')) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at registration.');
       return errorCodes.mark({ ok: false,
                reason: 'postQuantumRequired registration-and-sign-in',
-               why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
-                    'passkey at registration (postQuantumRequired is ' +
-                    'registration-and-sign-in), so a classical one cannot ' +
-                    'be made instead. Use a device or a security key that ' +
-                    'can make an ML-DSA passkey.' }, 'STS-AUTHN-0420');
+               why: Sentence.say(
+                 'refusals.passkey.retryRequiredRegistration') },
+               'STS-AUTHN-0420');
     }
     if (at === 'sign-in' && this.requiresPostQuantumAt('sign-in')) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at sign-in.');
       return errorCodes.mark({ ok: false,
                reason: 'postQuantumRequired sign-in',
-               why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
-                    'passkey to sign in here (postQuantumRequired), so a ' +
-                    'classical one made now would not sign you in. Use a ' +
-                    'device or a security key that can make an ML-DSA ' +
-                    'passkey.' }, 'STS-AUTHN-0420');
+               why: Sentence.say('refusals.passkey.retryRequiredSignIn') },
+               'STS-AUTHN-0420');
     }
     log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Allowed.');
     return { ok: true };
@@ -894,21 +1188,20 @@ class WebauthnPolicy {
     if (!this.settings().enabled) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). WebAuthn is off.');
       return errorCodes.mark({ ok: false,
-               why: 'Passkeys are switched off in this realm ' +
-                    '(webauthn.enabled), so none can be upgraded.' },
+               why: Sentence.say('refusals.passkey.upgradeOff') },
                'STS-AUTHN-0450');
     }
     if (!this.upgradeAlgorithms().length) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). No ML-DSA.');
       return errorCodes.mark({ ok: false,
-               why: 'This service can verify no ML-DSA algorithm, so a ' +
-                    'passkey cannot be upgraded to one.' }, 'STS-AUTHN-0450');
+               why: Sentence.say('refusals.passkey.upgradeNoMlDsa') },
+               'STS-AUTHN-0450');
     }
     if (this.alongsideClassical() && !this.laneRefusal('pqc').ok) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). The ' +
                 'post-quantum lane is refused.');
       return errorCodes.mark({ ok: false,
-               why: String(this.laneRefusal('pqc').why || '') },
+               why: this.laneRefusal('pqc').why || '' },
                'STS-AUTHN-0450');
     }
     log.debug('Leaving WebauthnPolicy.upgradeRefusal(). Offered.');
@@ -1531,8 +1824,8 @@ class WebauthnPolicy {
     if (LANES.indexOf(wanted) < 0) {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). Not a lane.');
       return errorCodes.mark({ ok: false,
-               why: 'A passkey is created in the "classical" lane or the ' +
-                    '"pqc" lane. "' + wanted + '" is neither.' },
+               why: Sentence.say('refusals.passkey.notALane',
+                                 { lane: wanted }) },
                'STS-AUTHN-0350');
     }
     // A CLASSICAL-ONLY POPULATION (#940) is refused the post-quantum lane
@@ -1541,28 +1834,22 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). The profile is ' +
                 'classical only.');
       return errorCodes.mark({ ok: false,
-               why: 'The passkey policy offers classical passkeys only here ' +
-                    '(registrationMode is classical-only), so a ' +
-                    'post-quantum one cannot be created. A post-quantum ' +
-                    'passkey already registered goes on working.' },
+               why: Sentence.say('refusals.passkey.laneClassicalOnly') },
                'STS-AUTHN-0433');
     }
     if (wanted === 'pqc' && !this.alongsideClassical()) {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). The post-quantum ' +
                 'lane is not offered here.');
       return errorCodes.mark({ ok: false,
-               why: 'A post-quantum passkey beside a classical one is not ' +
-                    'offered in this realm (webauthn.pqcAlongsideClassical' +
-                    (this.pqcOnly() ? ', and webauthn.pqcOnly is on' : '') +
-                    '). A post-quantum passkey already registered goes on ' +
-                    'working.' }, 'STS-AUTHN-0351');
+               why: Sentence.say('refusals.passkey.laneNotAlongside', {
+                 pqcOnly: this.pqcOnly() ? 'yes' : 'no' }) },
+               'STS-AUTHN-0351');
     }
     if (wanted === 'pqc' && !this.algorithmsOffered('pqc').length) {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). No ML-DSA can be ' +
                 'offered.');
       return errorCodes.mark({ ok: false,
-               why: 'This service can verify no ML-DSA algorithm, so a ' +
-                    'post-quantum passkey cannot be created.' },
+               why: Sentence.say('refusals.passkey.laneNoMlDsa') },
                'STS-AUTHN-0352');
     }
     log.debug('Leaving WebauthnPolicy.laneRefusal(). Allowed.');
@@ -1730,19 +2017,15 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.useAllowed(). A passkey may not be ' +
                 'a first factor here.');
       return errorCodes.mark({ ok: false,
-               why: 'A passkey cannot sign anybody in on its own in this ' +
-                    'realm (webauthn.primaryAllowed). Sign in with a ' +
-                    'password, and your passkey is asked for next where the ' +
-                    'realm allows it.' }, 'STS-AUTHN-0045');
+               why: Sentence.say('refusals.passkey.notPrimary') },
+               'STS-AUTHN-0045');
     }
     if (String(use) === 'mfa' && !live.mfaAllowed) {
       log.debug('Leaving WebauthnPolicy.useAllowed(). A passkey may not be ' +
                 'a second factor here.');
       return errorCodes.mark({ ok: false,
-               why: 'A passkey cannot be a second factor in this realm ' +
-                    '(webauthn.mfaAllowed). An authenticator app is the ' +
-                    'other one, where the authentication policy allows ' +
-                    'it.' }, 'STS-AUTHN-0046');
+               why: Sentence.say('refusals.passkey.notSecondFactor') },
+               'STS-AUTHN-0046');
     }
     // THE AUTHENTICATION POLICY'S TWO ROWS (#64), asked after this module's
     // own settings and with the same contract. The mechanism names stay the
@@ -1759,11 +2042,9 @@ class WebauthnPolicy {
                 'policy does not accept it.');
       return errorCodes.mark({ ok: false,
                why: String(use) === 'primary'
-                 ? 'This realm\'s authentication policy does not accept a ' +
-                   'passkey as a first factor. Sign in with what it does ' +
-                   'accept.'
-                 : 'This realm\'s authentication policy does not accept a ' +
-                   'passkey as a second factor.' }, policyRow.code);
+                 ? Sentence.say('refusals.policy.passkeyNotFirstFactor')
+                 : Sentence.say('refusals.policy.passkeyNotSecondFactor') },
+               policyRow.code);
     }
     log.debug('Leaving WebauthnPolicy.useAllowed(). Allowed.');
     return { ok: true };
@@ -1787,20 +2068,15 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). WebAuthn is not ' +
                 'offered here.');
       return errorCodes.mark({ ok: false,
-               why: 'Passkeys are switched off in this realm ' +
-                    '(webauthn.enabled). A passkey already registered goes ' +
-                    'on being listed; no new one can be registered.' },
+               why: Sentence.say('refusals.passkey.enrolmentOff') },
                'STS-AUTHN-0044');
     }
     if (!this.useAllowed('primary').ok && !this.useAllowed('mfa').ok) {
       log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). No use of a key ' +
                 'is accepted here.');
       return errorCodes.mark({ ok: false,
-               why: 'This realm accepts a passkey neither as a way to sign ' +
-                    'in on its own nor as a second factor ' +
-                    '(webauthn.primaryAllowed, webauthn.mfaAllowed and the ' +
-                    'authentication policy), so a new one could never be ' +
-                    'used.' }, 'STS-AUTHN-0531');
+               why: Sentence.say('refusals.passkey.enrolmentUseless') },
+               'STS-AUTHN-0531');
     }
     log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). Allowed.');
     return { ok: true };
@@ -1933,6 +2209,24 @@ class WebauthnPolicy {
       // policy enforces a PIN length (#529); absent otherwise, so the options
       // a realm that does not are byte for byte what they were.
       minPinLength: live.minPinLength === true ? true : undefined,
+      // CTAP 2.1 section 12.1's credProtect (#1955 P7), as the client
+      // extension inputs `credentialProtectionPolicy` and
+      // `enforceCredentialProtectionPolicy` — flat here, as credProps and
+      // minPinLength are, and made `extensions` by the browser runtime
+      // (`WebWebAuthn.creationExtensions()`). Absent while the passkey
+      // policy asks for none, so the options are what they were. It names
+      // no signature algorithm: that list is `algorithms` above.
+      credProtect: live.credProtect
+        ? { credentialProtectionPolicy: live.credProtect,
+            enforceCredentialProtectionPolicy: live.enforceCredProtect }
+        : undefined,
+      // THE LEGACY U2F APPID (#1955 P7, WebAuthn Level 3 section 10.1.2's
+      // appidExclude): where this realm permits a U2F AppID for this RP ID
+      // (`webauthn.u2fAppIds`), a registration asks the browser to refuse
+      // an authenticator holding one of `excludeCredentials` under that
+      // AppID too, so a key whose U2F credential was imported is not
+      // registered a second time. Absent otherwise.
+      appidExclude: this.legacyAppIdFor(rpId) || undefined,
       hints: hints
     };
     // ABSENT AND NOT `"any"`. The options dictionary has no value meaning "no
@@ -1976,14 +2270,17 @@ class WebauthnPolicy {
    * Builds the authentication options the browser receives.
    *
    * @param rpId - the relying party id
+   * @param appid - a legacy U2F AppID to send as the `appid` extension
+   *   (#1955 P7), where the step names a credential imported under it and
+   *   the realm permits it at this RP ID; nothing is sent otherwise
    * @returns the RP id, the user verification requirement and the timeout
    */
-  requestOptions(rpId) {
+  requestOptions(rpId, appid?: string) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.requestOptions(). rpId=' + rpId);
     const live = this.settings();
     const out: { rpId: string; userVerification: string; timeout: number;
-                 hints?: string[] } = {
+                 hints?: string[]; appid?: string } = {
       rpId: rpId,
       userVerification: live.userVerification,
       timeout: live.timeoutMs
@@ -1993,6 +2290,13 @@ class WebauthnPolicy {
     const hints = passkeyPolicy.hintsFor('sign-in');
     if (hints.length) {
       out.hints = hints;
+    }
+    // THE U2F APPID (#1955 P7, WebAuthn Level 3 section 10.1.1), flat as
+    // the creation options' flags are; the runtime makes it `extensions`.
+    // Asked again here, so a caller cannot send one the realm does not
+    // permit at this RP ID.
+    if (appid && this.legacyAppIdPermitted(appid, rpId)) {
+      out.appid = String(appid);
     }
     log.debug('Leaving WebauthnPolicy.requestOptions(). uv=' +
               out.userVerification);
@@ -2024,14 +2328,11 @@ class WebauthnPolicy {
     log.debug("Entering WebauthnPolicy.usernamelessOffered().");
     const live = this.settings();
     const why = !live.enabled
-      ? 'Passkeys are switched off in this realm (webauthn.enabled).'
+      ? Sentence.say('refusals.passkey.off')
       : (!live.primaryAllowed
-        ? 'A passkey may not sign anybody in on its own in this realm ' +
-          '(webauthn.primaryAllowed).'
+        ? Sentence.say('refusals.passkey.usernamelessNotPrimary')
         : (!live.usernameless
-          ? 'Signing in with a passkey and no username is switched off in ' +
-            'this realm (the passkey policy\'s allowUsernameless, on ' +
-            'Directory → Policies).'
+          ? Sentence.say('refusals.passkey.usernamelessOff')
           : ''));
     log.debug("Leaving WebauthnPolicy.usernamelessOffered(). " +
               (why ? 'No.' : 'Yes.'));
@@ -2253,6 +2554,8 @@ if (typeof config.addWriteRule === 'function') {
   config.addWriteRule(WebauthnPolicy.laneWriteRule);
   // And enterprise attestation's RP ID list (#1114).
   config.addWriteRule(WebauthnPolicy.enterpriseWriteRule);
+  // And the legacy U2F AppIDs (#1955 P7).
+  config.addWriteRule(WebauthnPolicy.u2fAppIdWriteRule);
 }
 
 /**
@@ -2268,6 +2571,16 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   settings: slot.forward('settings'),
   offered: slot.forward('offered'),
+  // The legacy U2F AppIDs (#1955 P7).
+  u2fAppIdsOf: WebauthnPolicy.u2fAppIdsOf,
+  appIdProblem: WebauthnPolicy.appIdProblem,
+  appIdRelatesTo: WebauthnPolicy.appIdRelatesTo,
+  legacyAppIds: slot.forward('legacyAppIds'),
+  legacyAppIdPermitted: slot.forward('legacyAppIdPermitted'),
+  legacyAppIdFor: slot.forward('legacyAppIdFor'),
+  keyAppId: WebauthnPolicy.keyAppId,
+  assertionOptions: slot.forward('assertionOptions'),
+  assertionExpectations: slot.forward('assertionExpectations'),
   useAllowed: slot.forward('useAllowed'),
   enrolmentAllowed: slot.forward('enrolmentAllowed'),
   algorithmsOffered: slot.forward('algorithmsOffered'),

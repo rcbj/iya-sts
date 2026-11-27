@@ -139,11 +139,14 @@ import clusterClaims = require('../cluster/cluster_claims');
 // cycle and moves no route.
 import fedHttp = require('../federation/federation_http');
 // Which build is calling, in RFC 9110 product form — the rule every outbound
-// requester in this service follows. Built once: the version cannot change.
+// requester in this service follows. Asked per fetch since #2142: product
+// leaves the build out (`mode.publishesBuildDetail()`).
 import version = require('../common/version');
 // SAML's vocabularies (#1579). A leaf.
 import SamlModel = require('./saml_model');
-const USER_AGENT = version.userAgent('saml-sp-metadata');
+import truststores = require('../common/truststores');
+// The shared agent, deadline and connect timeout (#2220).
+import OutboundLimits = require('../common/outbound_limits');
 
 // What parse() answers. It answers rather than throws; see that method.
 interface ParsedMetadata {
@@ -875,7 +878,8 @@ class SpMetadata {
     const options: any = {
       headers: { accept: 'application/samlmetadata+xml, application/xml, ' +
                          'text/xml',
-                 'user-agent': USER_AGENT },
+                 'user-agent': version.userAgent('saml-sp-metadata',
+                   mode.publishesBuildDetail()) },
       rejectUnauthorized: !policy || policy.rejectUnauthorized
     };
     if (policy && policy.ca) {
@@ -898,7 +902,10 @@ class SpMetadata {
         }
         callback(null, vetted.address, vetted.family);
       };
+      // The address it answers, for the shared agent's pool key (#2220).
+      options.lookup.stsPinned = String(vetted.address);
     }
+    OutboundLimits.useAgent(options, parsed.protocol === 'https:');
     const request = agent.get(url, options, function (res) {
       // NO REDIRECT FOLLOWING, deliberately: a redirect is how a URL somebody
       // vetted becomes a URL nobody vetted, and this is one of two places in
@@ -948,6 +955,13 @@ class SpMetadata {
                                                          'answer ' +
           'within ' + self.timeoutMs() +
              'ms (federation.outboundTimeoutMs)' });
+    });
+    OutboundLimits.guard(request, {
+      timeoutMs: self.timeoutMs(), secure: parsed.protocol === 'https:',
+      where: parsed.origin,
+      onTimeout: function (why: string) {
+        done({ ok: false, errorCode: 'STS-SAML-0050', why: 'it ' + why });
+      }
     });
     request.on('error', function (e) {
       // The message is the node error's, because "self-signed certificate",
@@ -1560,7 +1574,13 @@ class SpMetadata {
     const { config } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.realmAnchorValues().");
-    const raw = config.value('saml2.metadataTrustAnchors');
+    // Assigned truststores (#2118) answer as base64 DER, the setting's own
+    // form; unassigned, the setting is read exactly as before.
+    const assigned = truststores.namesFor('saml-metadata-signer').assigned;
+    const raw = assigned ? truststores.configuredPems('saml-metadata-signer')
+      .map(function (pem: string) {
+        return pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+      }) : config.value('saml2.metadataTrustAnchors');
     const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one) {
         return String(one).trim();

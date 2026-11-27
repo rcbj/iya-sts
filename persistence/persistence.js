@@ -38,7 +38,7 @@
 // and since 2026-09-13 the used-assertion history persists in every store and
 // both modes (`common/used_assertions.js`). `persistence/CLAUDE.md`'s *The
 // sentence this directory reverses* is the exact current wording, and
-// `docs/v1.1.0/persistence.md` the operator's.
+// `docs/v1.2.0/persistence.md` the operator's.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS NOT A node-ldapjs FEATURE, WHICH IS THE FIRST QUESTION ANYBODY
@@ -412,6 +412,11 @@ const shadowCount = cacheRegistry.register({
 });
 // key -> raw value, or null before a restore primed it
 let appconfigShadow = null;
+// How often each shadow was advanced by this process's own committed write,
+// so an applier can tell its read was overtaken by one
+// (`applyRealmsRead()`, `applyAppconfigRead()`).
+let realmShadowMoves = 0;
+let appconfigShadowMoves = 0;
 // The realms removed in THIS process and not yet written down.
 const removedHere = new Set();
 
@@ -422,10 +427,56 @@ const removedHere = new Set();
 let directoryDirty = false;
 let realmsDirty = false;
 let configDirty = false;
+// ---------------------------------------------------------------------------
+// THE SETTINGS GENERATION, AND THE FRONT PROCESS CATCHING UP ON IT (found in
+// #2019; rcbj, 2026-11-23: "catch up on change").
+//
+// A realm or a process-wide setting written in a request worker reached the
+// front process only at its next change-log pull — the LISTEN/NOTIFY nudge
+// on PostgreSQL (sent after the COMMIT, coalesced 25 ms), the one-second poll
+// on MariaDB — and the front decides some things BEFORE dispatch, on its own
+// copy: `common/forwarded_client_certificate.ts` reads
+// `tls.trustedProxyCertificates` and `tls.trustedProxyAddresses` there, and
+// so does every other middleware above the pool in `app.js` that reads a
+// realm setting. So a proxy's request sent the moment `/admin-api/realms/set`
+// answered was decided on the value the write had just replaced
+// (`tests/protocol/sts_cert_sign_in_profiles.js` E3, single-node and mariadb).
+//
+// Two halves, neither a per-request store round trip and neither a timer:
+//
+//   * THE ANSWER CARRIES IT. `settingsGen` moves wherever a realm row or a
+//     setting is marked dirty (`realmsChanged()`, `configChanged()`), and a
+//     request worker reads it when a request arrives and again as its
+//     answer's headers go: moved, the answer is marked
+//     `x-sts-pool-settings` (`request_worker.ts`), and the front process
+//     catches up (`syncSettingsNow()`, both tiers' logs) BEFORE it forwards a
+//     byte of that answer (`request_pool.js`). The answer goes out after its
+//     commit (`cluster/cluster_barrier.js` rule 2, every database store), so
+//     the catch-up pulls the write, and every request the client sends after
+//     reading the answer meets the new value in the front.
+//   * THE COMMIT NUDGES. A settings write with no answer to ride on (a
+//     cluster job's body run in a worker, #408) is announced once its save
+//     commits (`announceSettingsCommitted()`, `{ settingsCommitted }` on the
+//     worker channel), and the front wakes its pull at once
+//     (`nudgeSettingsPull()` — `wake()`, which coalesces into the pull in
+//     flight, so a burst is one or two pulls).
+//
+// WHAT IT DOES NOT COVER: another NODE's write (cluster mode). That reaches
+// this node's front as it always did — PostgreSQL's NOTIFY within tens of
+// milliseconds, MariaDB's poll within a second — because no answer of
+// another node passes through this front. Nor a store with no coordination
+// (memory, ldif): there are no request workers there, and the front is the
+// process that took the write.
+// ---------------------------------------------------------------------------
+let settingsGen = 0;
 
 // The pending flush, and the promise anybody waiting on it holds.
 let timer = null;
 let flushing = null;
+// When `flushing` was set: how long this process's own flush has been out,
+// which is what decides whether it is slow or stuck (#1934's follow-up,
+// `ownFlushStuckMs()`).
+let flushingSince = 0;
 // The ONE flush queued behind `flushing`, shared by every caller that arrives
 // while it runs. See flush().
 let flushQueued = null;
@@ -652,6 +703,12 @@ let dirFailedAt = 0;
 // periodic work: it exists only while a write is failing, which is the
 // "retry delay inside one operation" the scheduler directive leaves out
 // (root CLAUDE.md, *Anything periodic is a scheduler job*).
+//
+// ASKED AGAIN IN #2220 (the ASVS 5.0.0 L3 dependency review), and it stays a
+// timer: what it writes is THIS process's dirty state, which a cluster job
+// on another node cannot reach, and a per-process job would be periodic work
+// that runs when nothing has failed. It is recorded as a retry delay in
+// tests/no_periodic_timers.js.
 // ---------------------------------------------------------------------------
 const RETRY_FIRST_MS = 1000;
 const RETRY_MAX_MS = 30000;
@@ -1084,6 +1141,7 @@ function realmsChanged() {
   }
   realmsDirty = true;
   dirGeneration += 1;
+  settingsGen += 1;
   schedule();
   log.debug("Leaving realmsChanged().");
 }
@@ -1115,8 +1173,26 @@ function configChanged(realmId) {
   }
   configDirty = true;
   dirGeneration += 1;
+  settingsGen += 1;
   schedule();
   log.debug("Leaving configChanged().");
+}
+
+// A request worker's realm or settings save has committed: the front process
+// is told, so its pull runs now rather than at its next nudge or poll (see
+// THE SETTINGS GENERATION, above). Outside a worker thread the channel's
+// send() is a no-op, so the front process and a single process send nothing.
+function announceSettingsCommitted() {
+  log.debug("Entering announceSettingsCommitted().");
+  try {
+    require('../common/worker_channel').send({ settingsCommitted: true });
+  } catch (e) {
+    // The channel has gone: this worker is ending, and the front's own pull
+    // still brings the change.
+    log.debug("Caught in announceSettingsCommitted(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving announceSettingsCommitted().");
 }
 
 function schedule() {
@@ -1487,6 +1563,11 @@ function realmsDelta(removals) {
 
 function advanceRealmShadow(delta) {
   log.debug("Entering advanceRealmShadow().");
+  // A realm list read now in flight predates this (`applyRealmsRead()`).
+  if (delta && ((delta.removed && delta.removed.length) ||
+                (delta.upserts && delta.upserts.length))) {
+    realmShadowMoves += 1;
+  }
   delta.removed.forEach(function (id) {
     realmShadow.delete(id);
   });
@@ -1644,6 +1725,11 @@ function appconfigDelta() {
 
 function advanceAppconfigShadow(delta) {
   log.debug("Entering advanceAppconfigShadow().");
+  // A settings read now in flight predates this (`applyAppconfigRead()`).
+  if (delta && ((delta.cleared && delta.cleared.length) ||
+                (delta.set && Object.keys(delta.set).length))) {
+    appconfigShadowMoves += 1;
+  }
   const next = Object.assign({}, appconfigShadow || {});
   delta.cleared.forEach(function (key) {
     delete next[key];
@@ -2032,6 +2118,7 @@ function flush() {
   // product mode; persistence_replication.js holds a row of an unknown realm
   // back as well). The restore's order, for the restore's reason: a realm
   // has to exist before its directory can be loaded into it.
+  flushingSince = Date.now();
   flushing = Promise.resolve(typeof keystore.settleDeks === 'function'
     ? keystore.settleDeks() : null).then(function () {
     if (!wantRealms) {
@@ -2050,6 +2137,7 @@ function flush() {
       // The whole delta, a dropped value included, so that the next flush
       // does not send it again: `isolateDirectory()`'s rule.
       advanceRealmShadow(realmChanges);
+      announceSettingsCommitted();
     });
   }).then(function () {
     if (!wantConfig) {
@@ -2066,6 +2154,7 @@ function flush() {
       })
       .then(function () {
         advanceAppconfigShadow(configChanges);
+        announceSettingsCommitted();
       });
   }).then(function () {
     if (!changes) {
@@ -2408,6 +2497,7 @@ function flush() {
   }).then(function (result) {
     inFlightDirectory.clear();
     flushing = null;
+    flushingSince = 0;
     // WHERE A RESPONSE'S COMMIT WAIT GOES (2026-10-22, #820): the minted
     // flush had a timer and this one did not, so a commit wait three times
     // the minted flush's could not be placed. Only a flush that wrote.
@@ -2554,6 +2644,321 @@ function resolveDatabaseUrl() {
     log.debug('Leaving resolveDatabaseUrl(). Injected.');
     return refuseDefaultDatabasePassword(parsed.toString());
   });
+}
+
+// ---------------------------------------------------------------------------
+// THE DATABASE PASSWORD, READ AGAIN WHILE THE SERVICE RUNS (#2220).
+//
+// It was read once, at start, so a password rotated in the secret store took
+// a restart of every node to reach the pool — and until then, every new
+// connection the pool made logged in with a password the database no longer
+// accepted. Now it is read again in two cases, and a changed one is handed
+// to the driver, which dials every connection made AFTER it with the new
+// password (`useConnectionString()`); open connections keep their sessions.
+//
+//   * ON A SCHEDULE: the per-process job `persistence.database-password-
+//     refresh`, every `persistence.databasePasswordRefreshS` (0 turns it
+//     off). Per process, because each process has its own pools.
+//   * WHEN THE DATABASE REFUSES A LOGIN (SQLSTATE 28P01 or 28000, MariaDB's
+//     1045): the password may just have been rotated, so it is read again at
+//     once — at most every PASSWORD_REREAD_MIN_MS, so a database refusing
+//     every login is not answered with a secret-store read per attempt. A
+//     debounce inside one failure, not a timer.
+//
+// ROTATING THE PASSWORD AT THE DATABASE IS NOT THIS SERVICE'S JOB: the
+// operator does it, or the secret store does (OpenBao's database secrets
+// engine rotates a static role's password and its stored copy together).
+// What this service owes is to pick the new one up, which this does; the old
+// password has to stay valid at the database until every node has read the
+// new one, which a refresh interval bounds. Only the password of this
+// process's own database is read again; the global tier's
+// (`persistence.globalDatabasePassword*`) is still read at start.
+// ---------------------------------------------------------------------------
+const PASSWORD_JOB = 'persistence.database-password-refresh';
+const PASSWORD_REREAD_MIN_MS = 30 * 1000;
+let passwordDriver = null;
+let lastDatabaseUrl = '';
+let passwordRefreshing = null;
+let lastFailureReread = 0;
+// THE CLIENT CERTIFICATE, READ AGAIN ON THE SAME SCHEDULE (#2254). A
+// renewed certificate is written over the old files by whatever issues it
+// (an agent, cert-manager, a CSI driver), and the job above reads them again
+// beside the password: every driver that presents it (this process's own
+// database and, in a cell, the global tier's) dials every new connection
+// with the new pair, and open connections keep theirs. `lastClientPem` is
+// what was handed to the drivers last, so an unchanged pair costs a read of
+// two files and nothing else. One interval for one credential:
+// `persistence.databasePasswordRefreshS` decides both, and a refused login
+// reads both again.
+let certificateDrivers = [];
+let lastClientPem = '';
+let certificateRefreshing = null;
+
+// Whether a client certificate is configured for the database connection.
+function databaseCertificateConfigured() {
+  log.debug("Entering databaseCertificateConfigured().");
+  log.debug("Leaving databaseCertificateConfigured().");
+  return !!(String(config.value('persistence.databaseTlsClientCertFile') ||
+                   '').trim() ||
+            String(config.value('persistence.databaseTlsClientKeyFile') ||
+                   '').trim());
+}
+
+// Whether a connection error is the database refusing the login.
+function isLoginRefusal(err) {
+  log.debug("Entering isLoginRefusal().");
+  const code = String((err && err.code) || '');
+  log.debug("Leaving isLoginRefusal().");
+  return code === '28P01' || code === '28000' ||
+         code === 'ER_ACCESS_DENIED_ERROR' || Number(err && err.errno) === 1045;
+}
+
+// A pooled connection could not be made: a refused login reads the password
+// again, at most every PASSWORD_REREAD_MIN_MS.
+function onDatabaseConnectFailure(err) {
+  log.debug("Entering onDatabaseConnectFailure().");
+  const password = secrets.configuredFor(secrets.DATABASE_PASSWORD);
+  const certificate = databaseCertificateConfigured();
+  if (!isLoginRefusal(err) || (!password && !certificate) ||
+      Date.now() - lastFailureReread < PASSWORD_REREAD_MIN_MS) {
+    log.debug("Leaving onDatabaseConnectFailure(). Not read again.");
+    return;
+  }
+  lastFailureReread = Date.now();
+  if (password) {
+    refreshDatabasePassword('the database refused a login')
+      .catch(function (e) {
+        log.debug("Caught in onDatabaseConnectFailure(): " +
+                  ((e && e.message) || e));
+      });
+  }
+  // A certificate the database no longer accepts is refused as a login
+  // too (28000, MariaDB's 1045), and may just have been renewed (#2254).
+  if (certificate) {
+    refreshDatabaseCertificate('the database refused a login')
+      .catch(function (e) {
+        log.debug("Caught in onDatabaseConnectFailure(): " +
+                  ((e && e.message) || e));
+      });
+  }
+  log.debug("Leaving onDatabaseConnectFailure().");
+}
+
+// The audit row a changed password, or a failed read, is recorded on.
+function auditPasswordRefresh(row) {
+  log.debug("Entering auditPasswordRefresh().");
+  try {
+    require('../common/audit').audit(Object.assign({
+      actor: 'scheduler', protocol: 'console', channel: 'internal',
+      target: 'persistence.databasePasswordProvider'
+    }, row));
+  } catch (e) {
+    log.debug("Caught in auditPasswordRefresh(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving auditPasswordRefresh().");
+}
+
+/**
+ * Reads the database password again from its provider and, when it changed,
+ * dials every new connection with it.
+ *
+ * @param reason - why it is read again, for the log and the audit row
+ * @returns a promise of `{ read, changed }`; it rejects when the read fails
+ */
+function refreshDatabasePassword(reason) {
+  log.debug("Entering refreshDatabasePassword().");
+  if (!passwordDriver || typeof passwordDriver.useConnectionString !==
+      'function' || !secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
+    log.debug("Leaving refreshDatabasePassword(). Nothing to read.");
+    return Promise.resolve({ read: false, changed: false });
+  }
+  if (passwordRefreshing) {
+    log.debug("Leaving refreshDatabasePassword(). Already reading.");
+    return passwordRefreshing;
+  }
+  passwordRefreshing = resolveDatabaseUrl().then(function (url) {
+    if (!url || url === lastDatabaseUrl) {
+      return { read: true, changed: false };
+    }
+    const used = passwordDriver.useConnectionString(url);
+    if (!used || !used.ok) {
+      throw new Error('the connection string would not be dialled: ' +
+                      String((used && used.refused) || 'refused'));
+    }
+    lastDatabaseUrl = url;
+    log.info('persistence: the database password read from ' +
+             secrets.describeDatabasePassword().label + ' has changed (' +
+             String(reason) + '); new connections log in with it.');
+    auditPasswordRefresh({
+      action: 'persistence.database-password-changed',
+      summary: 'The database password changed in its secret store and new ' +
+               'connections now use it (' + String(reason) + ')',
+      detail: { reason: String(reason) } });
+    return { read: true, changed: true };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-STORE-0179') + 'persistence: the ' +
+              'database password could not be read again (' + String(reason) +
+              '), so new connections go on using the one held: ' +
+              ((e && e.message) || e));
+    auditPasswordRefresh({
+      action: 'persistence.database-password-changed', outcome: 'failure',
+      errorCode: 'STS-STORE-0179',
+      summary: 'The database password could not be read again from its ' +
+               'secret store', detail: { reason: String(reason) } });
+    throw e;
+  }).finally(function () {
+    passwordRefreshing = null;
+  });
+  log.debug("Leaving refreshDatabasePassword().");
+  return passwordRefreshing;
+}
+
+/**
+ * Reads the database client certificate and key again and, when they
+ * changed, dials every new connection of every driver that presents them
+ * with the new pair (#2254). A pair that cannot be read or does not hold
+ * together changes nothing: the one held goes on being presented.
+ *
+ * @param reason - why it is read again, for the log and the audit row
+ * @returns a promise of `{ read, changed }`; it rejects when the read fails
+ */
+function refreshDatabaseCertificate(reason) {
+  log.debug("Entering refreshDatabaseCertificate().");
+  const drivers = certificateDrivers.filter(function (one) {
+    return one && typeof one.useClientCertificate === 'function';
+  });
+  if (!drivers.length || !databaseCertificateConfigured()) {
+    log.debug("Leaving refreshDatabaseCertificate(). Nothing to read.");
+    return Promise.resolve({ read: false, changed: false });
+  }
+  if (certificateRefreshing) {
+    log.debug("Leaving refreshDatabaseCertificate(). Already reading.");
+    return certificateRefreshing;
+  }
+  certificateRefreshing = Promise.resolve().then(function () {
+    const read = databaseTlsClient();
+    const pem = read ? read.cert + read.key : '';
+    if (!read || pem === lastClientPem) {
+      return { read: true, changed: false };
+    }
+    drivers.forEach(function (one) {
+      const used = one.useClientCertificate({ cert: read.cert,
+                                              key: read.key });
+      if (!used || !used.ok) {
+        throw new Error('the new pair would not be dialled: ' +
+                        String((used && used.refused) || 'refused'));
+      }
+    });
+    lastClientPem = pem;
+    log.info('persistence: the database client certificate in ' +
+             read.certFile + ' has changed (' + String(reason) + '); new ' +
+             'connections present it' +
+             (read.notAfter ? ', valid until ' +
+               new Date(read.notAfter).toISOString() : '') + '.');
+    auditPasswordRefresh({
+      action: 'persistence.database-certificate-changed',
+      target: 'persistence.databaseTlsClientCertFile',
+      summary: 'The database client certificate changed on disk and new ' +
+               'connections now present it (' + String(reason) + ')',
+      detail: { reason: String(reason), subject: read.subject,
+                notAfter: read.notAfter } });
+    return { read: true, changed: true };
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-STORE-0181') + 'persistence: the ' +
+              'database client certificate could not be read again (' +
+              String(reason) + '), so new connections go on presenting the ' +
+              'one held: ' + ((e && e.message) || e));
+    auditPasswordRefresh({
+      action: 'persistence.database-certificate-changed',
+      outcome: 'failure', errorCode: 'STS-STORE-0181',
+      target: 'persistence.databaseTlsClientCertFile',
+      summary: 'The database client certificate could not be read again',
+      detail: { reason: String(reason) } });
+    throw e;
+  }).finally(function () {
+    certificateRefreshing = null;
+  });
+  log.debug("Leaving refreshDatabaseCertificate().");
+  return certificateRefreshing;
+}
+
+/**
+ * Reads the database's credentials again — the password from its provider
+ * and the client certificate from its files, each where it is configured —
+ * for the scheduled job (#2220, #2254). Rejects when either read fails,
+ * after both were tried.
+ *
+ * @param reason - why they are read again
+ * @returns a promise of `{ password, certificate }`, each `{ read, changed }`
+ */
+function refreshDatabaseCredentials(reason) {
+  log.debug("Entering refreshDatabaseCredentials().");
+  const settle = function (promise) {
+    log.debug("Entering settle().");
+    log.debug("Leaving settle().");
+    return promise.then(function (value) {
+      return { ok: true, value: value };
+    }, function (err) {
+      return { ok: false, err: err };
+    });
+  };
+  log.debug("Leaving refreshDatabaseCredentials().");
+  return Promise.all([settle(refreshDatabasePassword(reason)),
+                      settle(refreshDatabaseCertificate(reason))])
+    .then(function (both) {
+      const failed = both.filter(function (one) {
+        return !one.ok;
+      });
+      if (failed.length) {
+        throw failed[0].err;
+      }
+      return { password: both[0].value, certificate: both[1].value };
+    });
+}
+
+/**
+ * Registers the per-process job that reads the database password again
+ * (#2220). Idempotent.
+ *
+ * @param schedulerInstance - the scheduler; required lazily when omitted
+ */
+function ensurePasswordJob(schedulerInstance) {
+  log.debug("Entering ensurePasswordJob().");
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  if (!scheduler || typeof scheduler.register !== 'function' ||
+      scheduler.job(PASSWORD_JOB)) {
+    log.debug("Leaving ensurePasswordJob(). Nothing to register.");
+    return;
+  }
+  scheduler.register({
+    id: PASSWORD_JOB,
+    title: 'Database password refresh',
+    describe: 'Reads the database password again from the secret store ' +
+              'persistence.databasePasswordProvider names, every ' +
+              'persistence.databasePasswordRefreshS, and dials every new ' +
+              'connection of this process with it when it has changed. ' +
+              'Rotating the password at the database is the secret ' +
+              'store\'s or the operator\'s job.',
+    // The client certificate is read again by the same job (#2254), so the
+    // job is on where either is configured. `describe` and `title` stay as
+    // they were: they are translated, and the certificate's settings say
+    // the schedule they follow.
+    owner: 'persistence/persistence.js',
+    kind: 'per-process', quiet: true,
+    everySetting: 'persistence.databasePasswordRefreshS',
+    everySettingUnit: 's',
+    off: function () {
+      if (!secrets.configuredFor(secrets.DATABASE_PASSWORD) &&
+          !databaseCertificateConfigured()) {
+        return 'persistence.databasePasswordProvider is none';
+      }
+      return passwordDriver ? '' : 'this process has no database';
+    },
+    run: function () {
+      return refreshDatabaseCredentials('the scheduled refresh');
+    }
+  });
+  log.debug("Leaving ensurePasswordJob().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2757,6 +3162,137 @@ function databaseTlsCa() {
 }
 
 // ---------------------------------------------------------------------------
+// THE CLIENT CERTIFICATE THE DATABASE CONNECTION PRESENTS (#2254, ASVS 5.0.0
+// 12.3.5). Until this the connection authenticated with a password only,
+// while cells, the remote PEPs, SPIRE and OpenBao already used mutual TLS.
+// `persistence.databaseTlsClientCertFile` and `…KeyFile` name a PEM
+// certificate (the leaf first, then any intermediates) and its unencrypted
+// private key, and every dialler presents them: both tiers' pools, their
+// LISTEN, liveness and online-index connections (the pools' own), the read
+// pool, the directory bridge's thread, and the out-of-process tools through
+// `databaseConnection()`. The certificate may be used ALONE — pg_hba's
+// `cert` method, MariaDB's `REQUIRE X509`, with no password in the string
+// and no provider — or BESIDE the password (`clientcert=verify-full`); the
+// database decides which, and nothing here requires a password once a
+// certificate is given.
+//
+// **FILES, AND NOT A SECRET-STORE REFERENCE, AND THAT IS ARGUED.** The
+// database's other TLS material is a file (`persistence.databaseTlsCaFile`)
+// and so is the client identity this service presents to its secret store
+// (`keys.vaultClientCert`, `keys.vaultClientKey`). A client certificate is
+// ISSUED rather than stored — by Vault's or OpenBao's PKI engine through an
+// agent, by cert-manager, by a CSI secret-store driver — and every one of
+// those delivers it as files it renews in place, which is what the re-read
+// below picks up. The password provider's mechanism reads one string out of
+// one secret; a pair that must be renewed together and checked against each
+// other is not that shape. Each file is read through
+// `OutboundTls.readNamedFile()`, so in product it must lie in a directory
+// `security.fileRoots` lists (#2247).
+//
+// **OFF BY DEFAULT.** Both empty is today's connection, password only. One
+// without the other, a file that cannot be read, no certificate, an
+// encrypted or unparseable key, or a key that is not the certificate's is
+// FATAL at start (STS-STORE-0180), like the CA file beside it: a process
+// told to present a certificate and dialling without one would be refused
+// by the database with a sentence about the database.
+//
+// Read on every call: at start, by the status report, by a tool and by the
+// re-read job, never on a request path.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the client certificate and key the database connection presents,
+ * read from `persistence.databaseTlsClientCertFile` and `…KeyFile`, or null
+ * when both are empty.
+ *
+ * @returns `{ cert, key, certFile, keyFile, notAfter, subject }` or null
+ * @throws {Error} tagged STS-STORE-0180 when only one is set, a file cannot
+ * be read, or the two are not a pair
+ */
+function databaseTlsClient() {
+  log.debug("Entering databaseTlsClient().");
+  const certFile = String(config.value('persistence.databaseTlsClientCertFile')
+                          || '').trim();
+  const keyFile = String(config.value('persistence.databaseTlsClientKeyFile')
+                         || '').trim();
+  if (!certFile && !keyFile) {
+    log.debug("Leaving databaseTlsClient(). None named.");
+    return null;
+  }
+  const refuse = function (why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    log.debug("Leaving databaseTlsClient(). Refused.");
+    return new Error(errorCodes.tag('STS-STORE-0180') +
+                     'persistence: the database client certificate cannot ' +
+                     'be presented: ' + why + '. Fix the files, or empty ' +
+                     'both persistence.databaseTlsClientCertFile and ' +
+                     'persistence.databaseTlsClientKeyFile to dial with the ' +
+                     'password alone.');
+  };
+  if (!certFile || !keyFile) {
+    throw refuse((certFile ? 'persistence.databaseTlsClientCertFile'
+                           : 'persistence.databaseTlsClientKeyFile') +
+                 ' is set and ' +
+                 (certFile ? 'persistence.databaseTlsClientKeyFile'
+                           : 'persistence.databaseTlsClientCertFile') +
+                 ' is not; a certificate is presented with its key');
+  }
+  const read = function (setting, file) {
+    log.debug("Entering read().");
+    try {
+      const text = require('../common/outbound_tls').readNamedFile(file);
+      log.debug("Leaving read().");
+      return text;
+    } catch (e) {
+      log.debug("Caught in read(): " + ((e && e.message) || e));
+      log.debug("Leaving read(). Unreadable.");
+      throw refuse(setting + ' names ' + file + ', which cannot be read (' +
+                   ((e && e.namedFileRefused && e.message) ||
+                    (e && e.code) || (e && e.message) || e) + ')');
+    }
+  };
+  const cert = read('persistence.databaseTlsClientCertFile', certFile);
+  const key = read('persistence.databaseTlsClientKeyFile', keyFile);
+  // Checked through common/crypto.js, the one place this service reads a
+  // certificate or a key (rule 3r); lazily, for databaseTlsCa()'s reason.
+  const checked = require('../common/crypto')
+    .tlsClientKeyPairProblem(cert, key);
+  if (!checked.ok) {
+    throw refuse(checked.problem === 'mismatch'
+      ? 'the key in ' + keyFile + ' is not the private half of the ' +
+        'certificate in ' + certFile
+      : (checked.problem === 'key' ? keyFile : certFile) + ': ' +
+        checked.why);
+  }
+  if (checked.notAfter && checked.notAfter <= Date.now()) {
+    // Not refused: the database decides whether it accepts it, and a
+    // renewal may already be on its way to the file. Said, because the
+    // database's refusal will not say why.
+    log.warn('persistence: the database client certificate in ' + certFile +
+             ' expired at ' + new Date(checked.notAfter).toISOString() +
+             '; the database will refuse it until it is renewed.');
+  }
+  log.debug("Leaving databaseTlsClient().");
+  return { cert: checked.certificatePem, key: key, certFile: certFile,
+           keyFile: keyFile, notAfter: checked.notAfter,
+           subject: checked.subject };
+}
+
+/**
+ * The client certificate and key as a dialler is given them (`{ cert, key }`),
+ * or null — `databaseTlsClient()` without the facts about it.
+ *
+ * @returns `{ cert, key }` or null
+ * @throws as `databaseTlsClient()` does
+ */
+function databaseTlsClientPair() {
+  log.debug("Entering databaseTlsClientPair().");
+  const read = databaseTlsClient();
+  log.debug("Leaving databaseTlsClientPair().");
+  return read ? { cert: read.cert, key: read.key } : null;
+}
+
+// ---------------------------------------------------------------------------
 // EVERYTHING `persistence_postgres.create()` IS GIVEN TO DIAL THE DATABASE
 // THE WAY THIS SERVICE DOES (#213, 2026-09-26): the connection string with
 // the configured provider's password put back into it (`resolveDatabaseUrl()`
@@ -2783,16 +3319,17 @@ function databaseTlsCa() {
  *
  * For an out-of-process tool such as the risk dataset loader, so the two
  * cannot disagree about how a connection is made.
- * @returns a promise of `{ url, verifyTls, tlsCa }`; rejects as
- * `resolveDatabaseUrl()` does, and with STS-STORE-0079 for an unusable
- * `persistence.databaseTlsCaFile`
+ * @returns a promise of `{ url, verifyTls, tlsCa, tlsClient }`; rejects as
+ * `resolveDatabaseUrl()` does, with STS-STORE-0079 for an unusable
+ * `persistence.databaseTlsCaFile`, and with STS-STORE-0180 for an unusable
+ * client certificate (#2254)
  */
 function databaseConnection() {
   log.debug("Entering databaseConnection().");
   log.debug("Leaving databaseConnection().");
   return resolveDatabaseUrl().then(function (url) {
     return { url: url, verifyTls: verifiesDatabaseTls(),
-             tlsCa: databaseTlsCa() };
+             tlsCa: databaseTlsCa(), tlsClient: databaseTlsClientPair() };
   });
 }
 
@@ -2805,6 +3342,41 @@ function workerCount() {
             Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
   log.debug("Leaving workerCount().");
   return n;
+}
+
+// THE POOL'S WAITS (#2220): the connect timeout, the wait for a free
+// connection, and how long an idle one is kept — settings since #2220, with
+// the 5 s, 5 s and 30 s the driver always had as their defaults. Read once,
+// when the store is opened.
+function poolWaits() {
+  log.debug("Entering poolWaits().");
+  log.debug("Leaving poolWaits().");
+  return {
+    connectTimeoutMs: Number(config.value('persistence.connectTimeoutMs')),
+    poolWaitMs: Number(config.value('persistence.poolWaitMs')),
+    idleTimeoutMs: Number(config.value('persistence.idleTimeoutMs'))
+  };
+}
+
+// THE STATEMENT BOUND (#2220), set once every restore is done — `coordinate()`
+// is the last step of the start, after the directory, the realms, the
+// settings and the minted rows were read — so that the start's own heavy
+// reads, and the schema's migrations before them, are never under it
+// (`knex_store.js`, `boundStatements()`, lists what else is outside it).
+// `persistence.statementTimeoutMs`, 0 for none.
+function boundStatements() {
+  log.debug("Entering boundStatements().");
+  if (!driver || typeof driver.boundStatements !== 'function') {
+    log.debug("Leaving boundStatements(). Not a database store.");
+    return;
+  }
+  const ms = Math.max(0, Number(config.value(
+    'persistence.statementTimeoutMs')) || 0);
+  driver.boundStatements(ms);
+  log.info('persistence: ordinary statements run under a ' +
+           (ms ? ms + ' ms' : 'no') + ' statement timeout ' +
+           '(persistence.statementTimeoutMs).');
+  log.debug("Leaving boundStatements().");
 }
 
 /**
@@ -2839,6 +3411,10 @@ function start() {
   // In every mode, a store or none: a blocked loop is worth measuring in a
   // process with nothing to renew, and costs a histogram (#351).
   startLagMonitor();
+  // THE PASSWORD'S REFRESH (#2220), registered in every process that starts
+  // a store, before any store is open; its `off` says why it has nothing to
+  // do where no provider or no database is configured.
+  ensurePasswordJob();
   const chosen = mode();
   if (MODES.indexOf(chosen) < 0) {
     // Unreachable through config.value(), whose enum type refuses anything
@@ -3070,14 +3646,15 @@ function resolveGlobalUrls() {
  * Returns what a process needs to dial the global tier's database the way a
  * cell does.
  *
- * @returns a promise of `{ url, readUrl, verifyTls, tlsCa }`
+ * @returns a promise of `{ url, readUrl, verifyTls, tlsCa, tlsClient }`
  */
 function globalDatabaseConnection() {
   log.debug("Entering globalDatabaseConnection().");
   log.debug("Leaving globalDatabaseConnection().");
   return resolveGlobalUrls().then(function (urls) {
     return { url: urls.url, readUrl: urls.readUrl,
-             verifyTls: verifiesDatabaseTls(), tlsCa: databaseTlsCa() };
+             verifyTls: verifiesDatabaseTls(), tlsCa: databaseTlsCa(),
+             tlsClient: databaseTlsClientPair() };
   });
 }
 
@@ -3486,6 +4063,13 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // this `try`, so an unusable file is the fatal refusal its message is
     // written for (STS-STORE-0079) rather than an exception from nowhere.
     const tlsCa = storeModes.isDatabase(chosen) ? databaseTlsCa() : '';
+    // The client certificate (#2254), read once for both tiers and inside
+    // this `try` for the CA's reason: an unusable pair is STS-STORE-0180's
+    // fatal refusal.
+    const tlsClient = storeModes.isDatabase(chosen)
+      ? databaseTlsClientPair() : null;
+    lastClientPem = tlsClient ? tlsClient.cert + tlsClient.key : '';
+    certificateDrivers = [];
     driver = storeModes.isDatabase(chosen)
       // `verifyTls` is READ HERE AND PASSED IN, rather than read in the
       // driver: that module takes its url and its logger as options and
@@ -3495,8 +4079,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           // The engine is the MODE (#677): one driver, two engines.
           engine: chosen,
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
-          tlsCa: tlsCa,
-          poolMax: require('./persistence_postgres').poolMax(workerCount()),
+          tlsCa: tlsCa, tlsClient: tlsClient,
+          poolMax: require('./persistence_postgres').poolMax(workerCount(),
+            config.value('persistence.poolSize')),
+          // The pool's waits (#2220), read here for `verifyTls`'s reason.
+          ...poolWaits(),
           // Which coordination statements it sends (#677): read here, for
           // the reason `verifyTls` is.
           sqlDialect: String(config.value('persistence.sqlDialect') ||
@@ -3509,6 +4096,18 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           claimFenceOwner: !globalUrls
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
+    // THE DRIVER THE PASSWORD IS FOR (#2220): this process's own database —
+    // a cell's own when the store is tiered below — dialled with the
+    // password `persistence.databasePasswordProvider` names.
+    passwordDriver = storeModes.isDatabase(chosen) ? driver : null;
+    if (passwordDriver) {
+      certificateDrivers.push(passwordDriver);
+    }
+    lastDatabaseUrl = String(resolvedUrl || '');
+    if (passwordDriver && typeof passwordDriver.onConnectFailure ===
+        'function') {
+      passwordDriver.onConnectFailure(onDatabaseConnectFailure);
+    }
     // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
     // own, and the global tier's is made beside it — its writer, and this
     // cell's replica for every read — and the two are one driver from here
@@ -3522,14 +4121,19 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         // phase 6).
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
-        tlsCa: tlsCa,
-        poolMax: require('./persistence_postgres').poolMax(workerCount()),
+        tlsCa: tlsCa, tlsClient: tlsClient,
+        poolMax: require('./persistence_postgres').poolMax(workerCount(),
+          config.value('persistence.poolSize')),
+        ...poolWaits(),
         sqlDialect: String(config.value('persistence.sqlDialect') ||
                            'native'),
         // The status row's database, so the fence lock lives here (#884).
         claimFences: claimFences,
         claimFenceOwner: true
       });
+      // The global tier presents the same certificate, and takes a renewed
+      // one with the cell's (#2254).
+      certificateDrivers.push(globalDriver);
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),
         digest: routingDigest
@@ -3900,6 +4504,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // realm maps. Required lazily: this file loads before the composition
     // root, and report/stores must not load the scheduler from here.
     require('../report/stores').setDriver(driver, activeMode);
+    // THE APPEND-ONLY AUDIT LOG (#1616): `sts_audit` through the driver's
+    // `audit*` methods, where the driver has them; inactive otherwise.
+    require('./audit_store').setDriver(driver);
   }).then(function () {
     // ---------------------------------------------------------------------
     // THE KEYSTORE STARTS HERE, BEFORE ANYTHING SEALED IS READ BACK (#222).
@@ -4534,6 +5141,343 @@ function stop() {
 }
 
 // ---------------------------------------------------------------------------
+// THE WAIT ON THIS PROCESS'S OWN FLUSH, BOUNDED (#1934).
+//
+// `applyDirectoryChange()` waits for the running flush when the entry it is
+// about to apply is in it (the 2026-09-23 blocks inside it say why), and
+// until #1934 that wait was `flushing.then(...)` with no bound and no line.
+// In run #551 a flush that never settled — a removed realm's empty journal
+// map, fixed by #1933 — held a request worker's change-log pull for 44
+// minutes: every read-your-write request on it was refused (STS-WORKER-0053)
+// and the barrier's STS-STORE-0039 line named the row being applied and not
+// that the applier was waiting on its own process. Any other cause of a flush
+// that never settles would do the same, so the wait itself is now bounded
+// and said out loud:
+//
+//   * **WHILE IT WAITS, IT IS VISIBLE.** Each wait is in `ownFlushWaits`, and
+//     the directory applier carries `ownFlushWait()` beside itself (the
+//     `prepare` arrangement), which `persistence_replication.js`'s
+//     STS-STORE-0039 line reads: the key, how long it has waited, and the
+//     bound.
+//   * **THE BOUND IS `workers.readBarrierTimeoutMs`**, read at each wait. No
+//     save has a timeout of its own to borrow — the driver bounds a
+//     connection and a pool slot (`connectionTimeoutMillis`), never a
+//     transaction — so the bound is the point past which the wait has
+//     already cost this process every read-your-write request it was asked:
+//     each one waited that long for a pull that could not finish and was
+//     refused. A flush still out then is no longer a slow save worth waiting
+//     for; it is the wedge.
+//   * **PAST IT THE ROW IS NOT DROPPED.** The wait rejects with
+//     STS-STORE-0176, and `persistence_replication.js` fails the PAGE on that
+//     code rather than the row (every other applier failure is the row's,
+//     STS-STORE-0042, and is never applied again): the high-water mark is
+//     not advanced, so the next pull reads the same rows, and if the flush
+//     has settled meanwhile they apply.
+//   * **AND A REQUEST WORKER WHOSE FLUSH IS STUCK ASKS TO BE REPLACED**,
+//     once, over the channel it already has (`reportLag()`'s arrangement):
+//     the front process retires it through the drain a stop uses and forks
+//     a replacement into its slot (`request_pool.js`,
+//     `receiveReplaceWorker()`). SLOW IS NOT STUCK, and the difference is
+//     what the flush holds: this worker's own unflushed writes, a
+//     revocation among them, which a kill would lose. So the ask waits
+//     until the flush has been out OWN_FLUSH_STUCK_FACTOR bounds in all
+//     (2 minutes by default) — past one bound the pulls are already failing
+//     and re-reading, which costs this worker its read-your-write requests
+//     and nothing else — and the ask carries the flush's start and the
+//     instant it is given up on, OWN_FLUSH_HARD_FACTOR bounds after it
+//     began (5 minutes). The worker's drain waits for that flush to settle
+//     before it exits (`settleOwnFlush()`, `request_worker.ts`'s
+//     `releaseThenExit()`), and the front process does not end it before
+//     that instant: a statement that is only slow lands and its writes
+//     with it. Only a flush with no answer from the driver for that long is
+//     abandoned, and that is said where the worker goes (STS-WORKER-0057).
+//     The
+//     replacement restores from the store and follows the change log from
+//     the head it read when it opened the store, so every row this worker
+//     could not apply reaches it — they are committed rows, and the store is
+//     where they are. The front process has nobody to replace it: there the
+//     line says so and the pulls go on failing, a bound at a time, until the
+//     flush settles or the process restarts.
+//
+// ONE LINE A FLUSH: a wedged flush meets one pull after another, each
+// waiting out the bound, and a line for each would be a line every
+// `readBarrierTimeoutMs` for as long as it lasts. The first wait to run out
+// on a given flush reports at error; the rest at debug.
+// ---------------------------------------------------------------------------
+const ownFlushWaits = new Set();
+// The `flushing` promise whose wedge has been reported, and whether this
+// worker has asked to be replaced (once in its life: it is being retired).
+let reportedWedgeOf = null;
+let replacementAsked = false;
+// The latest wait that ran out, with the flush it waited for, so that a
+// barrier giving up between two pulls still says what holds them.
+let lastRanOut = null;
+const OWN_FLUSH_RAN_OUT = { ranOut: true };
+// SLOW AND STUCK, in bounds of `workers.readBarrierTimeoutMs` since the flush
+// began. Four, because the first bound is what makes the wait visible and a
+// statement waiting on a lock another session holds for a minute or two (a
+// long index build, a vacuum, a failover) is slow rather than gone; ten,
+// for the drain, because a flush that has had no answer from the driver for
+// that long (5 minutes by default) is not coming back, and a worker that
+// cannot exit until it does would hold its slot for ever. Both are factors
+// of the bound rather than settings of their own, so a stack that shortens
+// the bound (the tests, at its minimum of 1000 ms) shortens them with it.
+const OWN_FLUSH_STUCK_FACTOR = 4;
+const OWN_FLUSH_HARD_FACTOR = 10;
+
+/**
+ * How long this process's own flush may be out before it counts as stuck,
+ * and a request worker asks to be replaced.
+ * @returns milliseconds
+ */
+function ownFlushStuckMs() {
+  log.debug("Entering ownFlushStuckMs().");
+  log.debug("Leaving ownFlushStuckMs().");
+  return OWN_FLUSH_STUCK_FACTOR * ownFlushWaitLimitMs();
+}
+
+/**
+ * How long this process's own flush may be out before a drain gives up on
+ * it.
+ * @returns milliseconds
+ */
+function ownFlushHardMs() {
+  log.debug("Entering ownFlushHardMs().");
+  log.debug("Leaving ownFlushHardMs().");
+  return OWN_FLUSH_HARD_FACTOR * ownFlushWaitLimitMs();
+}
+
+/**
+ * The flush this process has out, if any.
+ * @returns `{ since, outMs, giveUpAt }` (epoch milliseconds), or null
+ */
+function ownFlushInFlight() {
+  log.debug("Entering ownFlushInFlight().");
+  if (!flushing) {
+    log.debug("Leaving ownFlushInFlight(). None.");
+    return null;
+  }
+  const since = flushingSince || Date.now();
+  log.debug("Leaving ownFlushInFlight(). Out.");
+  return { since: since, outMs: Date.now() - since,
+           giveUpAt: since + ownFlushHardMs() };
+}
+
+/**
+ * Waits for this process's own flush to settle, resolved or rejected — and
+ * for any flush queued behind it — until `ownFlushHardMs()` after the one
+ * out began. A drain calls it before it exits, so that a flush that is only
+ * slow is not abandoned with the writes in it.
+ * @returns a promise of true when nothing is out, false when it gave up
+ */
+function settleOwnFlush() {
+  log.debug("Entering settleOwnFlush().");
+  const out = ownFlushInFlight();
+  if (!out) {
+    log.debug("Leaving settleOwnFlush(). Nothing is out.");
+    return Promise.resolve(true);
+  }
+  const leftMs = Math.max(0, out.giveUpAt - Date.now());
+  // A ONE-SHOT BOUND inside one drain, cleared when the flushes settle.
+  let timer = null;
+  const gaveUp = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      resolve(OWN_FLUSH_RAN_OUT);
+    }, leftMs);
+    if (timer && typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  });
+  log.debug("Leaving settleOwnFlush(). Waiting " + leftMs + " ms at most.");
+  return Promise.race([flushesSettled(flushing), gaveUp])
+    .then(function (result) {
+      clearTimeout(timer);
+      return result !== OWN_FLUSH_RAN_OUT;
+    });
+}
+
+/**
+ * Settles once `held` has, resolved or rejected, and then any flush that
+ * started behind it — a queued one starts as the one before it settles.
+ * No timer: `settleOwnFlush()` bounds the whole wait with its one.
+ * @param held - the `flushing` promise out now
+ * @returns a promise of null
+ */
+function flushesSettled(held) {
+  log.debug("Entering flushesSettled().");
+  log.debug("Leaving flushesSettled().");
+  return held.then(function () {
+    return null;
+  }, function (e) {
+    // A flush that failed has settled: its writes are back in memory, and
+    // the drain's own last flush tries them again.
+    log.debug("Caught in flushesSettled(): " + ((e && e.message) || e));
+    return null;
+  }).then(function () {
+    return flushing && flushing !== held ? flushesSettled(flushing) : null;
+  });
+}
+
+/**
+ * The longest a change-log apply waits on this process's own flush.
+ * @returns milliseconds, `workers.readBarrierTimeoutMs`
+ */
+function ownFlushWaitLimitMs() {
+  log.debug("Entering ownFlushWaitLimitMs().");
+  // Read directly: the row's `min` (1000) bounds it, and 0 is not legal.
+  // The row's own default stands in only for a configuration that answers
+  // nothing at all (a test's stub), where NaN would make the bound 1 ms.
+  const ms = Number(config.value('workers.readBarrierTimeoutMs'));
+  log.debug("Leaving ownFlushWaitLimitMs().");
+  return ms > 0 ? ms : 30000;
+}
+
+/**
+ * The longest-running wait on this process's own flush, for the read
+ * barrier's STS-STORE-0039 line — or, between two pulls, the latest wait
+ * that ran out while the flush it waited for is still out.
+ * @returns `{ active, realm, key, waitedMs, limitMs, count }` (`active`
+ *   false for a wait that ran out, `waitedMs` then since it began), or null
+ *   when the change-log apply is waiting on nothing here
+ */
+function ownFlushWait() {
+  log.debug("Entering ownFlushWait().");
+  let oldest = null;
+  ownFlushWaits.forEach(function (one) {
+    if (!oldest || one.since < oldest.since) {
+      oldest = one;
+    }
+  });
+  if (oldest) {
+    log.debug("Leaving ownFlushWait(). Waiting.");
+    return { active: true, realm: oldest.realm, key: oldest.key,
+             waitedMs: Date.now() - oldest.since, limitMs: oldest.limitMs,
+             count: ownFlushWaits.size };
+  }
+  if (lastRanOut && flushing && lastRanOut.held === flushing) {
+    log.debug("Leaving ownFlushWait(). Ran out; the flush is still out.");
+    return { active: false, realm: lastRanOut.wait.realm,
+             key: lastRanOut.wait.key,
+             waitedMs: Date.now() - lastRanOut.wait.since,
+             limitMs: lastRanOut.wait.limitMs, count: 0 };
+  }
+  log.debug("Leaving ownFlushWait(). None.");
+  return null;
+}
+
+/**
+ * Waits for this process's running flush, then applies the change again —
+ * or, past `ownFlushWaitLimitMs()`, rejects with STS-STORE-0176 so that the
+ * page is read again, and a request worker asks to be replaced. See the
+ * block above.
+ * @param change - the change row being applied
+ * @param key - the key found in the flush
+ * @returns a promise of `applyDirectoryChange(change)`'s answer
+ */
+function waitForOwnFlush(change, key) {
+  log.debug("Entering waitForOwnFlush().");
+  const held = flushing;
+  const limitMs = ownFlushWaitLimitMs();
+  const wait = { realm: String(change.realm || ''), key: String(key),
+                 since: Date.now(), limitMs: limitMs };
+  ownFlushWaits.add(wait);
+  // A ONE-SHOT BOUND inside one apply, cleared when the flush wins the race:
+  // nothing repeats it but the next pull, which is the change log's own
+  // schedule. Unreferenced, so a process that is ending is not held for it.
+  let timer = null;
+  const ranOut = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      resolve(OWN_FLUSH_RAN_OUT);
+    }, limitMs);
+    if (timer && typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  });
+  // A flush that REJECTED has settled as surely as one that resolved, and
+  // the change is applied against what it left; it used to fail the row.
+  const settled = held.then(function () {
+    return null;
+  }, function (e) {
+    log.debug("Caught in waitForOwnFlush(): " + ((e && e.message) || e));
+    return null;
+  });
+  log.debug("Leaving waitForOwnFlush().");
+  return Promise.race([settled, ranOut]).then(function (out) {
+    clearTimeout(timer);
+    ownFlushWaits.delete(wait);
+    if (out !== OWN_FLUSH_RAN_OUT) {
+      return applyDirectoryChange(change);
+    }
+    throw ownFlushWedged(wait, held);
+  });
+}
+
+/**
+ * Reports a wait on this process's own flush that ran out, asks the front
+ * process to replace this worker, and answers the error the apply rejects
+ * with.
+ * @param wait - `{ realm, key, since, limitMs }`
+ * @param held - the `flushing` promise that did not settle
+ * @returns the Error, marked STS-STORE-0176
+ */
+function ownFlushWedged(wait, held) {
+  log.debug("Entering ownFlushWedged().");
+  const inWorker = !!process.env.STS_REQUEST_WORKER;
+  const what = 'a change-log apply of directory entry "' + wait.key +
+    '" in realm "' + (wait.realm || 'default') + '" waited ' +
+    (Date.now() - wait.since) + ' ms for this process\'s own flush of that ' +
+    'entry, past workers.readBarrierTimeoutMs (' + wait.limitMs + ' ms), ' +
+    'and the flush has not settled';
+  lastRanOut = { wait: wait, held: held };
+  const err = errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0176') +
+    what + '. The page is read again by the next pull; no row is dropped.'),
+  'STS-STORE-0176');
+  const stuckMs = ownFlushStuckMs();
+  if (reportedWedgeOf === held) {
+    log.debug('persistence: ' + what + ' (already reported).');
+  } else {
+    reportedWedgeOf = held;
+    log.error(errorCodes.tag('STS-STORE-0176') + 'persistence: ' + what +
+              '. The change is not applied and not dropped: the next pull ' +
+              'reads it again. ' + (inWorker
+      ? 'A flush that is only slow is waited for: this request worker asks ' +
+        'the front process to replace it only if the flush is still out ' +
+        stuckMs + ' ms after it began (STS-STORE-0177).'
+      : 'This is the front process, which nothing replaces: its pulls fail ' +
+        'a bound at a time until the flush settles or the process ' +
+        'restarts.'));
+  }
+  // STUCK, NOT SLOW: asked of the flush that is out now, at each wait that
+  // runs out, since the first one usually runs out long before this.
+  const out = held === flushing ? ownFlushInFlight() : null;
+  if (inWorker && !replacementAsked && out && out.outMs >= stuckMs) {
+    replacementAsked = true;
+    log.error(errorCodes.tag('STS-STORE-0177') + 'persistence: this ' +
+              'request worker\'s own flush has been out ' + out.outMs +
+              ' ms, past ' + stuckMs + ' ms (' + OWN_FLUSH_STUCK_FACTOR +
+              ' x workers.readBarrierTimeoutMs), so it asks the front ' +
+              'process to replace it. Its drain waits for that flush to ' +
+              'settle until ' + new Date(out.giveUpAt).toISOString() +
+              ', and the writes in it are kept if it does; the ' +
+              'replacement restores from the store and follows the change ' +
+              'log from there.');
+    try {
+      // Lazily, as reportLag() does: a process that is not a worker loads
+      // nothing, and outside a worker thread send() is a no-op.
+      require('../common/worker_channel').send({ replaceWorker: {
+        code: 'STS-STORE-0177', reason: what,
+        flushing: { since: out.since, giveUpAt: out.giveUpAt } } });
+    } catch (e) {
+      // The channel has gone: this worker is ending already, and the front
+      // replaces it from its exit.
+      log.debug("Caught in ownFlushWedged(): " + ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving ownFlushWedged().");
+  return err;
+}
+
+// ---------------------------------------------------------------------------
 // THE APPLIERS: HOW ANOTHER PROCESS'S WRITE BECOMES THIS PROCESS'S MEMORY.
 //
 // One per kind of change. Each is handed a POINTER — a kind, a realm and a
@@ -4614,9 +5558,7 @@ function applyDirectoryChange(change) {
   if (flushing && inFlightDirectory.has(change.realm + '\n' + change.key)) {
     log.debug('applyDirectoryChange(): a flush of ' + change.key + ' is ' +
               'out; applying the change once it settles.');
-    return flushing.then(function () {
-      return applyDirectoryChange(change);
-    });
+    return waitForOwnFlush(change, change.key);
   }
   return driver.readEntry(change.realm, change.key).then(function (row) {
     const rows = shadow.get(change.realm) || new Map();
@@ -4642,9 +5584,7 @@ function applyDirectoryChange(change) {
     if (flushing && inFlightDirectory.has(change.realm + '\n' + key)) {
       log.debug('applyDirectoryChange(): a flush of ' + key + ' started ' +
                 'during the read; applying the change once it settles.');
-      return flushing.then(function () {
-        return applyDirectoryChange(change);
-      });
+      return waitForOwnFlush(change, key);
     }
     const live = entryAt(change.realm, key);
     // THE BASE IS THE SHADOW: no flush of this key is out (both checks
@@ -4896,6 +5836,40 @@ function applyStaleKeys(keys, reader) {
 }
 
 
+// ---------------------------------------------------------------------------
+// A REALM LIST READ THAT THIS PROCESS'S OWN REALM WRITE OVERTOOK IS READ AGAIN
+// (GitHub run 45732176952, `sts_pseudonyms`, single-node).
+//
+// The list is read whole, and this process's own flush may commit a realm row
+// and advance `realmShadow` while that read is out. The answer then predates
+// the write it is judged against: a realm created HERE a moment earlier is in
+// the shadow and not in the answer, and the removal rule below took that as
+// "another node removed it". In the run worker 5 created `p644-…`, its flush
+// committed while a pull it was late with (another realm's removal) had the
+// list in flight, and the stale answer removed the new realm from worker 5 —
+// and, through the keystore's purge, its signing keys and data keys from the
+// STORE. Every later request worker 5 served for the realm was express's
+// "Cannot POST", and every other process met entries sealed under data keys
+// the purge had destroyed (STS-KEYS-0092). The same overtaking would put a
+// realm's overrides back to the stale row's, undoing a setting this process
+// had just written.
+//
+// So the shadow counts its moves (`realmShadowMoves`, advanced by
+// `advanceRealmShadow()`), and an answer read while the count moved is not
+// applied: the list is read again, now after the commit. Bounded at
+// REALMS_REREADS; past it the answer is applied with removals confined to
+// realms whose shadow is what it was before the read (STS-STORE-0182), so an
+// overtaken read can still never remove a realm.
+// ---------------------------------------------------------------------------
+const REALMS_REREADS = 4;
+
+/**
+ * Applies a realm change another process wrote: reads the realm list and
+ * reconciles this process's registry with it.
+ *
+ * @returns a promise of true once applied, false when realms are not
+ *   persisted
+ */
 function applyRealmsChange() {
   log.debug("Entering applyRealmsChange().");
   if (!persistsRealms()) {
@@ -4903,7 +5877,40 @@ function applyRealmsChange() {
     return Promise.resolve(false);
   }
   log.debug("Leaving applyRealmsChange().");
+  return applyRealmsRead(0);
+}
+
+/**
+ * One read of the realm list and, unless this process's own realm write
+ * overtook it, its application. See the block above.
+ *
+ * @param attempt - the reads already made and discarded
+ * @returns a promise of true once applied
+ */
+function applyRealmsRead(attempt) {
+  log.debug("Entering applyRealmsRead(). attempt=" + attempt);
+  // WHAT THIS PROCESS HOLDS FOR REALMS IT HAS NOT DEFINED, TAKEN BEFORE THE
+  // READ (#1938): only what was here before the store answered is judged by
+  // that answer. See `realms.forgetUnarrived()`, below.
+  const heldBefore = realms.heldUnarrivedIds();
+  // And the shadow as it was before the read, for the block above.
+  const movesBefore = realmShadowMoves;
+  const shadowBefore = new Map(realmShadow);
+  log.debug("Leaving applyRealmsRead().");
   return driver.loadRealms().then(function (rows) {
+    const overtaken = realmShadowMoves !== movesBefore;
+    if (overtaken && attempt + 1 < REALMS_REREADS) {
+      log.debug('persistence: this process wrote a realm row while the ' +
+                'realm list was being read; reading it again.');
+      return applyRealmsRead(attempt + 1);
+    }
+    if (overtaken) {
+      log.warn(errorCodes.tag('STS-STORE-0182') + 'persistence: the realm ' +
+               'list was read ' + REALMS_REREADS + ' times and each time ' +
+               'this process wrote a realm row while it was out; the last ' +
+               'answer is applied, removing no realm whose row this process ' +
+               'wrote meanwhile.');
+    }
     const stored = rows || [];
     // -----------------------------------------------------------------------
     // WHAT THIS PROCESS HAS CHANGED AND NOT WRITTEN YET RIDES ON TOP
@@ -4949,8 +5956,13 @@ function applyRealmsChange() {
     // neither, and is left alone.
     // -----------------------------------------------------------------------
     const storedIds = new Set(stored.map(function (row) { return row.id; }));
+    // Judged only where the shadow is what it was before the read: a realm
+    // this process wrote while the read was out is not the answer's to
+    // remove (the block above `applyRealmsChange()`).
     const gone = Array.from(realmShadow.keys()).filter(function (id) {
-      return !storedIds.has(id) && !!realms.get(id);
+      return !storedIds.has(id) && !!realms.get(id) &&
+        shadowBefore.has(id) &&
+        shadowBefore.get(id) === realmShadow.get(id);
     });
     const was = restoring;
     // The realms whose replicated update was refused (STS-STORE-0174).
@@ -4980,10 +5992,10 @@ function applyRealmsChange() {
       // process saw either row, so its directory rows — committed after the
       // realm's row, in the flush order above — will never find their realm
       // here. Waiting the ten minutes reported every one (STS-STORE-0088).
+      const listed = new Set(stored.map(function (row) {
+        return String(row.id);
+      }));
       if (typeof replication.heldRealmIds === 'function') {
-        const listed = new Set(stored.map(function (row) {
-          return String(row.id);
-        }));
         replication.heldRealmIds().forEach(function (id) {
           if (!listed.has(id) && !realms.get(id)) {
             const dropped = replication.forgetDeferred(id);
@@ -4993,6 +6005,11 @@ function applyRealmsChange() {
           }
         });
       }
+      // AND WHAT THIS PROCESS ADOPTED FOR SUCH A REALM IS FORGOTTEN TOO
+      // (#1938): the rows replication wrote into its partitions, and the
+      // keystore's signing-key set, certificate authority and data keys. It
+      // never defined the realm, so no `realms.remove()` will purge them.
+      realms.forgetUnarrived(listed, heldBefore);
     } finally {
       restoring = was;
     }
@@ -5020,6 +6037,18 @@ function applyRealmsChange() {
   });
 }
 
+// THE SETTINGS TABLE, READ AGAIN WHEN THIS PROCESS'S OWN SETTINGS WRITE
+// OVERTOOK THE READ — `applyRealmsRead()`'s reason (GitHub run 45732176952):
+// a setting committed here while the read was out is no longer in the
+// pending delta, and the stale table without it would clear it here.
+
+/**
+ * Applies a settings change another process wrote: reads the table and
+ * applies it under what this process has not written yet.
+ *
+ * @returns a promise of true once applied, false when settings are not
+ *   persisted
+ */
 function applyAppconfigChange() {
   log.debug("Entering applyAppconfigChange().");
   if (!persistsAppconfig()) {
@@ -5027,7 +6056,32 @@ function applyAppconfigChange() {
     return Promise.resolve(false);
   }
   log.debug("Leaving applyAppconfigChange().");
+  return applyAppconfigRead(0);
+}
+
+/**
+ * One read of the settings table and, unless this process's own settings
+ * write overtook it, its application.
+ *
+ * @param attempt - the reads already made and discarded
+ * @returns a promise of true once applied
+ */
+function applyAppconfigRead(attempt) {
+  log.debug("Entering applyAppconfigRead(). attempt=" + attempt);
+  const movesBefore = appconfigShadowMoves;
+  log.debug("Leaving applyAppconfigRead().");
   return driver.loadOverrides().then(function (saved) {
+    if (appconfigShadowMoves !== movesBefore) {
+      if (attempt + 1 < REALMS_REREADS) {
+        log.debug('persistence: this process wrote a setting while the ' +
+                  'settings were being read; reading them again.');
+        return applyAppconfigRead(attempt + 1);
+      }
+      log.warn(errorCodes.tag('STS-STORE-0182') + 'persistence: the ' +
+               'settings were read ' + REALMS_REREADS + ' times and each ' +
+               'time this process wrote a setting while the read was out; ' +
+               'the last answer is applied.');
+    }
     // ----------------------------------------------------------------------
     // AN EMPTY TABLE IS A FACT HERE, NOT AN ABSENCE (2026-09-08).
     //
@@ -5133,9 +6187,15 @@ function coordinate() {
     log.debug('Leaving coordinate(). Nothing is being persisted.');
     return Promise.resolve({ coordinating: false });
   }
+  boundStatements();
   log.debug("Leaving coordinate().");
   const appliers = {
-    directory: applyDirectoryChange,
+    // WITH `ownFlushWait` BESIDE IT (#1934), the `prepare` arrangement: the
+    // read barrier's STS-STORE-0039 line asks it whether the apply in
+    // flight is waiting on this process's own flush, and for how long.
+    directory: Object.assign(function (change) {
+      return applyDirectoryChange(change);
+    }, { ownFlushWait: ownFlushWait }),
     realms: applyRealmsChange,
     appconfig: applyAppconfigChange,
     keys: applyKeysChange,
@@ -5365,6 +6425,15 @@ const STATUS_PROSE = Object.freeze({
   caFileUnusable: 'NOT DIALLED — persistence.databaseTlsCaFile names ' +
     '{{file}}, which cannot be read or holds no certificate, so this ' +
     'service does not start on it.',
+  // THE CLIENT CERTIFICATE (#2254): appended to the sentence above whenever
+  // one is configured, so the Transport row says how this service proves
+  // itself to the database as well as how the database proves itself here.
+  clientCertificate: 'This service authenticates to the database with the ' +
+    'client certificate in {{file}} (persistence.databaseTlsClientCertFile), ' +
+    'read again every persistence.databasePasswordRefreshS.',
+  clientCertificateUnusable: 'NOT DIALLED — the client certificate in ' +
+    '{{file}} (persistence.databaseTlsClientCertFile) cannot be read, or ' +
+    'its key is not its own, so this service does not start on it.',
   refusedClear: 'NOT DIALLED — sslmode={{sslmode}} asks for a connection ' +
     'in the clear, which this service never opens, so it does not start ' +
     'on this connection string.',
@@ -5518,11 +6587,30 @@ function describeDatabase() {
     }
     const dial = require('./persistence_postgres').dialOptions(raw, verify,
       '', activeMode === 'mariadb' ? 'mariadb' : 'postgres');
-    const encrypted = !dial.refused && caUsable;
+    // The client certificate (#2254), the same way: configured or not, and
+    // usable or not, asked of the one reading of it and never thrown.
+    const clientFile = String(
+      config.value('persistence.databaseTlsClientCertFile') || '').trim();
+    let clientUsable = true;
+    if (databaseCertificateConfigured()) {
+      try {
+        databaseTlsClient();
+      } catch (e) {
+        log.debug("Caught in describeDatabase(): " +
+                  ((e && e.message) || e));
+        clientUsable = false;
+      }
+    }
+    const clientCertificate = databaseCertificateConfigured() &&
+      clientUsable;
+    const encrypted = !dial.refused && caUsable && clientUsable;
     const fill = require('../common/server_prose').fill;
     let tls;
     if (!caUsable) {
       tls = fill(STATUS_PROSE.caFileUnusable, { file: caFile });
+    } else if (!clientUsable) {
+      tls = fill(STATUS_PROSE.clientCertificateUnusable,
+                 { file: clientFile || '(none)' });
     } else if (!encrypted) {
       tls = sslmode === 'disable' || sslmode === 'allow'
         ? fill(STATUS_PROSE.refusedClear, { sslmode: sslmode })
@@ -5544,6 +6632,9 @@ function describeDatabase() {
     }
     if (encrypted && dial.verifyChain && caFile) {
       tls += ' ' + fill(STATUS_PROSE.trustCaFile, { file: caFile });
+    }
+    if (encrypted && clientCertificate) {
+      tls += ' ' + fill(STATUS_PROSE.clientCertificate, { file: clientFile });
     }
     // WHERE THE PASSWORD COMES FROM (2026-09-12) — never what it is. A
     // deployment that moved the password into a secret store has no other way
@@ -5569,6 +6660,10 @@ function describeDatabase() {
       // The file the trust anchors come from, or null for the default
       // store (2026-10-12).
       caFile: caFile || null,
+      // Whether the connection presents a client certificate (#2254), and
+      // the file it is read from.
+      clientCertificate: clientCertificate,
+      clientCertificateFile: clientFile || null,
       tls: tls
     };
   } catch (err) {
@@ -5582,6 +6677,37 @@ function describeDatabase() {
              tls: STATUS_PROSE.tlsUnknown,
              note: STATUS_PROSE.notAUrl };
   }
+}
+
+// ---------------------------------------------------------------------------
+// HOW THIS SERVICE PROVES ITSELF TO ITS DATABASE (#2254), for `/admin/mode`:
+// whether a database store is in use, whether its connection presents a
+// client certificate, and whether it carries a password (from a provider or
+// in the string). Facts only, no file and no secret; the database page says
+// the rest.
+// ---------------------------------------------------------------------------
+/**
+ * Says how the database connection authenticates this service.
+ *
+ * @returns `{ database, certificate, password }`
+ */
+function databaseCredential() {
+  log.debug("Entering databaseCredential().");
+  const database = storeModes.isDatabase(activeMode);
+  let inline = false;
+  try {
+    inline = !!new URL(databaseUrl()).password;
+  } catch (e) {
+    log.debug("Caught in databaseCredential(): " + ((e && e.message) || e));
+    inline = false;
+  }
+  log.debug("Leaving databaseCredential().");
+  return {
+    database: database,
+    certificate: database && databaseCertificateConfigured(),
+    password: database &&
+      (inline || secrets.configuredFor(secrets.DATABASE_PASSWORD))
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -5981,6 +7107,19 @@ module.exports = {
   // returns, put through `pg`'s own parser: two implementations meeting, which
   // is the arrangement `tests/webauthn_cross_impl.js` describes.
   resolveDatabaseUrl: resolveDatabaseUrl,
+  refreshDatabasePassword: refreshDatabasePassword,
+  ensurePasswordJob: ensurePasswordJob,
+  // FOR `tests/database_client_certificate.js` ONLY (#2254): the drivers a
+  // renewed client certificate is handed to are set by `openStore()`, which
+  // an in-process test cannot reach without a database; the test hands
+  // doubles in and asserts what each is given.
+  setCertificateDriversForTest: function (drivers, lastPem) {
+    log.debug("Entering setCertificateDriversForTest().");
+    certificateDrivers = Array.isArray(drivers) ? drivers.slice() : [];
+    lastClientPem = String(lastPem || '');
+    log.debug("Leaving setCertificateDriversForTest().");
+  },
+  PASSWORD_JOB: PASSWORD_JOB,
   // The connection an out-of-process tool dials the database with, made the
   // way this service makes its own (#213) — see databaseConnection().
   databaseConnection: databaseConnection,
@@ -5991,6 +7130,14 @@ module.exports = {
   verifiesDatabaseTls: verifiesDatabaseTls,
   // The database's own trust anchors, PEM, or '' (STS-STORE-0079).
   databaseTlsCa: databaseTlsCa,
+  // The client certificate the database connection presents (#2254), its
+  // re-read, and how the connection authenticates, for `/admin/mode`.
+  databaseTlsClient: databaseTlsClient,
+  refreshDatabaseCertificate: refreshDatabaseCertificate,
+  databaseCredential: databaseCredential,
+  // What `status()` says of the database, asked without an open store, for
+  // `tests/database_client_certificate.js`.
+  describeDatabase: describeDatabase,
   MODES: MODES,
   mode: mode,
   /**
@@ -6020,6 +7167,9 @@ module.exports = {
   start: start,
   stop: stop,
   releaseOrigin: releaseOrigin,
+  // A drain's wait on this process's own flush (#1934's follow-up).
+  ownFlushInFlight: ownFlushInFlight,
+  settleOwnFlush: settleOwnFlush,
   flush: flush,
   // A create's claims, given back in the transaction that commits it (#628);
   // see the note above `releaseClaimsAtCommit()`.
@@ -6120,10 +7270,14 @@ module.exports = {
   /**
    * Waits until every write up to a position is committed to the store.
    * @param target - a `writeGeneration()` answer; defaults to the current one
+   * @param since - optional: the `writeGeneration()` answer when the work
+   *   arrived. A minted save taken at or below it holds nothing that work
+   *   wrote and is not waited for; without it every older minted save still
+   *   out is (#1923, `persistence_minted.flushThrough()`)
    * @returns a promise of an array of the flush answers, any of which may carry
    * `error`
    */
-  commitThrough: function (target) {
+  commitThrough: function (target, since) {
     log.debug("Entering commitThrough().");
     const wanted = target || { directory: dirGeneration,
                                minted: minted.generation() };
@@ -6142,7 +7296,8 @@ module.exports = {
       timed('directory', directoryThrough(Number(wanted.directory) || 0)),
       // A minted flush started HERE is not inside flush(), whose tail arms
       // the retry, so its failure arms it here (#351).
-      timed('minted', minted.flushThrough(Number(wanted.minted) || 0))
+      timed('minted', minted.flushThrough(Number(wanted.minted) || 0,
+        since ? Number(since.minted) || 0 : 0))
         .then(function (answer) {
           if (answer && answer.error) {
             retryAfterFailure('a minted write a response waited for failed');
@@ -6420,6 +7575,55 @@ module.exports = {
     log.debug("Entering syncNow().");
     log.debug("Leaving syncNow().");
     return replication.syncNow();
+  },
+  // THE SETTINGS GENERATION and the front process's two ways of catching up
+  // on it. See THE SETTINGS GENERATION, above.
+  /**
+   * How many times a realm row or a setting has been marked changed in this
+   * process: a request worker compares it across one request.
+   * @returns the generation
+   */
+  settingsGeneration: function () {
+    log.debug("Entering settingsGeneration().");
+    log.debug("Leaving settingsGeneration().");
+    return settingsGen;
+  },
+  /**
+   * Waits until every realm and settings change committed before the call is
+   * applied here: the cell's log, and the global tier's where the store is
+   * tiered (a realm's row and its overrides are global).
+   * @returns a promise of `{ caughtUp, coordinating }`, never rejected
+   */
+  syncSettingsNow: function () {
+    log.debug("Entering syncSettingsNow().");
+    const pulls = [replication.syncNow()];
+    if (globalReplication) {
+      pulls.push(globalReplication.syncNow());
+    }
+    log.debug("Leaving syncSettingsNow().");
+    return Promise.all(pulls).then(function (states) {
+      return {
+        caughtUp: states.every(function (one) {
+          return !one || one.caughtUp !== false ||
+                 one.coordinating === false;
+        }),
+        coordinating: states.some(function (one) {
+          return !!one && one.coordinating !== false;
+        })
+      };
+    });
+  },
+  /**
+   * Wakes this process's change-log pulls now, for a worker's committed
+   * settings save. Coalesces into a pull in flight; arms no timer.
+   */
+  nudgeSettingsPull: function () {
+    log.debug("Entering nudgeSettingsPull().");
+    replication.wake();
+    if (globalReplication) {
+      globalReplication.wake();
+    }
+    log.debug("Leaving nudgeSettingsPull().");
   },
   status: status
 };

@@ -30,5 +30,22 @@
   "waivedBy": "管理員已在此領域豁免：<code>{requirement}</code>（{section}，{level}），因為 <code>{setting}</code> 已開啟。BCP 的其他所有要求仍然有效。",
   "requirementNotMet": "此處未符合：<code>{requirement}</code>（{section}），原因是 <code>{setting}</code>。",
   "waivedPerApplication": "按應用程式：只有當應用程式的 <code>{attribute}</code> 列出其請求的回應類型時，它才能使用這些回應類型；該屬性由管理員或應用程式的擁有者設定。自行註冊的用戶端只能啟用 <code>{setting}</code> 所列的類型：{value}。",
-  "waivedPerApplicationNone": "按應用程式：只有當應用程式的 <code>{attribute}</code> 列出其請求的回應類型時，它才能使用這些回應類型；該屬性由管理員或應用程式的擁有者設定。自行註冊的用戶端無法啟用其中任何一種，因為 <code>{setting}</code> 為空。"
+  "waivedPerApplicationNone": "按應用程式：只有當應用程式的 <code>{attribute}</code> 列出其請求的回應類型時，它才能使用這些回應類型；該屬性由管理員或應用程式的擁有者設定。自行註冊的用戶端無法啟用其中任何一種，因為 <code>{setting}</code> 為空。",
+  "dualHeading": "雙人審批",
+  "dualLead": "此領域中的高風險管理員操作是否等待第二位管理員（<code>admin.dualControl</code>）。在兩種模式下它都是領域的設定，而非模式差異；放在這裡是因為本頁回答它是否生效。",
+  "dualInForce": "生效：被暫緩的操作等待第二位管理員。",
+  "dualOnNotInForce": "已開啟，但並非對每種權限都生效。",
+  "dualOff": "關閉。",
+  "dualThAuthority": "權限",
+  "dualThHolders": "能夠決定的人",
+  "dualThInForce": "生效",
+  "dualYes": "是",
+  "dualNo": "否",
+  "dualLink": "待審批（{n, plural, =1 {一項操作等待中} other {# 項操作等待中}}）",
+  "dbHeading": "資料庫憑證",
+  "dbLead": "本服務如何向其資料庫證明自身身分（<code>persistence.databaseTlsClientCertFile</code>、<code>persistence.databasePasswordProvider</code>）。這是兩種模式共有的設定，而非模式之間的差異；列於此處，是因為連線如何驗證是本頁回答的問題。",
+  "dbCertificateAndPassword": "用戶端憑證和密碼。",
+  "dbCertificate": "用戶端憑證，無密碼。",
+  "dbPassword": "密碼；不出示用戶端憑證。",
+  "dbNeither": "既無用戶端憑證也無密碼：資料庫在兩者皆無的情況下接受連線。"
 }

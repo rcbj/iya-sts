@@ -27,6 +27,14 @@
 // credential, only `credentialSet`; the box is a password input, empty, and
 // left empty on a change it keeps the one set.
 //
+// **A FIELD ONE PROVIDER NEEDS IS MARKED REQUIRED WHILE THAT PROVIDER IS
+// SELECTED** (#1132). The region, the endpoint, the directory and — while no
+// credential is set yet — the write credential take the same mark as any
+// other required field: the red rule, the asterisk, the word and the
+// browser's `required`. The create page and this page's Edit fold both do,
+// and changing the provider moves the mark. A credential already set stays
+// optional, because an empty box keeps it.
+//
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
 // ---------------------------------------------------------------------------
@@ -41,6 +49,11 @@ const esc = kit.esc;
  * The page's path.
  */
 const PAGE = '/admin/secret-destinations';
+
+/**
+ * Directory → Secret destinations → Add a destination (#1132).
+ */
+const NEW = '/admin/secret-destinations/new';
 
 /**
  * Draws Directory → Secret destinations from the answer of
@@ -80,52 +93,96 @@ class SecretDestinationsPage {
       }).join('') + '</select></label>';
   }
 
-  // The fields of a destination's form, filled with `row` (empty for a new
-  // one). The credential box is never filled. The example placeholders are
-  // values (a region, a URL), not words, and are drawn as they were.
+  // The fields of a destination's Edit fold, filled with `row`. The
+  // credential box is never filled. The example placeholders are values
+  // (a region, a URL), not words, and are drawn as they were.
+  //
+  // Region, endpoint, directory and a write credential that is not set yet
+  // are required for the providers the create requires them for, and marked
+  // that way while the fold's provider is one of them (`WebKit.
+  // requirementWords()`, the same cells the create page draws). Changing
+  // the provider moves the mark. A credential already set is a plain empty
+  // box: posting nothing keeps it, so it must not be `required`.
   static fields(t: Json, json: Json, row: Json): string {
     const at = (row && row.location) || {};
     const providers: string[] = (json.providers || []).slice();
     if (row && row.provider && providers.indexOf(row.provider) < 0) {
       providers.push(row.provider);
     }
+    const providerNow = String((row && row.provider) || providers[0] || '');
+    const slug = String((row && row.id) || 'dest')
+      .replace(/[^A-Za-z0-9_-]/g, '');
+    const conditional = function (name: string, labelHtml: string,
+                                  value: unknown, placeholder: string,
+                                  values: string[],
+                                  type?: string): string {
+      const active = values.indexOf(providerNow) >= 0;
+      const id = slug + '-' + name;
+      const inputType = type || 'text';
+      return '<div id="fgc-' + esc(id) + '" class="fg-cell' +
+        (active ? ' fg-required' : '') +
+        '" data-required-when-field="provider"' +
+        ' data-required-when-values="' + esc(values.join(' ')) +
+        '" data-label="' +
+        esc(kit.unescapeText(kit.plainTextOf(labelHtml))) +
+        '"><label class="fg-name" for="' + esc(id) + '-in">' + labelHtml +
+        '</label><span class="fg-for">' +
+        kit.requirementWords(active, { field: 'provider', values: values },
+                             t) + '</span><input type="' + inputType +
+        '" id="' + esc(id) + '-in" name="' + name + '" value="' +
+        esc(value == null ? '' : value) + '"' +
+        (placeholder ? ' placeholder="' + esc(placeholder) + '"' : '') +
+        (inputType === 'password' ? ' autocomplete="off"' : '') +
+        (active ? ' required aria-required="true"' : '') + '></div>';
+    };
+    const regionLabel = t.html('consoleSecretDestinations.fields.region');
+    const endpointLabel =
+      t.html('consoleSecretDestinations.fields.endpoint');
+    const directoryLabel =
+      t.html('consoleSecretDestinations.fields.directory');
+    const credentialLabel =
+      t.html('consoleSecretDestinations.fields.credential');
+    const credential = row && row.credentialSet
+      ? '<div class="formrow"><label>' + credentialLabel + ' <input ' +
+        'type="password" name="credential" autocomplete="off" value="" ' +
+        'placeholder="' +
+        esc(t.text('consoleSecretDestinations.fields.credentialKept')) +
+        '"></label></div>'
+      : conditional('credential', credentialLabel, '',
+                    t.text(
+                      'consoleSecretDestinations.fields.credentialRequired'),
+                    ['aws', 'gcp', 'azure', 'vault'], 'password');
     return '<div class="formrow">' +
       this.select('provider',
                   t.text('consoleSecretDestinations.fields.provider'),
-                  providers, (row && row.provider) || providers[0] || '') +
+                  providers, providerNow) +
       this.select('payload',
                   t.text('consoleSecretDestinations.fields.payload'),
                   json.payloads || [], (row && row.payload) || 'password') +
-      this.text('region', t.text('consoleSecretDestinations.fields.region'),
-                at.region, 'us-east-1') +
       this.text('project',
                 t.text('consoleSecretDestinations.fields.project'),
                 at.project, 'my-project') +
+      '</div><div class="fg">' +
+      conditional('region', regionLabel, at.region, 'us-east-1',
+                  ['aws']) +
+      conditional('endpoint', endpointLabel, at.endpoint,
+                  'https://vault.example.com:8200', ['azure', 'vault']) +
+      (json.fileAllowed || providerNow === 'file'
+        ? conditional('directory', directoryLabel, at.directory,
+                      '/run/sts-test-secrets', ['file'])
+        : '') +
+      (row && row.credentialSet ? '' : credential) +
       '</div><div class="formrow">' +
-      this.text('endpoint',
-                t.text('consoleSecretDestinations.fields.endpoint'),
-                at.endpoint, 'https://vault.example.com:8200') +
       this.text('mount', t.text('consoleSecretDestinations.fields.mount'),
                 at.mount, 'secret') +
       this.text('field', t.text('consoleSecretDestinations.fields.field'),
                 at.field, 'value') +
-      (json.fileAllowed || (row && row.provider === 'file')
-        ? this.text('directory',
-                    t.text('consoleSecretDestinations.fields.directory'),
-                    at.directory, '/run/sts-test-secrets')
-        : '') +
       '</div><div class="formrow"><label>' +
       t.html('consoleSecretDestinations.fields.caCertificates') + ' ' +
       '<textarea name="caCertificates" rows="3" cols="64" ' +
       'placeholder="-----BEGIN CERTIFICATE-----">' +
       esc(at.caCertificates || '') + '</textarea></label></div>' +
-      '<div class="formrow"><label>' +
-      t.html('consoleSecretDestinations.fields.credential') + ' <input ' +
-      'type="password" name="credential" autocomplete="off" value="" ' +
-      'placeholder="' + esc(row && row.credentialSet
-        ? t.text('consoleSecretDestinations.fields.credentialKept')
-        : t.text('consoleSecretDestinations.fields.credentialRequired')) +
-      '"></label></div>';
+      (row && row.credentialSet ? credential : '');
   }
 
   // One destination's row: what it is, where it writes, whether it can.
@@ -203,6 +260,74 @@ class SecretDestinationsPage {
   }
 
   /**
+   * Draws Directory → Secret destinations → Add a destination (#1132) from
+   * the answer of `GET /admin-api/secret-destinations/new`: the one create
+   * form, its required fields called out as New user's are. A field one
+   * provider needs is marked the same way while that provider is selected.
+   *
+   * @param json - the answer, with `state` after a refused create
+   * @param ctx - the render context
+   * @returns the HTML
+   */
+  static newBody(json: Json, ctx?: Json): string {
+    const c = ctx || kit.context();
+    const t = c.t;
+    const listed = function (values: string[]): Json[] {
+      return (values || []).map(function (one: string): Json {
+        return { value: one, label: one };
+      });
+    };
+    // Each label's key written out whole, so the catalog check can find it.
+    const field = function (key: string, example?: string): Json {
+      return { label: t.html(key), placeholder: example };
+    };
+    // The file provider is offered in development mode only, and its
+    // directory with it.
+    const served = (json.createFields || []).filter(function (one: Json) {
+      return one.name !== 'directory' || json.fileAllowed;
+    });
+    return kit.note(t.html('consoleSecretDestinations.body.lead')) +
+      (json.fileAllowed
+        ? kit.warn(t.html('consoleSecretDestinations.body.development'))
+        : '') +
+      kit.createForm(Object.assign({}, json, { createFields: served }), {
+        post: NEW, action: 'add-destination',
+        heading: t.html('consoleSecretDestinations.body.add'),
+        button: t.html('consoleSecretDestinations.body.addButton'),
+        words: {
+          identifier: {
+            label: t.html('consoleSecretDestinations.body.identifier'),
+            placeholder: 'vault-prod' },
+          name: { label: t.html('consoleSecretDestinations.row.name'),
+                  placeholder: 'Production Vault' },
+          provider: Object.assign(field(
+            'consoleSecretDestinations.fields.provider'), {
+            type: 'select', choices: listed(json.providers) }),
+          payload: Object.assign(field(
+            'consoleSecretDestinations.fields.payload'), {
+            type: 'select', choices: listed(json.payloads),
+            value: 'password' }),
+          region: field('consoleSecretDestinations.fields.region',
+                        'us-east-1'),
+          project: field('consoleSecretDestinations.fields.project',
+                         'my-project'),
+          endpoint: field('consoleSecretDestinations.fields.endpoint',
+                          'https://vault.example.com:8200'),
+          mount: field('consoleSecretDestinations.fields.mount', 'secret'),
+          field: field('consoleSecretDestinations.fields.field', 'value'),
+          directory: field('consoleSecretDestinations.fields.directory',
+                           '/run/sts-test-secrets'),
+          caCertificates: Object.assign(field(
+            'consoleSecretDestinations.fields.caCertificates',
+            '-----BEGIN CERTIFICATE-----'), { type: 'long' }),
+          credential: Object.assign(field(
+            'consoleSecretDestinations.fields.credential'), {
+            type: 'password', attrs: { autocomplete: 'off' } })
+        }
+      }, t);
+  }
+
+  /**
    * Draws the page body.
    *
    * @param json - the view `GET /admin-api/secret-destinations` answers
@@ -244,19 +369,13 @@ class SecretDestinationsPage {
       '<p class="sub">' + t.html('consoleSecretDestinations.body.testPush') +
       '</p>') +
       (c.write
+        // THE ADD TAB IS THE WAY TO THE CREATE PAGE (#1132): Add a
+        // destination draws the one create form, its required fields
+        // called out as New user's are.
         ? '<h3 id="add" data-tab="add">' +
           t.html('consoleSecretDestinations.body.add') +
-          '</h3>' + kit.frame('<form method="post" ' +
-          'action="' + PAGE + '"><input type="hidden" name="action" ' +
-          'value="add-destination"><div class="formrow">' +
-          this.text('identifier',
-                    t.text('consoleSecretDestinations.body.identifier'), '',
-                    'vault-prod') +
-          this.text('name', t.text('consoleSecretDestinations.row.name'), '',
-                    'Production Vault') + '</div>' +
-          this.fields(t, json, null) + '<button type="submit">' +
-          t.html('consoleSecretDestinations.body.addButton') + '</button>' +
-          '</form>')
+          '</h3>' + kit.frame(kit.createLink(NEW,
+            t.html('consoleSecretDestinations.newDestination.button')))
         : '') +
       '<p class="links" data-metadata>' +
       '<code>GET /admin-api/secret-destinations</code></p>';

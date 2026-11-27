@@ -66,7 +66,7 @@
 // PRESENT and skipped, which is what makes a re-run add nothing.
 //
 // **WHAT IT DOES NOT DO**, each argued on #629 and in
-// `docs/v1.1.0/bulk-import.md`: no credentials (a password, Kerberos keys, a
+// `docs/v1.2.0/bulk-import.md`: no credentials (a password, Kerberos keys, a
 // factor — the allowlist below refuses every one), no audit row per entry, no
 // `noteAccountChange()` (so no RISC or CAEP event and no outbound SCIM push),
 // no groups, no update of an existing entry, no multi-cell store (the routing
@@ -408,7 +408,7 @@ const DROP_OWN =
 // transaction committed. Every import of the realm commits
 // that way, ONE AT A TIME, and a commit becomes visible before its lock is
 // released, so each check sees every other import's committed rows: two
-// files that overlap cannot both admit a name (`docs/v1.1.0/bulk-import.md`,
+// files that overlap cannot both admit a name (`docs/v1.2.0/bulk-import.md`,
 // *Several imports at once*). No correlated guard is needed in the insert,
 // and none would be cheap (above).
 //
@@ -1463,7 +1463,8 @@ async function main(argv) {
                     ((e && e.message) || e));
     }
     const dial = postgres.dialOptions(connection.url, connection.verifyTls,
-                                      connection.tlsCa);
+                                      connection.tlsCa, undefined,
+                                      connection.tlsClient);
     if (dial.refused) {
       throw refusal('STS-LDAP-0152', 'the connection string is not ' +
                     'dialled: ' + dial.refused + ' (#273).');
@@ -1483,6 +1484,7 @@ async function main(argv) {
     driver = postgres.create({ url: connection.url, log: log,
                                verifyTls: connection.verifyTls,
                                tlsCa: connection.tlsCa,
+                               tlsClient: connection.tlsClient,
                                poolMax: postgres.poolMax(0) });
     try {
       await driver.open();

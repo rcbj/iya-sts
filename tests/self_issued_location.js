@@ -46,6 +46,9 @@ const log = require('bunyan').createLogger({ name: 'self_issued_location',
 // ---------------------------------------------------------------------------
 function childMain() {
   const ROOT = process.env.WSI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
 
@@ -85,7 +88,7 @@ function childMain() {
     const webUri = view.webWallet ? requestUriOf(view.webWallet) : '';
     const appUri = view.sameDevice ? requestUriOf(view.sameDevice) : '';
     note(/\/oid4vp\/request\/[^?]+\?via=web$/.test(webUri) &&
-         view.webWallet.indexOf(WALLET) === 0 &&
+         urls.isUnder(view.webWallet, WALLET) &&
          /\/oid4vp\/request\/[^?]+$/.test(appUri) &&
          /^siopv2:\/\//.test(view.sameDevice) &&
          webUri.replace(/\?via=web$/, '') === appUri,

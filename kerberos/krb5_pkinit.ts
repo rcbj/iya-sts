@@ -37,6 +37,11 @@
 //     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED, because a reply key
 //     encrypted to the client's RSA key has no forward secrecy (#179's
 //     scope says so). DH keys are never reused (no serverDHNonce).
+//   * MS-PKCA section 2.2.3 — paChecksum2 (#2125): the KDC-REQ-BODY's
+//     digest under SHA-256, SHA-384 or SHA-512 beside RFC 4556's SHA-1
+//     paChecksum, which stays required. Checked whenever it is sent (SHA-1
+//     in it refused in product), required with
+//     `krb5.pkinitRequirePaChecksum2` (off by default; MIT does not send it).
 //   * RFC 5349 — ECDH on P-256, P-384 and P-521 beside MODP groups 14 to 18.
 //   * RFC 8070 — the freshness token: sealed under the realm's krbtgt key
 //     like FAST's cookie, offered in every KDC_ERR_PREAUTH_REQUIRED that asks
@@ -78,12 +83,17 @@
 // clientAuth alone and are refused KDC_ERR_INCONSISTENT_KEY_PURPOSE here.
 //
 // **HARDWARE-BOUND** (rcbj's other answer): the KDC cannot see a smart card.
-// What it can see is that the certificate is the SMARTCARD-LOGON profile
-// (id-ms-kp-sc-logon) and that this service did NOT generate its key (EST's
-// /serverkeygen records `keySource: 'server'`). Only then does the ticket
-// say `pkinit-hardware`, which `spnego_authn.ts` turns into `hwk`; every
-// other PKINIT ticket says `pkinit` and becomes `swk`, as `/tls/sign-in`
-// says of a certificate. Neither is a password, so neither is `pwd`.
+// It earns `pkinit-hardware`, which `spnego_authn.ts` turns into `hwk`, in
+// two ways. FROM EVIDENCE (#1955): a key an active hardware token's
+// attestation covers is hardware whatever its EKU, and a smart card's
+// evidence earns `pkinit-smartcard` (`sc`) beside it. BY INFERENCE, while
+// `hardwareTokens.hardwareClaims` is `inference` (the default): the
+// certificate is the SMARTCARD-LOGON profile (id-ms-kp-sc-logon) and this
+// service did NOT generate its key (EST's /serverkeygen records `keySource:
+// 'server'`). Every other PKINIT ticket says `pkinit` and becomes `swk`, as
+// `/tls/sign-in` says of a certificate. Neither is a password, so neither is
+// `pwd`. A PIV card authentication (9e) key is never evidence, and is
+// refused unless the authentication policy lets it sign in (#2031).
 //
 // ---------------------------------------------------------------------------
 // POST-QUANTUM. No post-quantum PKINIT is standardised. Where it would go is
@@ -117,6 +127,7 @@ import asn1 = require('./krb5_asn1');
 import msgs = require('./krb5_messages');
 import principals = require('./krb5_principals');
 import codec = require('./krb5_pkinit_codec');
+import truststores = require('../common/truststores');
 
 type Json = any;
 
@@ -152,6 +163,16 @@ interface Krb5PkinitDeps {
   tlsClientCertificates: () => Json;
   revocationStatus: () => Json;
   nodeName: () => string;
+  // What the hardware token register says of a certificate's key, and
+  // whether the realm still lets the inference stand (#1955): reached at
+  // the moment of use, and nothing (with the inference standing) when it
+  // cannot be asked.
+  // Since the #1955 review: by the certificate itself (its thumbprint and
+  // serial) and the person it would sign in, who must be its holder; and
+  // `cardAuth`, the PIV rule's refusal of a key that needs no PIN, or ''.
+  hardwareEvidence: (leaf: Buffer, username: string) => {
+    hardware: boolean; smartCard: boolean; inferenceAllowed: boolean;
+    cardAuth: string };
 }
 
 // The KDC's key and certificate in this process, per trust realm.
@@ -179,6 +200,11 @@ const FALLBACK_IDENTITY_CAS = ['tls-client', 'acme', 'est', 'scep'];
 const PKINIT_INDICATOR = 'pkinit';
 /** The indicator beside it for a certificate marked hardware-bound. */
 const HARDWARE_INDICATOR = 'pkinit-hardware';
+// THE KEY IS ON A SMART CARD (#1955 P1): set beside `pkinit-hardware` only
+// where a hardware token's attestation evidence says so, never inferred.
+// `Krb5Tokens.factorsFor()` turns it into RFC 8176 `sc`. An RFC 8129
+// indicator is a string the KDC chooses, as `pkinit-hardware` is.
+const SMARTCARD_INDICATOR = 'pkinit-smartcard';
 
 // RFC 8062's anonymous principal and realm.
 const ANONYMOUS_REALM = 'WELLKNOWN:ANONYMOUS';
@@ -206,6 +232,7 @@ class Krb5Pkinit {
   static readonly PKINIT_INDICATOR = PKINIT_INDICATOR;
   /** The indicator for a certificate marked hardware-bound. */
   static readonly HARDWARE_INDICATOR = HARDWARE_INDICATOR;
+  static readonly SMARTCARD_INDICATOR = SMARTCARD_INDICATOR;
   /** The claim scope a signed AuthPack is spent under. */
   static readonly REPLAY_SCOPE = REPLAY_SCOPE;
 
@@ -254,6 +281,34 @@ class Krb5Pkinit {
       },
       revocationStatus: function () {
         return require('../common/revocation_status');
+      },
+      hardwareEvidence: function (leaf: Buffer, username: string) {
+        let cardAuth = '';
+        try {
+          const refusal = require('../common/piv_attestation').signInRefusal(
+            pki.certificateSerialHex(leaf),
+            cryptoLib.digest('sha256', leaf, 'hex'));
+          cardAuth = refusal ? String(refusal.why || 'card-auth') : '';
+        } catch (e) {
+          helpers.log.debug('Caught in hardwareEvidence(): ' +
+                            ((e && e.message) || e));
+          // Not enrolled here, or no register to ask: not this rule's.
+          cardAuth = '';
+        }
+        try {
+          const tokens = require('../common/hardware_tokens');
+          const ev = tokens.certificateEvidence({ der: leaf,
+            serial: pki.certificateSerialHex(leaf), username: username });
+          return { hardware: !!ev.hardware, smartCard: !!ev.smartCard,
+                   inferenceAllowed: tokens.inferenceAllowed(),
+                   cardAuth: cardAuth };
+        } catch (e) {
+          helpers.log.debug('Caught in hardwareEvidence(): ' +
+                            ((e && e.message) || e));
+          // No register to ask: no evidence, and the inference as before.
+          return { hardware: false, smartCard: false,
+                   inferenceAllowed: true, cardAuth: cardAuth };
+        }
       },
       nodeName: function () {
         try {
@@ -590,7 +645,10 @@ class Krb5Pkinit {
       return cryptoLib.pkinitSignerIdentifies(signer.sid, one);
     })[0];
     const realmId = String(realms.currentId() || '');
-    const anchorsPem: string[] = pki.trustAnchorsFor(realmId);
+    // What `pkinit` is assigned (#2118): this service's Root by default,
+    // and now an outside smart-card CA too where a truststore holds one.
+    const anchorsPem: string[] = truststores.resolve('pkinit',
+      { realmId: realmId, expandSystem: true }).anchors;
     const anchorEpis = this.trustedCertifiers(anchorsPem);
     if (!leaf) {
       log.debug('Leaving Krb5Pkinit.checkCertificate(). No signer cert.');
@@ -742,10 +800,29 @@ class Krb5Pkinit {
       log.debug('Leaving Krb5Pkinit.checkCertificate(). Not bound.');
       return bound;
     }
+    // HARDWARE-BOUND (header), since #1955 from EVIDENCE too: a key an
+    // active hardware token's attestation covers is hardware whatever its
+    // EKU, and the smart-card evidence earns `sc` beside it. The inference
+    // stands only while `hardwareTokens.hardwareClaims` is `inference`, the
+    // default, so an existing realm's tickets say what they said.
+    const names = (cname && cname.name) || [];
+    const evidence = this.deps.hardwareEvidence(leaf,
+      names.length === 1 ? String(names[0]) : '');
+    // A PIV CARD AUTHENTICATION KEY (slot 9e) SIGNS NOBODY IN HERE either
+    // (the #1955 review): it needs no PIN, which is what PKINIT's
+    // `pkinit-smartcard` claims, and the TLS door already refuses it.
+    if (evidence.cardAuth) {
+      log.debug('Leaving Krb5Pkinit.checkCertificate(). A card-auth key.');
+      return this.refuse(codec.ERROR.CLIENT_NOT_TRUSTED, 'STS-PIV-0013',
+                         evidence.cardAuth);
+    }
+    const inferred = facts.ekus.indexOf(SMARTCARD_LOGON_EKU) >= 0 &&
+                     bound.keySource !== 'server' &&
+                     evidence.inferenceAllowed;
     log.debug('Leaving Krb5Pkinit.checkCertificate(). ' + bound.how);
     return { ok: true, leaf: leaf, chain: chainDers, how: bound.how,
-             hardware: facts.ekus.indexOf(SMARTCARD_LOGON_EKU) >= 0 &&
-                       bound.keySource !== 'server',
+             hardware: inferred || evidence.hardware,
+             smartCard: evidence.hardware && evidence.smartCard,
              notAfter: facts.notAfter, authority: first.authority,
              path: path.chain };
   }
@@ -913,6 +990,65 @@ class Krb5Pkinit {
   // `errorReply()`. `sessionKeyFor(etype)` answers the ticket session key and
   // its PA-PKINIT-KX for an anonymous client, and null otherwise.
   // -------------------------------------------------------------------------
+  // MS-PKCA SECTION 2.2.3's paChecksum2 (#2125, ASVS 5.0.0 11.4.3, rcbj's
+  // decision of 2026-11-24). The section says a PAChecksum2 that is present
+  // "will always be validated even if it is SHA-1", and that it "SHOULD be
+  // present" where SHA-1 is disabled; Windows Server 2022 23H2 and later send
+  // it. So: present, it is checked whatever else is true — an algorithm the
+  // section does not list, or SHA-1 in product (`mode.allowsLegacyHashes()`,
+  // the switch every other SHA-1 here answers to), is refused rather than
+  // skipped, because a client that chose a checksum is told it was not
+  // accepted instead of being judged on a weaker one in silence. Absent, it
+  // is refused only where krb5.pkinitRequirePaChecksum2 asks for it, which is
+  // off by default because MIT's client does not send one. The refusals are
+  // RFC 4556's for the paChecksum, which MS-PKCA names no others beside:
+  // KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) for one missing or not
+  // acceptable, KRB_AP_ERR_MODIFIED (41) for one that does not match.
+  /**
+   * Checks the PKAuthenticator's paChecksum2, if it carries one, and
+   * whether the realm requires one.
+   *
+   * @param pack - the decoded AuthPack
+   * @param raw - the KDC-REQ-BODY as it arrived
+   * @returns a refusal, or null when the request may go on
+   */
+  checkPaChecksum2(pack: Json, raw: Uint8Array): Json {
+    const { log, codec, cryptoLib, config, mode } = this.deps;
+    log.debug('Entering Krb5Pkinit.checkPaChecksum2().');
+    const given = pack.paChecksum2;
+    if (!given) {
+      if (config.value('krb5.pkinitRequirePaChecksum2') === true) {
+        log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). Required.');
+        return this.refuse(codec.ERROR.PA_CHECKSUM_MUST_BE_INCLUDED,
+                           'STS-KRB-0262', 'this realm requires an MS-PKCA ' +
+                           'paChecksum2 in the PKAuthenticator');
+      }
+      log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). None sent.');
+      return null;
+    }
+    const algorithm = cryptoLib.pkinitPaChecksum2Algorithm(given.algorithm);
+    if (!algorithm ||
+        (algorithm.legacy && !mode.allowsLegacyHashes())) {
+      log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). Not acceptable: ' +
+                given.algorithm);
+      return this.refuse(codec.ERROR.PA_CHECKSUM_MUST_BE_INCLUDED,
+                         'STS-KRB-0260', 'the paChecksum2 is over ' +
+                         (algorithm ? algorithm.label : given.algorithm) +
+                         ', which this KDC does not accept; send SHA-256, ' +
+                         'SHA-384 or SHA-512');
+    }
+    if (!cryptoLib.pkinitPaChecksum2Matches(raw, given.algorithm,
+                                            given.checksum)) {
+      log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). Mismatch.');
+      return this.refuse(41, 'STS-KRB-0261', 'the paChecksum2 is not the ' +
+                         algorithm.label + ' of this request\'s ' +
+                         'KDC-REQ-BODY');
+    }
+    log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). ' + algorithm.label +
+              ' matches.');
+    return null;
+  }
+
   /**
    * Checks a PA-PK-AS-REQ and builds the PKINIT reply: the client's
    * signature and certificate (or none, for anonymous PKINIT), the freshness
@@ -962,15 +1098,20 @@ class Krb5Pkinit {
                              'anonymous principal may send');
     }
     // THE paChecksum (section 3.2.1 item 6) over the KDC-REQ-BODY the AuthPack
-    // was signed for. THE ONE SHA-1 THIS SERVICE MAY NOT REFUSE (ASVS 5.0.0
-    // 11.4.1): RFC 4556 says it MUST be present and contains a SHA-1 checksum,
-    // and that a KDC MUST answer KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED where it
-    // is absent; RFC 8636 section 9 leaves it "fixed at SHA-1". What the
-    // request's security rests on is elsewhere, and in product it is enforced
-    // below: the signature's digest is not SHA-1, the reply key is agreed by
-    // Diffie-Hellman, and RFC 8636's KDF over SHA-256 or better binds the
+    // was signed for. STILL REQUIRED, AND STILL SHA-1 (ASVS 5.0.0 11.4.1 and
+    // 11.4.3): RFC 4556 says it MUST be present and contains a SHA-1
+    // checksum, and that a KDC MUST answer KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED
+    // where it is absent; RFC 8636 section 9 leaves it "fixed at SHA-1". So
+    // it is checked as the RFC says, and refusing it would refuse every MIT
+    // and Heimdal client. It is no longer the only integrity check this KDC
+    // can make over the request body: MS-PKCA's paChecksum2, below, is the
+    // same binding under SHA-256 or better, checked whenever a client sends
+    // one and required with krb5.pkinitRequirePaChecksum2 (#2125). Beyond
+    // both, what the request's security rests on is enforced below in
+    // product: the signature's digest is not SHA-1, the reply key is agreed
+    // by Diffie-Hellman, and RFC 8636's KDF over SHA-256 or better binds the
     // AS-REQ to the reply (its section 3), which is what covers a second
-    // preimage of this checksum (its section 9).
+    // preimage of the SHA-1 checksum (its section 9).
     if (!pack.paChecksum) {
       log.debug('Leaving Krb5Pkinit.checkRequest(). No paChecksum.');
       return this.refuse(codec.ERROR.PA_CHECKSUM_MUST_BE_INCLUDED,
@@ -981,6 +1122,11 @@ class Krb5Pkinit {
       log.debug('Leaving Krb5Pkinit.checkRequest(). paChecksum mismatch.');
       return this.refuse(41, 'STS-KRB-0180', 'the paChecksum is not the ' +
                          'SHA-1 of this request\'s KDC-REQ-BODY');
+    }
+    const second = this.checkPaChecksum2(pack, body.raw);
+    if (second) {
+      log.debug('Leaving Krb5Pkinit.checkRequest(). paChecksum2.');
+      return second;
     }
     // THE TIMESTAMP (section 3.2.2: "the time skew falls within acceptable
     // limits").
@@ -1152,7 +1298,8 @@ class Krb5Pkinit {
     }
     const indicators = opts.anonymous ? []
       : [PKINIT_INDICATOR].concat(certificate.hardware
-                                    ? [HARDWARE_INDICATOR] : []);
+                                    ? [HARDWARE_INDICATOR] : [])
+          .concat(certificate.smartCard ? [SMARTCARD_INDICATOR] : []);
     // AD-INITIAL-VERIFIED-CAS (section 3.2.3): the CAs the path went
     // through, the leaf left out. Never in an anonymous ticket (RFC 8062
     // section 4.1).

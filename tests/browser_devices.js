@@ -30,6 +30,8 @@
 //      compromised, the sign-in is refused, and the cookie is cleared.
 //   I. the pure halves: which browser a User-Agent names, and what counts
 //      as a second factor in an amr.
+//   J. "an administrator is always asked" reads the roster of the realm
+//      signed in to, not the default realm's (#2236).
 // ===========================================================================
 
 const fs = require('fs');
@@ -45,6 +47,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.RD_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.RD_OUT;
   const http = require('http');
   const findings = [];
@@ -317,12 +322,13 @@ function childMain() {
     const third = await passwordStep(b1f, authorizeAt, 'bd-alice', false);
     let landed = third.answer;
     for (let i = 0; i < 5 && landed.status >= 300 && landed.status < 400 &&
-         String(landed.headers.location || '').indexOf(REDIRECT) !== 0; i++) {
+         !urls.isAt(String(landed.headers.location || ''), REDIRECT); i++) {
       landed = await b1f.go('GET', pathOf(landed.headers.location));
     }
     const gen3Cookie = b1f.jar[cookieName];
-    note(String(landed.headers.location || '').indexOf(REDIRECT + '?code=') ===
-         0 && auditOf('authn.second-factor.skipped', 'bd-alice').length === 1,
+    note(urls.isAt(String(landed.headers.location || ''), REDIRECT) &&
+         /^\?code=/.test(new URL(landed.headers.location).search) &&
+         auditOf('authn.second-factor.skipped', 'bd-alice').length === 1,
          'F1. with the policy on, the password alone signs in on the ' +
          'remembered browser, and the audit log says the factor was skipped',
          third.answer.status + ' ' + String(landed.headers.location || ''));
@@ -370,7 +376,7 @@ function childMain() {
     };
     const refusedAt = copyDone === copy.answer ? copy.answer : copyDone;
     note((clearedIn(copy.answer) || clearedIn(copyDone)) &&
-         !String(refusedAt.headers.location || '').startsWith(REDIRECT),
+         !urls.isAt(String(refusedAt.headers.location || ''), REDIRECT),
          'H2. the sign-in on the compromised device does not reach the ' +
          'client, and the cookie is cleared so the next attempt is not ' +
          'refused on it', refusedAt.status + ' ' +
@@ -386,6 +392,56 @@ function childMain() {
          !browserDevices.hasSecondFactor(['hwk']) &&
          !browserDevices.hasSecondFactor(['pwd']),
          'I2. two factors are counted from amr, one factor is not');
+
+    // --- J. a trust realm's own roster (#2236) ------------------------------
+    // "An administrator is always asked" is asked of the roster of the realm
+    // the browser signs in to. Until #2236 the default realm's was read, so
+    // a trust realm's own administrator could skip the second factor on a
+    // remembered browser, and a person of the same name on the default
+    // realm's roster could not.
+    const adminRbac = require(ROOT + '/admin-ui/admin_rbac');
+    const realms = require(ROOT + '/common/realms');
+    const J_RUN = require('crypto').randomBytes(3).toString('hex');
+    const TWIN = 'bdtwin-' + J_RUN;
+    const RADMIN = 'bdradmin-' + J_RUN;
+    ldap.createUser(TWIN, { invent: false });
+    adminRbac.grant(TWIN, 'write', { via: 'test', actor: 'test' });
+    const trust = realms.create({ id: 'bd' + J_RUN, name: 'bd ' + J_RUN });
+    note(trust.ok, 'precondition: a trust realm',
+         JSON.stringify(trust.errors || []));
+    if (trust.ok) {
+      try {
+        await realms.run(trust.realm, async function () {
+          [TWIN, RADMIN].forEach(function (name) {
+            ldap.createUser(name, { invent: false });
+          });
+          adminRbac.grant(RADMIN, 'write', { via: 'test', actor: 'test',
+                                             realm: trust.realm.id });
+          const saved = authnPolicy.save('default',
+            Object.assign({}, authnPolicy.DEFAULTS,
+                          { rememberedBrowserSkipsSecondFactor: true }));
+          // A remembered browser recognised and trusted, for a client that
+          // is not on the never-skip list: what is left is who asks.
+          const skip = function (who) {
+            return browserDevices.skipsSecondFactor({
+              fact: { id: 'bd-none-' + J_RUN, via: 'browser-cookie',
+                      browserToken: {}, status: 'active' },
+              clientId: 'bd-client', username: who, riskLevel: 'LOW' });
+          };
+          const twin = skip(TWIN);
+          const radmin = skip(RADMIN);
+          note(saved.ok && !/administrator/.test(String(twin.why)) &&
+               /an administrator is always asked/.test(String(radmin.why)) &&
+               !radmin.skip,
+               'J1. in a trust realm, its own roster member is always asked ' +
+               'for the second factor, and a person of the same name as a ' +
+               'default-realm administrator is not treated as one',
+               JSON.stringify({ twin: twin, radmin: radmin }));
+        });
+      } finally {
+        realms.remove(trust.realm.id);
+      }
+    }
 
     policyWith({});
     server.close();

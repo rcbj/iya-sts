@@ -103,8 +103,12 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -412,6 +416,9 @@ function oauthApplication(identifier, name) {
 }
 
 // A person in this realm's directory, with a password and real attributes.
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses PASSWORD
+// at the sign-in screen (`own_password.js`; in development it is set).
 async function createPerson(username) {
   log.debug("Entering createPerson().");
   await act("users", "create", {
@@ -419,8 +426,13 @@ async function createPerson(username) {
     attributes: { cn: "Roles " + username, givenName: "Roles", sn: username,
                   displayName: "Roles " + username,
                   mail: username + "@roles-job.test" },
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   }, "created " + username + " in the realm");
+  await ownPassword.ownPassword(realmUrl(""), username, PASSWORD,
+    function (who, value) {
+      return postJson(api("/users/set-password"),
+                      { user: who, password: value });
+    });
   log.debug("Leaving createPerson().");
 }
 
@@ -609,7 +621,12 @@ async function anUnconfiguredRealmRefusesNobody() {
     //
     // ELEVEN SINCE #563 (2026-10-29): AUTHZEN_PEPS, held through
     // `roles.authzenPepGroup` as XACML_USER is through its group.
-    assert.strictEqual(register.body.builtIn.length, 11,
+    //
+    // TWELVE SINCE #1955 P2 (2026-11-22): PIV_KEY_RECOVERY, held through
+    // `roles.pivKeyRecoveryGroup` the same way, which the access-control
+    // policy asks for beside Admin Write before an escrowed
+    // piv-key-management key is recovered (`common/roles.js`).
+    assert.strictEqual(register.body.builtIn.length, 12,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +
@@ -949,7 +966,7 @@ async function theAuthorizationEndpointRefuses() {
   });
   const back = await holderBrowser.go("GET", signedIn.location);
   check("and the authorization endpoint hands them a code", function () {
-    assert.ok(back.location.indexOf(REDIRECT_URI) === 0 &&
+    assert.ok(urls.isAt(back.location, REDIRECT_URI) &&
               /[?&]code=/.test(back.location),
       "it went to " + back.location);
   });
@@ -968,7 +985,7 @@ async function theAuthorizationEndpointRefuses() {
   const second = await holderBrowser.go("GET",
     authorizeUrl("roles-second-app"));
   check("a LIVE session is refused at the authorization endpoint", function () {
-    assert.ok(second.location.indexOf(REDIRECT_URI) === 0,
+    assert.ok(urls.isAt(second.location, REDIRECT_URI),
       "the refusal goes to the redirect_uri the client controls and NOT to a " +
       "page on this service; it went to " + second.location);
   });

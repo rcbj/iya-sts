@@ -602,6 +602,26 @@ async function inParallel(items, limit, fn) {
   }
 }
 
+// The answers `namesForSubjectsAsync()` gave from its synchronous fallback
+// after the asynchronous door threw (#1952): right as far as they go, but
+// given while the store was failing, so a caller that keeps answers
+// (`admin_stats.js`'s memo, #790) must not keep these.
+const FALLBACK_NAME_ANSWERS = new WeakSet();
+
+/**
+ * Whether a Map `namesForSubjectsAsync()` answered came from its fallback
+ * after the asynchronous door threw.
+ *
+ * @param answer - the Map
+ * @returns true when it is a fallback answer
+ */
+function namesFellBack(answer) {
+  log.debug("Entering namesFellBack().");
+  log.debug("Leaving namesFellBack().");
+  return !!answer && typeof answer === 'object' &&
+    FALLBACK_NAME_ANSWERS.has(answer);
+}
+
 /**
  * `namesForSubjects()`, asking the directory asynchronously where it can.
  *
@@ -648,8 +668,10 @@ async function namesForSubjectsAsync(subjects) {
               'helpers: the subject resolver threw looking up ' +
               uuids.length + ' subjects asynchronously, so they are asked ' +
               'synchronously: ' + ((e && e.message) || e));
+    const fallback = namesForSubjects(subjects);
+    FALLBACK_NAME_ANSWERS.add(fallback);
     log.debug("Leaving namesForSubjectsAsync(). Asked synchronously.");
-    return namesForSubjects(subjects);
+    return fallback;
   }
 }
 
@@ -1149,17 +1171,274 @@ const RSA_SIGNING_UNITS = {
   xml: { commonName: 'ws-trust-sts-xml', serialPrefix: '04' }
 };
 
-function makeRsaSigningKey(useCaseId, privateKeyPem) {
+// ---------------------------------------------------------------------------
+// A REALM'S SIGNING KEYS IN THE HSM (#1955 P8, rcbj's D6: "both"), where its
+// `keys.signingKeyStore` is `pkcs11`: the RS256 key, the XML key and the
+// curve keys the module can make are made IN THE TOKEN, non-extractable, by
+// the same recipes as ever — the key set's shape does not change, its
+// private keys are HSM key objects (`crypto.js` section 19) whose "PEM" is a
+// reference, so the set is sealed, shared with the request workers, restored
+// and rotated exactly as a software set is. What the module cannot make
+// (Ed448 on most, anything on a module with no EC) and every post-quantum
+// key are made in software, as before, and `hsmKeyReport()` says which.
+//
+// IT IS REFUSED, NEVER QUIETLY SOFTWARE, where it cannot hold: a keystore
+// that does not persist (development mode — every start would leave a new
+// set of objects in the token) or no token open in this process
+// (keys.signingKeyToken), STS-KEYS-0206. An operator who asked for keys in
+// the HSM did not ask for keys in this process.
+// ---------------------------------------------------------------------------
+/**
+ * The signing keys' token where the AMBIENT realm keeps its signing keys in
+ * the HSM, or null where it keeps them in software.
+ *
+ * @returns `{ token, uri }`, or null
+ * @throws STS-KEYS-0206 where the realm asks for the HSM and it cannot be had
+ */
+function hsmSigning() {
+  log.debug("Entering hsmSigning().");
+  if (String(config.value('keys.signingKeyStore') || 'software') !==
+      'pkcs11') {
+    log.debug("Leaving hsmSigning(). Software.");
+    return null;
+  }
+  if (!keystore.persists()) {
+    throw errorCodes.mark(new Error('the "' + realms.currentId() + '" ' +
+      'realm keeps its signing keys in the HSM (keys.signingKeyStore ' +
+      'pkcs11) and the keystore does not persist, so every start would ' +
+      'leave a new set of keys in the token. It needs product mode (or ' +
+      'keys.source persisted).'), 'STS-KEYS-0206');
+  }
+  const held = require('./secrets').heldSigningToken();
+  if (!held) {
+    throw errorCodes.mark(new Error('the "' + realms.currentId() + '" ' +
+      'realm keeps its signing keys in the HSM (keys.signingKeyStore ' +
+      'pkcs11) and this process holds no signing token: set ' +
+      'keys.signingKeyToken, and restart.'), 'STS-KEYS-0206');
+  }
+  log.debug("Leaving hsmSigning(). " + held.uri);
+  return held;
+}
+
+// The same, for a realm named rather than ambient.
+function hsmSigningFor(realmId) {
+  log.debug("Entering hsmSigningFor(). " + realmId);
+  log.debug("Leaving hsmSigningFor().");
+  return realms.run(realmForKeys(realmId), hsmSigning);
+}
+
+// The CKA_LABEL a key is made under: the realm and what it is, so an operator
+// listing the token (yubihsm-shell, pkcs11-tool) can tell the keys apart.
+function hsmLabel(what) {
+  log.debug("Entering hsmLabel().");
+  log.debug("Leaving hsmLabel().");
+  return ('sts-' + realms.currentId() + '-' + what).slice(0, 64);
+}
+
+// The engine's description of a curve recipe, or null for one no HSM key is
+// made for.
+function hsmCurveSpec(spec) {
+  log.debug("Entering hsmCurveSpec().");
+  const named = { prime256v1: 'P-256', secp384r1: 'P-384',
+                  secp521r1: 'P-521', secp256k1: 'secp256k1' };
+  let out = null;
+  if (spec.gen[0] === 'ec' && named[spec.gen[1].namedCurve]) {
+    out = { kty: 'EC', crv: named[spec.gen[1].namedCurve] };
+  } else if (spec.gen[0] === 'ed25519') {
+    out = { kty: 'OKP', crv: 'Ed25519' };
+  } else if (spec.gen[0] === 'ed448') {
+    out = { kty: 'OKP', crv: 'Ed448' };
+  }
+  log.debug("Leaving hsmCurveSpec().");
+  return out;
+}
+
+// A curve key pair: in the HSM where the realm asks and the module can, in
+// software otherwise. Synchronous (`makeStsKeys()`'s door).
+// A CURVE THE MODULE OFFERS THE MECHANISM FOR AND STILL DOES NOT MAKE
+// (Ed448 on SoftHSM2; a curve a YubiHSM's firmware lacks) is STS-KEYS-0207,
+// and that one key is made in software — logged, and `hsmKeyReport()` lists
+// it there. Anything else the HSM answers (it is away, the PIN is refused)
+// is not a reason to make a key here, and is thrown.
+function curveInSoftware(spec, e) {
+  log.debug("Entering curveInSoftware(). " + spec.alg);
+  if (errorCodes.codeOf(e) !== 'STS-KEYS-0207') {
+    throw e;
+  }
+  log.warn(errorCodes.tag('STS-KEYS-0207') + 'helpers: the HSM does not ' +
+           'make a ' + (spec.curve || spec.alg) + ' key (' +
+           ((e && e.message) || e) + '); the "' + realms.currentId() +
+           '" realm\'s ' + (spec.curve || spec.alg) + ' key is made in ' +
+           'software.');
+  log.debug("Leaving curveInSoftware().");
+}
+
+function curvePairFor(spec, hsm) {
+  log.debug("Entering curvePairFor(). " + spec.alg);
+  const hsmSpec = hsm ? hsmCurveSpec(spec) : null;
+  if (hsmSpec && hsm.token.canGenerate(hsmSpec)) {
+    try {
+      const pair = stsCrypto.generatePkcs11KeyPair(hsm.token, hsm.uri,
+        hsmSpec, hsmLabel((spec.curve || spec.alg).toLowerCase()));
+      log.debug("Leaving curvePairFor(). In the HSM.");
+      return pair;
+    } catch (e) {
+      log.debug("Caught in curvePairFor(): " + ((e && e.message) || e));
+      curveInSoftware(spec, e);
+    }
+  }
+  log.debug("Leaving curvePairFor(). Software.");
+  return stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
+}
+
+// The same off the event loop: the HSM's async generation, or libuv's.
+function curvePairForAsync(spec, hsm) {
+  log.debug("Entering curvePairForAsync(). " + spec.alg);
+  const hsmSpec = hsm ? hsmCurveSpec(spec) : null;
+  if (hsmSpec && hsm.token.canGenerate(hsmSpec)) {
+    const realm = realms.current();
+    log.debug("Leaving curvePairForAsync(). In the HSM.");
+    return stsCrypto.generatePkcs11KeyPairAsync(hsm.token, hsm.uri, hsmSpec,
+      hsmLabel((spec.curve || spec.alg).toLowerCase()))
+      .catch(function (e) {
+        log.debug("Caught in curvePairForAsync(): " + ((e && e.message) ||
+                                                      e));
+        return realms.run(realm, function () {
+          curveInSoftware(spec, e);
+          return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
+        });
+      });
+  }
+  log.debug("Leaving curvePairForAsync(). Software.");
+  return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
+}
+
+// An RSA signing key's reference, made in the HSM off the event loop.
+async function hsmRsaKeyAsync(hsm, useCaseId) {
+  log.debug("Entering hsmRsaKeyAsync(). " + useCaseId);
+  const pair = await stsCrypto.generatePkcs11KeyPairAsync(hsm.token, hsm.uri,
+    { kty: 'RSA', bits: require('./mode').defaultRsaBits() },
+    hsmLabel('rsa-' + useCaseId));
+  log.debug("Leaving hsmRsaKeyAsync().");
+  return pair.privateKey.ref;
+}
+
+// ---------------------------------------------------------------------------
+// DOES THE AMBIENT REALM SIGN OR DECRYPT WITH A KEY IN THE HSM? (#1955 P8
+// follow-up.) For a door whose SYNCHRONOUS answer callers and tests read —
+// `wstrust.handleRst()` is the one — the off-the-loop road is taken only
+// where it is needed, so a realm with software keys answers exactly as it
+// always did, not one microtask later. True where the realm keeps its keys
+// in the HSM or any key of its set is there (one made before the setting
+// changed is still used); a false yes only costs an await.
+// ---------------------------------------------------------------------------
+/**
+ * Answers whether the ambient realm's signing keys are, or may be, in the
+ * HSM.
+ *
+ * @returns true when a door should take its off-the-loop road
+ */
+function keysInHsm() {
+  log.debug("Entering keysInHsm().");
+  if (String(config.value('keys.signingKeyStore') || 'software') ===
+      'pkcs11') {
+    log.debug("Leaving keysInHsm(). The realm's store.");
+    return true;
+  }
+  const keys = stsKeysFor();
+  const any = stsCrypto.isHsmKey(keys.privateKeyPem) ||
+    !!(keys.xmlKey && stsCrypto.isHsmKey(keys.xmlKey.privateKeyPem)) ||
+    (keys.extraKeys || []).some(function (one) {
+      return stsCrypto.isHsmKey(one.privateKey);
+    });
+  log.debug("Leaving keysInHsm(). " + any);
+  return any;
+}
+
+/**
+ * Says which of the ambient realm's signing keys are in the HSM and which in
+ * software — for `/admin-api` and the console, which say so per realm.
+ *
+ * @returns `{ store, token, inHsm: [alg…], inSoftware: [alg…] }`
+ */
+function hsmKeyReport() {
+  log.debug("Entering hsmKeyReport().");
+  const keys = stsKeysFor();
+  const inHsm = [];
+  const inSoftware = [];
+  const place = function (name, key) {
+    (stsCrypto.isHsmKey(key) ? inHsm : inSoftware).push(name);
+  };
+  place('RS256', keys.privateKeyPem);
+  place('XML', keys.xmlKey && keys.xmlKey.privateKeyPem);
+  (keys.extraKeys || []).forEach(function (one) {
+    place(one.publicJwk && one.publicJwk.crv && one.alg === 'EdDSA'
+      ? 'EdDSA (' + one.publicJwk.crv + ')' : one.alg, one.privateKey);
+  });
+  // The published post-quantum set (#2220): each key where it was made —
+  // the ML-DSA and SLH-DSA keys in the token where it offers CKM_ML_DSA or
+  // CKM_SLH_DSA, the composites always in software.
+  (keys.pqKeys || []).forEach(function (one) {
+    place(one.alg, one.privateKey);
+  });
+  const held = require('./secrets').heldSigningToken();
+  log.debug("Leaving hsmKeyReport().");
+  return { store: String(config.value('keys.signingKeyStore') || 'software'),
+           token: held ? held.uri : '', inHsm: inHsm,
+           inSoftware: inSoftware };
+}
+
+function makeRsaSigningKey(useCaseId, privateKeyPem, premade) {
   log.debug("Entering makeRsaSigningKey(). use=" + useCaseId);
+  // A CERTIFICATE ALREADY MADE OFF THE EVENT LOOP over this key
+  // (`makeRsaSigningKeyAsync()`), for an HSM key: its signature was
+  // C_SignAsync, and this door would otherwise make it with C_Sign.
+  if (premade && premade.privateKeyPem === privateKeyPem) {
+    log.debug("Leaving makeRsaSigningKey(). Made off the loop.");
+    return premade;
+  }
   const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
+  // IN THE HSM where the realm asks and no key was handed in (#1955 P8): a
+  // key handed in is one `prepareKeySet()` or a rotation already made — in
+  // the HSM where it asked, as a reference.
+  let keyPem = privateKeyPem;
+  if (!keyPem) {
+    const hsm = hsmSigning();
+    if (hsm) {
+      keyPem = stsCrypto.generatePkcs11KeyPair(hsm.token, hsm.uri,
+        { kty: 'RSA', bits: require('./mode').defaultRsaBits() },
+        hsmLabel('rsa-' + useCaseId)).privateKey.ref;
+    }
+  }
   const made = stsCrypto.selfSignedRsaCertificate({
+    bits: require('./mode').defaultRsaBits(),
+    rsaPrivateKeyPem: keyPem,
+    commonName: unit.commonName,
+    serialPrefix: unit.serialPrefix,
+    years: 5
+  });
+  log.debug("Leaving makeRsaSigningKey().");
+  return made;
+}
+
+// The same for a key already made (#1955 P8 follow-up): for an HSM key, the
+// certificate's signature is C_SignAsync, off the event loop; a software
+// key's certificate is `makeRsaSigningKey()`'s, made in place as before.
+async function makeRsaSigningKeyAsync(useCaseId, privateKeyPem) {
+  log.debug("Entering makeRsaSigningKeyAsync(). use=" + useCaseId);
+  if (!stsCrypto.isHsmKey(privateKeyPem)) {
+    log.debug("Leaving makeRsaSigningKeyAsync(). In place.");
+    return makeRsaSigningKey(useCaseId, privateKeyPem);
+  }
+  const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
+  const made = await stsCrypto.selfSignedRsaCertificateOffLoop({
     bits: require('./mode').defaultRsaBits(),
     rsaPrivateKeyPem: privateKeyPem,
     commonName: unit.commonName,
     serialPrefix: unit.serialPrefix,
     years: 5
   });
-  log.debug("Leaving makeRsaSigningKey().");
+  log.debug("Leaving makeRsaSigningKeyAsync(). In the HSM.");
   return made;
 }
 
@@ -1242,7 +1521,7 @@ function pqKeyFrom(alg, pair) {
 function makeStsKeys(made) {
   log.debug("Entering makeStsKeys().");
   const pre = made || {};
-  const keys = makeRsaSigningKey('jose', pre.signingPem);
+  const keys = makeRsaSigningKey('jose', pre.signingPem, pre.signingCert);
   // -------------------------------------------------------------------------
   // THE OTHER SIGNING KEYS, AND WHY THEY ARE GENERATED UNCONDITIONALLY.
   //
@@ -1266,8 +1545,12 @@ function makeStsKeys(made) {
   // Each gets a `kid` of its own derived from its own public key, so the
   // reasoning about kid collisions above holds per key rather than per service.
   // -------------------------------------------------------------------------
-  const extraKeys = CURVE_KEY_SPECS.map(function (spec) {
-    const pair = stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
+  // In the HSM where the realm asks (#1955 P8): pairs `prepareKeySet()` made
+  // there off the event loop, or made here.
+  const hsm = hsmSigning();
+  const extraKeys = CURVE_KEY_SPECS.map(function (spec, i) {
+    const pair = (pre.curvePairs && pre.curvePairs[i]) ||
+                 curvePairFor(spec, hsm);
     return curveKeyFrom(spec, pair);
   });
 
@@ -1303,7 +1586,7 @@ function makeStsKeys(made) {
     // the reason the others are: the set is what the key channel agrees and
     // the keystore seals. See makeRsaSigningKey(). Its view — the certificate
     // `pki.js` issued over it, and its kid — is installed by xmlKeyView().
-    xmlKey: makeRsaSigningKey('xml', pre.xmlPem),
+    xmlKey: makeRsaSigningKey('xml', pre.xmlPem, pre.xmlCert),
     // A `kid` names a KEY, so it is derived from the key material rather than
     // hard-coded. This key is regenerated on every start, and the kid was
     // previously a constant — so two instances of this mock (a stale container
@@ -1897,6 +2180,33 @@ function generationsView(realmId, stored, privateOf) {
     }
     return entry;
   });
+  // The retired request-decryption keys (#2220): the same rule again.
+  const retiredEnc = (stored.retiredEnc || []).map(function (one) {
+    const entry = /** @type {any} */ ({ kind: one.kind, kid: one.kid,
+                                        retiredAt: one.retiredAt,
+                                        retiredUntil: one.retiredUntil });
+    const kid = one.kid;
+    if (typeof privateOf === 'function') {
+      Object.defineProperty(entry, 'keys', {
+        enumerable: true, configurable: true,
+        get: function () {
+          log.debug("Entering get().");
+          const held = privateOf();
+          const own = held && held.retiredEnc && held.retiredEnc.get(kid);
+          if (!own) {
+            throw new Error('the "' + realmId + '" realm\'s retired ' +
+              'request-decryption key ' + kid + ' is held encrypted and ' +
+              'could not be decrypted; see the keystore errors above.');
+          }
+          log.debug("Leaving get().");
+          return own;
+        }
+      });
+    } else {
+      entry.keys = one.keys;
+    }
+    return entry;
+  });
   const parentCerts = (stored.parentCerts || []).filter(function (one) {
     return typeof one === 'string' && one.length > 0;
   });
@@ -1904,7 +2214,8 @@ function generationsView(realmId, stored, privateOf) {
   return { generation: Number(stored.generation) || 0,
            rotated: Object.assign({}, stored.rotated || {}),
            parentCerts: parentCerts,
-           standby: standby, retiredRefresh: retiredRefresh };
+           standby: standby, retiredRefresh: retiredRefresh,
+           retiredEnc: retiredEnc };
 }
 
 // ---------------------------------------------------------------------------
@@ -2974,6 +3285,46 @@ function keySetNeedsMaking(realmId) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// A REALM'S HSM KEYS, FOUND OFF THE EVENT LOOP BEFORE A HANDLER READS ITS SET
+// (#1955 P8 follow-up). The keystore's start resolves every realm it held
+// then; a realm whose stored set this thread first meets later — created on
+// another node, adopted since — has its references resolved here, through
+// the token's control thread (`stsCrypto.resolveHsmKeysAsync()`), once per
+// realm per thread. The request middleware is the road (`app.js`). A
+// reference adopted after that — a rotation another node made — is resolved
+// in place at its first use, once.
+// ---------------------------------------------------------------------------
+const hsmResolvedRealms = new Set();
+
+// A promise that settles once the realm's stored HSM keys are held, or null
+// when there is nothing to find (or it was done). Never rejects.
+function hsmKeysAhead(realmId) {
+  log.debug("Entering hsmKeysAhead().");
+  if (hsmResolvedRealms.has(realmId) ||
+      !String(config.value('keys.signingKeyToken') || '').trim()) {
+    log.debug("Leaving hsmKeysAhead(). Nothing to do.");
+    return null;
+  }
+  const realm = realmForKeys(realmId);
+  const stored = keystore.storedFor(realm.id);
+  if (!stored) {
+    // Asked again next time: a set may be stored for it later.
+    log.debug("Leaving hsmKeysAhead(). Nothing stored.");
+    return null;
+  }
+  hsmResolvedRealms.add(realmId);
+  const refs = stsCrypto.hsmRefsIn(stored);
+  if (!refs.length) {
+    log.debug("Leaving hsmKeysAhead(). No HSM key.");
+    return null;
+  }
+  log.debug("Leaving hsmKeysAhead(). " + refs.length + " reference(s).");
+  return stsCrypto.resolveHsmKeysAsync(refs).then(function () {
+    return undefined;
+  });
+}
+
 // On libuv's thread pool, through `crypto.js`'s generateKeyPairAsync() (#453).
 function generateRsaPairAsync(bits, asPem) {
   log.debug("Entering generateRsaPairAsync(). bits=" + bits);
@@ -3006,6 +3357,13 @@ function generateRsaPairAsync(bits, asPem) {
 function prepareKeySet(realmId, options) {
   log.debug("Entering prepareKeySet(). realm=" + realmId);
   const id = String(realmId || '');
+  const ahead = hsmKeysAhead(id);
+  if (ahead) {
+    log.debug("Leaving prepareKeySet(). Its HSM keys are found first.");
+    return ahead.then(function () {
+      return prepareKeySet(realmId, options);
+    });
+  }
   const awaitCertificate = !(options && options.awaitCertificate === false);
   if (!keySetNeedsMaking(id)) {
     // HELD — BUT PERHAPS NOT YET CERTIFIED (2026-11-17): a set a read made
@@ -3029,6 +3387,21 @@ function prepareKeySet(realmId, options) {
   const started = Date.now();
   // The sizes are read IN THE REALM, synchronously, before anything is
   // awaited — `makeStsKeys()` reads the same three settings the same way.
+  // THE HSM, where the realm keeps its signing keys there (#1955 P8): its
+  // RS256 key, XML key and curve keys are made in the token, off the event
+  // loop, instead of the two software RSA pairs. Asked in the realm; a
+  // refusal is the same warning a failed generation gives, and the read
+  // that follows refuses again with its code.
+  let hsm = null;
+  try {
+    hsm = realms.run(realm, hsmSigning);
+  } catch (e) {
+    log.debug("Caught in prepareKeySet(): " + ((e && e.message) || e));
+    log.warn(errorCodes.tag(errorCodes.codeOf(e) || 'STS-KEYS-0206') +
+             'helpers: ' + ((e && e.message) || e));
+    log.debug("Leaving prepareKeySet(). The HSM was refused.");
+    return Promise.resolve(false);
+  }
   const bits = realms.run(realm, function () {
     return {
       signing: require('./mode').defaultRsaBits(),
@@ -3037,21 +3410,55 @@ function prepareKeySet(realmId, options) {
       requestObject: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits')
     };
   });
+  const inRealm = function (fn) {
+    return realms.run(realm, fn);
+  };
   const work = Promise.all([
-    generateRsaPairAsync(bits.signing, true),
+    hsm ? inRealm(function () {
+      return hsmRsaKeyAsync(hsm, 'jose');
+    }).then(function (ref) {
+      // Its certificate too, signed off the loop (#1955 P8 follow-up).
+      return inRealm(function () {
+        return makeRsaSigningKeyAsync('jose', ref);
+      }).then(function (cert) {
+        return { privateKey: ref, cert: cert };
+      });
+    }) : generateRsaPairAsync(bits.signing, true),
     generateRsaPairAsync(bits.vci),
     generateRsaPairAsync(bits.refresh),
     generateRsaPairAsync(bits.requestObject),
     // The XML signing key (#42, D2), a fifth pair.
-    generateRsaPairAsync(bits.signing, true)
+    hsm ? inRealm(function () {
+      return hsmRsaKeyAsync(hsm, 'xml');
+    }).then(function (ref) {
+      return inRealm(function () {
+        return makeRsaSigningKeyAsync('xml', ref);
+      }).then(function (cert) {
+        return { privateKey: ref, cert: cert };
+      });
+    }) : generateRsaPairAsync(bits.signing, true),
+    // And the curve keys, in the HSM only: in software they are a few
+    // milliseconds on the loop, as they always were.
+    hsm ? Promise.all(CURVE_KEY_SPECS.map(function (spec) {
+      return inRealm(function () {
+        const hsmSpec = hsmCurveSpec(spec);
+        return hsmSpec && hsm.token.canGenerate(hsmSpec)
+          ? curvePairForAsync(spec, hsm) : null;
+      });
+    })) : Promise.resolve(null)
   ]).then(function (pairs) {
     // Somebody may have made or adopted the set while the threads worked; the
     // factory's order decides, and a prepared set it does not use is dropped.
+    // (A prepared HSM key that is dropped stays in the token, unreferenced:
+    // listed by its sts-<realm>- label for an operator to delete.)
     if (keySetNeedsMaking(id)) {
       preparedSets.set(realm.id, { signingPem: pairs[0].privateKey,
+                                   signingCert: pairs[0].cert,
                                    vci: pairs[1], refresh: pairs[2],
                                    requestObject: pairs[3],
-                                   xmlPem: pairs[4].privateKey });
+                                   xmlPem: pairs[4].privateKey,
+                                   xmlCert: pairs[4].cert,
+                                   curvePairs: pairs[5] });
       stsKeysFor.of(id);
       preparedSets.delete(realm.id);
     }
@@ -4480,6 +4887,7 @@ function xmlSignatureChoice() {
  */
 function resetStsKeys() {
   log.debug("Entering resetStsKeys().");
+  hsmResolvedRealms.clear();
   const held = stsKeysFor.existing();
   if (held && typeof held.clear === 'function') {
     held.clear();
@@ -5896,6 +6304,37 @@ function decryptOwnElement(xml, opts) {
   return first;
 }
 
+/**
+ * `decryptOwnElement()`, with a key in the HSM decrypting off the event loop
+ * (`stsCrypto.decryptElementOffLoop()`, #1955 P8 follow-up): the same keys,
+ * in the same order, and the same answer. A software key's answer is
+ * `decryptElement()`'s, as it was.
+ *
+ * @param xml - the document holding the encrypted element
+ * @param opts - `stsCrypto.decryptElement()`'s options
+ * @returns a promise of `decryptOwnElement()`'s answer
+ */
+async function decryptOwnElementOffLoop(xml, opts) {
+  log.debug("Entering decryptOwnElementOffLoop().");
+  const keys = ownRsaDecryptionKeys('xml');
+  let first = null;
+  for (let i = 0; i < keys.length; i++) {
+    const opened = await stsCrypto.decryptElementOffLoop(String(xml),
+      keys[i].privateKeyPem, opts);
+    if (opened && opened.ok) {
+      log.debug("Leaving decryptOwnElementOffLoop(). Opened by " +
+                keys[i].kid + ".");
+      return opened;
+    }
+    if (!first) {
+      first = opened;
+    }
+  }
+  log.debug("Leaving decryptOwnElementOffLoop(). None of " + keys.length +
+            " opened it.");
+  return first;
+}
+
 // Every PUBLIC signing key of this realm a verifier may find by `kid`: the
 // current curve and post-quantum keys and every live standby one of any unit.
 // For the verifiers that look their own keys up in a list —
@@ -6131,17 +6570,34 @@ function generateCurvePairAsync(spec) {
   return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
 }
 
-async function mintStandbyKey(unitRow, role) {
+async function mintStandbyKey(unitRow, role, realmId) {
   log.debug("Entering mintStandbyKey(). unit=" + unitRow.unit);
+  // A ROTATION IN THE HSM (#1955 P8): the next key of a realm that keeps its
+  // keys there is made there, by the recipes the current one was.
+  const hsm = hsmSigningFor(realmId === undefined ? realms.currentId()
+                                                  : realmId);
+  const inRealm = function (fn) {
+    return realms.run(realmForKeys(realmId === undefined ?
+      realms.currentId() : realmId), fn);
+  };
   const base = { unit: unitRow.unit, role: role || 'next', alg: unitRow.alg,
                  crv: unitRow.crv || '', kind: unitRow.kind,
                  useCase: unitRow.useCase, slot: unitRow.slot,
                  createdAt: Date.now(), retiredAt: 0, retiredUntil: 0,
                  reason: '' };
   if (unitRow.kind === 'rsa') {
-    const pair = await generateRsaPairAsync(
-      require('./mode').defaultRsaBits(), true);
-    const made = makeRsaSigningKey(unitRow.useCase, pair.privateKey);
+    const pair = hsm
+      ? { privateKey: await inRealm(function () {
+          return hsmRsaKeyAsync(hsm, unitRow.useCase);
+        }) }
+      : await generateRsaPairAsync(require('./mode').defaultRsaBits(), true);
+    // Its certificate's signature off the loop for an HSM key (#1955 P8
+    // follow-up); made in place for a software key, as before.
+    const made = hsm
+      ? await inRealm(function () {
+        return makeRsaSigningKeyAsync(unitRow.useCase, pair.privateKey);
+      })
+      : makeRsaSigningKey(unitRow.useCase, pair.privateKey);
     const kid = kidOf(made.certB64);
     log.debug("Leaving mintStandbyKey(). RSA " + kid);
     return Object.assign(base, {
@@ -6159,7 +6615,11 @@ async function mintStandbyKey(unitRow, role) {
       log.debug("Leaving mintStandbyKey(). No curve spec.");
       throw new Error('no curve key recipe for ' + unitRow.unit);
     }
-    const entry = curveKeyFrom(spec, await generateCurvePairAsync(spec));
+    const entry = curveKeyFrom(spec, hsm
+      ? await inRealm(function () {
+          return curvePairForAsync(spec, hsm);
+        })
+      : await generateCurvePairAsync(spec));
     log.debug("Leaving mintStandbyKey(). Curve " + entry.publicJwk.kid);
     return Object.assign(base, { kid: entry.publicJwk.kid,
                                  privateKey: entry.privateKey,
@@ -6214,7 +6674,10 @@ async function mintStandbyKey(unitRow, role) {
       kid: kid, privateKey: Buffer.from(pair.secretKey),
       publicKeyB64: Buffer.from(pair.publicKey).toString('base64') });
   }
-  const pq = pqKeyFrom(unitRow.alg, await pqJose.generateAsync(unitRow.alg));
+  // In the token where it offers the algorithm, as the current key was
+  // (#2220); a composite, and a token without the mechanism, in software.
+  const pq = pqKeyFrom(unitRow.alg, await pqPairForAsync(unitRow.alg, hsm,
+    realmId === undefined ? realms.currentId() : realmId));
   log.debug("Leaving mintStandbyKey(). Post-quantum " + pq.publicJwk.kid);
   return Object.assign(base, { kid: pq.publicJwk.kid,
                                privateKey: pq.privateKey,
@@ -6345,7 +6808,13 @@ function plainCopyOf(keys, overrides) {
         return copy;
       }),
       retiredRefresh: ((keys.generations && keys.generations.retiredRefresh) ||
-                       []).slice()
+                       []).slice(),
+      // The retired request-decryption keys (#2220), each read once.
+      retiredEnc: ((keys.generations && keys.generations.retiredEnc) || [])
+        .map(function (one) {
+          return { kind: one.kind, kid: one.kid, retiredAt: one.retiredAt,
+                   retiredUntil: one.retiredUntil, keys: one.keys };
+        })
     }
   };
   log.debug("Leaving plainCopyOf().");
@@ -6437,7 +6906,7 @@ async function ensureNextGenerations(realmId, options) {
   }
   const made = [];
   for (let i = 0; i < lacking.length; i++) {
-    made.push(await mintStandbyKey(lacking[i], 'next'));
+    made.push(await mintStandbyKey(lacking[i], 'next', id));
   }
   const current = stsKeysFor.of(id);
   const copy = plainCopyOf(current);
@@ -6737,7 +7206,12 @@ function retireExpiredGenerations(realmId, nowMs) {
     .filter(function (one) {
       return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
     });
-  if (!expired.length && !refreshGone.length) {
+  // And the retired request-decryption keys past theirs (#2220).
+  const encGone = ((keys.generations && keys.generations.retiredEnc) || [])
+    .filter(function (one) {
+      return Number(one.retiredUntil) > 0 && Number(one.retiredUntil) <= now;
+    });
+  if (!expired.length && !refreshGone.length && !encGone.length) {
     log.debug("Leaving retireExpiredGenerations(). Nothing due.");
     return { ok: true, dropped: [],
              generation: Number(keys.generations &&
@@ -6757,8 +7231,16 @@ function retireExpiredGenerations(realmId, nowMs) {
     .filter(function (one) {
       return refreshKids.indexOf(one.kid) < 0;
     });
+  const encKids = encGone.map(function (one) {
+    return one.kid;
+  });
+  copy.generations.retiredEnc = copy.generations.retiredEnc
+    .filter(function (one) {
+      return encKids.indexOf(one.kid) < 0;
+    });
   const answer = replaceGeneration(id, copy, (gone.length +
-    refreshKids.length) + ' retired key(s) past their grace dropped');
+    refreshKids.length + encKids.length) +
+    ' retired key(s) past their grace dropped');
   log.debug("Leaving retireExpiredGenerations(). " + gone.length +
             " signing and " + refreshKids.length + " refresh set(s) dropped.");
   return { ok: answer.ok, generation: answer.generation, why: answer.reason,
@@ -6767,6 +7249,9 @@ function retireExpiredGenerations(realmId, nowMs) {
                       slot: one.slot, role: 'retired' };
            }).concat(refreshGone.map(function (one) {
              return { unit: 'refresh:enc', kid: one.kid, useCase: 'refresh',
+                      slot: '', role: 'retired' };
+           })).concat(encGone.map(function (one) {
+             return { unit: 'request:enc', kid: one.kid, useCase: one.kind,
                       slot: '', role: 'retired' };
            })) : [] };
 }
@@ -6835,6 +7320,197 @@ function retiredRefreshTokenKeysFor(keySet) {
       return one.keys;
     });
   log.debug("Leaving retiredRefreshTokenKeysFor(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE REQUEST-DECRYPTION KEYS, REPLACED ON A SCHEDULE (#2220, ASVS 5.0.0 L3;
+// key-management.md's Known gaps).
+//
+// The request object encryption keys (RFC 9101), the OpenID4VCI
+// request-encryption key and the KEM decryption keys (#82) were carried over
+// every signing rotation (`plainCopyOf()`) and never replaced, so one of them
+// leaked opened every request a client ever encrypted to it. They are now
+// replaced by `rotateEncryptionKeys()` — what the `keys.encryption-key-rotate`
+// job in `common/key_renewal.ts` calls — and the key replaced is RETIRED, as
+// a refresh-token set is (D7): kept in `generations.retiredEnc` only to
+// DECRYPT what a client encrypted to it before it read the new one, until
+// `retiredUntil`, and published nowhere. `signing.retire`'s
+// `retireExpiredGenerations()` drops it then.
+//
+// **THE NEW KEY IS PUBLISHED FIRST.** It is in `/oauth2/jwks` and the
+// credential issuer metadata from the moment of the rotation, before the key
+// it replaces stops opening anything: a client that refreshes its copy within
+// the overlap (`keys.encryptionKeyOverlapDays`) never encrypts to a key this
+// service cannot open. Only the kinds a set already holds are replaced; a
+// member a set lacks is still made lazily, as before.
+// ---------------------------------------------------------------------------
+/** The kinds of request-decryption key `rotateEncryptionKeys()` replaces. */
+const ENCRYPTION_KEY_KINDS = Object.freeze(['ro', 'vci', 'kem']);
+
+// One KEM decryption key pair for `alg`, as `kemEncryptionKeysFor()` makes
+// one: the kid from the public key's thumbprint.
+function makeKemKey(alg) {
+  log.debug("Entering makeKemKey(). " + alg);
+  const pair = stsCrypto.generateJweKemKeyPair(alg);
+  const kid = 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '') +
+              '-' + stsCrypto.jwkThumbprint(
+                stsCrypto.publicJweKemJwk(pair.publicJwk), { truncate: 16 });
+  pair.publicJwk.kid = kid;
+  pair.privateJwk.kid = kid;
+  log.debug("Leaving makeKemKey(). " + kid);
+  return { alg: alg, publicJwk: pair.publicJwk, privateJwk: pair.privateJwk };
+}
+
+/**
+ * The current request-decryption keys of a set, one row per key, as the
+ * rotation and its clock read them: `{ kind, kid, keys }`.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the rows
+ */
+function encryptionKeysHeld(keySet) {
+  log.debug("Entering encryptionKeysHeld().");
+  const keys = keySet || stsKeysFor();
+  const out = [];
+  const ro = keys.requestObjectEncKeys;
+  if (ro && ro.rsa && ro.rsa.publicJwk) {
+    out.push({ kind: 'ro', kid: ro.rsa.publicJwk.kid, keys: ro });
+  }
+  const vci = keys.vciRequestEncKey;
+  if (vci && vci.publicJwk) {
+    out.push({ kind: 'vci', kid: vci.publicJwk.kid, keys: vci });
+  }
+  (keys.kemEncKeys || []).forEach(function (one) {
+    if (one && one.publicJwk) {
+      out.push({ kind: 'kem', kid: one.publicJwk.kid, keys: one });
+    }
+  });
+  log.debug("Leaving encryptionKeysHeld(). " + out.length + ".");
+  return out;
+}
+
+/**
+ * Replaces a realm's request-decryption keys of the kinds named, the new
+ * ones made off the event loop; each key replaced is retired, kept only to
+ * decrypt until `overlapMs` has passed.
+ *
+ * @param realmId - the realm
+ * @param kinds - a subset of `ENCRYPTION_KEY_KINDS`
+ * @param overlapMs - how long a replaced key still decrypts
+ * @param why - the reason, for the log
+ * @returns a promise of `{ ok, why, generation, rotated: [{ kind, from,
+ *   to }] }`
+ */
+async function rotateEncryptionKeys(realmId, kinds, overlapMs, why) {
+  log.debug("Entering rotateEncryptionKeys(). realm=" + realmId + " " +
+            (kinds || []).join(','));
+  const id = String(realmId || '');
+  const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
+  const wanted = (kinds || []).filter(function (one) {
+    return ENCRYPTION_KEY_KINDS.indexOf(one) >= 0;
+  });
+  const keys = stsKeysFor.of(id);
+  const held = encryptionKeysHeld(keys).filter(function (one) {
+    return wanted.indexOf(one.kind) >= 0;
+  });
+  if (!held.length) {
+    log.debug("Leaving rotateEncryptionKeys(). Nothing held to replace.");
+    return { ok: true, rotated: [], generation: 0, why: 'none held' };
+  }
+  const bits = realms.run(realm, function () {
+    return { ro: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits'),
+             vci: rsaBitsFor('oid4vci.requestEncryptionKeyBits') };
+  });
+  const overrides = {};
+  const rotated = [];
+  const has = function (kind) {
+    log.debug("Entering has().");
+    log.debug("Leaving has().");
+    return held.some(function (one) {
+      return one.kind === kind;
+    });
+  };
+  if (has('ro')) {
+    const pair = await generateRsaPairAsync(bits.ro);
+    overrides.requestObjectEncKeys = realms.run(realm, function () {
+      return makeRequestObjectEncryptionKeys(pair);
+    });
+  }
+  if (has('vci')) {
+    const pair = await generateRsaPairAsync(bits.vci);
+    overrides.vciRequestEncKey = realms.run(realm, function () {
+      return makeRequestEncryptionKey(pair);
+    });
+  }
+  if (has('kem')) {
+    overrides.kemEncKeys = (keys.kemEncKeys || []).map(function (one) {
+      return makeKemKey(one.alg);
+    });
+  }
+  const now = Date.now();
+  const until = now + Math.max(0, Number(overlapMs) || 0);
+  const retired = held.map(function (one) {
+    let to = '';
+    if (one.kind === 'ro') {
+      to = overrides.requestObjectEncKeys.rsa.publicJwk.kid;
+    } else if (one.kind === 'vci') {
+      to = overrides.vciRequestEncKey.publicJwk.kid;
+    } else {
+      to = (overrides.kemEncKeys.filter(function (fresh) {
+        return fresh.alg === one.keys.alg;
+      })[0] || { publicJwk: {} }).publicJwk.kid || '';
+    }
+    rotated.push({ kind: one.kind, from: one.kid, to: to });
+    // Read ONCE, here, on the leader: the copy below is written sealed.
+    const material = one.kind === 'ro'
+      ? { rsa: { privateKey: one.keys.rsa.privateKey,
+                 publicJwk: one.keys.rsa.publicJwk },
+          ec: { privateKey: one.keys.ec.privateKey,
+                publicJwk: one.keys.ec.publicJwk } }
+      : one.kind === 'vci'
+        ? { privateKey: one.keys.privateKey, publicJwk: one.keys.publicJwk }
+        : { alg: one.keys.alg, publicJwk: one.keys.publicJwk,
+            privateJwk: one.keys.privateJwk };
+    return { kind: one.kind, kid: one.kid, retiredAt: now,
+             retiredUntil: until, keys: material };
+  });
+  const copy = plainCopyOf(keys, overrides);
+  copy.generations.retiredEnc = (copy.generations.retiredEnc || [])
+    .concat(retired);
+  wanted.forEach(function (kind) {
+    copy.generations.rotated['enc:' + kind] = now;
+  });
+  const answer = replaceGeneration(id, copy, why ||
+                                   'a rotation of the request-decryption keys');
+  log.debug("Leaving rotateEncryptionKeys(). " + JSON.stringify(answer));
+  return { ok: answer.ok, why: answer.reason, generation: answer.generation,
+           rotated: answer.ok ? rotated : [] };
+}
+
+/**
+ * The retired request-decryption keys of one kind still inside their
+ * overlap, newest first — what a decrypt site tries after the current key.
+ *
+ * @param kind - 'ro', 'vci' or 'kem'
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns the keys, each in its kind's own shape
+ */
+function retiredEncryptionKeysFor(kind, keySet) {
+  log.debug("Entering retiredEncryptionKeysFor(). " + kind);
+  const keys = keySet || stsKeysFor();
+  const now = Date.now();
+  const out = ((keys.generations && keys.generations.retiredEnc) || [])
+    .filter(function (one) {
+      return one.kind === kind &&
+             !(Number(one.retiredUntil) > 0 &&
+               Number(one.retiredUntil) <= now);
+    }).sort(function (a, b) {
+      return (Number(b.retiredAt) || 0) - (Number(a.retiredAt) || 0);
+    }).map(function (one) {
+      return one.keys;
+    }).filter(Boolean);
+  log.debug("Leaving retiredEncryptionKeysFor(). " + out.length + ".");
   return out;
 }
 
@@ -7450,6 +8126,98 @@ function oauthError(res, status, error, description) {
 // be far worse — a client that cached it would be missing the key it needs —
 // which is why the JWKS triggers the whole set rather than one at a time.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE PUBLISHED SET IN THE HSM, WHERE THE TOKEN OFFERS IT (#2220).
+//
+// A realm that keeps its signing keys in the HSM (`keys.signingKeyStore`
+// `pkcs11`) made its RSA and curve keys there and these eleven in software
+// until #2220. Now each of the five pure keys — ML-DSA-44, -65 and -87 and
+// SLH-DSA-SHA2-128s and -SHAKE-128s — is made in the token when it lists
+// PKCS#11 3.2's generation mechanism and CKM_ML_DSA or CKM_SLH_DSA with
+// CKF_SIGN (`Pkcs11Token.canGenerate()`), and in software only when it does
+// not; the six composites stay in software, because no PKCS#11 mechanism
+// signs one. `hsmKeyReport()` says which went where, per key.
+//
+// The private key of a key made in the token is its REFERENCE (a string,
+// `pkcs11-key:v1:…`), which every signing door asks `isHsmKey()` of; the
+// keystore stores it as the reference (`keystore.js`'s `pqKeys`). A
+// generation the token refuses for want of the mechanism (STS-KEYS-0207) is
+// made in software, logged, as a curve key is (`curveInSoftware()`).
+// Anything else the HSM answers is thrown, as it is for every other key.
+// ---------------------------------------------------------------------------
+// The realm's token where its keys are in the HSM; null in software, or
+// where the realm's store cannot be had (the classical keys refused that
+// already, with STS-KEYS-0206, so the published set is not where it shows).
+function pqHsmFor(keys) {
+  log.debug("Entering pqHsmFor().");
+  let hsm = null;
+  try {
+    hsm = hsmSigningFor(keys.realm);
+  } catch (e) {
+    log.debug("Caught in pqHsmFor(): " + ((e && e.message) || e));
+    hsm = null;
+  }
+  log.debug("Leaving pqHsmFor(). " + (hsm ? hsm.uri : 'software'));
+  return hsm;
+}
+
+// What `pq_jose.js` makes, from a key pair made in the token: the raw
+// public key and the private key's reference.
+function pqPairFromHsm(made) {
+  log.debug("Entering pqPairFromHsm().");
+  log.debug("Leaving pqPairFromHsm().");
+  return { pub: Buffer.from(made.publicKey.raw),
+           priv: made.privateKey.ref };
+}
+
+// One key of the published set: in the token where it offers the
+// algorithm, in software otherwise. Synchronous (`pqKeysFor()`'s door).
+function pqPairFor(alg, hsm, realmId) {
+  log.debug("Entering pqPairFor(). " + alg);
+  const spec = { kty: 'AKP', alg: alg };
+  if (hsm && hsm.token.canGenerate(spec)) {
+    try {
+      const made = realms.run(realmForKeys(realmId), function () {
+        return stsCrypto.generatePkcs11KeyPair(hsm.token, hsm.uri, spec,
+                                               hsmLabel(alg.toLowerCase()));
+      });
+      log.debug("Leaving pqPairFor(). In the HSM.");
+      return pqPairFromHsm(made);
+    } catch (e) {
+      log.debug("Caught in pqPairFor(): " + ((e && e.message) || e));
+      realms.run(realmForKeys(realmId), function () {
+        curveInSoftware({ alg: alg }, e);
+      });
+    }
+  }
+  log.debug("Leaving pqPairFor(). Software.");
+  return pqJose.generate(alg);
+}
+
+// The same off the event loop: the token's async generation, or the
+// child processes `pq_jose.js` makes the rest in.
+function pqPairForAsync(alg, hsm, realmId) {
+  log.debug("Entering pqPairForAsync(). " + alg);
+  const spec = { kty: 'AKP', alg: alg };
+  if (hsm && hsm.token.canGenerate(spec)) {
+    const label = realms.run(realmForKeys(realmId), function () {
+      return hsmLabel(alg.toLowerCase());
+    });
+    log.debug("Leaving pqPairForAsync(). In the HSM.");
+    return stsCrypto.generatePkcs11KeyPairAsync(hsm.token, hsm.uri, spec,
+                                                label)
+      .then(pqPairFromHsm, function (e) {
+        log.debug("Caught in pqPairForAsync(): " + ((e && e.message) || e));
+        realms.run(realmForKeys(realmId), function () {
+          curveInSoftware({ alg: alg }, e);
+        });
+        return pqJose.generateAsync(alg);
+      });
+  }
+  log.debug("Leaving pqPairForAsync(). Software.");
+  return pqJose.generateAsync(alg);
+}
+
 function pqKeysFor(keys) {
   log.debug("Entering pqKeysFor().");
   if (keys.pqKeys) {
@@ -7457,8 +8225,9 @@ function pqKeysFor(keys) {
   } else {
     pqKeysCount.miss();
     const started = Date.now();
+    const hsm = pqHsmFor(keys);
     keys.pqKeys = pqJose.PQ_ALGS.map(function (alg) {
-      return pqKeyFrom(alg, pqJose.generate(alg));
+      return pqKeyFrom(alg, pqPairFor(alg, hsm, keys.realm));
     });
     log.info('The post-quantum signing keys were generated for the "' +
              keys.realm + '" realm: ' + keys.pqKeys.length + ' key(s) in ' +
@@ -7557,8 +8326,9 @@ function pqKeysForAsync(keys) {
     pqKeysCount.hit();
   } else {
     pqKeysCount.miss();
+    const hsm = pqHsmFor(keys);
     generation = Promise.all(pqJose.PQ_ALGS.map(function (alg) {
-      return pqJose.generateAsync(alg).then(function (pair) {
+      return pqPairForAsync(alg, hsm, keys.realm).then(function (pair) {
         return pqKeyFrom(alg, pair);
       });
     }));
@@ -8748,6 +9518,58 @@ function signJwtAs(payload, alg, secret, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// `signJwtAs()` AND `signJwt()` OFF THE EVENT LOOP FOR A KEY IN THE HSM
+// (#1955 P8 follow-up, 2026-11-23; rcbj: "I do not want this activity to
+// block the main event loop"). The same refusals, the same key, the same
+// header and the same recording, in the same order; the signature is
+// `stsCrypto.signJwsOffLoop()`'s, which for a software key IS `signJws()` —
+// so a caller moved here from the synchronous door signs the same bytes —
+// and for a realm key in the HSM is C_SignAsync. Every service caller of the
+// synchronous two with a realm key is on these (the list is
+// `common/CLAUDE.md`'s, *Keys in a hardware security module*). They are not
+// `signJwtAsync()` / `signJwtAsAsync()`, which sign a software RSA or curve
+// key on libuv: a different road their own callers chose.
+// ---------------------------------------------------------------------------
+/**
+ * `signJwtAs()`, with an HSM key's signature made off the event loop.
+ *
+ * @param payload - the claims
+ * @param alg - the JWS algorithm
+ * @param secret - the client secret, for HS*
+ * @param opts - as `signJwtAs()`
+ * @returns a promise of the compact JWS
+ */
+function signJwtAsOffLoop(payload, alg, secret, opts) {
+  log.debug("Entering signJwtAsOffLoop(). alg=" + alg);
+  const options = opts || {};
+  const spec = stsCrypto.JWS_ALGS[alg];
+  let signer;
+  try {
+    const refused = signatureRefusal(alg, options);
+    if (refused || (spec && spec.family === 'hmac')) {
+      // A refusal, or an HMAC signature, which no HSM key makes: the
+      // synchronous door's own answer.
+      // certificate-header: none — `opts` is the caller's, use case and
+      // all, handed on whole.
+      const own = signJwtAs(payload, alg, secret, opts);
+      log.debug("Leaving signJwtAsOffLoop(). signJwtAs().");
+      return Promise.resolve(own);
+    }
+    signer = signingKeyFor(alg, options.certificateHeader);
+  } catch (e) {
+    log.debug("Caught in signJwtAsOffLoop(): " + ((e && e.message) || e));
+    log.debug("Leaving signJwtAsOffLoop(). Refused.");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving signJwtAsOffLoop(). " + alg + ".");
+  return stsCrypto.signJwsOffLoop(payload, signer.key,
+    { algorithm: alg, keyid: publishedKidFor(signer.kid),
+      header: withCertificateHeader(options.header,
+                                    options.certificateHeader, alg,
+                                    signer.kid) });
+}
+
+// ---------------------------------------------------------------------------
 // THE SAME SIGNATURE, OFF THIS PROCESS'S THREAD, and the two call sites that
 // use it are the two a CLIENT can point at a post-quantum algorithm: the ID
 // Token (`id_token_signed_response_alg`) and the signed UserInfo response
@@ -8847,13 +9669,55 @@ function signJwtAsAsync(payload, alg, secret, opts) {
  */
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
+  const plan = signJwtPlan(payload, opts);
+  // certificate-header: none — the header is the plan's, which
+  // signJwtPlan() built from the caller's own certificateHeader.
+  const signed = stsCrypto.signJws(payload, plan.key, plan.options);
+  signJwtRecorded(payload, context, signed);
+  log.debug("Leaving signJwt().");
+  return signed;
+}
+
+/**
+ * `signJwt()`, with an HSM key's signature made off the event loop
+ * (`signJwtAsOffLoop()`'s note): the same plan and the same recording.
+ *
+ * @param payload - the claims
+ * @param context - as `signJwt()`'s, for the token registry
+ * @param opts - as `signJwt()`'s
+ * @returns a promise of the compact JWS
+ */
+function signJwtOffLoop(payload, context, opts) {
+  log.debug("Entering signJwtOffLoop(). typ=" + (payload.typ || '(none)'));
+  let plan;
+  try {
+    plan = signJwtPlan(payload, opts);
+  } catch (e) {
+    log.debug("Caught in signJwtOffLoop(): " + ((e && e.message) || e));
+    log.debug("Leaving signJwtOffLoop(). Refused.");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving signJwtOffLoop().");
+  // certificate-header: none — the header is the plan's, which
+  // signJwtPlan() built from the caller's own certificateHeader.
+  return stsCrypto.signJwsOffLoop(payload, plan.key, plan.options)
+    .then(function (signed) {
+      signJwtRecorded(payload, context, signed);
+      return signed;
+    });
+}
+
+// `signJwt()` up to the signature: the refusal, the signer, the header, and
+// the artifact logged before signing. Throws what `signJwt()` threw.
+function signJwtPlan(payload, opts) {
+  log.debug("Entering signJwtPlan().");
   const alg = String((opts && opts.algorithm) ||
                      signaturePolicy.defaultJoseAlg());
   // Held to the same answer as signJwtAs() since #1368: a signature this realm
   // publishes no key for helps nobody.
   const refused = signatureRefusal(alg, opts);
   if (refused) {
-    log.debug("Leaving signJwt(). Refused by the policy.");
+    log.debug("Leaving signJwtPlan(). Refused by the policy.");
     throw refused;
   }
   // The use case's signer-group key where the realm is in that model (#68),
@@ -8875,9 +9739,16 @@ function signJwt(payload, context, opts) {
               { header: Object.assign({ alg: alg, kid: kid },
                                       certificateHeaderMembers || {}),
                 payload: payload });
-  const signed = stsCrypto.signJws(payload, signer.key,
-                                   { algorithm: alg, keyid: kid,
-                                     header: certificateHeaderMembers });
+  log.debug("Leaving signJwtPlan().");
+  return { key: signer.key,
+           options: { algorithm: alg, keyid: kid,
+                      header: certificateHeaderMembers } };
+}
+
+// `signJwt()` after the signature: the artifact logged, and the token
+// handed to the recorder.
+function signJwtRecorded(payload, context, signed) {
+  log.debug("Entering signJwtRecorded().");
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'after ' +
       'signing', signed);
   // Every token this service issues passes through here, which is what makes
@@ -8893,8 +9764,7 @@ function signJwt(payload, context, opts) {
                 'unaffected: ' + e.message);
     }
   }
-  log.debug("Leaving signJwt().");
-  return signed;
+  log.debug("Leaving signJwtRecorded().");
 }
 
 // ---------------------------------------------------------------------------
@@ -9693,10 +10563,14 @@ module.exports = {
   verifyOwnXml: verifyOwnXml,
   ownRsaDecryptionKeys: ownRsaDecryptionKeys,
   decryptOwnElement: decryptOwnElement,
+  keysInHsm: keysInHsm,
+  decryptOwnElementOffLoop: decryptOwnElementOffLoop,
   allVerificationKeys: allVerificationKeys,
   allVerificationKeysAsync: allVerificationKeysAsync,
   xmlKeyFor: xmlKeyFor,
   ensureNextGenerations: ensureNextGenerations,
+  // A realm's signing keys in the HSM (#1955 P8): which are, and which not.
+  hsmKeyReport: hsmKeyReport,
   promoteGenerations: promoteGenerations,
   retireExpiredGenerations: retireExpiredGenerations,
   keySetIfMade: keySetIfMade,
@@ -9706,6 +10580,7 @@ module.exports = {
   allSigningKeysAsync: allSigningKeysAsync,
   curveSigningKeys: curveSigningKeys,
   signJwtAs: signJwtAs,
+  signJwtAsOffLoop: signJwtAsOffLoop,
   signJwtAsAsync: signJwtAsAsync,
   certificateHeaderFor: certificateHeaderFor,
   certificateHeaderForAsync: certificateHeaderForAsync,
@@ -9777,6 +10652,7 @@ module.exports = {
   oauthError: oauthError,
   vciError: vciError,
   signJwt: signJwt,
+  signJwtOffLoop: signJwtOffLoop,
   signJwtAsync: signJwtAsync,
   ownPublicJwkFor: ownPublicJwkFor,
   ownPublicJwkForAsync: ownPublicJwkForAsync,
@@ -9791,6 +10667,7 @@ module.exports = {
   warmPeopleAsync: warmPeopleAsync,
   namesForSubjects: namesForSubjects,
   namesForSubjectsAsync: namesForSubjectsAsync,
+  namesFellBack: namesFellBack,
   subjectsForNamesAsync: subjectsForNamesAsync,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,
@@ -9810,6 +10687,13 @@ module.exports = {
   refreshTokenKeysFor: refreshTokenKeysFor,
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
+  // The request-decryption keys on a schedule (#2220).
+  ENCRYPTION_KEY_KINDS: ENCRYPTION_KEY_KINDS,
+  encryptionKeysHeld: encryptionKeysHeld,
+  rotateEncryptionKeys: rotateEncryptionKeys,
+  retiredEncryptionKeysFor: retiredEncryptionKeysFor,
+  // The curve keys' table, for the credential signers' rotation (#2220).
+  CURVE_KEY_SPECS: CURVE_KEY_SPECS,
   requestObjectKeysFor: requestObjectKeysFor,
   kemEncryptionKeysFor: kemEncryptionKeysFor,
   kemDecryptionKeyFor: kemDecryptionKeyFor,
@@ -9830,6 +10714,10 @@ module.exports = {
   kidOf: kidOf,
   groupKidOf: groupKidOf,
   pqKeyFrom: pqKeyFrom,
+  // One key of the published post-quantum set, in the token where it offers
+  // the algorithm (#2220) — for the test that plays a token.
+  pqPairFor: pqPairFor,
+  pqPairForAsync: pqPairForAsync,
   curveKeyFrom: curveKeyFrom,
   listedSigningAlgs: listedSigningAlgs,
   withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,

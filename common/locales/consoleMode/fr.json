@@ -30,5 +30,22 @@
   "waivedBy": "LEVÉE DANS CE DOMAINE PAR UN ADMINISTRATEUR : <code>{requirement}</code> ({section}, un {level}), car <code>{setting}</code> est activé. Toutes les autres exigences de la BCP restent en vigueur.",
   "requirementNotMet": "NON RESPECTÉE ICI : <code>{requirement}</code> ({section}), à cause de <code>{setting}</code>.",
   "waivedPerApplication": "PAR APPLICATION : une application n’utilise ces types de réponse que si son <code>{attribute}</code> contient celui qu’elle demande, défini par un administrateur ou par le propriétaire de l’application. Un client qui s’enregistre lui-même ne peut activer que ce que <code>{setting}</code> nomme : {value}.",
-  "waivedPerApplicationNone": "PAR APPLICATION : une application n’utilise ces types de réponse que si son <code>{attribute}</code> contient celui qu’elle demande, défini par un administrateur ou par le propriétaire de l’application. Un client qui s’enregistre lui-même ne peut en activer aucun, car <code>{setting}</code> est vide."
+  "waivedPerApplicationNone": "PAR APPLICATION : une application n’utilise ces types de réponse que si son <code>{attribute}</code> contient celui qu’elle demande, défini par un administrateur ou par le propriétaire de l’application. Un client qui s’enregistre lui-même ne peut en activer aucun, car <code>{setting}</code> est vide.",
+  "dualHeading": "Approbation à deux personnes",
+  "dualLead": "Si les actes d'administration à haut risque attendent un second administrateur dans ce domaine (<code>admin.dualControl</code>). C'est un paramètre du domaine dans les deux modes, non une différence de mode ; il figure ici parce que savoir s'il est en vigueur est une question à laquelle cette page répond.",
+  "dualInForce": "En vigueur : un acte retenu attend un second administrateur.",
+  "dualOnNotInForce": "Activée, mais pas en vigueur pour toutes les autorités.",
+  "dualOff": "Désactivée.",
+  "dualThAuthority": "Autorité",
+  "dualThHolders": "Personnes pouvant décider",
+  "dualThInForce": "En vigueur",
+  "dualYes": "oui",
+  "dualNo": "non",
+  "dualLink": "Approbations en attente ({n, plural, =1 {un acte en attente} other {# actes en attente}})",
+  "dbHeading": "Identifiant de la base de données",
+  "dbLead": "Comment ce service s’authentifie auprès de sa base de données (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). C’est un paramètre des deux modes, pas une différence entre eux ; il figure ici parce que cette page indique comment la connexion s’authentifie.",
+  "dbCertificateAndPassword": "Un certificat client et un mot de passe.",
+  "dbCertificate": "Un certificat client, sans mot de passe.",
+  "dbPassword": "Un mot de passe ; aucun certificat client n’est présenté.",
+  "dbNeither": "Ni certificat client ni mot de passe : la base de données accepte la connexion sans l’un ni l’autre."
 }

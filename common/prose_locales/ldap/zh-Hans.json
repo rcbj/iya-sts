@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "此客户端可以请求的 response_type 值——RFC 7591 第 2 节的 response_types，来自注册或由管理员写入，每个值一个响应类型（\"code\"、\"code id_token\"）。授权端点在所有模式下都会拒绝其他任何值（unauthorized_client）；空列表不限制任何东西。客户端实际请求过的是 oauthResponseTypeObserved。"
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "此客户端可以请求的 response_mode 值 —— query、fragment、form_post 以及 JARM 的 jwt、query.jwt、fragment.jwt 和 form_post.jwt —— 由管理员写入。授权端点拒绝其他任何值（unauthorized_client），未指名任何值的请求按其响应类型的默认模式衡量（code 为 query，其余为 fragment），在每种模式下都是如此；空列表除服务器的 response_modes_supported 外不作任何限制。没有 RFC 7591 成员承载它，因此注册不会写入它。"
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "在 RFC 9700 模式生效时（产品模式始终生效）此客户端可以使用的、从授权端点签发访问令牌的响应类型——token、code token、id_token token、code id_token token。仅当领域豁免 RFC 9700 第 2.1.2 节时生效（oauth2.allowImplicitTokenResponses，在 OAuth 2.1 或 FAPI 下从不生效）；此时未在此列出的类型会被拒绝（unauthorized_client）。默认为空，空表示无。在领域允许这些类型时由管理员或应用程序的所有者写入，或由 oauth2.dynamicRegistrationTokenResponseTypes 范围内的动态注册写入。RFC 9700 第 2.1.2 节规定客户端不应（SHOULD NOT）使用它们。"
@@ -576,8 +580,8 @@
     "text": "此应用请求过的作用域，随其请求累积。是观察到的，从不是声明的：不会据此允许或拒绝任何东西。应用可以被签发什么由 oauthAllowedScope 决定。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、report:use 和 report:admin（/report-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite，以及始终存在的 ssf.read 和 ssf.manage）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此。对共享信号而言，写入包含读取：列出写入作用域也就授权了读取作用域，而只列出读取作用域并不授权写入作用域。每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
+    "en": "00c084c993d99663",
+    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、report:use 和 report:admin（/report-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite，以及始终存在的 ssf.read 和 ssf.manage）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此。对共享信号而言，写入包含读取：列出写入作用域也就授权了读取作用域，而只列出读取作用域并不授权写入作用域。每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于 oauth2.undeclaredClientScopes 所选的默认集合时才签发：自 1.2.0 起默认仅 openid（ASVS 5.0.0 10.4.11）；identity 再加上 profile、email、address 和 phone；legacy（升级后的存储所保留的）还加上 offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "AuthZEN 访问请求回调（#1180）：此客户端作为 AuthZEN PEP 可指定为访问请求 callback.endpoint 的 https URL——每个值一个，须完全匹配。指定其他任何 URL 的请求都会被拒绝；本服务绝不会仅凭请求中的 URL 就向其发起回调。由管理员设置，绝不由调用方设置。"
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "AUTHZEN 回调重试（#1202）：一条已登记的回调 URL，以及为它覆盖 authzen.callbackAttempts 和 authzen.callbackBackoffS 的尝试次数与退避。值是该 URL，然后是 attempts=N（1 到 20）和 backoff=S（60 到 86400），二者可只写其一或都写。该 URL 也必须是一个 appAuthzenCallbackUri 值。缺省时，该 URL 使用领域的设置。由管理员设置，绝不由调用方设置。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "选择 WS-Trust 响应加密所用证书元素的 XPath 表达式：一个 ds:X509Certificate，或 ValueType 以 #X509v3 结尾的 BinarySecurityToken。子集与元素映射相同。设置之后若什么都不选中，或选中的元素不是这两种之一，就没有接收方，并且不会尝试下一个来源。选中的证书元素其文本不是证书时，是一次已完成加密的故障，并且不会尝试下一个来源。未设置时，接收方是请求的 WS-Security 签名所点名的第一个签名者证书元素——该签名的引用所指向的 BinarySecurityToken，或该签名 KeyInfo 中的 ds:X509Certificate。指纹、Subject Key Identifier 或颁发者与序列号不是证书元素。"
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE 或 FALSE：要求 AppliesTo 为此应用的请求携带 WS-Security 消息签名，覆盖 wstrust.signRequest。开启时，没有被接受签名的请求为 FailedCheck，且 wstrustSignRequestElements 选中的每个元素都必须被该签名覆盖。开发模式一如既往地相信签名，但仍会将映射与该签名所引用的内容进行核对。"
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "WS-TRUST 请求中必须被签名的元素，每个一条 XPath 1.0 表达式，采用 wstrustEncryptRequestElements 的子集。每个表达式必须至少选中一个元素，且它选中的每个元素都必须是请求中被接受的 WS-Security 签名所引用的元素，或位于此类元素之内；否则该请求为 FailedCheck。为空时为 SOAP Body，签名总是覆盖它。仅在 wstrustSignRequest（或 wstrust.signRequest）开启时读取。"
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE 或 FALSE：用 WS-Security 消息签名为此应用的 WS-Trust 响应签名，覆盖 wstrust.signResponse。响应在其 wsse:Security 头中携带 wsu:Timestamp 和 ds:Signature，使用此领域的 XML 签名密钥生成，并通过 BinarySecurityToken 引用其证书；签名覆盖 Timestamp 以及 wstrustSignResponseElements 的元素。故障以未签名形式发送。开启时，若无法生成签名，该请求在两种模式下都是故障。"
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "WS-TRUST 响应中其签名在 wsu:Timestamp 之外所覆盖的元素，每个一条 XPath 1.0 表达式，采用 wstrustEncryptResponseElements 的子集。为空时为 SOAP Body。没有 wsu:Id 的元素会被赋予一个。不匹配任何内容的表达式，或选中 wsse:Security 头本身的表达式，为故障。"
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "两者都开启时，此应用的 WS-Trust 响应签名与加密的顺序，覆盖 wstrust.responseProtectionOrder：sign-then-encrypt（签名的摘要针对明文，为 WS-SecurityPolicy 的默认）或 encrypt-then-sign（摘要针对密文）。wsse:Security 头按接收方处理它的顺序写入。"
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE 或 FALSE：同时加密此应用的 WS-Trust 响应的 ds:Signature（WS-SecurityPolicy 的 sp:EncryptSignature），覆盖 wstrust.encryptSignature。仅在响应既签名又加密且先签名时读取；签名加密给响应的接收方。"
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE 或 FALSE：无论接收方证书的 keyUsage 如何，都将此应用程序的 WS-Trust 响应加密给它，覆盖 wstrust.recipientIgnoresKeyUsage。领域的消息签名证书只允许 digitalSignature，因此没有此设置时，加密给请求签名证书的响应会被拒绝。只跳过 keyUsage 检查：在偏执 PKI 模式检查的地方，仍会检查证书的有效期、路径和吊销状态。"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "发给此应用的 WS-TRUST 请求所加密到的证书，PEM。设置后，发给此应用的请求用其私钥而非领域的私钥解密，而加密到领域密钥的发给它的请求是 FailedCheck。公开：应用页面和 GET /admin-api/applications 会提供它。"
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "当此 UMA 2.0 资源服务器可通过以 client_credentials 获取的保护 API 令牌注册其自身拥有的资源时为 TRUE。缺失或 FALSE（默认值）表示 PAT 必须属于某个人（授权码流程），并由该人拥有其注册的内容。"
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE 或 FALSE：登录此应用程序时是否提供可动态选择的角色（#1072），覆盖 roles.dynamicSelection。FALSE 不显示“为此次登录选择角色”复选框，不提供任何角色，此应用程序的令牌也不携带任何动态选择的角色。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及标准的 owner 和 description。"
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "此策略为之生成的远程 PEP 和路由，形式为 PEP 的名称、一个斜杠和路由的 id；策略由反向代理路由表单上路由的授权选择（简单或公开）或 generate-pep-route-policy 操作（#1760）生成。这样的策略在保存路由时重写，随路由重命名，并随路由移除；它永远不是根策略。它可以在策略编辑器中编辑，而路由的简单或公开选择的下次保存会重新写入它——在路由上选择现有策略即可保留手写策略。"
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "将此策略作为其资格策略而拥有它的角色（按其在 ou=roles 中的名称，#1072）：PDP 针对一个人单独判定它，以说明登录时是否可以向此人提供该可动态选择的角色。此类策略永远不是根策略，永远不会被根策略通过 PolicyIdReference 引用，也永远不会发送给远程 PEP。"
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "一个已向此策略决策点注册的远程策略执行点。这一行是记录而不是许可——从不注册的 PEP 仍然可以拉取存储库并执行策略。一行所换来的是控制台上的一席之地，以及一个用于变更提醒的地址。"
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "远程 PEP 最近一次在心跳中报告的、关于其每个监听器的情况（#1760），包括其环境的四个和已定义的监听器：一个 JSON 文档 { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }，以及到达时间。状态是 listening、waiting、failed 和 off 之一，原因来自一个封闭集合，从不是操作系统的文本；证书是其所提供证书的主体、签发者、序列号、subjectAltName、有效期和指纹。其他成员一律丢弃。不含它的心跳保留它，值为 null 的心跳清除它，注册则删除它。早于监听器功能的 PEP 上没有此项，控制台显示为未报告。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "注册的远程 PEP 类型（#2026，#1206 的一部分）：container，即 xacml-pep 镜像；或 embedded，即通过 iya-pep 软件包位于身份验证库中的 PEP。未说明类型的注册视为 container，因此较旧的 PEP 仍按原样读取。嵌入式 PEP 没有反向代理、监听器或 AuthZEN 边缘。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "嵌入式远程 PEP 注册时声明其所嵌入的应用（#2026）。仅当它是该 PEP 条目所绑定的应用（stsPepApplication，由管理员设置）时才接受，因此它与绑定的不一致最多持续到 PEP 的下一次心跳，一旦不一致该心跳即被拒绝。容器为空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "嵌入式远程 PEP 的模式（#2026）：central，每个决策都向本服务的 AuthZEN 评估端点询问；或 local，它拉取其应用的策略并在进程内决策。容器为空，且不得发送。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "远程 PEP 的软件包所使用的 PEP 协议版本，以其注册或最近一次心跳所述为准（#2026）。本服务支持版本 1 并拒绝其他版本，因此落后的库会被看见，而不是悄然出错。未发送版本的 PEP（容器）为空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "嵌入式远程 PEP 所在应用的流能否传递 pep-policies-changed 事件，以 PEP 最近一次心跳报告为准（#2026）：none（主机没有信号流，因此 PEP 轮询）、requested、excluded（应用的 ssfEvents 将其排除）或 down。在报告之前为空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "远程 PEP 最近一次从 GET /xacml/pep/policies 拉取的内容（#2027）：repository，即除保留策略外的所有已启用策略（容器的拉取）；或 bound-application，即 local 模式嵌入式 PEP 的拉取：其应用自身的策略或领域的根策略，以及其引用闭包。重新注册时保留；变更以 xacml.pep.scope 审计。拉取之前为空。"
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

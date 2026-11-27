@@ -191,7 +191,11 @@ impl Pep {
     /// GET is a DECISION — the PIP asked at the PDP, the enforcement counted
     /// and reported on the heartbeat — and a HEAD is what a monitor or a
     /// link checker sends without meaning one; it stays the generic 404, as
-    /// every other method this handler does not answer.
+    /// every other method this handler does not answer. **Not for the
+    /// Search and Access Request paths either** (#1205): a GET of one of
+    /// them is 403, and rewriting HEAD to GET would tell a monitor the edge
+    /// answers a profile it does not hold. Those HEADs stay 404, and the
+    /// body is still stripped.
     pub async fn handle(
         self: Arc<Self>,
         mut request: Request<Body>,
@@ -199,7 +203,8 @@ impl Pep {
         if request.method() != Method::HEAD {
             return self.answer(request).await;
         }
-        if request.uri().path() != "/protected" {
+        let path = request.uri().path().to_string();
+        if path != "/protected" && !authzen::head_is_absent(&path) {
             *request.method_mut() = Method::GET;
         }
         let response = self.answer(request).await;
@@ -252,6 +257,16 @@ impl Pep {
                 }),
             );
         }
+        // Search and the Access Request profile, before admission and
+        // before a body is read (#1205). A turned-off edge still says the
+        // API is off. The CRL-only listener has already answered 404.
+        if let Some(reply) = authzen::refused_here(method.as_str(), &path) {
+            let catalogue = self.sync.catalogue();
+            if let Some(off) = self.authzen_off(&catalogue) {
+                return reply_response(&off);
+            }
+            return reply_response(&reply);
+        }
         if method == Method::POST
             && (path == authzen::EVALUATION_PATH
                 || path == authzen::EVALUATIONS_PATH)
@@ -265,6 +280,12 @@ impl Pep {
                     .and_then(|v| v.to_str().ok()),
             );
             let batch = path == authzen::EVALUATIONS_PATH;
+            // Read before the body consumes the request (#936).
+            let content_type = request
+                .headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.to_string());
             let limit = if batch {
                 self.options
                     .now()
@@ -281,6 +302,7 @@ impl Pep {
                 .authzen_post(
                     batch,
                     &transport,
+                    content_type.as_deref(),
                     body,
                     id.as_deref().unwrap_or(""),
                 )
@@ -443,8 +465,10 @@ impl Pep {
                     POST /notify, GET /healthcheck, GET /crl/<name> for its \
                     own credential's lists, and the AuthZEN edge PDP: POST \
                     /access/v1/evaluation, POST /access/v1/evaluations and \
-                    GET /.well-known/authzen-configuration. HEAD is answered \
-                    for each GET but /protected."
+                    GET /.well-known/authzen-configuration. The Search APIs, \
+                    the Access Request profile and a token-exchange binding \
+                    tuple are the service's. HEAD is answered for each GET \
+                    but /protected and those service-only paths."
             }),
         )
     }
@@ -1128,7 +1152,8 @@ mod tests {
         sync.load_for_test(&json!({ "syncToken": "p1", "policies": [] }));
         sync.load_catalogue_for_test(&json!({
             "syncToken": "c1", "realm": "", "apiObject": "sts-authzen-api",
-            "rows": [], "settings": { "enabled": true, "batchEnabled": true }
+            "rows": [], "settings": { "enabled": true, "batchEnabled": true,
+                                      "obligationsProfile": true }
         }));
         Arc::new(Pep::new(
             options.clone(),
@@ -1172,6 +1197,94 @@ mod tests {
         );
         pep.options.managed.apply(Managed::default());
         assert_eq!(overview(&pep)["authzen"]["enabled"], json!(env));
+    }
+
+    /// AN API SWITCHED OFF IS A 403, AND THE METADATA NAMES ONLY WHAT
+    /// ANSWERS (#2208, rcbj: "Follow the spec, but return 403 otherwise").
+    /// AuthZEN 1.0 prescribes no status for a switched-off API (section
+    /// 10.1.2 defines 400, 401, 403 and 500) and only that an endpoint
+    /// absent from the metadata is one the PDP "is not capable" of (section
+    /// 9.1.1): the batch off is left out of the metadata and refused 403,
+    /// the realm's API off and this container's switch off refuse every
+    /// AuthZEN path 403, the metadata included, and no answer is a 5xx.
+    #[test]
+    fn a_switched_off_api_is_403_and_the_metadata_names_only_what_answers() {
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let host = [("host", "pep.example:9443")];
+        let metadata = |pep: &Arc<Pep>| {
+            let (status, _, body) = answer(
+                pep,
+                Method::GET,
+                "/.well-known/authzen-configuration",
+                https.clone(),
+                &host,
+                "",
+            );
+            (status, body)
+        };
+        let (status, body) = metadata(&pep);
+        assert_eq!(status, StatusCode::OK, "{}", body);
+        let on: Value = serde_json::from_str(&body).unwrap();
+        assert!(on.get("access_evaluations_endpoint").is_some(), "{}", on);
+        for absent in [
+            "search_subject_endpoint",
+            "search_resource_endpoint",
+            "search_action_endpoint",
+        ] {
+            assert!(on.get(absent).is_none(), "{}: {}", absent, on);
+        }
+        // THE BATCH OFF: not named, and refused 403 (STS-AUTHZEN-0039).
+        pep.sync.load_catalogue_for_test(&json!({
+            "syncToken": "c2", "realm": "", "apiObject": "sts-authzen-api",
+            "rows": [], "settings": { "enabled": true, "batchEnabled": false }
+        }));
+        let (status, body) = metadata(&pep);
+        assert_eq!(status, StatusCode::OK, "{}", body);
+        let off: Value = serde_json::from_str(&body).unwrap();
+        assert!(off.get("access_evaluations_endpoint").is_none(), "{}", off);
+        assert!(off.get("access_evaluation_endpoint").is_some(), "{}", off);
+        let (status, _, said) = answer(
+            &pep,
+            Method::POST,
+            "/access/v1/evaluations",
+            https.clone(),
+            &[("content-type", "application/json")],
+            "{}",
+        );
+        assert_eq!(status, StatusCode::FORBIDDEN, "{}", said);
+        assert!(!said.contains("STS-"), "a code is never sent: {}", said);
+        assert!(said.contains("batch endpoint is turned off"), "{}", said);
+        // THE REALM'S API OFF (STS-AUTHZEN-0013): every AuthZEN path 403.
+        pep.sync.load_catalogue_for_test(&json!({
+            "syncToken": "c3", "realm": "", "apiObject": "sts-authzen-api",
+            "rows": [], "settings": { "enabled": false }
+        }));
+        let (status, _) = metadata(&pep);
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        for (method, path) in [
+            (Method::POST, "/access/v1/evaluation"),
+            (Method::POST, "/access/v1/evaluations"),
+            (Method::POST, "/access/v1/search/subject"),
+            (Method::POST, "/access/v1/access-requests"),
+        ] {
+            let (status, body) = ask(&pep, method, path, https.clone());
+            assert_eq!(status, StatusCode::FORBIDDEN, "{}: {}", path, body);
+        }
+        // THIS CONTAINER'S SWITCH OFF (PEP_AUTHZEN, STS-XPEP-0044): 403.
+        pep.options.managed.apply(Managed::parse(
+            "t",
+            true,
+            &json!({ "authzen": false }),
+        ));
+        let (status, _) = metadata(&pep);
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) =
+            ask(&pep, Method::POST, "/access/v1/search/action", https);
+        assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
     /// HEAD IS GET WITHOUT THE BODY (#1830) for every GET but /protected,
@@ -1258,6 +1371,12 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{}", body);
         let said: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(said["policy_decision_point"], "https://pep.example:9443");
+        assert_eq!(
+            said["supported_obligations"],
+            json!(["step-up", "notification", "session_termination", "custom"])
+        );
+        assert!(said.get("signed_metadata").is_none());
+        assert!(said.get("access_request_endpoint").is_none());
         let read = read_answer("getAuthzenConfiguration", 200, &said);
         assert!(matches!(read, Some(Ok(()))), "{:?}", read);
         let (_, _, body) = answer(
@@ -1279,10 +1398,82 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
+    /// Search and the Access Request profile are the service's (#1205).
+    /// A ready edge answers 403 without admission (#2208: AuthZEN 1.0
+    /// prescribes no status for an API a PDP does not serve; 501 before). HEAD, and the methods
+    /// the profile does not define, stay 404. A cold edge says it is not
+    /// ready before it says the path is the service's.
+    #[test]
+    fn search_and_access_requests_are_the_services() {
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let searches = [
+            "/access/v1/search/subject",
+            "/access/v1/search/resource",
+            "/access/v1/search/action",
+        ];
+        for path in searches {
+            let (status, body) = ask(&pep, Method::POST, path, https.clone());
+            assert_eq!(status, StatusCode::FORBIDDEN, "{}", path);
+            assert!(body.contains("Search APIs"), "{}: {}", path, body);
+            assert!(!body.contains("STS-XPEP"), "{}", body);
+            let (status, _) = ask(&pep, Method::GET, path, https.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "GET {}", path);
+            let (status, _) = ask(&pep, Method::HEAD, path, https.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "HEAD {}", path);
+        }
+        let access = [
+            (Method::POST, "/access/v1/access-requests"),
+            (Method::GET, "/access/v1/access-requests/schema"),
+            (Method::GET, "/access/v1/access-requests/task-1"),
+            (Method::POST, "/access/v1/access-requests/task-1/cancel"),
+            (Method::DELETE, "/access/v1/access-requests/task-1/cancel"),
+        ];
+        for (method, path) in access {
+            let (status, body) = ask(&pep, method.clone(), path, https.clone());
+            assert_eq!(status, StatusCode::FORBIDDEN, "{} {}", method, path);
+            assert!(body.contains("approval store"), "{}: {}", path, body);
+            assert!(!body.contains("STS-XPEP"), "{}", body);
+        }
+        let absent = [
+            (Method::GET, "/access/v1/access-requests"),
+            (Method::POST, "/access/v1/access-requests/schema"),
+            (Method::POST, "/access/v1/access-requests/task-1"),
+            (Method::GET, "/access/v1/access-requests/task-1/cancel"),
+            (Method::HEAD, "/access/v1/access-requests/task-1"),
+            (Method::HEAD, "/access/v1/access-requests/schema"),
+        ];
+        for (method, path) in absent {
+            let (status, _) = ask(&pep, method.clone(), path, https.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "{} {}", method, path);
+        }
+        let cold = a_pep();
+        let (status, body) = ask(
+            &cold,
+            Method::POST,
+            "/access/v1/search/subject",
+            https.clone(),
+        );
+        // NOTHING PULLED YET IS A PEP FAILURE: 403, never 503 (#2208).
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.contains("not yet pulled"), "{}", body);
+        let crl = Transport {
+            crl_only: true,
+            ..Transport::default()
+        };
+        let (status, body) =
+            ask(&pep, Method::POST, "/access/v1/access-requests", crl);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.contains("CRL"), "{}", body);
+    }
+
     /// ADMISSION ASKS THE LISTENER THE REQUEST ARRIVED ON (#1830): the
     /// environment's listener here verifies nothing, and a request that
     /// came in on a listener that does is admitted past STS-XPEP-0039 (to
-    /// 0050, no caller list pulled yet); one on a listener that does not is
+    /// 0050's 403, no caller list pulled yet); one on a listener that does not is
     /// 0039, and plain HTTP is answered by the environment's as before.
     #[test]
     fn admission_asks_the_listener_the_request_arrived_on() {
@@ -1303,7 +1494,7 @@ mod tests {
         let path = "/access/v1/evaluation";
         let (status, _, said) =
             answer(&pep, Method::POST, path, on(true), &[], body);
-        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{}", said);
+        assert_eq!(status, StatusCode::FORBIDDEN, "{}", said);
         assert!(said.contains("not yet pulled"), "{}", said);
         let (status, _, said) =
             answer(&pep, Method::POST, path, on(false), &[], body);

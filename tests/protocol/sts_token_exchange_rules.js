@@ -45,6 +45,9 @@
 // STS_TEST_REMOVE_REALMS=1.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -514,7 +517,7 @@ async function policy(tokens) {
           assert.ok(c.act, JSON.stringify(c));
           assert.strictEqual(c.act.sub, "urn:sts:client:" + FRONT);
           assert.strictEqual(c.act.iss, c.iss);
-          assert.ok([].concat(c.aud).indexOf(BACK_AUD) >= 0,
+          assert.ok(urls.holds(c.aud, BACK_AUD),
                     JSON.stringify(c.aud));
         });
   const problems = [];

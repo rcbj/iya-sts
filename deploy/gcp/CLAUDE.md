@@ -17,12 +17,13 @@ need a change.
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the GCS state bucket `iya-sts-terraform-state-<project>`, versioned | an administrator |
-| `foundation/` | long-lived | the APIs, the KMS key ring and key (and the service agents' use of it), **the service's key-encryption key `iya-sts-kek` and each environment's node account's use of it (#391)**, Artifact Registry `iya-sts`, the log bucket and sink, **the public zone `gcp.iyasec.io`**, the deployer service account, **one node service account per environment**, and **one certificate secret per environment with a public name** | an administrator |
+| `foundation/` | long-lived | the APIs, the KMS key ring and key (and the service agents' use of it), **the service's key-encryption key `iya-sts-kek` and each environment's node account's use of it (#391)**, Artifact Registry `iya-sts`, the log bucket and sink, **the public zone `gcp.iyasec.io`**, the deployer service account, **one node service account per environment** (and one member account per PEP environment, `pep_environments`, #1284), and **one certificate secret per environment with a public name** | an administrator |
 | `dns-delegation/` | once | the NS record `gcp.iyasec.io` in **the Route 53 zone `iyasec.io`**, naming Cloud DNS's name servers | an administrator with AWS **and** GCP credentials |
 | `environment/` | per run | VPC, firewall, passthrough network load balancer, Cloud SQL primary + replica behind a Private Service Connect endpoint, secrets, three zonal managed instance groups of one VM each, the public A record | the deployer (impersonated) |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `dev` and `ci` have none | the deployer |
 | `environment/units/` | per run | the systemd units (and the disk script) cloud-init writes on every node | — |
-| `node-init/` | per image | `sts-secrets` and `sts-cert`: Secret Manager → env files, and the ACME certificate | built by hand for now |
+| `node-init/` | per image | `sts-secrets` and `sts-cert`: Secret Manager → env files, and the ACME certificate; `sts-secret-files` (#1284): Secret Manager → files, for a remote PEP member's PEM keys | built by hand for now |
+| `pep-cluster/` | per PEP environment | **a remote XACML PEP cluster as an environment of its own (#1284)**: its own VPC, Cloud NAT on one reserved address, a global external Application Load Balancer with a Google-managed certificate and a Cloud Armor policy, a zonal instance group per member (or one regional group), `provision.sh` writing each member's keys to Secret Manager — never to state or metadata. Values in `pep-cluster/envs/<env>.tfvars` (`testpep`); state at `environment/<env>/pep-cluster/<cluster>` (*A remote PEP cluster*, below). Written and checked statically only | the deployer; `provision.sh` by a person |
 | `schema-init/` | per image | `postgres/schema.sql` against Cloud SQL — **AWS's `apply.sh`, not a copy** | built by hand for now |
 | `Dockerfile`, `entrypoint.sh`, `terraform-local.sh` | per run | the Terraform image and its launcher, AWS's arrangement | a person |
 
@@ -111,6 +112,97 @@ backend (CONNECTION) and the ALB's (UTILIZATION) — Google restricts mixed
 balancing modes on one group; the managed certificate provisioning once the
 public name resolves to the new address; and the deployer's roles
 (`loadBalancerAdmin`, `securityAdmin`) covering Cloud Armor's edge policy.
+
+## A remote PEP cluster: `pep-cluster/` (#1284, 2026-11-23)
+
+**AWS's remote PEP cluster on GCP: an environment of its own, written and
+checked statically only.** `deploy/aws/pep-cluster/` is the design and
+`deploy/aws/CLAUDE.md`, *A remote PEP cluster*, the argument — the PEP image
+behind a load balancer with a WAF in front, reaching the identity service at
+`idp_url` over the internet, reading nothing of any iya-sts environment
+(rcbj, 2026-11-23). AWS's was built and a whole browser sign-in verified
+through it; **nothing here has been applied**: `fmt -check`, `init
+-backend=false`, `validate`, `tests/render.tftest.hcl` (ten runs, mocked
+provider), `bash -n` and ShellCheck on the scripts. The first apply is its
+test.
+
+| AWS | GCP | Why |
+|---|---|---|
+| ECS service of one task per member | a ZONAL managed instance group of size one per member, on COS, spread round the zones | an environment's nodes' arrangement (*What each AWS piece became*); autohealing on the member's `/healthcheck` |
+| one shared service, Application Auto Scaling | one REGIONAL group and a regional autoscaler by CPU | the same choice, GCP's parts |
+| ALB + regional AWS WAF | **a global external Application Load Balancer (EXTERNAL_MANAGED) + a Cloud Armor policy** on every backend | WAF's GCP counterpart is Cloud Armor, on a backend service |
+| ACM certificate | a Google-managed certificate for every name the balancer answers | its key never leaves Google, which is what an edge certificate wants |
+| ALB `lb_cookie` on the proxy | `GENERATED_COOKIE` affinity, a day | a sign-in, its session and its DPoP key live in one member |
+| decision API on port 9443 | on **`decision_hostname`**, port 443 | a global external ALB's forwarding rule takes 80, 8080 and 443 only |
+| a notify PORT per member | a notify NAME per member, `<member>.<public_hostname>`, routed to that member's group alone, behind a Cloud Armor policy of its own admitting `notify_cidrs` | the same port limit; a host rule per member is the stable per-member address |
+| NAT gateway, one EIP | **Cloud NAT on one reserved address** (`MANUAL_ONLY`), and Private Google Access on the subnet | the members have NO external address; Google's APIs are reached privately, only the identity service through the NAT |
+| ECS `secrets` from Secrets Manager | **node-init's new `sts-secret-files`**: five Secret Manager secrets a member, into files on `/run/pep` (a tmpfs), mounted read-only | a PEM value has newlines, which `sts-secrets`' env file refuses |
+| an execution role of its own | **the foundation's `iya-sts-pep-<env>` account** (`pep_environments`) | the deployer creates no identity (*The deployer*); the account holds the log and metric writers and reading the registry — no `dns.admin`, no KEK |
+| the companion as a second container | the same, in the PEP container's network namespace (`--network container:xacml-pep`) | `127.0.0.1:9700` is each member's own; no firewall rule names 9700 |
+
+**THE CLOUD ARMOR RULES (`armor.tf`)**, in order: the eight preconfigured WAF
+rule sets (CRS 3.3 — sqli, xss, lfi, rfi, rce, protocolattack,
+scannerdetection, methodenforcement) at sensitivity 1, then `allowed_cidrs`
+THROTTLED (under `waf_rate_limit` a minute per address allowed, over it 429),
+and the default deny — the signatures BEFORE the allowlist, because an allow
+ends evaluation. **The throttle and the allowlist are one rule matching the
+allowed ranges**: a throttle's `conform_action` ends evaluation too, and the
+first version's throttle on `*` ahead of a separate allow admitted every
+address under the limit, so the deny-all was never reached. Caught in review;
+`tests/render.tftest.hcl` now refuses any allow or throttle on `*`. Cloud Armor inspects the first 8 KB of a body and passes the
+rest, where AWS's SizeRestrictions_BODY was counted; neither blocks an
+application's large POST.
+
+**THE KEYS ARE IN NO STATE AND NO METADATA.** `provision.sh` creates and
+writes each member's five secrets (`<name>-<env>-pep-<cluster>-<member>-
+<part>`: `assertion-key`, `assertion-cert`, `https-cert`, `https-key`,
+`service-ca`), regional under the project key like an environment's, a new
+version for a changed value and the older ones disabled, never an empty one.
+The stack looks each up by name and grants the members' account
+`secretAccessor` on the four a member mounts — `assertion-cert` is only what
+makes the utility idempotent. On the VM `pep-secrets` runs
+`sts-secret-files` into `/run/pep`; a part with no version (the pair before
+the second pass, the anchor where the service's certificate is public) is
+simply absent, and `anchor.env` names `PEP_TLS_CA` only when the anchor is
+there. A new pair reaches a member at its next boot, so the second pass
+`rolling-action replace`s each member it issued one to.
+
+**THE NUDGE IS OFF BY DEFAULT**, for AWS's reason: an iya-sts environment's
+nodes leave from addresses that change, so `provision.sh` stops nudging the
+rows (`xacml/disable-pep`) and the members poll every 15 seconds. With
+`notify_cidrs` the per-member names exist and are advertised.
+
+**THE PEP ENVIRONMENT IS NAMED LIKE ANY OTHER** (`testpep`, its values in
+`pep-cluster/envs/`), its state at
+`environment/<env>/pep-cluster/<cluster>` (`entrypoint.sh`), and its name
+must be in the foundation's `pep_environments` and NOT in `environments` —
+the foundation refuses one name in both, since both would write under
+`environment/<name>`.
+
+**What to look at first on the first apply**:
+
+* **The managed certificate** provisions only once every name it carries
+  (`public_hostname`, `decision_hostname`, any notify names) resolves to the
+  load balancer's address; until then the balancer answers TLS errors.
+* **Cloud Armor's preconfigured rules against the proxy's own traffic**: a
+  sign-in's callback, a SAML POST in the `saml` identity mode or an
+  application's form may trip a CRS signature at sensitivity 1. The sampled
+  log on the policy says which rule; lower that one's sensitivity or add an
+  `opt_out_rule_ids` rather than turning the set off.
+* **Docker on COS and `--network container:xacml-pep`**: the companion's
+  unit waits for the PEP container to run; a PEP restart takes the
+  companion's namespace with it, which `BindsTo=` should follow.
+* **`docker-credential-gcr` with `HOME=/var/lib/pep`**, as the nodes' unit
+  assumes for `/var/lib/sts`.
+* **The members' egress**: everything but 443 is denied, and DNS goes to the
+  metadata server, which no firewall rule governs. If a pull or Secret
+  Manager read hangs, check Private Google Access on the subnet and the NAT's
+  error log.
+* **The deployer's roles**: Cloud NAT, the router, Cloud Armor, the managed
+  certificate and the instance groups are inside the roles it holds
+  (`networkAdmin`, `securityAdmin`, `loadBalancerAdmin`,
+  `instanceAdmin.v1`); a 403 naming a permission is a role to add in
+  `foundation/iam_deployer.tf`.
 
 ## The certificate
 

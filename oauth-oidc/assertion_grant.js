@@ -412,6 +412,21 @@ async function unwrapAssertion(presented, opts) {
       return null;
     }
   })();
+  // AND THE ONES A SCHEDULED ROTATION RETIRED (#2220), each still opening
+  // what was encrypted to it before its overlap ended.
+  const retiredOf = function (kind) {
+    log.debug('Entering retiredOf().');
+    let found = [];
+    try {
+      found = require('../common/helpers').retiredEncryptionKeysFor(kind) ||
+              [];
+    } catch (e) {
+      log.debug('Caught in retiredOf(): ' + ((e && e.message) || e));
+      found = [];
+    }
+    log.debug('Leaving retiredOf().');
+    return found;
+  };
   const kidMatches = function (jwk) {
     log.debug('Entering kidMatches().');
     log.debug('Leaving kidMatches().');
@@ -434,6 +449,13 @@ async function unwrapAssertion(presented, opts) {
         (!wanted || encEc.publicJwk.crv === wanted)) {
       candidates.push({ privateKey: encEc.privateKey });
     }
+    retiredOf('ro').forEach(function (one) {
+      const ec = one && one.ec;
+      if (ec && ec.publicJwk && kidMatches(ec.publicJwk) &&
+          (!wanted || ec.publicJwk.crv === wanted)) {
+        candidates.push({ privateKey: ec.privateKey });
+      }
+    });
     (STS.extraKeys || []).forEach(function (one) {
       const jwk = one.publicJwk || {};
       if (jwk.kty !== 'EC' || (wanted && jwk.crv !== wanted)) {
@@ -465,11 +487,24 @@ async function unwrapAssertion(presented, opts) {
                  String(header.kid) === String(held.publicJwk.kid))) {
       candidates.push({ privateJwk: held.privateJwk });
     }
+    if (held) {
+      retiredOf('kem').forEach(function (one) {
+        if (one && one.alg === alg && kidMatches(one.publicJwk)) {
+          candidates.push({ privateJwk: one.privateJwk });
+        }
+      });
+    }
   } else {
     const encRsa = encKeys && encKeys.rsa;
     if (encRsa && encRsa.publicJwk && kidMatches(encRsa.publicJwk)) {
       candidates.push({ privateKey: encRsa.privateKey });
     }
+    retiredOf('ro').forEach(function (one) {
+      const rsa = one && one.rsa;
+      if (rsa && rsa.publicJwk && kidMatches(rsa.publicJwk)) {
+        candidates.push({ privateKey: rsa.privateKey });
+      }
+    });
     // Every RSA key of this realm, JOSE first — each live generation (#42).
     require('../common/helpers').ownRsaDecryptionKeys('jose')
       .forEach(function (one) {
@@ -619,14 +654,25 @@ async function unwrapAssertion(presented, opts) {
  *
  * @param fields - the party's entry, or a person's record
  * @param kind - `person` or `application`
+ * @param clientId - the application's client_id, where `fields` does not
+ *   carry it as `oauthClientId`; it finds the key sets bound to it (#2149)
  * @returns `{ keys, problems, ... }`
  */
-function keysForParty(fields, kind) {
+function keysForParty(fields, kind, clientId) {
   log.debug('Entering keysForParty(). kind=' + (kind || 'application'));
   const found = [];
   const problems = [];
   const person = String(kind) === 'person';
-  const names = person ? ['jwks'] : ['oauthJwks', 'oauthAssertionJwks'];
+  // WHICH SOURCES COUNT (#2149): the `client-jws` use case's list. Its
+  // default, `registered-keys`, is everything below as it was; a key-set
+  // truststore bound to this client adds its keys, and a list without
+  // `registered-keys` leaves the client's own registration out. A person is
+  // not a party a key set may be bound to.
+  const sources = person ? null :
+    clientKeySources(clientId || (fields && fields.oauthClientId));
+  const registered = !sources || sources.registered;
+  const names = !registered ? [] :
+    person ? ['jwks'] : ['oauthJwks', 'oauthAssertionJwks'];
   names.forEach(function (name) {
     const held = fields && fields[name];
     const text = person && held && typeof held === 'object'
@@ -650,8 +696,9 @@ function keysForParty(fields, kind) {
   // asynchronous caller asks `ensurePartyKeys()` first and every other
   // endpoint prefetches. A PERSON has no `jwks_uri`: it is an application's
   // registration member and no person attribute holds one.
-  const uri = String(kind) !== 'person' && fields && fields.oauthJwksUri &&
-              !fields.oauthJwks ? String(fields.oauthJwksUri) : '';
+  const uri = registered && String(kind) !== 'person' && fields &&
+              fields.oauthJwksUri && !fields.oauthJwks ?
+    String(fields.oauthJwksUri) : '';
   let fetched = false;
   if (uri) {
     const held = clientJwks.cachedKeys(uri);
@@ -665,11 +712,76 @@ function keysForParty(fields, kind) {
       });
     }
   }
+  const bound = sources ? boundKeys(sources) : { keys: [], unfetched: 0 };
+  bound.keys.forEach(function (one) {
+    found.push(one);
+  });
+  (sources ? sources.problems : []).forEach(function (one) {
+    problems.push(one.store + ': ' + one.why);
+  });
   log.debug('Leaving keysForParty(). ' + found.length + ' key(s).');
   return { keys: found, problems: problems,
            // A `jwks_uri` whose keys could not be had — never fetched, or
-           // the fetch refused — and nothing else to verify with.
-           jwksUriOnly: !!uri && !fetched && !fields.oauthAssertionJwks };
+           // the fetch refused — and nothing else to verify with; or a bound
+           // key set's, where nothing else gave a key (#2149).
+           jwksUriOnly: (!!uri && !fetched && !fields.oauthAssertionJwks &&
+                         !bound.keys.length) ||
+             (!found.length && bound.unfetched > 0) };
+}
+
+// The `client-jws` use case's sources for one client (#2149), or null where
+// no client is known — which reads the registration alone, as before.
+/**
+ * The key sources the `client-jws` use case names for a client.
+ *
+ * @param clientId - the client_id
+ * @returns `truststores.keySources()`'s answer, or null without a client
+ */
+function clientKeySources(clientId) {
+  log.debug('Entering clientKeySources().');
+  if (!clientId) {
+    log.debug('Leaving clientKeySources(). No client.');
+    return null;
+  }
+  // Lazily: this module is on `app.js`'s require chain, and the registry
+  // reads the PKI.
+  const truststores = require('../common/truststores');
+  const sources = truststores.keySources('client-jws',
+    { kind: 'client', id: String(clientId) });
+  log.debug('Leaving clientKeySources(). ' + sources.sets.length +
+            ' bound set(s).');
+  return sources;
+}
+
+// The keys of a client's bound key sets: pasted ones as stored, a jwks_uri's
+// from `client_jwks.js`'s cache (prefetched by `ensurePartyKeys()`).
+/**
+ * The keys the bound key sets of some sources hold now.
+ *
+ * @param sources - `clientKeySources()`'s answer
+ * @returns `{ keys, unfetched }`, `unfetched` the jwks_uris not yet cached
+ */
+function boundKeys(sources) {
+  log.debug('Entering boundKeys().');
+  const keys = [];
+  let unfetched = 0;
+  (sources.sets || []).forEach(function (set) {
+    let held = set.keys;
+    if (set.uri) {
+      const cached = clientJwks.cachedKeys(set.uri);
+      held = cached && Array.isArray(cached.keys) ? cached.keys : null;
+      if (!held) {
+        unfetched++;
+        return;
+      }
+    }
+    const read = keysFrom(JSON.stringify({ keys: held }));
+    (read.keys || []).forEach(function (one) {
+      keys.push(Object.assign({ source: 'truststore:' + set.name }, one));
+    });
+  });
+  log.debug('Leaving boundKeys(). ' + keys.length + ' key(s).');
+  return { keys: keys, unfetched: unfetched };
 }
 
 // For an ASYNCHRONOUS verifier: fetch the party's `jwks_uri` (under
@@ -684,14 +796,29 @@ function keysForParty(fields, kind) {
  * @param fields - the party's entry
  * @param kind - `person` or `application`
  * @param kid - the key id the assertion names
+ * @param clientId - the client_id, where `fields` does not carry it; the
+ *   jwks_uris of the key sets bound to it are fetched too (#2149)
  * @returns a promise of the fetch's answer, or of null when nothing was fetched
  */
-async function ensurePartyKeys(fields, kind, kid) {
+async function ensurePartyKeys(fields, kind, kid, clientId) {
   log.debug('Entering ensurePartyKeys().');
+  const sources = String(kind) === 'person' ? null :
+    clientKeySources(clientId || (fields && fields.oauthClientId));
+  let boundAnswer = null;
+  for (const set of (sources ? sources.sets : [])) {
+    if (set.uri) {
+      boundAnswer = await clientJwks.ensure(String(set.uri),
+                                            kid ? String(kid) : '');
+    }
+  }
+  if (sources && !sources.registered) {
+    log.debug('Leaving ensurePartyKeys(). Bound key sets only.');
+    return boundAnswer;
+  }
   if (String(kind) === 'person' || !fields || !fields.oauthJwksUri ||
       fields.oauthJwks) {
     log.debug('Leaving ensurePartyKeys(). Nothing to fetch.');
-    return null;
+    return boundAnswer;
   }
   const answer = await clientJwks.ensure(String(fields.oauthJwksUri),
                                          kid ? String(kid) : '');
@@ -1608,6 +1735,8 @@ module.exports = {
   // keys may sign".
   keysForParty: keysForParty,
   ensurePartyKeys: ensurePartyKeys,
+  clientKeySources: clientKeySources,
+  boundKeys: boundKeys,
   unwrapAssertion: unwrapAssertion,
   // The certificate-chain path, for section 2.2 as well. A client that was
   // issued a key pair from /admin/pki can present its certificate in the `x5c`

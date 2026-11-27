@@ -1,0 +1,6 @@
+{
+  "denialTitle": "Zugriff anfordern",
+  "denialDescription": "Dieser Zugriff kann angefordert werden. Ein von der Richtlinie benannter Genehmiger entscheidet, danach fragt die Anwendung erneut.",
+  "taskTitle": "{status, select, pending {Zugriffsanfrage gesendet} approved {Zugriffsanfrage genehmigt} denied {Zugriffsanfrage abgelehnt} expired {Zugriffsanfrage abgelaufen} cancelled {Zugriffsanfrage abgebrochen} failed {Zugriffsanfrage fehlgeschlagen} other {Zugriffsanfrage}}",
+  "taskDescription": "{status, select, pending {Die Genehmiger wurden gefragt. Die Anwendung fragt erneut, sobald einer von ihnen entschieden hat.} approved {Ein Genehmiger hat diese Anfrage genehmigt. Die Anwendung fragt erneut und legt die Genehmigung vor.} denied {Ein Genehmiger hat diese Anfrage abgelehnt.} expired {Niemand hat über diese Anfrage entschieden, bevor sie abgelaufen ist.} cancelled {Diese Anfrage wurde abgebrochen.} failed {Diese Anfrage konnte nicht abgeschlossen werden. Fragen Sie erneut an.} other {Diese Anfrage ist {status}.}}"
+}

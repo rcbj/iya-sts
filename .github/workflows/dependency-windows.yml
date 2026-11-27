@@ -17,12 +17,42 @@
 # main's image (CVE-2026-102276, CVE-2026-102278, CVE-2026-19534); develop's
 # image ships no npm since the 2026-11-14 slim image, and a dispatch from
 # develop still scanned main's.
+#
+# SECURITY ADVISORIES ONLY (#2219, rcbj 2026-11-25). The scheduled run holds
+# the advisory windows (critical 7, high 30, moderate 90 days) over both
+# lockfiles, the root's and sdk/'s, and over the image. Until then it also
+# ran SECURITY.md's 90-day update review (`--updates`), which since #2159
+# read the 27 sdk/ workspace pins too, so the day went red whenever an SDK
+# fell behind with no advisory against it. The update review now runs only
+# when a dispatch asks for it (`updates`), and reads the root lockfile only.
+#
+# AND THE THREE OTHER IMAGES THE STACK RUNS (#2220, 2026-11-25): the remote
+# PEP and the ICAP adapter, built from this ref on every ref (their images
+# are not what a pull of main's service image brings), and the ClamAV image
+# at the tag docker-compose.yml names. Each is scanned the same way and held
+# to the same windows; the PEP's crates and its built-in OpenSSL are seen
+# through the CycloneDX SBOM its image carries. Three builds where there was
+# one, so the job's limit went from 45 minutes to 90.
+#
+# AND THE RUSTSEC AUDIT OF rust/Cargo.lock (#2220): `cargo audit`, which is
+# what names an advisory in the PEP's crates and in the OpenSSL its
+# `openssl-src` crate builds. It is HERE and not in tests.yml's `rust` job
+# on purpose: that job gates the merge queue, and an advisory published
+# today would block every merge until somebody bumped the crate. A finding
+# fails this run instead; a reviewed exception is recorded, with its reason,
+# in rust/.cargo/audit.toml. It runs even when the image windows failed, so
+# one run reports both.
 name: Dependency windows
 
 on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+    inputs:
+      updates:
+        description: Also run the 90-day update review of the root lockfile
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,7 +63,7 @@ permissions:
 jobs:
   windows:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       # submodules: the build copies node-ldapjs, and an empty one builds an
       # image that is not the service (build-container.yml says why).
@@ -47,10 +77,8 @@ jobs:
           docker pull ghcr.io/rcbj/iya-sts:latest
           docker tag ghcr.io/rcbj/iya-sts:latest iya-sts:scan
       - name: Set up Buildx
-        if: github.ref != 'refs/heads/main'
         uses: docker/setup-buildx-action@v4
       - name: Log in to GitHub Container Registry
-        if: github.ref != 'refs/heads/main'
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       # The same build as build-container.yml's, with the same contexts. It
@@ -70,14 +98,60 @@ jobs:
             debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
             node:24.22.1-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.22.1-bookworm-slim
           cache-from: type=gha
-      - name: Scan the image
+      - name: Build the remote PEP's image of this ref
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: xacml-pep/Dockerfile
+          tags: iya-sts-xacml-pep:scan
+          load: true
+          push: false
+          build-contexts: |
+            rust:1.97-bookworm=docker-image://ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
+            debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
+          cache-from: type=gha,scope=xacml-pep
+      - name: Build the ICAP adapter's image of this ref
+        uses: docker/build-push-action@v7
+        with:
+          context: ./icap-clamav
+          tags: iya-sts-icap-clamav:scan
+          load: true
+          push: false
+          build-contexts: |
+            debian:bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/debian:bookworm-slim
+      # The tag the compose file runs, read from it so the two cannot drift.
+      - name: Pull the ClamAV image docker-compose.yml names
         run: |
-          docker save iya-sts:scan -o image.tar
-          docker run --rm -v "$PWD:/out" \
-            aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
-            image --quiet --scanners vuln --format json \
-            --output /out/image-report.json --input /out/image.tar
+          clamav="$(grep -o 'clamav/clamav:[0-9][0-9.]*' docker-compose.yml | head -1)"
+          test -n "$clamav"
+          docker pull "$clamav"
+          docker tag "$clamav" clamav:scan
+      - name: Scan the images
+        run: |
+          for image in iya-sts iya-sts-xacml-pep iya-sts-icap-clamav clamav; do
+            docker save "$image:scan" -o "$image.tar"
+            docker run --rm -v "$PWD:/out" \
+              aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c \
+              image --quiet --scanners vuln --format json \
+              --output "/out/$image-report.json" --input "/out/$image.tar"
+            rm -f "$image.tar"
+          done
       - name: Fail on anything past its window
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node tests/tools/dependency-windows.js --updates --image-report=image-report.json
+          UPDATE_REVIEW: ${{ inputs.updates && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${UPDATE_REVIEW}" = true ]; then args+=(--updates); fi
+          node tests/tools/dependency-windows.js --image-report=iya-sts-report.json \
+            --image-report=iya-sts-xacml-pep-report.json \
+            --image-report=iya-sts-icap-clamav-report.json \
+            --image-report=clamav-report.json "${args[@]}"
+      - name: Audit rust/Cargo.lock against the RustSec advisories
+        if: ${{ !cancelled() }}
+        run: >-
+          docker run --rm -v "${PWD}:/src" -w /src/rust
+          -e CARGO_TERM_COLOR=always
+          ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
+          bash -c "cargo install cargo-audit --version 0.22.2 --locked --quiet && cargo audit"

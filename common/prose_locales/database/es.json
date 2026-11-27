@@ -63,6 +63,14 @@
     "en": "ce51e3182e53d854",
     "text": "SIN CONEXIÓN — persistence.databaseTlsCaFile nombra {{file}}, que no se puede leer o no contiene ningún certificado, así que este servicio no arranca con él."
   },
+  "persistence.status.clientCertificate": {
+    "en": "803d02a07753ab1b",
+    "text": "Este servicio se autentica ante la base de datos con el certificado de cliente de {{file}} (persistence.databaseTlsClientCertFile), que se vuelve a leer cada persistence.databasePasswordRefreshS."
+  },
+  "persistence.status.clientCertificateUnusable": {
+    "en": "79cae22fc2547022",
+    "text": "NO SE CONECTA — el certificado de cliente de {{file}} (persistence.databaseTlsClientCertFile) no se puede leer, o su clave no es la suya, así que este servicio no arranca con él."
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "SIN CONEXIÓN — sslmode={{sslmode}} pide una conexión en claro, que este servicio nunca abre, así que no arranca con esta cadena de conexión."

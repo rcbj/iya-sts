@@ -92,6 +92,8 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
+// A refusal a person reads, as a catalog sentence (#2006).
+import Sentence = require('./sentence');
 import config = require('./config');
 import crypto = require('./crypto');
 import mode = require('./mode');
@@ -438,6 +440,35 @@ class Credentials {
     helpers.log.debug("Leaving Credentials.reportedMinPinLength().");
     return typeof value === 'number' && Number.isInteger(value) &&
            value >= 0 && value <= 255 ? value : null;
+  }
+
+  /**
+   * The credProtect level a registration's authenticator reported (#1955
+   * P7), CTAP 2.1 section 12.1's `credProtect` extension output, or null
+   * where it reported none.
+   *
+   * @param verdict - `authn/webauthn.js`'s registration verdict
+   * @returns 1, 2 or 3, or null
+   */
+  static reportedCredProtect(verdict: any): number | null {
+    helpers.log.debug("Entering Credentials.reportedCredProtect().");
+    helpers.log.debug("Leaving Credentials.reportedCredProtect().");
+    return passkeyPolicy.reportedCredProtect(verdict && verdict.extensions);
+  }
+
+  /**
+   * The U2F AppID a stored key was imported under (#1955 P7), or `''` for a
+   * key registered through WebAuthn, which is every other key.
+   *
+   * @param key - a stored key
+   * @returns the AppID, or `''`
+   */
+  static appIdOf(key: any): string {
+    helpers.log.debug("Entering Credentials.appIdOf().");
+    // The one reading, `webauthn_policy.ts`'s.
+    const out = webauthnPolicy.keyAppId(key);
+    helpers.log.debug("Leaving Credentials.appIdOf().");
+    return out;
   }
 
   // An AAGUID as the UUID string CAEP and the FIDO metadata service write
@@ -916,7 +947,15 @@ class Credentials {
         let held = { read: false, write: false };
         try {
           const rbac = require('../admin-ui/admin_rbac');
-          const roles = rbac.rolesOf(username) || {};
+          // THE ROSTER OF THE REALM THE PERSON SIGNS IN TO, named (#2236).
+          // `mfaRequirementFor()` asks it of a person of the ambient realm,
+          // under that realm's own `requireSecondFactorForAdministrators`;
+          // unnamed, `rolesOf()` read the DEFAULT realm's roster, so a trust
+          // realm's own administrators were never asked for one, and a
+          // person of the same name on the default roster was. Not the
+          // service roster on purpose: a default-realm administrator signs
+          // in through the default realm, which is the realm named here then.
+          const roles = rbac.rolesOf(username, realms.currentId()) || {};
           // MEMBERSHIP OF THE ROSTER'S GROUPS, not `read`/`write`: those are
           // also true for EVERYBODY while the roster is empty (the console's
           // open-console rule), and nobody is an administrator for #246 by
@@ -1062,6 +1101,11 @@ class Credentials {
   static readonly RESERVED_REFUSAL = 'invalid';
 
   private directory = null;
+
+  // The realms whose bootstrap password file this process wrote. Each realm
+  // has a file of its own (#1969), so this guards only a second bootstrap of
+  // the SAME realm in one start, which must not delete the copy it just made.
+  private bootstrapPasswordWritten = new Set<string>();
 
   /**
    * Fills the directory slot. Refused whole unless it carries at least
@@ -1293,14 +1337,26 @@ class Credentials {
   // the work: a derivation queued for the old password and started after a
   // reset landed would otherwise stamp the old password's keys as the new
   // one's (seen on the cluster stack, 2026-09-24 — sts_kerberos_keytab).
+  //
+  // WHO ACTED, AND WHEN (#2236). What the observer derives is a CONSEQUENCE
+  // of this act, and the Kerberos keys' own credential-change carries the
+  // act's initiating entity and instant rather than its own: they were
+  // derived after it, asynchronously, and a `system` change dated after a
+  // sign-in revoked the console token the person had just been issued (the
+  // hosted surfaces act on every change not the person's own). A
+  // verification is always the person's own password, so `user`; a set says
+  // who made it where its caller knows (`setPassword()`'s
+  // `opts.initiatingEntity`), and nothing where it does not.
   private notifyPassword(name, password, event, hash?, retainPreviousMs?,
-                         previousHash?) {
+                         previousHash?, initiatingEntity?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.notifyPassword().");
     if (!this.passwordObserver || !name || !password) {
       log.debug("Leaving Credentials.notifyPassword().");
       return;
     }
+    const initiator = initiatingEntity
+      ? String(initiatingEntity) : (event === 'set' ? '' : 'user');
     try {
       // `retainPreviousMs` (#221): a service account's rotation overlap, for
       // which the KDC holds the retired key version at least as long.
@@ -1308,7 +1364,9 @@ class Credentials {
                             { event: event, hash: hash || null,
                               retainPreviousMs: Number(retainPreviousMs) ||
                                                 0,
-                              previousHash: previousHash || null });
+                              previousHash: previousHash || null,
+                              initiatingEntity: initiator,
+                              atMs: Date.now() });
     } catch (e) {
       // Swallowed with a reason: see the header. What is lost is whatever the
       // observer derives, and the log says so; the credential act it observed
@@ -1339,9 +1397,11 @@ class Credentials {
   // `verifyPrepare()` — the reserved refusal, development mode, a missing name,
   // a missing store, a store that threw, nobody by that name, a stored form
   // this service did not write. Those are the overwhelming majority of refusals
-  // and none of them costs 68ms. What comes back is either a finished answer or
-  // the stored value to compare against, and the two doors differ only in which
-  // process runs the comparison.
+  // and none of them NEEDS a derivation — though since #2136 the ones that
+  // would otherwise tell a guesser an account exists PAY for one anyway
+  // (`decoy`; `spendDecoy()` below). What comes back is either a finished
+  // answer or the stored value to compare against, and the two doors differ
+  // only in which process runs the comparison.
   //
   // The alternative — an async door with its own copy of those seven refusals —
   // is the shape this file exists to avoid: `verify()` is the one place a
@@ -1380,7 +1440,10 @@ class Credentials {
       log.info('credentials: ' + name + ' is disabled and was refused (via ' +
                via + ').');
       log.debug('Leaving Credentials.verifyPrepare(). Disabled.');
-      return { done: this.disabledRefusal(name, via) };
+      // #2136: in a mode that compares passwords, the refusal costs what a
+      // wrong password does, so its timing does not say the name exists.
+      return { name: name, decoy: mode.verifiesCredentials(),
+               done: this.disabledRefusal(name, via) };
     }
 
     // A SERVICE ACCOUNT AT A DOOR ITS POLICY DOES NOT OPEN (#221), in BOTH
@@ -1393,7 +1456,8 @@ class Credentials {
     if (accountRefused) {
       log.debug('Leaving Credentials.verifyPrepare(). A service account at ' +
                 'a door its policy closes.');
-      return { done: accountRefused };
+      return { name: name, decoy: mode.verifiesCredentials(),
+               done: accountRefused };
     }
 
     if (!mode.verifiesCredentials()) {
@@ -1444,7 +1508,13 @@ class Credentials {
                 'holds a password.');
       // `name` rides beside the refusal: a person with no password may still
       // hold an app password, and `verify()` asks about that first (#101).
-      return { name: name, via: via, done: coded('STS-AUTHN-0052', { ok: false,
+      // `decoy` (#2136): THE ACCOUNT-EXISTENCE TIMING. This refusal used to
+      // cost nothing where a wrong password costs a derivation, so the
+      // response time named the accounts that exist. Both doors now verify
+      // the presented password against `crypto.decoyPasswordHash()` and
+      // discard the result; the refusal and its reason are unchanged.
+      return { name: name, via: via, decoy: true,
+               done: coded('STS-AUTHN-0052', { ok: false,
                reason: 'no-credential',
                detail: 'no ' + PASSWORD_ATTRIBUTE + ' is set for "' + name +
                        '". In product mode a person with no stored ' +
@@ -1463,7 +1533,8 @@ class Credentials {
                ' that this service did not write and cannot read. It is ' +
                'being REFUSED rather than compared as plaintext.');
       log.debug('Leaving Credentials.verifyPrepare(). Unreadable stored form.');
-      return { name: name, via: via, done: coded('STS-AUTHN-0053',
+      return { name: name, via: via, decoy: true,
+               done: coded('STS-AUTHN-0053',
                            { ok: false, reason: 'unreadable-credential',
                detail: 'the stored ' + PASSWORD_ATTRIBUTE + ' is not in the ' +
                        'form this service writes, so it cannot be ' +
@@ -1472,6 +1543,82 @@ class Credentials {
 
     log.debug('Leaving Credentials.verifyPrepare(). A comparison is needed.');
     return { stored: stored, name: name, via: via };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DECOY DERIVATION (#2136, ASVS 5.0.0 6.3.8 and 11.2.4). A refusal
+  // `verifyPrepare()` decided without a comparison — nobody by that name, a
+  // stored value this service cannot read, a disabled account, a service
+  // account at a door its policy closes — still costs one derivation: the
+  // presented password verified against `crypto.decoyPasswordHash()` at the
+  // hash spec the person's password policy would write, and the result
+  // DISCARDED. Without it the response time said which accounts exist,
+  // whatever the response said. Only in a mode that compares passwords
+  // (`verifyPrepare()` sets `decoy` there and nowhere else): development
+  // compares none, so every answer there is equally cheap already.
+  //
+  // It never throws and never changes the answer: a spec that cannot be
+  // read falls back to the default one, and a hash that cannot be made is
+  // logged and skipped, because a refusal that failed to cost enough is
+  // still the right refusal.
+  // ---------------------------------------------------------------------------
+  private decoyHash(name) {
+    const { log, crypto, passwordPolicy } = this.deps;
+    log.debug('Entering Credentials.decoyHash().');
+    let spec = null;
+    try {
+      spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
+    } catch (e) {
+      log.debug('Caught in Credentials.decoyHash(): ' +
+                ((e && e.message) || e));
+      spec = null;
+    }
+    let hash = '';
+    try {
+      hash = crypto.decoyPasswordHash(spec);
+    } catch (e) {
+      log.debug('Caught in Credentials.decoyHash(): ' +
+                ((e && e.message) || e));
+      log.warn('credentials: no decoy password hash could be made, so a ' +
+               'refusal that needed no comparison costs less than a wrong ' +
+               'password this time: ' + ((e && e.message) || e));
+      hash = '';
+    }
+    log.debug('Leaving Credentials.decoyHash().');
+    return hash;
+  }
+
+  // On this thread, as `verify()` runs its comparison.
+  private spendDecoy(name, password) {
+    const { log, crypto } = this.deps;
+    log.debug('Entering Credentials.spendDecoy().');
+    const hash = this.decoyHash(name);
+    if (hash) {
+      crypto.verifySecret(String(password == null ? '' : password), hash);
+    }
+    log.debug('Leaving Credentials.spendDecoy().');
+  }
+
+  // On libuv's thread pool, as `verifyAsync()` runs its comparison. Never
+  // rejects: `verifySecretAsync()` does not either.
+  private spendDecoyAsync(name, password) {
+    const { log, crypto } = this.deps;
+    log.debug('Entering Credentials.spendDecoyAsync().');
+    const hash = this.decoyHash(name);
+    if (!hash) {
+      log.debug('Leaving Credentials.spendDecoyAsync(). No decoy.');
+      return Promise.resolve(false);
+    }
+    log.debug('Leaving Credentials.spendDecoyAsync(). On libuv.');
+    return crypto.verifySecretAsync(String(password == null ? '' : password),
+                                    hash)
+      .then(() => {
+        return false;
+      }, (e) => {
+        log.debug('Caught in Credentials.spendDecoyAsync(): ' +
+                  ((e && e.message) || e));
+        return false;
+      });
   }
 
   // The answer, once the comparison has been made in whichever process made it.
@@ -1770,6 +1917,9 @@ class Credentials {
       }
     }
     if (ready.done) {
+      if (ready.decoy) {
+        this.spendDecoy(ready.name, password);
+      }
       this.noteRefusal(username, opts, ready.done);
       log.debug('Leaving Credentials.verify(). Decided without a derivation.');
       return ready.done;
@@ -2005,6 +2155,13 @@ class Credentials {
       log.debug('Entering Credentials.verifyAsync() password step.');
       if (ready.done) {
         this.noteRefusal(username, opts, ready.done);
+        if (ready.decoy) {
+          log.debug('Leaving Credentials.verifyAsync() password step. ' +
+                    'Decided without a derivation; a decoy one on libuv.');
+          return this.spendDecoyAsync(ready.name, password).then(() => {
+            return ready.done;
+          });
+        }
         log.debug('Leaving Credentials.verifyAsync() password step. ' +
                   'Decided without a derivation.');
         return Promise.resolve(ready.done);
@@ -2193,7 +2350,16 @@ class Credentials {
     // realm lets a key be one: a key has no role, and every key may answer
     // the second step.
     const key = this.keyUses(this.keysOf(name).length).mfa > 0;
-    const totp = !!this.totpOf(name);
+    // `totp` HERE MEANS "A ONE-TIME CODE THE DOOR CAN ASK FOR" (#1955 P4):
+    // the authenticator app's or an HOTP token's, which the KDC's OTP
+    // pre-authentication and `verifyTotpAsync()` accept alike. `hotp` says
+    // which, for a door that words its prompt.
+    const hotp = !!this.hotpStatusOf(name);
+    // A YubiKey OTP is a code the door can ask for, the same way an HOTP
+    // token is. It is not added to the `none` object above: that object is
+    // compared as a whole by callers that have no person.
+    const yubi = !!this.yubiStatusOf(name);
+    const totp = !!this.totpOf(name) || hotp || yubi;
     const requirement = this.mfaRequirementFor(name);
     const holds = key || totp;
     // AN EXEMPT SERVICE ACCOUNT (#221) is asked for nothing at a door that
@@ -2201,7 +2367,9 @@ class Credentials {
     // second-factor rules, and a factor it happens to hold does not put it
     // back in. Its `amr` is still `pwd` alone.
     const exempt = !!requirement.exemptServiceAccount;
-    const answer = { person: true, totp: totp, key: key, holds: holds,
+    const answer = { person: true, totp: totp, hotp: hotp, yubi: yubi,
+                     key: key,
+                     holds: holds,
                      required: !!requirement.required,
                      byUser: !!requirement.byUser,
                      exemptServiceAccount: exempt,
@@ -2324,15 +2492,11 @@ class Credentials {
       return '';
     }
     const profile = passwordPolicy.profileFor(username, application);
-    const problems = passwordPolicy.problemsWith(password, profile);
-    if (!problems.length) {
-      log.debug("Leaving Credentials.passwordProblem().");
-      return '';
-    }
+    // The policy's own sentence (#2006): `problemsWith()`'s phrases, as a
+    // catalog message the page draws in its language.
+    const said = passwordPolicy.refusalFor(password, profile);
     log.debug("Leaving Credentials.passwordProblem().");
-    return 'That password does not meet this realm\'s password policy, which ' +
-           'asks for ' + problems.join(', ') + '. The rules are on ' +
-           '/admin/policies (profile "' + profile.name + '").';
+    return said || '';
   }
 
   // The rules as a person reads them, and whether they are being enforced — for
@@ -2484,10 +2648,8 @@ class Credentials {
     log.debug('Entering Credentials.preparePassword(). username=' + name);
     if (!password) {
       log.debug('Leaving Credentials.preparePassword(). No password.');
-      return coded('STS-AUTHN-0055', { ok: false, errors: ['Give a password. ' +
-                                   'To take one away, remove ' +
-                                   'the ' + PASSWORD_ATTRIBUTE + ' attribute ' +
-                                   'from the entry.'] });
+      return coded('STS-AUTHN-0055', { ok: false, errors: [Sentence.say(
+        'refusals.password.missing', { attribute: PASSWORD_ATTRIBUTE })] });
     }
     // A ROTATING SERVICE ACCOUNT'S PASSWORD IS SET BY ITS ROTATION ONLY
     // (#221), at every door that sets a password — the console, the API, an
@@ -2502,11 +2664,8 @@ class Credentials {
                 'account.');
       return coded('STS-SVCACCT-0013', { ok: false,
         reason: 'service-account-rotates',
-        errors: [name + ' is a service account whose password rotates ' +
-                 'through its push destination, so it cannot be set by ' +
-                 'hand: the destination is where its consumers read it. ' +
-                 'Use Rotate now on its page, or POST /admin-api/users/' +
-                 'rotate-password.'] });
+        errors: [Sentence.say('refusals.password.rotates',
+                              { account: name })] });
     }
     // THE PERSON'S PROFILE (#1236): the one their groups name, or the
     // application's where the door knows one (`opts.application`, the
@@ -2542,9 +2701,7 @@ class Credentials {
                  'has appeared in a data breach.');
         log.debug('Leaving Credentials.preparePassword(). Breached.');
         return coded('STS-AUTHN-0222', { ok: false, reason: 'breached',
-          errors: ['That password has appeared in a data breach, so ' +
-                   'people trying stolen passwords will try it. Choose a ' +
-                   'different one.'] });
+          errors: [Sentence.say('refusals.password.breached')] });
       }
     }
     const current = options.current !== undefined
@@ -2567,12 +2724,9 @@ class Credentials {
                ' before it.');
       log.debug('Leaving Credentials.preparePassword(). Reused.');
       return coded('STS-AUTHN-0057', { ok: false, reason: 'password-history',
-               errors: ['That password has been used for this account ' +
-                        'recently. This realm\'s password policy refuses the ' +
-                        'current password and ' +
-                        'the ' + profile.history + ' before it ' +
-                        '(profile "' + profile.name + '"). Choose one you ' +
-                        'have not used here.'] });
+               errors: [Sentence.say('refusals.password.reused', {
+                 history: profile.history, profile: String(profile.name) })]
+             });
     }
     // THE HISTORY TO LEAVE: the value being replaced goes on the front, the
     // oldest fall off the back. The CURRENT value is only remembered when it is
@@ -2618,8 +2772,10 @@ class Credentials {
    *
    * @param username - the person
    * @param password - the new password
-   * @param opts - `generated` for a password from `generatePassword()`, and
-   *   `application`, the application it is set for where known (#1236)
+   * @param opts - `generated` for a password from `generatePassword()`,
+   *   `application`, the application it is set for where known (#1236), and
+   *   `initiatingEntity`, CAEP's word for who set it where the caller knows
+   *   (`user` for the person's own choice, #2236)
    * @returns `{ ok: true, username, … }`, or a refusal `{ ok: false, errors }`
    */
   setPassword(username, password, opts?) {
@@ -2707,7 +2863,10 @@ class Credentials {
     // The plaintext was just WRITTEN — see the password observer above. After
     // the write and not before it, so an observer reading the stored hash back
     // reads the one this password produced.
-    this.notifyPassword(name, password, 'set', prepared.hash, overlapMs);
+    // `opts.initiatingEntity` (#2236): who set it, for what the observer
+    // derives from it; see `notifyPassword()`.
+    this.notifyPassword(name, password, 'set', prepared.hash, overlapMs,
+                        null, (opts && opts.initiatingEntity) || '');
     log.debug('Leaving Credentials.setPassword(). Written.');
     return { ok: true, username: name,
              message: 'The password for ' + name + ' is set. It is stored as ' +
@@ -2837,6 +2996,82 @@ class Credentials {
   }
 
   /**
+   * The path of the ambient realm's generated bootstrap password, under
+   * persistence.dataDir.
+   *
+   * ONE FILE PER REALM (#1969). A first product start bootstraps the default
+   * realm and then every configured realm, and when they shared one name
+   * each write replaced the last, so only the last realm's password
+   * survived. The default realm keeps the name it always had,
+   * `bootstrap-admin-password`, because the documentation, the deployment
+   * scripts and every operator's notes name it; a trust realm's is
+   * `bootstrap-admin-password-<realm id>`. A realm id is `[a-z0-9-]` only
+   * (`realms.js`'s ID_PATTERN), so it cannot leave the directory.
+   *
+   * @returns the file's path
+   */
+  private bootstrapPasswordFile(): string {
+    const { log, config, realms } = this.deps;
+    log.debug("Entering Credentials.bootstrapPasswordFile().");
+    const nodePath = require('path');
+    const dir = nodePath.resolve(String(
+      config.value('persistence.dataDir')));
+    const realmId = String(realms.currentId() || realms.DEFAULT_ID);
+    const name = realmId === realms.DEFAULT_ID
+      ? 'bootstrap-admin-password'
+      : 'bootstrap-admin-password-' + realmId;
+    const file = nodePath.join(dir, name);
+    log.debug("Leaving Credentials.bootstrapPasswordFile().");
+    return file;
+  }
+
+  /**
+   * Whether a bootstrap password file still opens the account it names.
+   *
+   * @param file - the file's path
+   * @returns true when its `name:password` verifies against that account's
+   *   stored password now
+   */
+  private bootstrapPasswordStillOpens(file: string): boolean {
+    const { log, crypto } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.bootstrapPasswordStillOpens().");
+    let text = '';
+    try {
+      text = String(require('fs').readFileSync(file, 'utf8'));
+    } catch (e) {
+      // Absent or unreadable: nothing in it opens anything, and the unlink
+      // that follows reports what is wrong with it.
+      log.debug("Caught in Credentials.bootstrapPasswordStillOpens(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.bootstrapPasswordStillOpens(). " +
+                "Unreadable.");
+      return false;
+    }
+    const line = text.replace(/\r?\n$/, '');
+    const colon = line.indexOf(':');
+    if (colon <= 0 || !directory ||
+        typeof directory.readPassword !== 'function') {
+      log.debug("Leaving Credentials.bootstrapPasswordStillOpens(). " +
+                "Not a name and a password.");
+      return false;
+    }
+    let stored = null;
+    try {
+      stored = directory.readPassword(line.slice(0, colon));
+    } catch (e) {
+      log.debug("Caught in Credentials.bootstrapPasswordStillOpens(): " +
+                ((e && e.message) || e));
+      stored = null;
+    }
+    const opens = !!stored && !!crypto.verifySecret(line.slice(colon + 1),
+                                                    stored);
+    log.debug("Leaving Credentials.bootstrapPasswordStillOpens(). " +
+              (opens ? "Yes." : "No."));
+    return opens;
+  }
+
+  /**
    * Writes a generated bootstrap password to a file only this user can read.
    *
    * @param username - the account
@@ -2852,8 +3087,8 @@ class Credentials {
     }
     const nodeFs = require('fs');
     const nodePath = require('path');
-    const dir = nodePath.resolve(String(config.value('persistence.dataDir')));
-    const file = nodePath.join(dir, 'bootstrap-admin-password');
+    const file = this.bootstrapPasswordFile();
+    const dir = nodePath.dirname(file);
     try {
       nodeFs.mkdirSync(dir, { recursive: true });
       nodeFs.writeFileSync(file, username + ':' + password + '\n',
@@ -2871,10 +3106,81 @@ class Credentials {
   }
 
   /**
+   * Removes the ambient realm's bootstrap password file a previous start
+   * left behind, once the password in it no longer opens the account.
+   *
+   * Only this realm's own file is touched (#1969). A start that wrote it
+   * itself leaves it. A file whose password still verifies is left too: see
+   * the rule below. ENOENT is success. Any other failure is logged
+   * (STS-AUTHN-0567) and the start continues.
+   */
+  private removeLeftoverBootstrapPassword(): void {
+    const { log, errorCodes, realms } = this.deps;
+    log.debug("Entering Credentials.removeLeftoverBootstrapPassword().");
+    if (this.bootstrapPasswordWritten.has(String(realms.currentId()))) {
+      log.debug("Leaving Credentials.removeLeftoverBootstrapPassword(). " +
+                "Written this start.");
+      return;
+    }
+    const nodeFs = require('fs');
+    const file = this.bootstrapPasswordFile();
+    // REMOVED ONLY ONCE IT IS STALE (#1969). `bootstrapOnce()` gives its
+    // claim back as soon as the winner's writes commit, so a node that
+    // starts a moment later wins the claim, finds the credential the winner
+    // just made, and reaches this line. Where the nodes share
+    // persistence.dataDir, deleting here would delete the only copy of a
+    // password nobody has read yet, and nobody could sign in. So the rule
+    // is the file's CONTENT rather than its age: the file is removed once
+    // the password in it no longer opens the account it names — the account
+    // was given a new password (its first sign-in forces one), lost its
+    // password, or is gone — and is left while it still does. It is the
+    // same file either way, so this never keeps a working password that
+    // somebody could not already read there, and it asks no clock: a file's
+    // mtime on a shared volume and a node's timestamp on the entry come
+    // from different clocks, and comparing them would be right only as
+    // often as they agree.
+    if (this.bootstrapPasswordStillOpens(file)) {
+      log.info('credentials: kept the bootstrap password file ' + file +
+               ' because the password in it still opens its account; a ' +
+               'start after that password is changed removes it.');
+      log.debug("Leaving Credentials.removeLeftoverBootstrapPassword(). " +
+                "Still opens.");
+      return;
+    }
+    try {
+      nodeFs.unlinkSync(file);
+    } catch (e) {
+      if (e && e.code === 'ENOENT') {
+        log.debug("Caught in " +
+                  "Credentials.removeLeftoverBootstrapPassword(): " +
+                  "already absent.");
+        log.debug("Leaving Credentials.removeLeftoverBootstrapPassword()." +
+                  " Absent.");
+        return;
+      }
+      log.debug("Caught in " +
+                "Credentials.removeLeftoverBootstrapPassword(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHN-0567') +
+                'credentials: the bootstrap password file ' + file +
+                ' could not be removed: ' + ((e && e.message) || e));
+      log.debug("Leaving Credentials.removeLeftoverBootstrapPassword()." +
+                " Not removed.");
+      return;
+    }
+    log.info('credentials: removed the bootstrap password file ' + file +
+             ' because the password in it no longer opens its account.');
+    log.debug("Leaving Credentials.removeLeftoverBootstrapPassword().");
+  }
+
+  /**
    * Creates the bootstrap administrator a fresh product-mode service is
    * reached through, with a generated password announced in the log.
    *
-   * It does not run in development mode.
+   * It does not run in development mode. A product start that finds a
+   * credential already held removes this realm's password file a previous
+   * start wrote, once the password in it no longer opens its account,
+   * unless this process wrote that file itself.
    * @param opts - `username`, `admin` by default; the password is
    *   `admin.bootstrapPassword` or a generated one
    * @returns `{ ran, username, … }`, or `{ ran: false, why }`
@@ -2912,6 +3218,13 @@ class Credentials {
       return { ran: false, why: 'the credential store could not be read' };
     }
     if (anybody) {
+      // A LATER START. The file from the start that generated the password
+      // is the plaintext, and this start did not generate one. It is this
+      // realm's file only, and it is removed only once the password in it
+      // no longer opens its account (#1969), so a node that wins the claim
+      // just after another node bootstrapped does not delete the file that
+      // node just wrote. A node that lost bootstrapOnce() never reaches here.
+      this.removeLeftoverBootstrapPassword();
       log.debug('Leaving Credentials.bootstrap(). Somebody already holds a ' +
                 'credential.');
       return { ran: false, why: 'somebody already holds a credential, so ' +
@@ -3007,11 +3320,18 @@ class Credentials {
     // NOT IN THE LOG (#1493, ASVS 5.0.0 16.2.5): the password goes to a file only
     // this service's user can read, unless an operator asked for the old way.
     const held = this.writeBootstrapPassword(username, password);
+    if (held) {
+      // A second bootstrap of this realm in this start must leave it.
+      this.bootstrapPasswordWritten.add(
+        String(this.deps.realms.currentId()));
+    }
     log.warn('=======================================================\n' +
              'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +
              '\n' +
              '  username: ' + username + '\n' +
-             (held ? '  password: in the file ' + held + '\n'
+             (held ? '  password: in the file ' + held + '\n' +
+                     '  A start after this password is changed removes this ' +
+                     'file.\n'
                    : '  password: ' + password + '\n') +
              '\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
@@ -3048,7 +3368,13 @@ class Credentials {
   //
   // **WHAT A NODE THAT LOSES SEES**: one info line naming the node holding the
   // claim and when it took it, and NO password — it seeds nothing and writes
-  // nothing, and the password is in the winner's log alone. If the winner died
+  // nothing, and it does not remove the password file, which the winner may
+  // have just written on a data directory the nodes share. A node that wins
+  // the claim AFTER the winner gave it back does reach the removal, which is
+  // why that removal waits until the password in the file no longer opens its
+  // account (`removeLeftoverBootstrapPassword()`, #1969). The password is in
+  // the winner's file, or its log when admin.logBootstrapPassword is on. If
+  // the winner died
   // before it wrote, the claim expires (`BOOTSTRAP_CLAIM_TTL_MS`) and the next
   // node to start runs the bootstrap; a service nobody can sign in to for that
   // long is the price of never printing a password that does not work.
@@ -3797,6 +4123,37 @@ class Credentials {
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
     }
+    // THE CREDPROTECT LEVEL THE KEY REPORTED (#1955 P7), asked only of a
+    // ceremony that ran — a door that ran none (an import) is held to no
+    // level it was never asked for. `undefined` is "not asked"; null is
+    // "asked, reported nothing".
+    // WHILE THE LEVEL IS ENFORCED IT MUST BE PROVEN (the #1955 review):
+    // the level is in the authenticator data, which only a TRUSTED
+    // attestation vouches for — under `none` it is the browser's word — so
+    // an unattested report counts as none (level 1), and the rule refuses
+    // it. And an imported U2F key ran no ceremony, reported no level and
+    // can prove none, so an import is refused while the rule is enforced.
+    const credRule = this.deps.passkeyPolicy.credProtectRule(
+      this.deps.passkeyPolicy.profileFor(name));
+    if (credRule.enforce && given.appid) {
+      log.info('credentials: a U2F key was NOT imported for ' + name +
+               ': the passkey policy enforces credProtect level ' +
+               credRule.level + ', which an imported key cannot prove.');
+      log.debug("Leaving Credentials.addKey(). An import under an " +
+                "enforced credProtect.");
+      return coded('STS-AUTHN-0580', { ok: false, reason: 'cred-protect',
+               errors: [Sentence.say('refusals.passkey.importCredProtect',
+                 { level: credRule.level })] });
+    }
+    if (given.credProtect !== undefined) {
+      facts.credProtect = given.credProtect;
+      const att = given.attestation || {};
+      if (credRule.enforce &&
+          !(att.verified === true && att.trusted === true)) {
+        facts.credProtect = null;
+        facts.credProtectUnattested = true;
+      }
+    }
     // AN UPGRADE (#939): the classical passkey it upgrades, looked up NOW
     // among this person's keys — the entry as it is at the write, not as
     // it was at the proof — and its algorithm sent to the policy beside
@@ -3821,9 +4178,7 @@ class Credentials {
                'write; nothing was written.');
       log.debug("Leaving Credentials.addKey(). The upgraded key is gone.");
       return coded('STS-AUTHN-0457', { ok: false, reason: 'upgrade',
-               errors: ['The passkey you were upgrading was removed or ' +
-                        'upgraded by another request since you used it, ' +
-                        'so nothing was changed.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeGone')] });
     }
     if (upgrading) {
       facts.upgrade = { mode: upgrade.mode,
@@ -3846,8 +4201,10 @@ class Credentials {
               ? 'attestation-algorithm'
               // #940: an algorithm the person's profile does not offer.
               : (synced.reason === 'profile-algorithm' ? 'profile-algorithm'
-                : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                                  : 'passkey-policy')))));
+                // #1955 P7: a credProtect level below the enforced one.
+                : (synced.reason === 'cred-protect' ? 'cred-protect'
+                  : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                                    : 'passkey-policy'))))));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
@@ -3876,9 +4233,7 @@ class Credentials {
                'already enrolled. Refused as a duplicate.');
       log.debug("Leaving Credentials.addKey(). Already enrolled.");
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
-               errors: ['That authenticator is already enrolled. Use a ' +
-                        'DIFFERENT one — a backup on the same device is lost ' +
-                        'with the original.'] });
+               errors: [Sentence.say('refusals.passkey.alreadyEnrolled')] });
     }
     const cap = webauthnPolicy.settings().maxKeysPerPerson;
     // AN UPGRADE IN PLACE (#939) ADDS NO KEY: the one it replaces is not
@@ -3957,6 +4312,20 @@ class Credentials {
       // every later sign-in to while it enforces a PIN length.
       minPinLength: typeof credential.minPinLength === 'number'
         ? credential.minPinLength : null,
+      // THE CREDPROTECT LEVEL THE KEY REPORTED (#1955 P7), CTAP 2.1 section
+      // 12.1: 1, 2 or 3; absent where it reported none or no ceremony ran,
+      // so a row is written as it was before unless a key reported one.
+      credProtect: passkeyPolicy.reportedCredProtect(
+        { credProtect: credential.credProtect }) || undefined,
+      // THE LEGACY U2F APPID IT WAS IMPORTED UNDER (#1955 P7), and who
+      // imported it and when — absent for every key registered here. An
+      // assertion by it is checked against SHA-256 of this AppID only where
+      // the client used the appid extension (`authn/webauthn.js`).
+      appid: typeof credential.appid === 'string' && credential.appid
+        ? String(credential.appid) : undefined,
+      importedBy: credential.appid && credential.importedBy
+        ? Credentials.enrolledByOf(credential.importedBy) || undefined
+        : undefined,
       // THE USER HANDLE IT WAS CREATED UNDER (#474): what its authenticator
       // hands back, and what `userHandleRefusal()` holds an assertion to.
       // Only a handle this service mints; a key written without one (before
@@ -4050,6 +4419,22 @@ class Credentials {
                                    'in this realm\'s directory.'] });
     }
     log.info('credentials: a passkey was enrolled for ' + name + '.');
+    // THE HARDWARE TOKEN IT IS ON (#1955 P1): a key whose trusted
+    // enterprise attestation named a device serial is a credential on a
+    // physical token, and the token register records it HERE, at the one
+    // writer, so no enrolment door can miss it. Required at the moment of
+    // use (it reaches this file lazily the other way); a failure there
+    // never undoes the key.
+    try {
+      require('./hardware_tokens').noteFidoKey(name, record, {
+        actor: enrolledBy ? enrolledBy.username : name,
+        via: enrolledBy ? 'admin' : 'webauthn' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-HWTOKEN-0011') +
+                'credentials: the passkey of ' + name + ' was written and ' +
+                'the hardware token it is on could not be recorded: ' +
+                ((e && e.message) || e));
+    }
     // A ROW THIS ONE MAY HAVE REPLACED ON ITS AUTHENTICATOR (#1101). Not
     // for an upgrade, whose write already replaced or marked the old row.
     if (!upgrading) {
@@ -4213,9 +4598,7 @@ class Credentials {
                  ' was REFUSED: its credential id is being registered, or ' +
                  'was just registered, by another request or node.');
         return coded('STS-AUTHN-0193', { ok: false, reason: 'duplicate',
-          errors: ['That authenticator has just been registered by another ' +
-                   'request. It is enrolled once; look for it on your key ' +
-                   'list.'] });
+          errors: [Sentence.say('refusals.passkey.justRegistered')] });
       }
       if (!claimed.ok) {
         log.error(errorCodes.tag('STS-AUTHN-0194') + 'credentials: whether ' +
@@ -4224,8 +4607,7 @@ class Credentials {
                   (claimed.why || claimed.reason) + '), so it was not ' +
                   'enrolled.');
         return coded('STS-AUTHN-0194', { ok: false, reason: 'store',
-          errors: ['The security key could not be registered just now. Try ' +
-                   'again.'] });
+          errors: [Sentence.say('refusals.passkey.notRegisteredNow')] });
       }
       const stored = this.addKey(username, credential, opts);
       if (!stored.ok) {
@@ -4258,8 +4640,8 @@ class Credentials {
     if (!credentialId || !s.challenge) {
       log.debug("Leaving Credentials.spendAssertion(). Nothing to spend.");
       return Promise.resolve(coded('STS-AUTHN-0182', { ok: false,
-        reason: 'store', detail: 'The assertion names no credential or ' +
-                                 'challenge, so it cannot be spent.' }));
+        reason: 'store',
+        detail: Sentence.say('refusals.passkey.assertionNothingToSpend') }));
     }
     log.debug("Leaving Credentials.spendAssertion(). Claiming the challenge.");
     return claims.claim({
@@ -4273,14 +4655,14 @@ class Credentials {
                    'been answered, by another node or a request racing this ' +
                    'one.');
           return coded('STS-AUTHN-0181', { ok: false, reason: 'replay',
-            detail: 'this sign-in step has already been answered' });
+            detail: Sentence.say('refusals.passkey.assertionAnswered') });
         }
         log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: a ' +
                   'security-key assertion for ' + name + ' could not be ' +
                   'proved unspent (' + (claimed.why || claimed.reason) +
                   '), so it was refused.');
         return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-          detail: 'the assertion could not be checked just now' });
+          detail: Sentence.say('refusals.passkey.assertionUnchecked') });
       }
       return counters.advance({
         scope: WEBAUTHN_COUNTER_SCOPE, key: credentialId, value: signCount,
@@ -4300,16 +4682,15 @@ class Credentials {
                                answer.highest);
             return coded('STS-AUTHN-0035', { ok: false, reason: 'counter',
               highest: answer.highest,
-              detail: 'the signature counter did not increase (now ' +
-                      signCount + ', highest seen ' + answer.highest +
-                      ') — the key may have been cloned' });
+              detail: Sentence.say('refusals.passkey.counterBehind', {
+                now: signCount, highest: String(answer.highest) }) });
           }
           log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: the ' +
                     'signature counter for ' + name + ' could not be ' +
                     'advanced (' + (answer.why || answer.reason) + '), so ' +
                     'the assertion was refused.');
           return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-            detail: 'the signature counter could not be checked just now' });
+            detail: Sentence.say('refusals.passkey.counterUnchecked') });
         }
         const recorded = this.noteKeyUsed(name, credentialId, signCount,
                                           s.flags);
@@ -5037,9 +5418,11 @@ class Credentials {
    *
    * @param username - the person
    * @param credentialId - the key's credential id
+   * @param opts - `lost`: the key was reported lost (#1955), so the
+   *   last-way-in guard does not keep it
    * @returns `{ ok: true, remaining }`, or a refusal
    */
-  removeKey(username, credentialId) {
+  removeKey(username, credentialId, opts?) {
     const { log } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
@@ -5091,7 +5474,11 @@ class Credentials {
         kept.some((one) => {
           return !one.possiblyReplacedBy;
         });
-    if (removed && keyIsWayIn &&
+    // A LOST KEY (#1955) IS NOT KEPT AS A WAY IN: its holder no longer has
+    // it and whoever found it does. The person is left to an activation
+    // link or the realm's recovery, which the lost-key act's answer says.
+    const lost = !!(opts && opts.lost);
+    if (removed && keyIsWayIn && !lost &&
         !this.hasPassword(name) && !stillHasKey) {
       log.debug("Leaving Credentials.removeKey().");
       return coded('STS-AUTHN-0070',
@@ -5111,6 +5498,20 @@ class Credentials {
                                    e.message] });
     }
     log.info('credentials: a passkey was removed for ' + name + '.');
+    // The hardware token that listed it (#1955) drops it, unless the
+    // lost-key act is removing it — that act keeps it on the record as
+    // retired. Lazily, and never undoing the removal.
+    if (!lost) {
+      try {
+        require('./hardware_tokens').forgetCredential('fido',
+                                                      String(credentialId));
+      } catch (e) {
+        log.debug('Caught in Credentials.removeKey(): ' +
+                  ((e && e.message) || e));
+        // The token page lists a removed passkey until the token is next
+        // written; the key itself is gone either way.
+      }
+    }
     log.debug("Leaving Credentials.removeKey().");
     return { ok: true, remaining: kept.length };
   }
@@ -5189,6 +5590,132 @@ class Credentials {
   // and written to the audit, and nothing a person means by a nickname needs
   // one.
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // A LEGACY FIDO U2F CREDENTIAL, IMPORTED BY VALUE (#1955 P7, rcbj's reversal
+  // of the issue's D5).
+  //
+  // A U2F relying party kept, per registered key, the KEY HANDLE (the
+  // credential id), the P-256 PUBLIC KEY as an uncompressed point (65 bytes,
+  // 0x04 ‖ x ‖ y; FIDO U2F Raw Message Formats section 4.3), the COUNTER and
+  // the APPID it was registered under. Those four, and the person, are the
+  // import; nothing is verified about where they came from, because there is
+  // no ceremony to verify — an administrator vouches for them, the console
+  // says so, and the act is audited. What IS checked:
+  //
+  //   * the AppID is one `webauthn.u2fAppIds` lists (STS-AUTHN-0561): the
+  //     switch is the setting, EMPTY by default, so nothing is importable
+  //     until an operator names the legacy relying party;
+  //   * the key handle is base64 or base64url of 1 to 255 bytes, U2F's own
+  //     bound (a one-byte length, section 4.3) (STS-AUTHN-0562);
+  //   * the public key is an uncompressed P-256 point `common/crypto.js`
+  //     accepts as one (STS-AUTHN-0563);
+  //   * the counter is a whole number from 0 to 2^32 - 1, the U2F counter's
+  //     range (STS-AUTHN-0564), so the next assertion is held to it.
+  //
+  // THEN `addKey()`, THE ONE WRITER, like every other door: the duplicate
+  // check, the cap, the lane, and the issuance policy's registration
+  // question — the algorithm (ES256, which a profile's registration list
+  // may exclude) and the attestation algorithms (none recorded, which a set
+  // attestationAlgorithms list refuses). The key is recorded with its
+  // `appid`, `importedBy`, no attestation, not discoverable and not
+  // backup-eligible (a U2F key holds its credential), and `userVerified`
+  // false: U2F has no user verification, which is why such a key answers
+  // only a second-factor step (`authn.ts`).
+  // ---------------------------------------------------------------------------
+  /**
+   * Imports a legacy U2F credential onto a person's entry (#1955 P7).
+   *
+   * @param username - the person
+   * @param given - `{ keyHandle, publicKey, appId, counter, label }`; the
+   *   key handle and the public key base64 or base64url
+   * @param opts - `importedBy`: `{ username, sub, at }`, the administrator
+   * @returns `addKey()`'s answer, or a refusal
+   */
+  importU2fKey(username, given, opts?) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.importU2fKey().");
+    const name = String(username || '').trim();
+    const body = given || {};
+    const appid = String(body.appId || body.appid || '').trim();
+    if (webauthnPolicy.legacyAppIds().indexOf(appid) < 0) {
+      log.debug("Leaving Credentials.importU2fKey(). AppID not permitted.");
+      return coded('STS-AUTHN-0561', { ok: false, reason: 'appid',
+        errors: [webauthnPolicy.legacyAppIds().length
+          ? 'The AppID "' + appid.slice(0, 200) + '" is not one this ' +
+            'realm\'s webauthn.u2fAppIds lists, so a credential registered ' +
+            'under it cannot be imported.'
+          : 'This realm permits no legacy U2F AppID (webauthn.u2fAppIds ' +
+            'is empty), so no U2F credential can be imported.'] });
+    }
+    const bytesOf = function (value: unknown): Buffer | null {
+      log.debug("Entering importU2fKey() bytesOf().");
+      const text = String(value == null ? '' : value).trim();
+      log.debug("Leaving importU2fKey() bytesOf().");
+      return /^[A-Za-z0-9+/_-]+={0,2}$/.test(text)
+        ? Buffer.from(text, 'base64') : null;
+    };
+    const handle = bytesOf(body.keyHandle);
+    if (!handle || handle.length < 1 || handle.length > 255) {
+      log.debug("Leaving Credentials.importU2fKey(). Bad key handle.");
+      return coded('STS-AUTHN-0562', { ok: false, reason: 'key-handle',
+        errors: ['The key handle is not base64 or base64url of 1 to 255 ' +
+                 'bytes, which is what a U2F key handle is.'] });
+    }
+    const point = bytesOf(body.publicKey);
+    let jwk: Record<string, string> | null = null;
+    if (point && point.length === 65 && point[0] === 0x04) {
+      jwk = { kty: 'EC', crv: 'P-256',
+              x: point.subarray(1, 33).toString('base64url'),
+              y: point.subarray(33, 65).toString('base64url') };
+      try {
+        crypto.publicKeyFromJwk(jwk);
+      } catch (e) {
+        // NOT A POINT ON THE CURVE: refused below, by name.
+        log.debug("Caught in Credentials.importU2fKey(): " +
+                  ((e && e.message) || e));
+        jwk = null;
+      }
+    }
+    if (!jwk) {
+      log.debug("Leaving Credentials.importU2fKey(). Bad public key.");
+      return coded('STS-AUTHN-0563', { ok: false, reason: 'public-key',
+        errors: ['The public key is not an uncompressed P-256 point (65 ' +
+                 'bytes starting 0x04, base64 or base64url), which is ' +
+                 'what a U2F registration recorded.'] });
+    }
+    const rawCounter = body.counter === undefined || body.counter === null ||
+      String(body.counter).trim() === '' ? '0' : String(body.counter).trim();
+    const counter = /^[0-9]{1,10}$/.test(rawCounter) ? Number(rawCounter)
+                                                    : -1;
+    if (counter < 0 || counter > 4294967295) {
+      log.debug("Leaving Credentials.importU2fKey(). Bad counter.");
+      return coded('STS-AUTHN-0564', { ok: false, reason: 'counter',
+        errors: ['The counter is not a whole number from 0 to 4294967295, ' +
+                 'the range of a U2F signature counter.'] });
+    }
+    jwk.alg = 'ES256';
+    const out = this.addKey(name, {
+      credentialId: handle.toString('base64url'),
+      publicKeyJwk: jwk, signCount: counter,
+      label: String(body.label || '').trim().slice(0, 60),
+      attachment: 'cross-platform', aaguid: null,
+      algorithm: 'ES256', coseAlg: -7, attestation: null,
+      backupEligible: false, backupState: false, transports: [],
+      discoverable: false, userVerified: false,
+      appid: appid,
+      importedBy: (opts && opts.importedBy) || { username: 'operator',
+                                                  at: Date.now() }
+    });
+    if (out && out.ok === false) {
+      log.debug("Leaving Credentials.importU2fKey(). The writer refused: " +
+                (errorCodes.codeOf(out) || 'no code'));
+      return out;
+    }
+    log.debug("Leaving Credentials.importU2fKey(). Imported.");
+    return out;
+  }
+
   /**
    * Renames one of a person's passkeys; an empty name restores the default.
    *
@@ -5516,12 +6043,17 @@ class Credentials {
   // `kekEpoch()` (a test's stub) is asked every time, which is the old cost
   // and never a wrong answer. `remembered` says whether the verdict was
   // already known, so a caller reports a finding once.
-  private sealedSecretVerdict(ciphertext) {
+  private sealedSecretVerdict(ciphertext, purpose?) {
     const { log, keystore } = this.deps;
     log.debug('Entering Credentials.sealedSecretVerdict().');
     const epoch = typeof keystore.kekEpoch === 'function'
       ? keystore.kekEpoch() : -1;
-    const key = String(ciphertext);
+    // The purpose the text was sealed under (`totp-secret`, or `hotp-secret`
+    // since #1955 P4), which is part of what it opens under, so part of the
+    // remembered key.
+    const sealedFor = String(purpose || 'totp-secret');
+    const key = (sealedFor === 'totp-secret' ? '' : sealedFor + '\n') +
+                String(ciphertext);
     const held = epoch >= 0 ? totpVerdicts.get(key) : undefined;
     if (held && held.epoch === epoch) {
       totpVerdictCount.hit();
@@ -5529,7 +6061,7 @@ class Credentials {
       return { opens: held.opens, remembered: true };
     }
     totpVerdictCount.miss();
-    const opens = !!keystore.open(ciphertext, 'totp-secret');
+    const opens = !!keystore.open(ciphertext, sealedFor);
     if (epoch >= 0) {
       if (!held) {
         cacheRegistry.makeRoom(totpVerdicts, TOTP_VERDICTS_MAX,
@@ -5637,20 +6169,18 @@ class Credentials {
     const options = opts || {};
     if (!directory || typeof directory.writeTotp !== 'function') {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
-                                   'store is installed, so an authenticator ' +
-                                   'app cannot be enrolled.'] });
+      return coded('STS-AUTHN-0059', { ok: false, errors: [Sentence.say(
+        'refusals.factor.totpNoStore')] });
     }
     if (!totp.offered()) {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0074', { ok: false, errors: ['Authenticator ' +
-                                   'apps are turned off on this service ' +
-                                   '(the authentication policy).'] });
+      return coded('STS-AUTHN-0074', { ok: false, errors: [Sentence.say(
+        'refusals.factor.totpOff')] });
     }
     if (!name) {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name ' +
-                                   'to enrol an authenticator for.'] });
+      return coded('STS-AUTHN-0058', { ok: false, errors: [Sentence.say(
+        'refusals.factor.totpNoName')] });
     }
     // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD (run
     // 21's fuzz stage): it is the record's key, and PostgreSQL cannot store
@@ -5658,9 +6188,8 @@ class Credentials {
     if (/[\u0000-\u001f\u007f]/.test(name)) {
       log.debug("Leaving Credentials.beginTotpEnrolment(). A name no " +
                 "person holds.");
-      return coded('STS-AUTHN-0557', { ok: false, errors: ['The name ' +
-                                   'holds a control character, so no ' +
-                                   'person has it. Nothing was started.'] });
+      return coded('STS-AUTHN-0557', { ok: false, errors: [Sentence.say(
+        'refusals.factor.nameControlCharacter')] });
     }
     // `entryExists()` AND NOT `hasEntry()` (2026-09-18). That one answers
     // false always — it is the bootstrap's, so the bootstrap always attempts
@@ -5671,11 +6200,8 @@ class Credentials {
       log.info('credentials: product mode, so an authenticator was NOT ' +
                'enrolled for "' + name + '" — there is no entry for them.');
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0024', { ok: false, errors: ['There is nobody ' +
-          'called "' + name + '" ' +
-                                   'in this realm\'s directory. In product ' +
-                                   'mode every referenced object must exist ' +
-                                   'first.'] });
+      return coded('STS-AUTHN-0024', { ok: false, errors: [Sentence.say(
+        'refusals.account.nobodyCalled', { name: name })] });
     }
     const live = totp.settings();
     const secret = totp.generateSecret();
@@ -5766,8 +6292,7 @@ class Credentials {
     if (!held) {
       log.debug('Leaving Credentials.confirmTotpEnrolment(). Nothing pending.');
       return coded('STS-AUTHN-0075', { ok: false, reason: 'expired',
-               errors: ['That enrolment has expired. Start again and scan ' +
-                        'the new code.'] });
+               errors: [Sentence.say('refusals.factor.totpEnrolExpired')] });
     }
     const verdict = totp.verify(held, code);
     // Narrowed by the tag: `totp.verify()` answers `ok` as a boolean always.
@@ -5852,8 +6377,8 @@ class Credentials {
     if (!record) {
       log.debug('Leaving Credentials.totpPrepare(). Nothing enrolled.');
       return { done: coded('STS-AUTHN-0076', { ok: false, reason: 'none',
-               detail: 'No authenticator app is enrolled for ' + name +
-                       '.' }) };
+               detail: Sentence.say('refusals.factor.totpNoneFor',
+                                    { name: name }) }) };
     }
     if (record.unusable) {
       log.error(errorCodes.tag('STS-AUTHN-0077') +
@@ -5865,10 +6390,7 @@ class Credentials {
       log.debug('Leaving Credentials.totpPrepare(). The enrolment is ' +
                 'unusable.');
       return { done: coded('STS-AUTHN-0077', { ok: false, reason: 'unusable',
-               detail: 'Your authenticator enrolment cannot be read by this ' +
-                       'service, so it cannot be checked. An administrator ' +
-                       'has to clear it on your row under /admin/users and ' +
-                       'you can enrol again.' }) };
+               detail: Sentence.say('refusals.factor.totpUnreadable') }) };
     }
     const verdict = totp.verify(record, code, options);
     // Narrowed by the tag, as in confirmTotpEnrolment().
@@ -5905,7 +6427,11 @@ class Credentials {
     }
     log.debug('Leaving Credentials.totpFinish(). Accepted at step ' +
               verdict.counter + '.');
-    return { ok: true, counter: verdict.counter, drift: verdict.drift };
+    // The kind and the hardware evidence (#1955 P4): a code from a
+    // vendor-provisioned TOTP token an administrator imported may earn
+    // `hwk` (X3); an app's never does.
+    return { ok: true, counter: verdict.counter, drift: verdict.drift,
+             kind: 'totp', hardware: this.oathHardware('totp', record) };
   }
 
   // THE SYNCHRONOUS DOOR, KEPT FOR ITS CALLERS AND NOT CLUSTER-SAFE. It spends
@@ -5975,34 +6501,36 @@ class Credentials {
    * Verifies a one-time code and spends its step across the cluster: a step
    * at or below the highest any node accepted is refused.
    *
-   * A store that cannot be asked refuses (`STS-AUTHN-0182`).
+   * A store that cannot be asked refuses (`STS-AUTHN-0182`). The
+   * authenticator app's half of `verifyTotpAsync()` (#1955 P4).
    * @param username - the person
    * @param code - the code
    * @param opts - handed to the TOTP verifier
    * @returns a promise of `{ ok: true, … }`, or a refusal (`replay`, `store`)
    */
-  verifyTotpAsync(username, code, opts?) {
+  verifyAppCodeAsync(username, code, opts?) {
     const { log, realms, errorCodes, counters } = this.deps;
     const { TOTP_STEP_SCOPE } = Credentials;
     const coded = this.coded.bind(this);
-    log.debug("Entering Credentials.verifyTotpAsync().");
+    log.debug("Entering Credentials.verifyAppCodeAsync().");
     const name = String(username || '').trim();
     const realmId = realms.currentId();
     let ready;
     try {
       ready = this.totpPrepare(name, code, opts || {});
     } catch (e) {
-      log.debug("Caught in Credentials.verifyTotpAsync(): " +
+      log.debug("Caught in Credentials.verifyAppCodeAsync(): " +
                 ((e && e.message) || e));
-      log.debug("Leaving Credentials.verifyTotpAsync(). It threw.");
+      log.debug("Leaving Credentials.verifyAppCodeAsync(). It threw.");
       return Promise.reject(e);
     }
     if (ready.done) {
-      log.debug('Leaving Credentials.verifyTotpAsync(). Refused before the ' +
-                'store.');
+      log.debug('Leaving Credentials.verifyAppCodeAsync(). Refused before ' +
+                'the store.');
       return Promise.resolve(ready.done);
     }
-    log.debug("Leaving Credentials.verifyTotpAsync(). Advancing the step.");
+    log.debug("Leaving Credentials.verifyAppCodeAsync(). Advancing the " +
+              "step.");
     return counters.advance({
       scope: TOTP_STEP_SCOPE,
       key: name + '\n' + String(ready.record.enrolledAt || 0),
@@ -6020,17 +6548,1305 @@ class Credentials {
         this.noteTotpReplay(name);
         return coded('STS-AUTHN-0106', { ok: false, reason: 'replay',
           counter: ready.verdict.counter,
-          detail: 'That code has already been used. Wait for your ' +
-                  'authenticator to show the next one.' });
+          detail: Sentence.say('refusals.factor.totpReplay') });
       }
       log.error(errorCodes.tag('STS-AUTHN-0182') +
                 'credentials: a code for ' + name + ' verified and could not ' +
                 'be proved unspent (' + (answer.why || answer.reason) + '), ' +
                 'so it was refused.');
       return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-        detail: 'That code could not be checked just now. Try the next one ' +
-                'in a moment.' });
+        detail: Sentence.say('refusals.factor.codeUncheckedNext') });
     });
+  }
+
+  // ===========================================================================
+  // COUNTER-BASED CODES (RFC 4226), BESIDE THE AUTHENTICATOR APP (#1955 P4).
+  //
+  // A person may hold ONE HOTP credential (`stsHotpCredential`, single-valued
+  // for `stsTotpCredential`'s reason: a code names nothing, so two secrets of
+  // one kind would be tried against each other and the replay guard would not
+  // know which counter was spent) — a YubiKey's OTP slot programmed from the
+  // portal, or a vendor's pre-provisioned token an administrator imported
+  // (`common/oath_tokens.ts`). It may sit BESIDE an authenticator app: the
+  // two are different devices with different moving factors, and a person
+  // who carries a phone and a key is entitled to either.
+  //
+  // **EVERY DOOR THAT TAKES "A ONE-TIME CODE" TAKES EITHER, BY KIND.**
+  // `verifyTotpAsync()` is that door — the sign-in step, step-up and recent
+  // sign-in through it, Kerberos FAST OTP (#173) — and it dispatches: the
+  // authenticator app first where the person holds one, and the HOTP
+  // credential when the app's code did not match (or was the wrong length,
+  // which is how a six-digit app and an eight-digit token tell apart). A
+  // person holding both therefore has two secrets a guess is tried against;
+  // that is the cost of holding two devices, bounded by the same
+  // `mfa-code` budget at every door (RFC 4226 section 7.3), and it is the
+  // person's choice. A REPLAY of the app's code is answered as a replay and
+  // the token is NOT then tried: "already used" is the true answer and
+  // trying the second secret would only widen the guess.
+  //
+  // **THE COUNTER IS SPENT BY COMPARE-AND-SET IN THE STORE (design X5)**:
+  // `cluster_counters.advance()` under `authn.hotp-counter`, keyed by the
+  // CREDENTIAL'S id (an enrolment's random id, or `pskc:<token>` for an
+  // imported token, so a token handed from one person to another cannot
+  // replay a code the first person spent). The stored value is the NEXT
+  // counter the token is expected to show, so it is never 0 after an
+  // acceptance — `advance()` treats 0-to-0 as "a counter that is always
+  // zero" (a WebAuthn rule), which must never apply to a code. Exactly one
+  // of two concurrent verifications of one code gets the row; the other is
+  // refused as a replay. The entry's own `counter` is the look-ahead's base
+  // and is written after, so a page that draws "last used" is right — and
+  // an entry behind the store (another node accepted, the change log has not
+  // arrived) only makes the window start lower, never accepts a spent code.
+  // ===========================================================================
+  /** The attribute that holds a person's HOTP credential. */
+  static readonly HOTP_ATTRIBUTE = 'stsHotpCredential';
+
+  /** The counter scope an HOTP credential's next counter is advanced under. */
+  static readonly HOTP_COUNTER_SCOPE = 'authn.hotp-counter';
+
+  // The pending HOTP enrolment shares `pendingTotp`'s store under its own key
+  // (a NUL cannot be in a name, so the prefix cannot collide with a person's).
+  private pendingHotpKeyOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingHotpKeyOf().");
+    log.debug("Leaving Credentials.pendingHotpKeyOf().");
+    return 'hotp\u0000' + this.pendingKeyOf(username);
+  }
+
+  private hotpLib() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hotpLib().");
+    // `common/hotp.ts` requires `totp.ts` and the authentication policy,
+    // both already in hand; it is reached here rather than taken through the
+    // constructor so a test's stub deps need not name it.
+    const lib = (this.deps as any).hotp || require('./hotp');
+    log.debug("Leaving Credentials.hotpLib().");
+    return lib;
+  }
+
+  // The raw value, read through the directory hook; '' for none or no hook.
+  private readHotpValue(name) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.readHotpValue().");
+    if (!directory || typeof directory.readHotp !== 'function') {
+      log.debug("Leaving Credentials.readHotpValue(). No store.");
+      return '';
+    }
+    try {
+      const raw = directory.readHotp(name) || '';
+      log.debug("Leaving Credentials.readHotpValue().");
+      return raw;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-OATH-0011') + 'credentials: reading the ' +
+                'HOTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.readHotpValue(). It threw.");
+      return '';
+    }
+  }
+
+  /**
+   * Reads a person's HOTP credential, its secret opened. An unreadable one is
+   * `{ unusable: true, why }` and never absent, for `totpOf()`'s reason.
+   *
+   * @param username - the person
+   * @returns the record, `{ unusable, why }`, or null
+   */
+  hotpOf(username) {
+    const { log, keystore } = this.deps;
+    log.debug("Entering Credentials.hotpOf().");
+    const name = String(username || '').trim();
+    const raw = this.readHotpValue(name);
+    if (!raw) {
+      log.debug("Leaving Credentials.hotpOf(). None.");
+      return null;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      log.warn('credentials: the stsHotpCredential value on ' + name +
+               ' is not JSON this service wrote; it is reported unusable: ' +
+               ((e && e.message) || e));
+      log.debug("Leaving Credentials.hotpOf(). Not JSON.");
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+    if (parsed && parsed.sealed) {
+      const opened = keystore.open(parsed.secret, 'hotp-secret');
+      if (!opened) {
+        log.warn('credentials: the HOTP secret of ' + name + ' will not ' +
+                 'open under this process\'s key-encryption key; reported ' +
+                 'UNUSABLE rather than absent.');
+        log.debug("Leaving Credentials.hotpOf(). Will not open.");
+        return { unusable: true, why: 'the stored secret is sealed under a ' +
+                                      'different key-encryption key' };
+      }
+      parsed.secret = opened;
+    }
+    log.debug("Leaving Credentials.hotpOf().");
+    return parsed;
+  }
+
+  // The record WITHOUT its secret, for every report (`totpStatusFromValue()`'s
+  // reason): whether the sealed text opens is asked once per text and key
+  // set (`sealedSecretVerdict()`).
+  private hotpStatusOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hotpStatusOf().");
+    const name = String(username || '').trim();
+    const raw = this.readHotpValue(name);
+    if (!raw) {
+      log.debug("Leaving Credentials.hotpStatusOf(). None.");
+      return null;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      log.debug("Caught in Credentials.hotpStatusOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.hotpStatusOf(). Not JSON.");
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+    const out = Object.assign({}, parsed);
+    if (parsed && parsed.sealed &&
+        !this.sealedSecretVerdict(parsed.secret, 'hotp-secret').opens) {
+      log.debug("Leaving Credentials.hotpStatusOf(). Unusable.");
+      return { unusable: true, why: 'the stored secret is sealed under a ' +
+                                    'different key-encryption key' };
+    }
+    delete out.secret;
+    log.debug("Leaving Credentials.hotpStatusOf().");
+    return out;
+  }
+
+  /**
+   * Says whether a person holds an HOTP credential.
+   *
+   * @param username - the person
+   * @returns true when they hold one (readable or not)
+   */
+  hasHotp(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hasHotp().");
+    log.debug("Leaving Credentials.hasHotp().");
+    return !!this.hotpStatusOf(username);
+  }
+
+  // Sealed where the key outlives the process (`writeTotpRecord()`'s rule,
+  // and its reason); under the cell's key where there is one (#98).
+  private writeHotpRecord(username, record) {
+    const { log, keystore, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.writeHotpRecord().");
+    const name = String(username || '').trim();
+    if (!directory || typeof directory.writeHotp !== 'function') {
+      log.debug("Leaving Credentials.writeHotpRecord(). No store.");
+      return coded('STS-OATH-0012', { ok: false, errors: ['No credential ' +
+        'store is installed, so a one-time code token cannot be kept.'] });
+    }
+    const out = Object.assign({}, record);
+    if (keystore.persists()) {
+      const sealedSecret = keystore.seal(out.secret, 'hotp-secret', 'cell');
+      if (!sealedSecret) {
+        log.error(errorCodes.tag('STS-OATH-0010') + 'credentials: the HOTP ' +
+                  'secret of ' + name + ' could not be sealed, so it was ' +
+                  'NOT written.');
+        log.debug("Leaving Credentials.writeHotpRecord(). Not sealed.");
+        return coded('STS-OATH-0010', { ok: false, errors: ['The shared ' +
+          'secret could not be encrypted, so it was not stored.'] });
+      }
+      out.secret = sealedSecret;
+      out.sealed = true;
+    } else {
+      out.sealed = false;
+    }
+    let written = false;
+    try {
+      written = directory.writeHotp(name, JSON.stringify(out));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-OATH-0011') + 'credentials: writing the ' +
+                'HOTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.writeHotpRecord(). It threw.");
+      return coded('STS-OATH-0011', { ok: false, errors: ['The credential ' +
+        'store refused the write.'] });
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.writeHotpRecord(). No entry.");
+      return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" in this realm\'s directory.'] });
+    }
+    log.debug("Leaving Credentials.writeHotpRecord(). Written.");
+    return { ok: true };
+  }
+
+  // -------------------------------------------------------------------------
+  // ENROLMENT, IN TWO STEPS AND THE FIRST WRITES NOTHING (TOTP's shape and
+  // its reason). The pending record starts the counter at 0, which is where
+  // a YubiKey slot programmed with `ykman otp hotp` and an app scanning
+  // `counter=0` both start; the confirmation searches the look-ahead from
+  // there, so a key pressed once or twice while being set up still confirms.
+  // -------------------------------------------------------------------------
+  /**
+   * Mints an HOTP secret to show, holding it pending; nothing is written.
+   *
+   * @param username - the person
+   * @param opts - `base`, the base URL the issuer name is drawn from
+   * @returns `{ ok: true, secret, grouped, digits, counter, uri, ykman,
+   *   expiresAt }`, or a refusal
+   */
+  beginHotpEnrolment(username, opts?) {
+    const { log, mode, totp } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginHotpEnrolment().");
+    const name = String(username || '').trim();
+    const hotp = this.hotpLib();
+    if (!directory || typeof directory.writeHotp !== 'function') {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). No store.");
+      return coded('STS-OATH-0012', { ok: false, errors: ['No credential ' +
+        'store is installed, so a one-time code token cannot be enrolled.'] });
+    }
+    if (!hotp.offered()) {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). Off.");
+      return coded('STS-OATH-0008', { ok: false, errors: ['One-time code ' +
+        'tokens (HOTP) are turned off on this service (the authentication ' +
+        'policy).'] });
+    }
+    if (!name || /[\u0000-\u001f\u007f]/.test(name)) {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). No name.");
+      return coded('STS-OATH-0013', { ok: false, errors: ['There is no ' +
+        'person to enrol a token for.'] });
+    }
+    if (!mode.autoCreates() && !this.entryExists(name)) {
+      log.debug("Leaving Credentials.beginHotpEnrolment(). No entry.");
+      return coded('STS-OATH-0014', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" in this realm\'s directory. In product mode ' +
+        'every referenced object must exist first.'] });
+    }
+    const live = hotp.settings();
+    const secret = totp.generateSecret();
+    const ttl = totp.settings().enrolmentTtlMs;
+    this.sweepPendingTotp();
+    pendingTotp.set(this.pendingHotpKeyOf(name), {
+      kind: 'hotp', secret: secret, algorithm: 'SHA1', digits: live.digits,
+      counter: 0, expires: Date.now() + ttl
+    });
+    const issuer = totp.issuerFor((opts || {}).base);
+    log.info('credentials: an HOTP enrolment was started for ' + name +
+             '. Nothing is stored until a code confirms it.');
+    log.debug("Leaving Credentials.beginHotpEnrolment(). Minted.");
+    return {
+      ok: true, username: name, secret: secret, issuer: issuer,
+      grouped: totp.grouped(secret), algorithm: 'SHA1',
+      digits: live.digits, counter: 0,
+      uri: hotp.otpauthUri({ issuer: issuer, account: name, secret: secret,
+                             digits: live.digits, counter: 0 }),
+      // What programs a YubiKey's second OTP slot with this secret: the
+      // portal shows it beside the QR code (`ykman otp hotp --help`).
+      ykman: 'ykman otp hotp ' + (live.digits === 8 ? '--digits 8 ' : '') +
+             '2 ' + secret,
+      expiresAt: Date.now() + ttl
+    };
+  }
+
+  /**
+   * The HOTP enrolment waiting for a code, if any.
+   *
+   * @param username - the person
+   * @returns the pending enrolment, or null
+   */
+  pendingHotpFor(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingHotpFor().");
+    this.sweepPendingTotp();
+    const held = pendingTotp.get(this.pendingHotpKeyOf(username));
+    log.debug("Leaving Credentials.pendingHotpFor().");
+    return held || null;
+  }
+
+  /**
+   * Forgets a pending HOTP enrolment.
+   *
+   * @param username - the person
+   */
+  abandonHotpEnrolment(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.abandonHotpEnrolment().");
+    const key = this.pendingHotpKeyOf(username);
+    if (pendingTotp.has(key)) {
+      pendingTotp.delete(key);
+    }
+    log.debug("Leaving Credentials.abandonHotpEnrolment().");
+  }
+
+  // The credential's id, which is the cluster counter's key: random for an
+  // enrolment, `pskc:<token>` for an imported token (section header).
+  private hotpCounterKey(record) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.hotpCounterKey().");
+    log.debug("Leaving Credentials.hotpCounterKey().");
+    return String((record && record.id) || '');
+  }
+
+  /**
+   * Stores a pending HOTP enrolment once a code proves the token holds it,
+   * with the accepted counter spent in the store (X5).
+   *
+   * @param username - the person
+   * @param code - the code the token shows
+   * @returns a promise of `{ ok: true, username, … }`, or a refusal
+   */
+  async confirmHotpEnrolment(username, code) {
+    const { log, crypto, counters, realms, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.confirmHotpEnrolment().");
+    const name = String(username || '').trim();
+    const held = this.pendingHotpFor(name);
+    if (!held) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Nothing.");
+      return coded('STS-OATH-0009', { ok: false, reason: 'expired',
+        errors: ['That enrolment has expired. Start again.'] });
+    }
+    const verdict = this.hotpLib().verify(held, code);
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Refused.");
+      return coded(errorCodes.codeOf(verdict) || 'STS-OATH-0003',
+                   { ok: false, reason: verdict.reason,
+                     errors: [verdict.detail] });
+    }
+    const record = {
+      id: 'hotp-' + crypto.randomBytes(16).toString('base64url'),
+      secret: held.secret, algorithm: held.algorithm || 'SHA1',
+      digits: held.digits, counter: verdict.next,
+      enrolledAt: Date.now(), lastUsedAt: Date.now(),
+      source: 'enrolled', label: 'one-time code token'
+    };
+    // The confirmation's counter is SPENT in the store before the record is
+    // kept, so the code used to confirm cannot also sign anybody in.
+    const answer = await counters.advance({
+      scope: Credentials.HOTP_COUNTER_SCOPE, key: this.hotpCounterKey(record),
+      value: verdict.next, realm: realms.currentId() });
+    if (!answer.ok) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Not spent.");
+      return coded('STS-OATH-0006', { ok: false, reason: 'store',
+        errors: ['That code could not be checked just now. Try the next ' +
+                 'one in a moment.'] });
+    }
+    const written = this.writeHotpRecord(name, record);
+    if (!written.ok) {
+      log.debug("Leaving Credentials.confirmHotpEnrolment(). Not written.");
+      return written;
+    }
+    this.abandonHotpEnrolment(name);
+    log.info('credentials: ' + name + ' enrolled a one-time code token ' +
+             '(HOTP) as a second factor.');
+    log.debug("Leaving Credentials.confirmHotpEnrolment(). Enrolled.");
+    return { ok: true, username: name, kind: 'hotp',
+             recoveryAdvised: this.deps.backupCodes.offered() &&
+                              !this.backupCodesOf(name) };
+  }
+
+  // -------------------------------------------------------------------------
+  // AN IMPORTED TOKEN, ASSIGNED (`common/oath_tokens.ts`). The vendor's
+  // secret, digits, algorithm and counter become the person's credential, of
+  // the token's kind: an HOTP token is their `stsHotpCredential`, a TOTP token
+  // their authenticator (REPLACING an app, as enrolling again always has —
+  // one secret per kind). The record names its token, which is how the
+  // sign-in knows the credential is hardware the vendor provisioned (X3) and
+  // how the lost-key retirer knows it is still this token's.
+  // -------------------------------------------------------------------------
+  /**
+   * Installs an imported OATH token as a person's credential of its kind.
+   *
+   * @param username - the person
+   * @param token - `{ key, kind, secret (base32), algorithm, digits,
+   *   counter?, period?, vendor, serial, model }`
+   * @returns a promise of `{ ok: true }`, or a refusal
+   */
+  async installImportedOath(username, token) {
+    const { log, counters, realms } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.installImportedOath().");
+    const name = String(username || '').trim();
+    const t = token || {};
+    const common = { source: 'pskc-import', token: String(t.key || ''),
+                     vendor: String(t.vendor || ''),
+                     serial: String(t.serial || ''),
+                     model: String(t.model || ''),
+                     secret: String(t.secret || ''),
+                     algorithm: String(t.algorithm || 'SHA1'),
+                     digits: Number(t.digits || 6),
+                     enrolledAt: Date.now(), lastUsedAt: 0,
+                     label: 'hardware token ' + String(t.serial || '') };
+    if (t.kind === 'totp') {
+      const written = this.writeTotpRecord(name, Object.assign(common, {
+        period: Number(t.period || 30),
+        // A claim's code is spent (`oath_tokens.claim()`).
+        lastCounter: Math.max(0, Math.floor(Number(t.lastCounter) || 0)) }));
+      log.debug("Leaving Credentials.installImportedOath(). TOTP.");
+      return written;
+    }
+    const record = Object.assign(common, {
+      id: 'pskc:' + String(t.key || ''),
+      counter: Math.max(0, Math.floor(Number(t.counter) || 0)) });
+    // The stored value is the NEXT counter, so a token starting at counter C
+    // has spent everything below C: recorded when C is above 0 (an advance
+    // to 0 would mean nothing, see the section header). A token whose
+    // counter the store already holds HIGHER (assigned before, its codes
+    // spent) starts from the store's: a code spent under one holder is not
+    // good under the next.
+    if (record.counter > 0) {
+      const answer = await counters.advance({
+        scope: Credentials.HOTP_COUNTER_SCOPE, key: record.id,
+        value: record.counter, realm: realms.currentId() });
+      if (!answer.ok && answer.reason === 'store') {
+        log.debug("Leaving Credentials.installImportedOath(). Store.");
+        return coded('STS-OATH-0006', { ok: false, errors: ['The token\'s ' +
+          'counter could not be recorded just now. Try again.'] });
+      }
+      // A CLAIM WHOSE CODE THE STORE IS ALREADY PAST IS REFUSED (the #1955
+      // review): the code the person typed was spent by another request,
+      // so it proves nothing about who holds the token now.
+      if (!answer.ok && t.claim === true) {
+        log.debug("Leaving Credentials.installImportedOath(). Behind.");
+        return coded('STS-OATH-0051', { ok: false, errors: ['That code was ' +
+          'already used. Press the token for a new code and claim it ' +
+          'again.'] });
+      }
+      if (!answer.ok) {
+        record.counter = Math.max(record.counter,
+                                  Number(answer.highest || 0));
+      }
+    }
+    const written = this.writeHotpRecord(name, record);
+    log.debug("Leaving Credentials.installImportedOath(). HOTP.");
+    return written;
+  }
+
+  /**
+   * Removes a person's HOTP credential; like the authenticator app it can
+   * never be the only way in, so it cannot lock anybody out.
+   *
+   * @param username - the person
+   * @param opts - `onlyToken`: remove it only if it is that imported token's
+   * @returns `{ ok: true, username }`, or a refusal
+   */
+  removeHotp(username, opts?) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.removeHotp().");
+    const name = String(username || '').trim();
+    this.abandonHotpEnrolment(name);
+    const held = this.hotpStatusOf(name);
+    if (!held || !directory || typeof directory.writeHotp !== 'function') {
+      log.debug("Leaving Credentials.removeHotp(). None.");
+      return coded('STS-OATH-0007', { ok: false, errors: ['No one-time code ' +
+        'token is enrolled for ' + name + '.'] });
+    }
+    if (opts && opts.onlyToken && held.token !== String(opts.onlyToken)) {
+      log.debug("Leaving Credentials.removeHotp(). Another token's.");
+      return coded('STS-OATH-0007', { ok: false, errors: ['The one-time ' +
+        'code credential of ' + name + ' is not that token\'s.'] });
+    }
+    try {
+      directory.writeHotp(name, null);
+    } catch (e) {
+      log.debug("Caught in Credentials.removeHotp(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.removeHotp(). It threw.");
+      return coded('STS-OATH-0011', { ok: false, errors: ['The credential ' +
+        'store refused the write.'] });
+    }
+    log.info('credentials: the HOTP credential of ' + name + ' was removed.');
+    log.debug("Leaving Credentials.removeHotp(). Removed.");
+    return { ok: true, username: name };
+  }
+
+  // Everything decided against the entry, before the store: totpPrepare()'s
+  // shape.
+  private hotpPrepare(name, code, options) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.hotpPrepare().");
+    const record = this.hotpOf(name);
+    if (!record) {
+      log.debug("Leaving Credentials.hotpPrepare(). None.");
+      return { done: coded('STS-OATH-0007', { ok: false, reason: 'none',
+        detail: Sentence.say('refusals.factor.hotpNoneFor', { name: name }) })
+      };
+    }
+    if (record.unusable) {
+      log.error(errorCodes.tag('STS-OATH-0002') + 'credentials: ' + name +
+                ' holds an HOTP credential this process cannot read (' +
+                record.why + '); refused rather than let through on one ' +
+                'factor.');
+      log.debug("Leaving Credentials.hotpPrepare(). Unusable.");
+      return { done: coded('STS-OATH-0002', { ok: false, reason: 'unusable',
+        detail: Sentence.say('refusals.factor.hotpUnreadable') }) };
+    }
+    const verdict = this.hotpLib().verify(record, code, options);
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.hotpPrepare(). Refused.");
+      return { done: coded(errorCodes.codeOf(verdict) || 'STS-OATH-0003',
+        { ok: false, reason: verdict.reason, detail: verdict.detail }) };
+    }
+    log.debug("Leaving Credentials.hotpPrepare().");
+    return { record: record, verdict: verdict };
+  }
+
+  // Whether an imported token's credential is evidence of hardware (X3): it
+  // names its token, and the register holds that token active with
+  // `pskc-import` evidence. A QR-enrolled secret never is.
+  private oathHardware(kind, record) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.oathHardware().");
+    if (!record || record.source !== 'pskc-import' || !record.token) {
+      log.debug("Leaving Credentials.oathHardware(). Not imported.");
+      return false;
+    }
+    let hardware = false;
+    try {
+      hardware = !!require('./hardware_tokens')
+        .evidenceFor(kind, String(record.token)).hardware;
+    } catch (e) {
+      log.debug("Caught in Credentials.oathHardware(): " +
+                ((e && e.message) || e));
+      // No register in this process: no evidence, so no claim.
+      hardware = false;
+    }
+    log.debug("Leaving Credentials.oathHardware(). " + hardware);
+    return hardware;
+  }
+
+  // Spends a verified counter (X5) and writes the entry: one place, for the
+  // sign-in and the resynchronisation alike.
+  private async hotpSpend(name, record, verdict, why) {
+    const { log, counters, realms, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.hotpSpend().");
+    const answer = await counters.advance({
+      scope: Credentials.HOTP_COUNTER_SCOPE, key: this.hotpCounterKey(record),
+      value: verdict.next, realm: realms.currentId() });
+    if (!answer.ok && answer.reason === 'behind') {
+      log.warn('credentials: an HOTP code for ' + name + ' matched counter ' +
+               verdict.counter + ' and was REFUSED: counter ' +
+               (Number(answer.highest || 0) - 1) + ' or later has already ' +
+               'been accepted, by another node or a request racing this one.');
+      this.noteTotpReplay(name);
+      log.debug("Leaving Credentials.hotpSpend(). Replay.");
+      return coded('STS-OATH-0005', { ok: false, reason: 'replay',
+        detail: Sentence.say('refusals.factor.hotpReplay') });
+    }
+    if (!answer.ok) {
+      log.error(errorCodes.tag('STS-OATH-0006') + 'credentials: an HOTP ' +
+                'code for ' + name + ' matched and could not be proved ' +
+                'unspent (' + (answer.why || answer.reason) + '), so it was ' +
+                'refused.');
+      log.debug("Leaving Credentials.hotpSpend(). Store.");
+      return coded('STS-OATH-0006', { ok: false, reason: 'store',
+        detail: Sentence.say('refusals.factor.codeUncheckedNext') });
+    }
+    const next = Object.assign({}, record, { counter: verdict.next,
+                                             lastUsedAt: Date.now() });
+    const written = this.writeHotpRecord(name, next);
+    if (!written.ok) {
+      // NOT a refusal (`totpFinish()`'s reason): the counter is spent in
+      // the store, which is the defence; the entry is only behind.
+      log.error(errorCodes.tag('STS-OATH-0011') + 'credentials: the HOTP ' +
+                'counter of ' + name + ' was spent in the store and could ' +
+                'not be written to the entry (' + why + ').');
+    }
+    log.debug("Leaving Credentials.hotpSpend(). Spent.");
+    return { ok: true, kind: 'hotp', counter: verdict.counter,
+             drift: verdict.ahead,
+             hardware: this.oathHardware('hotp', record) };
+  }
+
+  /**
+   * Verifies an HOTP code by look-ahead and spends its counter across the
+   * cluster (X5): one of two concurrent verifications of a code wins.
+   *
+   * @param username - the person
+   * @param code - the code
+   * @param opts - `window`, overriding `hotp.window`
+   * @returns a promise of `{ ok: true, kind: 'hotp', counter, drift,
+   *   hardware }`, or a refusal (`none`, `shape`, `mismatch`, `replay`,
+   *   `store`, `unusable`)
+   */
+  async verifyHotpAsync(username, code, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.verifyHotpAsync().");
+    const name = String(username || '').trim();
+    const ready = this.hotpPrepare(name, code, opts || {});
+    if (ready.done) {
+      log.debug("Leaving Credentials.verifyHotpAsync(). Refused.");
+      return ready.done;
+    }
+    const out = await this.hotpSpend(name, ready.record, ready.verdict,
+                                     'a sign-in');
+    log.debug("Leaving Credentials.verifyHotpAsync().");
+    return out;
+  }
+
+  /**
+   * Resynchronises a person's HOTP token from two consecutive codes over
+   * the resync window (RFC 4226 section 7.4), spending both.
+   *
+   * @param username - the person
+   * @param first - the first code
+   * @param second - the next code the token showed
+   * @returns a promise of `{ ok: true, counter, drift }`, or a refusal
+   */
+  async resyncHotpAsync(username, first, second) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.resyncHotpAsync().");
+    const name = String(username || '').trim();
+    const record = this.hotpOf(name);
+    if (!record || record.unusable) {
+      log.debug("Leaving Credentials.resyncHotpAsync(). None.");
+      return coded(record ? 'STS-OATH-0002' : 'STS-OATH-0007',
+        { ok: false, reason: record ? 'unusable' : 'none',
+          detail: record
+            ? Sentence.say('refusals.factor.hotpUnreadableShort')
+            : Sentence.say('refusals.factor.hotpNoneFor', { name: name }) });
+    }
+    const verdict = this.hotpLib().resync(record, first, second);
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.resyncHotpAsync(). Refused.");
+      return coded(errorCodes.codeOf(verdict) || 'STS-OATH-0004',
+        { ok: false, reason: verdict.reason, detail: verdict.detail });
+    }
+    const out = await this.hotpSpend(name, record, verdict, 'a resync');
+    if (out.ok) {
+      log.info('credentials: the HOTP token of ' + name + ' was ' +
+               'resynchronised ' + verdict.ahead + ' press(es) ahead.');
+    }
+    log.debug("Leaving Credentials.resyncHotpAsync().");
+    return out;
+  }
+
+  /**
+   * Verifies "a one-time code" at every door that takes one: the
+   * authenticator app's (RFC 6238) or the HOTP token's (RFC 4226), by what
+   * the person holds (section header). Each is spent across the cluster.
+   *
+   * @param username - the person
+   * @param code - the code
+   * @param opts - handed to the verifier
+   * @returns a promise of `{ ok: true, kind, counter, drift, hardware }`,
+   *   or a refusal
+   */
+  async verifyTotpAsync(username, code, opts?) {
+    const { log } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.verifyTotpAsync().");
+    const name = String(username || '').trim();
+    // A YubiKey OTP is 32–48 modhex characters. When one is held and the
+    // code has that shape, it is the only verifier: a 44-character string
+    // is not an app code. A person who holds only that credential and types
+    // anything else is told the shape, not that they have no authenticator.
+    const yubiHeld = this.yubiStatusOf(name);
+    if (yubiHeld && this.yubiLib().looksLike(code)) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The YubiKey's.");
+      return this.verifyYubiOtpAsync(name, code);
+    }
+    if (yubiHeld && !this.totpStatusOf(name) && !this.hotpStatusOf(name)) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). YubiKey shape.");
+      return coded('STS-YUBIOTP-0001', { ok: false, reason: 'shape',
+        detail: Sentence.say('refusals.factor.yubiShape') });
+    }
+    const token = this.hotpStatusOf(name);
+    if (!token) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The app's.");
+      return this.verifyAppCodeAsync(name, code, opts);
+    }
+    if (!this.totpStatusOf(name)) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The token's.");
+      return this.verifyHotpAsync(name, code, opts);
+    }
+    const app = await this.verifyAppCodeAsync(name, code, opts);
+    if (app.ok || (app.reason !== 'mismatch' && app.reason !== 'shape')) {
+      log.debug("Leaving Credentials.verifyTotpAsync(). The app answered.");
+      return app;
+    }
+    const hotp = await this.verifyHotpAsync(name, code, opts);
+    // The token's refusal only where it says more than "not this one".
+    const out = hotp.ok || (hotp.reason !== 'mismatch' &&
+                            hotp.reason !== 'shape') ? hotp : app;
+    log.debug("Leaving Credentials.verifyTotpAsync(). Both asked.");
+    return out;
+  }
+
+  // ===========================================================================
+  // YUBICO OTP (#1955 P5), BESIDE THE AUTHENTICATOR APP AND THE HOTP TOKEN.
+  //
+  // One credential per person (`stsYubiOtpCredential`). The public identity
+  // stays in the clear so an LDAP bind can see which suffix is the OTP. The
+  // AES key and the private identity are one sealed JSON value. The server
+  // holds that key, so a successful check is `amr` `otp` and never `hwk`,
+  // and `verifyYubiOtpAsync()` reports `hardware: false` even when the
+  // hardware-token register has a row (that row exists so a lost CSV token
+  // can be retired).
+  //
+  // The replay value is `use * 256 + session`, spent by compare-and-set
+  // under `authn.yubiotp-counter` BEFORE the entry is written. The stored
+  // value is the composite just accepted, so the next one must be strictly
+  // greater. Zero is refused before the store is asked: `advance()` treats
+  // 0-to-0 as "a counter that is always zero".
+  // ===========================================================================
+  /** The attribute that holds a person's YubiKey OTP credential. */
+  static readonly YUBI_ATTRIBUTE = 'stsYubiOtpCredential';
+
+  /** The counter scope a YubiKey OTP's composite is advanced under. */
+  static readonly YUBI_COUNTER_SCOPE = 'authn.yubiotp-counter';
+
+  private pendingYubiKeyOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingYubiKeyOf().");
+    log.debug("Leaving Credentials.pendingYubiKeyOf().");
+    return 'yubi\u0000' + this.pendingKeyOf(username);
+  }
+
+  private yubiLib() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiLib().");
+    const lib = (this.deps as any).yubiotp || require('./yubiotp');
+    log.debug("Leaving Credentials.yubiLib().");
+    return lib;
+  }
+
+  private yubiStore() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiStore().");
+    const store = (this.deps as any).yubiotpStore ||
+                  require('./yubiotp_store');
+    log.debug("Leaving Credentials.yubiStore().");
+    return store;
+  }
+
+  private readYubiValue(name) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.readYubiValue().");
+    if (!directory || typeof directory.readYubi !== 'function') {
+      log.debug("Leaving Credentials.readYubiValue(). No store.");
+      return '';
+    }
+    try {
+      const raw = directory.readYubi(name) || '';
+      log.debug("Leaving Credentials.readYubiValue().");
+      return raw;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: reading ' +
+                'the YubiKey OTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.readYubiValue(). It threw.");
+      return '';
+    }
+  }
+
+  private parseYubiRecord(raw, name) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.parseYubiRecord().");
+    if (!raw) {
+      log.debug("Leaving Credentials.parseYubiRecord(). None.");
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      log.debug("Leaving Credentials.parseYubiRecord().");
+      return parsed;
+    } catch (e) {
+      log.debug("Caught in Credentials.parseYubiRecord(): " +
+                ((e && e.message) || e));
+      log.warn('credentials: the stsYubiOtpCredential value on ' + name +
+               ' is not JSON.');
+      log.debug("Leaving Credentials.parseYubiRecord(). Not JSON.");
+      return { unusable: true, why: 'the stored value is not readable' };
+    }
+  }
+
+  // The record WITHOUT its AES key, for a page. Whether a sealed secret
+  // opens is asked once per text (`sealedSecretVerdict()`).
+  yubiStatusOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiStatusOf().");
+    const name = String(username || '').trim();
+    const parsed = this.parseYubiRecord(this.readYubiValue(name), name);
+    if (!parsed) {
+      log.debug("Leaving Credentials.yubiStatusOf(). None.");
+      return null;
+    }
+    if (parsed.unusable) {
+      log.debug("Leaving Credentials.yubiStatusOf(). Unusable.");
+      return parsed;
+    }
+    if (parsed.sealed &&
+        !this.sealedSecretVerdict(parsed.secret, 'yubiotp-secret').opens) {
+      log.debug("Leaving Credentials.yubiStatusOf(). Will not open.");
+      return { unusable: true, publicId: parsed.publicId || '',
+               id: parsed.id || '',
+               why: 'the stored secret is sealed under a different ' +
+                    'key-encryption key' };
+    }
+    const out = Object.assign({}, parsed);
+    delete out.secret;
+    log.debug("Leaving Credentials.yubiStatusOf().");
+    return out;
+  }
+
+  // The record WITH the AES key and private identity opened, for a check.
+  private yubiOf(username) {
+    const { log, keystore } = this.deps;
+    log.debug("Entering Credentials.yubiOf().");
+    const name = String(username || '').trim();
+    const parsed = this.parseYubiRecord(this.readYubiValue(name), name);
+    if (!parsed) {
+      log.debug("Leaving Credentials.yubiOf(). None.");
+      return null;
+    }
+    if (parsed.unusable) {
+      log.debug("Leaving Credentials.yubiOf(). Unusable.");
+      return parsed;
+    }
+    let text = String(parsed.secret || '');
+    if (parsed.sealed) {
+      const opened = keystore.open(text, 'yubiotp-secret');
+      if (!opened) {
+        log.warn('credentials: the YubiKey OTP secret of ' + name +
+                 ' will not open under this process\'s key-encryption key.');
+        log.debug("Leaving Credentials.yubiOf(). Will not open.");
+        return { unusable: true, publicId: parsed.publicId || '',
+                 id: parsed.id || '',
+                 why: 'the stored secret is sealed under a different ' +
+                      'key-encryption key' };
+      }
+      text = opened;
+    }
+    let inner: any = null;
+    try {
+      inner = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in Credentials.yubiOf(): " +
+                ((e && e.message) || e));
+      inner = null;
+    }
+    if (!inner || !inner.k || !inner.p) {
+      log.debug("Leaving Credentials.yubiOf(). No key.");
+      return { unusable: true, publicId: parsed.publicId || '',
+               why: 'the stored value is not readable' };
+    }
+    log.debug("Leaving Credentials.yubiOf().");
+    return Object.assign({}, parsed, { k: inner.k, p: inner.p });
+  }
+
+  private writeYubiRecord(username, record) {
+    const { log, keystore, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.writeYubiRecord().");
+    const name = String(username || '').trim();
+    if (!directory || typeof directory.writeYubi !== 'function') {
+      log.debug("Leaving Credentials.writeYubiRecord(). No store.");
+      return coded('STS-YUBIOTP-0011', { ok: false, errors: ['No credential ' +
+        'store is installed, so a YubiKey OTP cannot be kept.'] });
+    }
+    const out = Object.assign({}, record);
+    delete out.k;
+    delete out.p;
+    const clear = JSON.stringify({ k: record.k, p: record.p });
+    if (keystore.persists()) {
+      const sealedSecret = keystore.seal(clear, 'yubiotp-secret', 'cell');
+      if (!sealedSecret) {
+        log.error(errorCodes.tag('STS-YUBIOTP-0009') + 'credentials: the ' +
+                  'YubiKey OTP secret of ' + name + ' could not be sealed, ' +
+                  'so it was NOT written.');
+        log.debug("Leaving Credentials.writeYubiRecord(). Not sealed.");
+        return coded('STS-YUBIOTP-0009', { ok: false, errors: ['The ' +
+          'YubiKey secret could not be encrypted, so it was not stored.'] });
+      }
+      out.secret = sealedSecret;
+      out.sealed = true;
+    } else {
+      out.secret = clear;
+      out.sealed = false;
+    }
+    let written = false;
+    try {
+      written = directory.writeYubi(name, JSON.stringify(out));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: writing ' +
+                'the YubiKey OTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.writeYubiRecord(). It threw.");
+      return coded('STS-YUBIOTP-0010', { ok: false, errors: ['The ' +
+        'credential store refused the write.'] });
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.writeYubiRecord(). No entry.");
+      return coded('STS-YUBIOTP-0010', { ok: false, errors: ['There is ' +
+        'nobody called "' + name + '" in this realm\'s directory.'] });
+    }
+    log.debug("Leaving Credentials.writeYubiRecord(). Written.");
+    return { ok: true };
+  }
+
+  /**
+   * Mints a YubiKey OTP slot to program, holding it pending. Nothing is
+   * written to the directory. The programming line is returned once and
+   * is not logged.
+   *
+   * @param username - the person
+   * @returns `{ ok: true, publicId, ykman, expiresAt }`, or a refusal
+   */
+  beginYubiEnrolment(username) {
+    const { log, mode, totp } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginYubiEnrolment().");
+    const name = String(username || '').trim();
+    const lib = this.yubiLib();
+    if (!directory || typeof directory.writeYubi !== 'function') {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). No store.");
+      return coded('STS-YUBIOTP-0011', { ok: false, errors: ['No credential ' +
+        'store is installed, so a YubiKey OTP cannot be enrolled.'] });
+    }
+    if (!lib.offered()) {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). Off.");
+      return coded('STS-YUBIOTP-0007', { ok: false, errors: ['YubiKey OTP ' +
+        'enrolment is turned off (yubiotp.offered, or the authentication ' +
+        'policy).'] });
+    }
+    if (!name || /[\u0000-\u001f\u007f]/.test(name)) {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). No name.");
+      return coded('STS-YUBIOTP-0006', { ok: false, errors: ['There is no ' +
+        'person to enrol a YubiKey OTP for.'] });
+    }
+    if (!mode.autoCreates() && !this.entryExists(name)) {
+      log.debug("Leaving Credentials.beginYubiEnrolment(). No entry.");
+      return coded('STS-YUBIOTP-0006', { ok: false, errors: ['There is ' +
+        'nobody called "' + name + '" in this realm\'s directory.'] });
+    }
+    const minted = lib.generate();
+    const ttl = totp.settings().enrolmentTtlMs;
+    this.sweepPendingTotp();
+    pendingTotp.set(this.pendingYubiKeyOf(name), {
+      kind: 'yubi', k: minted.k, p: minted.p, publicId: minted.publicId,
+      ykman: minted.ykman, expires: Date.now() + ttl
+    });
+    log.info('credentials: a YubiKey OTP enrolment was started for ' +
+             name + '. Nothing is stored until an OTP confirms it.');
+    log.debug("Leaving Credentials.beginYubiEnrolment(). Minted.");
+    return { ok: true, username: name, publicId: minted.publicId,
+             ykman: minted.ykman, expiresAt: Date.now() + ttl };
+  }
+
+  /**
+   * The YubiKey OTP enrolment waiting for an OTP, if any.
+   *
+   * @param username - the person
+   * @returns the pending enrolment, or null
+   */
+  pendingYubiFor(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingYubiFor().");
+    this.sweepPendingTotp();
+    const held = pendingTotp.get(this.pendingYubiKeyOf(username));
+    log.debug("Leaving Credentials.pendingYubiFor().");
+    return held || null;
+  }
+
+  /**
+   * Forgets a pending YubiKey OTP enrolment.
+   *
+   * @param username - the person
+   */
+  abandonYubiEnrolment(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.abandonYubiEnrolment().");
+    const key = this.pendingYubiKeyOf(username);
+    if (pendingTotp.has(key)) {
+      pendingTotp.delete(key);
+    }
+    log.debug("Leaving Credentials.abandonYubiEnrolment().");
+  }
+
+  // Spends `composite` under the credential's id. A store fault is 0005;
+  // a value that is not strictly above the last one is a replay (0004).
+  private async yubiAdvance(name, key, composite) {
+    const { log, counters, realms, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.yubiAdvance().");
+    const answer = await counters.advance({
+      scope: Credentials.YUBI_COUNTER_SCOPE, key: key,
+      value: composite, realm: realms.currentId() });
+    if (!answer.ok && answer.reason === 'behind') {
+      log.warn('credentials: a YubiKey OTP for ' + name + ' was REFUSED: ' +
+               'composite ' + composite + ' is not above ' +
+               Number(answer.highest || 0) + '.');
+      log.debug("Leaving Credentials.yubiAdvance(). Replay.");
+      return coded('STS-YUBIOTP-0004', { ok: false, reason: 'replay',
+        detail: Sentence.say('refusals.factor.yubiReplay') });
+    }
+    if (!answer.ok) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0005') + 'credentials: a ' +
+                'YubiKey OTP for ' + name + ' matched and could not be ' +
+                'proved unspent (' + (answer.why || answer.reason) + ').');
+      log.debug("Leaving Credentials.yubiAdvance(). Store.");
+      return coded('STS-YUBIOTP-0005', { ok: false, reason: 'store',
+        detail: Sentence.say('refusals.factor.yubiUnchecked') });
+    }
+    log.debug("Leaving Credentials.yubiAdvance(). Spent.");
+    return { ok: true };
+  }
+
+  /**
+   * Stores a pending enrolment once an OTP proves the key holds it.
+   * The counters are spent before the record is written.
+   *
+   * @param username - the person
+   * @param otp - the OTP the key typed
+   * @returns a promise of `{ ok: true }`, or a refusal
+   */
+  async confirmYubiEnrolment(username, otp) {
+    const { log, crypto, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.confirmYubiEnrolment().");
+    const name = String(username || '').trim();
+    const held = this.pendingYubiFor(name);
+    if (!held) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Nothing.");
+      return coded('STS-YUBIOTP-0008', { ok: false, reason: 'expired',
+        errors: ['That enrolment has expired. Start again.'] });
+    }
+    const opened = this.yubiLib().open(
+      { k: held.k, p: held.p, publicId: held.publicId }, otp);
+    if (!opened.ok) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Refused.");
+      return coded(errorCodes.codeOf(opened) || 'STS-YUBIOTP-0003',
+        { ok: false, reason: opened.reason,
+          errors: [opened.detail || opened.error || 'That OTP was refused.'] });
+    }
+    const id = 'yubi-' + crypto.randomBytes(16).toString('base64url');
+    const spent = await this.yubiAdvance(name, id, opened.fields.composite);
+    if (!spent.ok) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Not spent.");
+      return spent;
+    }
+    const indexed = this.yubiStore().indexPublicId(held.publicId, {
+      username: name, credentialId: id, serial: '' });
+    if (!indexed.ok) {
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Public id.");
+      return indexed;
+    }
+    const prior = this.yubiStatusOf(name);
+    const written = this.writeYubiRecord(name, {
+      id: id, publicId: held.publicId, k: held.k, p: held.p,
+      use: opened.fields.use, session: opened.fields.session,
+      composite: opened.fields.composite,
+      enrolledAt: Date.now(), lastUsedAt: Date.now(),
+      source: 'enrolled', serial: '', token: '' });
+    if (!written.ok) {
+      this.yubiStore().dropPublicId(held.publicId, id);
+      log.debug("Leaving Credentials.confirmYubiEnrolment(). Not written.");
+      return written;
+    }
+    if (prior && prior.publicId && prior.publicId !== held.publicId) {
+      this.yubiStore().dropPublicId(prior.publicId, prior.id || '');
+    }
+    this.abandonYubiEnrolment(name);
+    log.info('credentials: ' + name + ' enrolled a YubiKey OTP as a ' +
+             'second factor.');
+    log.debug("Leaving Credentials.confirmYubiEnrolment(). Enrolled.");
+    return { ok: true, username: name, kind: 'yubiotp', id: id,
+             publicId: held.publicId };
+  }
+
+  /**
+   * Installs an inventoried YubiKey OTP as the person's credential. The
+   * caller has already checked the OTP. The public identity is indexed
+   * and the composite is spent before the entry is written.
+   *
+   * @param username - the person
+   * @param spec - `{ serial, publicId, k, p, composite, use, session }`
+   * @returns a promise of `{ ok: true, id }`, or a refusal
+   */
+  async installImportedYubi(username, spec) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.installImportedYubi().");
+    const name = String(username || '').trim();
+    const s = spec || {};
+    const serial = String(s.serial || '');
+    const id = 'yubi:' + serial;
+    const spent = await this.yubiAdvance(name, id, Number(s.composite));
+    if (!spent.ok) {
+      log.debug("Leaving Credentials.installImportedYubi(). Not spent.");
+      return spent;
+    }
+    const indexed = this.yubiStore().indexPublicId(String(s.publicId || ''), {
+      username: name, credentialId: id, serial: serial });
+    if (!indexed.ok) {
+      log.debug("Leaving Credentials.installImportedYubi(). Public id.");
+      return indexed;
+    }
+    const prior = this.yubiStatusOf(name);
+    const written = this.writeYubiRecord(name, {
+      id: id, publicId: String(s.publicId || ''), k: s.k, p: s.p,
+      use: Number(s.use || 0), session: Number(s.session || 0),
+      composite: Number(s.composite || 0),
+      enrolledAt: Date.now(), lastUsedAt: Date.now(),
+      source: 'csv-import', serial: serial, token: id });
+    if (!written.ok) {
+      this.yubiStore().dropPublicId(String(s.publicId || ''), id);
+      log.debug("Leaving Credentials.installImportedYubi(). Not written.");
+      return written;
+    }
+    if (prior && prior.publicId && prior.publicId !== String(s.publicId)) {
+      this.yubiStore().dropPublicId(prior.publicId, prior.id || '');
+    }
+    log.debug("Leaving Credentials.installImportedYubi(). Installed.");
+    return { ok: true, id: id, username: name };
+  }
+
+  /**
+   * Removes a person's YubiKey OTP credential and its public-id index.
+   *
+   * @param username - the person
+   * @param opts - `onlySerial`: remove it only when it is that serial's
+   * @returns `{ ok: true, publicId?, id? }`, or a refusal
+   */
+  removeYubiOtp(username, opts?) {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.removeYubiOtp().");
+    const name = String(username || '').trim();
+    this.abandonYubiEnrolment(name);
+    const held = this.yubiStatusOf(name);
+    if (!held) {
+      log.debug("Leaving Credentials.removeYubiOtp(). None.");
+      return { ok: true, username: name };
+    }
+    if (opts && opts.onlySerial &&
+        String(held.serial || '') !== String(opts.onlySerial)) {
+      log.debug("Leaving Credentials.removeYubiOtp(). Another token's.");
+      return { ok: true, username: name };
+    }
+    if (!directory || typeof directory.writeYubi !== 'function') {
+      log.debug("Leaving Credentials.removeYubiOtp(). No store.");
+      return coded('STS-YUBIOTP-0011', { ok: false, errors: ['No credential ' +
+        'store is installed.'] });
+    }
+    try {
+      directory.writeYubi(name, null);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: removing ' +
+                'the YubiKey OTP credential of ' + name + ' threw: ' +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.removeYubiOtp(). It threw.");
+      return coded('STS-YUBIOTP-0010', { ok: false, errors: ['The ' +
+        'credential store refused the write.'] });
+    }
+    if (held.publicId) {
+      this.yubiStore().dropPublicId(held.publicId, held.id || '');
+    }
+    log.info('credentials: the YubiKey OTP credential of ' + name +
+             ' was removed.');
+    log.debug("Leaving Credentials.removeYubiOtp(). Removed.");
+    return { ok: true, username: name, publicId: held.publicId || '',
+             id: held.id || '' };
+  }
+
+  /**
+   * Verifies a YubiKey OTP and spends its counters. `hardware` is always
+   * false: this service holds the AES key.
+   *
+   * @param username - the person
+   * @param otp - the OTP
+   * @returns a promise of `{ ok: true, kind: 'yubiotp', hardware: false }`,
+   *   or a refusal
+   */
+  async verifyYubiOtpAsync(username, otp) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.verifyYubiOtpAsync().");
+    const name = String(username || '').trim();
+    const record = this.yubiOf(name);
+    if (!record) {
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). None.");
+      return coded('STS-YUBIOTP-0006', { ok: false, reason: 'none',
+        detail: Sentence.say('refusals.factor.yubiNoneFor', { name: name }) });
+    }
+    if (record.unusable) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0002') + 'credentials: ' + name +
+                ' holds a YubiKey OTP this process cannot read (' +
+                record.why + ').');
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). Unusable.");
+      return coded('STS-YUBIOTP-0002', { ok: false, reason: 'unusable',
+        detail: Sentence.say('refusals.factor.yubiUnreadable') });
+    }
+    const opened = this.yubiLib().open(
+      { k: record.k, p: record.p, publicId: record.publicId }, otp);
+    if (!opened.ok) {
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). Refused.");
+      return coded(errorCodes.codeOf(opened) || 'STS-YUBIOTP-0003',
+        { ok: false, reason: opened.reason, detail: opened.detail });
+    }
+    const spent = await this.yubiAdvance(name, record.id,
+                                         opened.fields.composite);
+    if (!spent.ok) {
+      log.debug("Leaving Credentials.verifyYubiOtpAsync(). Not spent.");
+      return spent;
+    }
+    const written = this.writeYubiRecord(name, Object.assign({}, record, {
+      use: opened.fields.use, session: opened.fields.session,
+      composite: opened.fields.composite, lastUsedAt: Date.now() }));
+    if (!written.ok) {
+      log.error(errorCodes.tag('STS-YUBIOTP-0010') + 'credentials: the ' +
+                'YubiKey OTP counter of ' + name + ' was spent in the ' +
+                'store and could not be written to the entry.');
+    }
+    log.debug("Leaving Credentials.verifyYubiOtpAsync(). Accepted.");
+    return { ok: true, kind: 'yubiotp', hardware: false,
+             use: opened.fields.use, session: opened.fields.session,
+             composite: opened.fields.composite };
+  }
+
+  /**
+   * Splits an LDAP simple-bind password into the password and a trailing
+   * YubiKey OTP when the person holds one whose public identity is that
+   * suffix. Anything else is left whole, so a password is not spent as
+   * an OTP and an OTP is not accepted as a password.
+   *
+   * @param username - the person, or any key the directory locates
+   * @param password - the bind credential
+   * @returns `{ password, otp }`, or null
+   */
+  yubiPasswordSplit(username, password) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.yubiPasswordSplit().");
+    const status = this.yubiStatusOf(username);
+    const publicId = String((status && status.publicId) || '').toLowerCase();
+    const text = String(password == null ? '' : password);
+    const otpLen = publicId.length + 32;
+    if (!publicId || otpLen < 32 || otpLen > 48 || (otpLen % 2) !== 0 ||
+        text.length <= otpLen) {
+      log.debug("Leaving Credentials.yubiPasswordSplit(). No.");
+      return null;
+    }
+    const otp = text.slice(text.length - otpLen).toLowerCase();
+    if (!otp.startsWith(publicId) || !this.yubiLib().looksLike(otp)) {
+      log.debug("Leaving Credentials.yubiPasswordSplit(). No match.");
+      return null;
+    }
+    log.debug("Leaving Credentials.yubiPasswordSplit(). Split.");
+    return { password: text.slice(0, text.length - otpLen), otp: otp };
   }
 
   // ---------------------------------------------------------------------------
@@ -7090,6 +8906,10 @@ class Credentials {
       mfaKeys: mechanisms.mfaKeys || 0,
       totp: !!mechanisms.totp,
       totpUsable: !!mechanisms.totpUsable,
+      // `interpretValues()`'s two #1955 facts (P4, P5), in its order, so
+      // the census answers the same members by either door.
+      hotp: !!mechanisms.hotp,
+      yubi: !!mechanisms.yubi,
       mfaRequired: !!mechanisms.mfaRequired,
       secondFactor: mechanisms.secondFactor || '',
       usable: !!mechanisms.usable
@@ -7126,6 +8946,11 @@ class Credentials {
     const mfaKeys = uses.mfa;
     const authenticator = this.totpStatusFromValue(values.totp || '', name);
     const totpEnrolled = !!authenticator;
+    // #1955 P4: an HOTP token, off the same entry's values; a code step
+    // asks for either (`mechanismsFor()`'s `oneTimeCode`).
+    const hotpEnrolled = !!values.hotp;
+    const yubiEnrolled = !!values.yubi;
+    const oneTimeCode = totpEnrolled || hotpEnrolled || yubiEnrolled;
     let mailHeld = '';
     if (mailFactor && values.mail &&
         typeof mailFactor.heldOfAttributes === 'function') {
@@ -7151,10 +8976,12 @@ class Credentials {
         mfaKeys: mfaKeys,
         totp: totpEnrolled,
         totpUsable: totpEnrolled && !authenticator.unusable,
+        hotp: hotpEnrolled,
+        yubi: yubiEnrolled,
         // `mechanismsFor()`'s two lines, read against the same three facts.
-        mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+        mfaRequired: mfaKeys > 0 || oneTimeCode || !!mailHeld,
         secondFactor: mfaKeys > 0 ? 'webauthn' :
-                      (totpEnrolled ? 'totp' :
+                      (oneTimeCode ? 'totp' :
                        (mailHeld ? 'email-' + mailHeld : '')),
         usable: password || primaryKeys > 0
       },
@@ -8047,8 +9874,8 @@ class Credentials {
       log.debug('backupPrepare(): none issued.');
       log.debug("Leaving Credentials.backupPrepare().");
       return { done: coded('STS-AUTHN-0087', { ok: false, reason: 'none',
-                       detail: 'No recovery codes have been issued for ' +
-                               name + '.' }) };
+                       detail: Sentence.say('refusals.factor.backupNoneFor',
+                                            { name: name }) }) };
     }
     if (held.unusable) {
       log.error(errorCodes.tag('STS-AUTHN-0089') +
@@ -8058,10 +9885,8 @@ class Credentials {
                 'through.');
       log.debug("Leaving Credentials.backupPrepare().");
       return { done: coded('STS-AUTHN-0089', { ok: false, reason: 'unusable',
-                       detail: 'Your recovery codes cannot be read by this ' +
-                               'service, so they cannot be checked. An ' +
-                               'administrator has to clear them on your row ' +
-                               'under /admin/users.' }) };
+                       detail: Sentence.say(
+                         'refusals.factor.backupUnreadable') }) };
     }
     // THE SHAPE FIRST, and it matters far more than it did. A password typed
     // into this box used to cost ten constant-time string comparisons; it would
@@ -8071,9 +9896,7 @@ class Credentials {
       log.debug('backupPrepare(): not the shape of a code.');
       log.debug("Leaving Credentials.backupPrepare().");
       return { done: coded('STS-AUTHN-0090', { ok: false, reason: 'shape',
-                       detail: 'A recovery code is letters and digits only — ' +
-                               'the ones this service printed for you, in ' +
-                               'groups. Dashes and spaces are ignored.' }) };
+                       detail: Sentence.say('refusals.factor.backupShape') }) };
     }
     log.debug("Leaving Credentials.backupPrepare().");
     return { held: held };
@@ -8099,14 +9922,13 @@ class Credentials {
                'already spent.');
       log.debug("Leaving Credentials.backupFinish().");
       return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
-               detail: 'That recovery code has already been used. Each one ' +
-                       'works once — use the next unused code on your list.' });
+               detail: Sentence.say('refusals.factor.backupSpent') });
     }
     if (matchedIndex < 0) {
       log.info('credentials: a recovery code for ' + name + ' did not match.');
       log.debug("Leaving Credentials.backupFinish().");
       return coded('STS-AUTHN-0092', { ok: false, reason: 'mismatch',
-               detail: 'That is not one of your recovery codes.' });
+               detail: Sentence.say('refusals.factor.backupMismatch') });
     }
     // THE HASHES ARE CARRIED VERBATIM. A spend rewrites the array to mark one
     // entry used and must not re-hash anything: the codes are not here to hash,
@@ -8130,9 +9952,7 @@ class Credentials {
                 'code that cannot be spent is a code that works for ever.');
       log.debug("Leaving Credentials.backupFinish().");
       return coded('STS-AUTHN-0093', { ok: false, reason: 'store',
-               detail: 'That code is right and this service could not record ' +
-                       'that it has been used, so it was not accepted. Try ' +
-                       'another one, and tell an administrator.' });
+               detail: Sentence.say('refusals.factor.backupUnrecorded') });
     }
     log.info('credentials: ' + name + ' signed in with a recovery code. ' +
              written.remaining + ' of ' + written.total + ' remain.');
@@ -8456,9 +10276,7 @@ class Credentials {
               return null;
             }).then(() => {
               return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
-                detail: 'That recovery code has already been used. Each ' +
-                        'one works once — use the next unused code on your ' +
-                        'list.' });
+                detail: Sentence.say('refusals.factor.backupSpent') });
             });
         }
         if (!claimed.ok) {
@@ -8467,8 +10285,7 @@ class Credentials {
                     'proved unspent (' + (claimed.why || claimed.reason) +
                     '), so it was refused.');
           return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-            detail: 'That code could not be checked just now. Try again in a ' +
-                    'moment.' });
+            detail: Sentence.say('refusals.factor.codeUncheckedAgain') });
         }
         return this.claimedButUnmarked(name, held.codes, realm.id,
                                        found.matchedIndex)
@@ -9401,6 +11218,13 @@ class Credentials {
     // it still means this person configured two factors, and reporting it as
     // absent would sign them in with one. `verifyTotp()` refuses it by name.
     const totpEnrolled = !!authenticator;
+    // THE HOTP TOKEN (#1955 P4), reported the same three ways, and beside it
+    // `oneTimeCode`: what the sign-in's code step asks for is either.
+    const token = this.hotpStatusOf(name);
+    const hotpEnrolled = !!token;
+    const yubi = this.yubiStatusOf(name);
+    const yubiEnrolled = !!yubi;
+    const oneTimeCode = totpEnrolled || hotpEnrolled || yubiEnrolled;
     // THE EMAILED SECOND FACTOR (#64), HELD only while it is usable: opted
     // in, allowed by the realm's authentication policy, mail working and the
     // address verified (`common/mail_factor.ts` argues why). Asked lazily —
@@ -9435,6 +11259,29 @@ class Credentials {
             unusable: !!authenticator.unusable,
             why: authenticator.why || '' }
         : null,
+      hotp: hotpEnrolled,
+      hotpUsable: hotpEnrolled && !token.unusable,
+      hotpDetail: hotpEnrolled
+        ? { enrolledAt: token.enrolledAt || 0,
+            lastUsedAt: token.lastUsedAt || 0,
+            digits: token.digits || 0, counter: token.counter || 0,
+            sealed: !!token.sealed, unusable: !!token.unusable,
+            why: token.why || '', source: token.source || 'enrolled',
+            token: token.token || '', serial: token.serial || '',
+            vendor: token.vendor || '', model: token.model || '' }
+        : null,
+      yubi: yubiEnrolled,
+      yubiUsable: yubiEnrolled && !yubi.unusable,
+      yubiDetail: yubiEnrolled
+        ? { enrolledAt: yubi.enrolledAt || 0,
+            lastUsedAt: yubi.lastUsedAt || 0,
+            publicId: yubi.publicId || '',
+            source: yubi.source || 'enrolled',
+            serial: yubi.serial || '',
+            sealed: !!yubi.sealed, unusable: !!yubi.unusable,
+            why: yubi.why || '' }
+        : null,
+      oneTimeCode: oneTimeCode,
       // Can they get in at all? UNCHANGED, and see the header: a second factor
       // has never been a way in on its own and an authenticator app is not one
       // either.
@@ -9463,7 +11310,7 @@ class Credentials {
       // so the sign-in screen demands it as well — which is what makes the flag
       // mean anything. **The recovery codes are deliberately not on this line**
       // — see the field above.
-      mfaRequired: uses.mfa > 0 || totpEnrolled || !!mailFactor.held,
+      mfaRequired: uses.mfa > 0 || oneTimeCode || !!mailFactor.held,
       // The emailed factor (#64): `held` is `code`, `link` or '', and the
       // rest says why it is not held where it is opted into.
       mailFactor: mailFactor,
@@ -9475,8 +11322,9 @@ class Credentials {
       // The emailed factor comes LAST (#64): it is the weakest of the three
       // (NIST SP 800-63B-4 section 3.1.3.1), so a person holding another is
       // asked for that, and offered the email as a way round it.
+      // `totp` is the one-time code step, whichever kind answers it.
       secondFactor: uses.mfa > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' :
+                    (oneTimeCode ? 'totp' :
                      (mailFactor.held ? 'email-' + mailFactor.held : '')),
       // Has this person finished setting themselves up? What product mode asks
       // before it will let an activation link be spent, and what the sign-in
@@ -9510,7 +11358,7 @@ class Credentials {
       // (#786): the census does not report this flag.
       recoveryAdvised: skipRecovery ? false :
                        (backupCodes.offered() &&
-                        ((uses.mfa > 0 && password) || totpEnrolled) &&
+                        ((uses.mfa > 0 && password) || oneTimeCode) &&
                         !this.backupCodesOf(name)),
       // IS A SECOND FACTOR REQUIRED OF THEM (2026-09-13), whether or not they
       // hold one — by an administrator on their entry, or by the realm. It is
@@ -10144,6 +11992,8 @@ class Credentials {
       discoverable: Credentials.discoverableOf(credential),
       // CTAP 2.1's minPinLength, as the key reported it (#529).
       minPinLength: Credentials.reportedMinPinLength(verdict),
+      // And its credProtect level (#1955 P7), null for none reported.
+      credProtect: Credentials.reportedCredProtect(verdict),
       // The handle the page created it under (#474), and its lane (#643),
       // both off the pending record.
       userHandle: held.userHandle,
@@ -10292,16 +12142,16 @@ class Credentials {
     if (!key) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Not theirs.");
       return coded('STS-AUTHN-0451', { ok: false, reason: 'upgrade',
-               errors: ['No passkey of that id is registered for ' +
-                        String(username || '') + '.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeNotTheirs',
+                 { name: String(username || '') })] });
     }
     if (Credentials.keyAlgorithm(key).postQuantum) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Already " +
                 "post-quantum.");
       return coded('STS-AUTHN-0452', { ok: false, reason: 'upgrade',
-               errors: ['That passkey is already post-quantum (' +
-                        Credentials.keyAlgorithm(key).name + '); there is ' +
-                        'nothing to upgrade.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeAlreadyPq',
+                 { algorithm: String(Credentials.keyAlgorithm(key).name) })]
+             });
     }
     const held = this.keysOf(username);
     if (key.upgradedTo && held.some(function (one) {
@@ -10310,9 +12160,7 @@ class Credentials {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Upgraded " +
                 "already.");
       return coded('STS-AUTHN-0453', { ok: false, reason: 'upgrade',
-               errors: ['That passkey was already upgraded: its ' +
-                        'post-quantum passkey is beside it. Remove that one ' +
-                        'first to upgrade again.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeDone')] });
     }
     const enrolment = webauthnPolicy.enrolmentAllowed();
     if (!enrolment.ok) {
@@ -10325,9 +12173,8 @@ class Credentials {
         held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
       return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
-               errors: ['You already hold ' + held.length + ' passkey(s), ' +
-                        'the most this realm allows, and the upgrade adds ' +
-                        'one beside this passkey. Remove one first.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeAtCap',
+                 { count: held.length })] });
     }
     log.debug("Leaving Credentials.keyUpgradeRefusal(). Allowed.");
     return { ok: true };
@@ -10388,8 +12235,8 @@ class Credentials {
     const directory = this.directory;
     if (!directory || typeof directory.replaceWebauthn !== 'function') {
       log.debug("Leaving Credentials.beginKeyUpgrade(). No store.");
-      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
-                   'store is installed, so no passkey can be upgraded.'] });
+      return coded('STS-AUTHN-0059', { ok: false, errors: [Sentence.say(
+                   'refusals.passkey.upgradeNoStore')] });
     }
     const key = this.keysOf(name).filter(function (one) {
       return String(one.credentialId) === String(credentialId || '');
@@ -10471,18 +12318,15 @@ class Credentials {
       log.debug("Leaving Credentials.upgradeInHand(). None in progress.");
       return { held: null, refused: coded('STS-AUTHN-0454',
         { ok: false, reason: 'expired',
-          errors: ['That passkey upgrade is not the one in progress, or it ' +
-                   'has expired. Your passkey is unchanged; start again.'] }) };
+          errors: [Sentence.say('refusals.passkey.upgradeNotInProgress')] }) };
     }
     if (held.upgrade.phase !== phase) {
       log.debug("Leaving Credentials.upgradeInHand(). Out of order.");
       return { held: null, refused: coded('STS-AUTHN-0456',
         { ok: false, reason: 'mismatch',
           errors: [phase === 'proof'
-            ? 'This passkey has already been used for this upgrade; create ' +
-              'the post-quantum passkey now.'
-            : 'Use your passkey first, to show it is yours, before the ' +
-              'post-quantum passkey is created.'] }) };
+            ? Sentence.say('refusals.passkey.upgradeProofDone')
+            : Sentence.say('refusals.passkey.upgradeProofFirst')] }) };
     }
     log.debug("Leaving Credentials.upgradeInHand().");
     return { held: held, refused: null };
@@ -10562,6 +12406,18 @@ class Credentials {
         'different passkey from the one you are upgrading. Nothing was ' +
         'changed; start again and use the passkey you chose.'));
     }
+    // A LEGACY U2F KEY'S PROOF (#1955 P7): the one set of expectations
+    // every assertion door uses — the AppID's hash only with `appid: true`,
+    // no UV flag of a key that cannot give one, and a refusal once its
+    // AppID is no longer permitted. The person is signed in already, so it
+    // is not a passwordless use.
+    const legacy = webauthnPolicy.assertionExpectations(key,
+      String(options.rpId || ''), assertion, false);
+    if (legacy.refusal) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). A U2F key refused.");
+      return Promise.resolve(dropped(legacy.refusal.code,
+                                     legacy.refusal.why));
+    }
     let verdict;
     try {
       verdict = webauthnVerifier.verifyAssertion({
@@ -10572,9 +12428,11 @@ class Credentials {
         expectedChallenge: held.challenge,
         expectedOrigin: String(options.origin || ''),
         expectedRpId: String(options.rpId || ''),
-        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        requireUserVerification: legacy.requireUserVerification,
         previousSignCount: key.signCount,
-        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed(),
+        expectedAppId: legacy.expectedAppId,
+        appidUsed: legacy.appidUsed
       });
     } catch (e) {
       log.debug("Caught in Credentials.proveKeyUpgrade(): " +
@@ -10736,17 +12594,15 @@ class Credentials {
                 ((e && e.message) || e));
       log.debug("Leaving Credentials.checkKeyUpgrade(). It threw.");
       return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
-               errors: ['The registration could not be checked: ' +
-                        ((e && e.message) || e) + '. Your passkey is ' +
-                        'unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeUnchecked',
+                 { detail: String((e && e.message) || e) })] });
     }
     if (!verdict.ok) {
       log.debug("Leaving Credentials.checkKeyUpgrade(). It did not verify.");
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
-               errors: ['The post-quantum passkey did not verify — ' +
-                        (verdict.failed || []).join('; ') + '. Your ' +
-                        'passkey is unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeNotVerified',
+                 { checks: (verdict.failed || []).join('; ') })] });
     }
     // THE EXCLUSION, as an enrolment checks it, and the classical
     // credential itself: an authenticator answering with the key being
@@ -10755,8 +12611,7 @@ class Credentials {
         String(verdict.credentialId) === String(held.upgrade.credentialId)) {
       log.debug("Leaving Credentials.checkKeyUpgrade(). Already enrolled.");
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
-               errors: ['That authenticator is already enrolled. Your ' +
-                        'passkey is unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeDuplicate')] });
     }
     log.debug("Leaving Credentials.checkKeyUpgrade(). Verifying the " +
               "attestation, then writing through the claim.");
@@ -11882,7 +13737,15 @@ class Credentials {
     // The keys themselves (#911), not mechanismsFor(): that is nine store
     // reads and a TOTP unseal for a yes/no asked on every second-factor
     // step and recovery door. Any key, since a key has no role (#1135).
-    const out = this.keysOf(String(username || '').trim()).length > 0;
+    const name = String(username || '').trim();
+    // OR WHOSE PASSKEY WAS REPORTED LOST (#1955 P1) and not yet replaced:
+    // the lost-key act removed the keys, and a recovery after it must be no
+    // weaker than the passkey it replaces, so the person is still covered
+    // while the `lost-key` recovery is pending. Read only when no key is
+    // held, so an ordinary person costs nothing more.
+    const held = this.keysOf(name).length > 0;
+    const pending = held ? null : this.recoveryPending(name);
+    const out = held || !!(pending && pending.door === 'lost-key');
     log.debug("Leaving Credentials.holdsPasskey(). " + out);
     return out;
   }
@@ -11935,7 +13798,14 @@ class Credentials {
       return false;
     }
     const name = String(username || '').trim();
-    const value = door ? String(door) + ' ' + new Date().toISOString() : '';
+    // A LOST KEY'S RECOVERY IS KEPT (#1955 P1) when a later door writes
+    // its own: the loss is what keeps the person covered (`holdsPasskey()`),
+    // and a reset link spent after it must not uncover them. Only clearing
+    // — a passkey signing them in — ends it.
+    const current = door ? this.recoveryPending(name) : null;
+    const kept = current && current.door === 'lost-key' ? 'lost-key' : '';
+    const value = door ? String(kept || door) + ' ' +
+                         new Date().toISOString() : '';
     let written = false;
     try {
       written = !!directory.writeRecoveryPending(name, value);
@@ -12730,7 +14600,8 @@ class Credentials {
     const mfa = keys;
     const hadTotp = !!this.totpOf(name);
     const hadCodes = !!this.backupCodesOf(name);
-    if (!mfa.length && !hadTotp && !hadCodes) {
+    const hadYubi = !!this.yubiStatusOf(name);
+    if (!mfa.length && !hadTotp && !hadCodes && !hadYubi) {
       log.debug("Leaving Credentials.removeSecondFactors(). None held.");
       return coded('STS-AUTHN-0162', { ok: false, errors: [name + ' holds no ' +
           'second factor — no authenticator app, no passkey ' +
@@ -12745,7 +14616,7 @@ class Credentials {
           'Reset their password (or issue a reset link) first, then ' +
           'disable their second factors.'] });
     }
-    const done = { totp: false, keys: [], backupCodes: false };
+    const done = { totp: false, keys: [], backupCodes: false, yubi: false };
     try {
       if (mfa.length) {
         directory.replaceWebauthn(name, []);
@@ -12758,6 +14629,14 @@ class Credentials {
       if (hadCodes) {
         directory.writeBackupCodes(name, null);
         done.backupCodes = true;
+      }
+      if (hadYubi) {
+        const dropped = this.removeYubiOtp(name);
+        if (dropped && dropped.ok === false) {
+          throw new Error((dropped.errors && dropped.errors[0]) ||
+                          'the YubiKey OTP credential could not be removed');
+        }
+        done.yubi = true;
       }
     } catch (e) {
       // WHAT WENT BEFORE THE THROW IS GONE AND IS REPORTED AS GONE, so a caller
@@ -12858,6 +14737,10 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   // --- the authenticator app (RFC 6238) ---
   TOTP_ATTRIBUTE: Credentials.TOTP_ATTRIBUTE,
+  HOTP_ATTRIBUTE: Credentials.HOTP_ATTRIBUTE,
+  HOTP_COUNTER_SCOPE: Credentials.HOTP_COUNTER_SCOPE,
+  YUBI_ATTRIBUTE: Credentials.YUBI_ATTRIBUTE,
+  YUBI_COUNTER_SCOPE: Credentials.YUBI_COUNTER_SCOPE,
   totpOf: slot.forward('totpOf'),
   // THE RECOVERY CODES (2026-09-10). `revealBackupCodes()` used to be the one
   // export here that handed back a live credential; since 2026-09-11 the set
@@ -12944,6 +14827,10 @@ export = {
   LANES: Credentials.LANES,
   userHandleRefusal: slot.forward('userHandleRefusal'),
   addKey: slot.forward('addKey'),
+  // #1955 P7: a legacy U2F credential imported by value.
+  importU2fKey: slot.forward('importU2fKey'),
+  appIdOf: Credentials.appIdOf,
+  reportedCredProtect: Credentials.reportedCredProtect,
   removeKey: slot.forward('removeKey'),
   renameKey: slot.forward('renameKey'),
   // THE TWO-STEP ENROLMENT (2026-09-10), which is what lets somebody hold a
@@ -13050,6 +14937,28 @@ export = {
   // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46) — each is argued above
   // its definition.
   verifyTotpAsync: slot.forward('verifyTotpAsync'),
+  // #1955 P4: the HOTP credential, beside the authenticator app's.
+  verifyAppCodeAsync: slot.forward('verifyAppCodeAsync'),
+  hotpOf: slot.forward('hotpOf'),
+  hasHotp: slot.forward('hasHotp'),
+  beginHotpEnrolment: slot.forward('beginHotpEnrolment'),
+  pendingHotpFor: slot.forward('pendingHotpFor'),
+  abandonHotpEnrolment: slot.forward('abandonHotpEnrolment'),
+  confirmHotpEnrolment: slot.forward('confirmHotpEnrolment'),
+  installImportedOath: slot.forward('installImportedOath'),
+  removeHotp: slot.forward('removeHotp'),
+  verifyHotpAsync: slot.forward('verifyHotpAsync'),
+  resyncHotpAsync: slot.forward('resyncHotpAsync'),
+  // #1955 P5: the YubiKey OTP credential.
+  yubiStatusOf: slot.forward('yubiStatusOf'),
+  beginYubiEnrolment: slot.forward('beginYubiEnrolment'),
+  pendingYubiFor: slot.forward('pendingYubiFor'),
+  abandonYubiEnrolment: slot.forward('abandonYubiEnrolment'),
+  confirmYubiEnrolment: slot.forward('confirmYubiEnrolment'),
+  installImportedYubi: slot.forward('installImportedYubi'),
+  removeYubiOtp: slot.forward('removeYubiOtp'),
+  verifyYubiOtpAsync: slot.forward('verifyYubiOtpAsync'),
+  yubiPasswordSplit: slot.forward('yubiPasswordSplit'),
   spendAssertion: slot.forward('spendAssertion'),
   reconcileBackupCodes: slot.forward('reconcileBackupCodes'),
   spendActivation: slot.forward('spendActivation'),

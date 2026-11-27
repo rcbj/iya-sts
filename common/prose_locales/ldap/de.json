@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Die response_type-Werte, die dieser Client verlangen darf — die response_types aus RFC 7591 Abschnitt 2, aus einer Registrierung oder von einem Administrator geschrieben, jeder Wert ein Antworttyp (\"code\", \"code id_token\"). Der Autorisierungsendpunkt lehnt jeden anderen ab (unauthorized_client), in jedem Modus; eine leere Liste beschränkt nichts. Was der Client tatsächlich verlangt hat, ist oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "Die response_mode-Werte, die dieser Client anfordern darf — query, fragment, form_post und die jwt, query.jwt, fragment.jwt und form_post.jwt von JARM — von einem Administrator geschrieben. Der Autorisierungsendpunkt lehnt jeden anderen ab (unauthorized_client), und eine Anfrage, die keinen nennt, wird am Standardmodus ihres Antworttyps gemessen (query für code, fragment für die übrigen), in jedem Modus; eine leere Liste schränkt nichts über response_modes_supported des Servers hinaus ein. Kein RFC-7591-Member trägt ihn, daher schreibt eine Registrierung ihn nicht."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "Die Antworttypen, die vom Autorisierungsendpunkt ein Access Token ausstellen — token, code token, id_token token, code id_token token —, die dieser Client verwenden darf, wo der RFC-9700-Modus gilt (der product-Modus gilt immer). Beachtet nur, solange der Bereich RFC 9700 Abschnitt 2.1.2 aussetzt (oauth2.allowImplicitTokenResponses, nie unter OAuth 2.1 oder FAPI); ein hier nicht aufgeführter Typ wird dann abgelehnt (unauthorized_client). STANDARDMÄSSIG LEER, und leer bedeutet keine. Geschrieben von einem Administrator oder dem Eigentümer der Anwendung, solange der Bereich diese Typen erlaubt, oder durch eine dynamische Registrierung innerhalb von oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 Abschnitt 2.1.2 sagt, dass Clients sie SHOULD NOT verwenden."
@@ -576,8 +580,8 @@
     "text": "Scopes, die diese Anwendung VERLANGT HAT, angesammelt, während sie verlangt. GESICHTET, nie deklariert: dadurch wird nichts erlaubt oder abgelehnt. Was der Anwendung ausgestellt werden darf, ist oauthAllowedScope."
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "DIE SCOPES, DIE DIESEM CLIENT AUSGESTELLT WERDEN DÜRFEN — das `scope` aus RFC 7591 Abschnitt 2, \"die Liste, die der Client beim Anfordern von Access Tokens verwenden kann\". Ein Scope-Token je Wert. Drei Arten von Scope lesen es unterschiedlich.\n\n**Die eigenen geschützten Scopes dieses Dienstes** — admin:read und admin:write (/admin-api), report:use und report:admin (/report-api), die SCIM-Scopes (scim.scopeRead, scim.scopeWrite), die Shared-Signals-Scopes (ssf.authScopeRead, ssf.authScopeWrite und immer ssf.read und ssf.manage) und die Debugger-Berechtigung — werden NUR einem Client ausgestellt, der sie aufführt, IN BEIDEN MODI. Bei Shared Signals schließt Schreiben das Lesen ein: einen Schreib-Scope aufzuführen autorisiert auch den Lese-Scope, und nur einen Lese-Scope aufzuführen autorisiert keinen Schreib-Scope. Der Resource Server dahinter fragt bei jedem Aufruf erneut, daher kappt das Entfernen eines Wertes hier bereits ausgestellte Tokens. Eine Registrierung nach RFC 7591 darf sie nicht deklarieren; ein Administrator tut es, hier.\n\n**Jeder andere Scope** wird im product-Modus nur ausgestellt, wenn er hier aufgeführt ist — oder, wenn nichts aufgeführt ist, wenn er zur Standardmenge gehört: openid, profile, email, address, phone, offline_access und die OpenID4VCI-Credential-Scopes dieses Bereichs. In der Entwicklung wird jeder Scope ausgestellt.\n\n**Ein Scope, der eine Anwendung oder eine delegierte Berechtigung nennt,** behält seine eigenen Regeln (die Audience und oauthDelegatedPermission) und muss nicht aufgeführt sein.\n\nEin Scope außerhalb der Liste wird an den Autorisierungs- und Token-Endpunkten mit invalid_scope abgelehnt (RFC 6749 Abschnitt 3.3) und bei einem Refresh oder einem Token-Tausch entfernt. Zu unterscheiden von oauthScope, das nur festhält, was der Client verlangt hat."
+    "en": "00c084c993d99663",
+    "text": "DIE SCOPES, DIE DIESEM CLIENT AUSGESTELLT WERDEN DÜRFEN — das `scope` aus RFC 7591 Abschnitt 2, \"die Liste, die der Client beim Anfordern von Access Tokens verwenden kann\". Ein Scope-Token je Wert. Drei Arten von Scope lesen es unterschiedlich.\n\n**Die eigenen geschützten Scopes dieses Dienstes** — admin:read und admin:write (/admin-api), report:use und report:admin (/report-api), die SCIM-Scopes (scim.scopeRead, scim.scopeWrite), die Shared-Signals-Scopes (ssf.authScopeRead, ssf.authScopeWrite und immer ssf.read und ssf.manage) und die Debugger-Berechtigung — werden NUR einem Client ausgestellt, der sie aufführt, IN BEIDEN MODI. Bei Shared Signals schließt Schreiben das Lesen ein: einen Schreib-Scope aufzuführen autorisiert auch den Lese-Scope, und nur einen Lese-Scope aufzuführen autorisiert keinen Schreib-Scope. Der Resource Server dahinter fragt bei jedem Aufruf erneut, daher kappt das Entfernen eines Wertes hier bereits ausgestellte Tokens. Eine Registrierung nach RFC 7591 darf sie nicht deklarieren; ein Administrator tut es, hier.\n\n**Jeder andere Scope** wird im product-Modus nur ausgestellt, wenn er hier aufgeführt ist — oder, wenn nichts aufgeführt ist, wenn er zur Standardmenge gehört, die oauth2.undeclaredClientScopes wählt: seit 1.2.0 standardmäßig nur openid (ASVS 5.0.0 10.4.11); identity ergänzt profile, email, address und phone; legacy, was ein aktualisierter Speicher behält, ergänzt zudem offline_access und die OpenID4VCI-Credential-Scopes dieses Bereichs. In der Entwicklung wird jeder Scope ausgestellt.\n\n**Ein Scope, der eine Anwendung oder eine delegierte Berechtigung nennt,** behält seine eigenen Regeln (die Audience und oauthDelegatedPermission) und muss nicht aufgeführt sein.\n\nEin Scope außerhalb der Liste wird an den Autorisierungs- und Token-Endpunkten mit invalid_scope abgelehnt (RFC 6749 Abschnitt 3.3) und bei einem Refresh oder einem Token-Tausch entfernt. Zu unterscheiden von oauthScope, das nur festhält, was der Client verlangt hat."
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "AUTHZEN-ZUGRIFFSANFRAGE-CALLBACK (#1180): eine https-URL, die dieser Client als AuthZEN-PEP als callback.endpoint einer Zugriffsanfrage nennen darf — eine je Wert, genau abgeglichen. Eine Anfrage, die eine andere nennt, wird abgelehnt; dieser Dienst wählt niemals eine Callback-URL an, die allein aus einer Anfrage genommen ist. Gesetzt von einem Administrator, niemals vom Aufrufer."
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "AUTHZEN-CALLBACK-WIEDERHOLUNG (#1202): eine registrierte Callback-URL und die Versuche und die Wartezeit, die authzen.callbackAttempts und authzen.callbackBackoffS für sie überschreiben. Der Wert ist die URL, dann attempts=N (1 bis 20) und backoff=S (60 bis 86400), eines von beiden oder beide. Die URL muss außerdem ein Wert von appAuthzenCallbackUri sein. Fehlt der Eintrag, verwendet diese URL die Einstellungen des Vertrauensbereichs. Gesetzt von einem Administrator, niemals vom Aufrufer."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "EIN XPATH-AUSDRUCK, DER DAS ZERTIFIKATELEMENT AUSWÄHLT, AN DAS EINE WS-TRUST-ANTWORT VERSCHLÜSSELT WIRD: ein ds:X509Certificate oder ein BinarySecurityToken, dessen ValueType auf #X509v3 endet. Dieselbe Teilmenge wie die Elementzuordnungen. Ist er gesetzt und wählt nichts aus, oder wählt er ein Element, das keines dieser beiden ist, gibt es keinen Empfänger, und die nächste Quelle wird nicht versucht. Ein ausgewähltes Zertifikatelement, dessen Text kein Zertifikat ist, ist ein Fehler der abgeschlossenen Verschlüsselung, und die nächste Quelle wird nicht versucht. Ist er nicht gesetzt, ist der Empfänger das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt — das BinarySecurityToken, auf das die Referenz dieser Signatur zeigt, oder ein ds:X509Certificate im KeyInfo dieser Signatur. Ein Thumbprint, ein Subject Key Identifier oder ein Aussteller und eine Seriennummer ist kein Zertifikatelement."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE oder FALSE: verlangen, dass eine Anfrage, deren AppliesTo diese Anwendung ist, eine WS-Security-Nachrichtensignatur trägt; ersetzt wstrust.signRequest. An, ist eine Anfrage ohne akzeptierte Signatur ein FailedCheck, und jedes Element, das wstrustSignRequestElements auswählt, muss von dieser Signatur abgedeckt sein. Der Entwicklungsmodus glaubt einer Signatur, wie er es immer getan hat, und misst die Zuordnung dennoch an dem, was diese Signatur referenziert."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "DIE ELEMENTE EINER WS-TRUST-ANFRAGE, DIE SIGNIERT SEIN MÜSSEN, je ein Ausdruck in XPath 1.0, in der Teilmenge von wstrustEncryptRequestElements. Jeder Ausdruck muss mindestens ein Element auswählen, und jedes Element, das er auswählt, muss eines sein, das die akzeptierte WS-Security-Signatur der Anfrage referenziert, oder in einem solchen liegen; andernfalls ist die Anfrage ein FailedCheck. Leer: der SOAP Body, den eine Signatur immer abdeckt. Wird nur gelesen, solange wstrustSignRequest (oder wstrust.signRequest) eingeschaltet ist."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE oder FALSE: eine WS-Trust-Antwort für diese Anwendung mit einer WS-Security-Nachrichtensignatur signieren; ersetzt wstrust.signResponse. Die Antwort trägt in ihrem wsse:Security-Header einen wsu:Timestamp und eine ds:Signature, erstellt mit dem XML-Signaturschlüssel dieses Vertrauensbereichs und mit Verweis auf dessen Zertifikat über ein BinarySecurityToken; die Signatur deckt den Timestamp und die Elemente von wstrustSignResponseElements ab. Ein Fehler wird unsigniert gesendet. Eingeschaltet, und die Signatur lässt sich nicht erstellen, ist die Anfrage in beiden Modi ein Fehler."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "DIE ELEMENTE EINER WS-TRUST-ANTWORT, DIE IHRE SIGNATUR NEBEN DEM wsu:Timestamp ABDECKT, je ein Ausdruck in XPath 1.0, in der Teilmenge von wstrustEncryptResponseElements. Leer: der SOAP Body. Ein Element ohne wsu:Id erhält eine. Ein Ausdruck, der nichts trifft, oder einer, der den wsse:Security-Header selbst auswählt, ist ein Fehler."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "Die Reihenfolge, in der eine WS-Trust-Antwort für diese Anwendung signiert und verschlüsselt wird, wenn beides eingeschaltet ist; ersetzt wstrust.responseProtectionOrder: sign-then-encrypt (die Digests der Signatur gelten dem Klartext, der Standard von WS-SecurityPolicy) oder encrypt-then-sign (sie gelten dem Geheimtext). Der wsse:Security-Header wird in der Reihenfolge geschrieben, in der ein Empfänger ihn verarbeitet."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE oder FALSE: auch die ds:Signature einer WS-Trust-Antwort für diese Anwendung verschlüsseln (sp:EncryptSignature von WS-SecurityPolicy); ersetzt wstrust.encryptSignature. Wird nur gelesen, solange die Antwort sowohl signiert als auch verschlüsselt wird, zuerst signiert; die Signatur wird für den Empfänger der Antwort verschlüsselt."
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE oder FALSE: die WS-Trust-Antworten dieser Anwendung an ihr Empfängerzertifikat verschlüsseln, unabhängig von dessen keyUsage; ersetzt wstrust.recipientIgnoresKeyUsage. Die Nachrichtensignatur-Zertifikate des Bereichs erlauben nur digitalSignature, daher wird eine an das Signaturzertifikat der Anfrage verschlüsselte Antwort ohne diese Einstellung abgelehnt. Nur die keyUsage-Prüfung entfällt: Gültigkeit, Pfad und Sperrstatus des Zertifikats werden weiterhin geprüft, wo der paranoide PKI-Modus sie prüft."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "DAS ZERTIFIKAT, AN DAS EINE WS-TRUST-ANFRAGE FÜR DIESE ANWENDUNG VERSCHLÜSSELT WIRD, PEM. Solange es gesetzt ist, wird eine Anfrage für diese Anwendung mit seinem privaten Schlüssel entschlüsselt und nicht mit dem des Realms, und eine an den Schlüssel des Realms verschlüsselte Anfrage für sie ist ein FailedCheck. Öffentlich: Die Anwendungsseite und GET /admin-api/applications geben es heraus."
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE, wenn dieser Ressourcenserver nach UMA 2.0 Ressourcen registrieren darf, die er SELBST BESITZT, über ein Protection-API-Token, das mit client_credentials bezogen wurde. Abwesend oder FALSE, der Standard, bedeutet, dass ein PAT einer Person gehören muss (der Code-Flow) und dass diese Person besitzt, was es registriert."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE oder FALSE: Werden bei Anmeldungen an dieser Anwendung dynamisch auswählbare Rollen angeboten (#1072), anstelle von roles.dynamicSelection. FALSE zeigt kein Kästchen „Rollen für diese Anmeldung wählen“, bietet keine Rolle an, und ein Token für diese Anwendung trägt keine dynamisch gewählte Rolle."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn sowie die üblichen Attribute owner und description."
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Der entfernte PEP und die Route, als der Name des PEP, ein Schrägstrich und die ID der Route, für die diese Richtlinie durch die Authorization-Wahl der Route (simple oder public) auf den Formularen der Reverse-Proxy-Routen oder durch die Aktion generate-pep-route-policy ERZEUGT wurde (#1760). Eine solche Richtlinie wird neu geschrieben, wenn die Route gespeichert wird, mit der Route umbenannt und mit ihr entfernt; sie ist niemals die Wurzel. Sie darf im Richtlinieneditor bearbeitet werden, und das nächste Speichern der Wahl simple oder public der Route schreibt sie erneut — wählen Sie auf der Route eine vorhandene Richtlinie, um eine von Hand geschriebene zu behalten."
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Die Rolle (über ihren Namen in ou=roles), der diese Richtlinie als Berechtigungsrichtlinie GEHÖRT (#1072): Der PDP entscheidet sie allein, für eine Person, um zu sagen, ob ihr diese dynamisch auswählbare Rolle bei der Anmeldung angeboten werden darf. Eine solche Richtlinie ist nie die Wurzel, wird nie über eine PolicyIdReference von der Wurzel erreicht und nie an einen entfernten PEP gesendet."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Ein entfernter Policy Enforcement Point, der sich bei diesem Policy Decision Point registriert hat. DIE ZEILE IST EINE AUFZEICHNUNG UND KEINE BERECHTIGUNG — ein PEP, der sich niemals registriert, kann das Repositorium weiterhin ziehen und durchsetzen. Was eine Zeile einbringt, ist ein Platz auf der Konsole und eine Adresse für den Änderungsanstoß."
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "Was der entfernte PEP zuletzt in einem Heartbeat über jeden Listener gemeldet hat, den er hat (#1760), die vier seiner Umgebung und die festgelegten: ein JSON-Dokument von { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, mit dem Zeitpunkt des Eintreffens. state ist eines von listening, waiting, failed und off, und reason eines aus einer geschlossenen Menge, niemals der Text des Betriebssystems; certificate ist subject, issuer, serial, subjectAltName, validity und fingerprint dessen, das er ausliefert. Jedes andere Mitglied wird verworfen. Ein Heartbeat ohne es behält es, einer mit null löscht es, und eine Registrierung verwirft es. Abwesend bei einem PEP, der älter ist als die Listener, was die Konsole als nicht gemeldet zeichnet."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Welche Art von Remote-PEP sich registriert hat (#2026, Teil von #1206): container, das Image xacml-pep, oder embedded, ein PEP in einer Authentifizierungsbibliothek über ein iya-pep-Paket. Eine Registrierung ohne Angabe ist container, sodass ein älterer PEP gelesen wird wie immer. Ein eingebetteter PEP hat keinen Reverse Proxy, keine Listener und keinen AuthZEN-Edge."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "Die Anwendung, in die ein eingebetteter Remote-PEP bei seiner Registrierung eingebettet zu sein angab (#2026). Nur akzeptiert, wenn es die Anwendung ist, an die sein Eintrag gebunden ist (stsPepApplication, von einem Administrator gesetzt); sie kann also nur bis zum nächsten Heartbeat des PEP von der Bindung abweichen, der abgelehnt wird, sobald beide auseinandergehen. Leer bei einem Container."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "Der Modus eines eingebetteten Remote-PEP (#2026): central, wobei jede Entscheidung beim AuthZEN-Auswertungsendpunkt dieses Dienstes erfragt wird, oder local, wobei er die Richtlinien seiner Anwendung lädt und im Prozess entscheidet. Leer bei einem Container, der keinen senden darf."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "Die PEP-Protokollversion, die das Paket des Remote-PEP spricht, wie bei seiner Registrierung oder seinem letzten Heartbeat angegeben (#2026). Dieser Dienst unterstützt Version 1 und lehnt jede andere ab, sodass eine veraltete Bibliothek sichtbar wird statt stillschweigend falsch zu sein. Leer bei einem PEP, der keine sendet (dem Container)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Ob der Stream der Anwendung, in die ein eingebetteter Remote-PEP eingebettet ist, das Ereignis pep-policies-changed übertragen kann, wie der PEP es zuletzt in einem Heartbeat gemeldet hat (#2026): none (der Host hat keinen Signal-Stream, daher fragt der PEP regelmäßig ab), requested, excluded (ssfEvents der Anwendung schließt es aus) oder down. Leer, bis es gemeldet wurde."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Was der Remote-PEP zuletzt von GET /xacml/pep/policies geladen hat (#2027): repository, jede aktivierte Richtlinie außer den zurückgehaltenen (die Abfrage des Containers), oder bound-application, die eines eingebetteten PEP im Modus local: die eigene Richtlinie seiner Anwendung oder die Wurzel des Bereichs und der Abschluss ihrer Referenzen. Bleibt bei einer erneuten Registrierung erhalten; ein Wechsel wird als xacml.pep.scope protokolliert. Leer, bis er geladen hat."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

@@ -26,9 +26,11 @@
 //      approval used for another tuple (0086), and revoked (0085), each
 //      answered as a plain denial.
 //
-// (d), with the reason: 0073's other case — a denial with no binding_token
-// — is refused by the request model's denial member first (WIRE: answered
-// not_requestable under the model's code).
+// (d), with the reason: a denial with neither binding_token nor
+// evaluation_id is the model's not_requestable (STS-AUTHZEN-0072), before
+// 0073. An evaluation_id this realm issued, with expires_at echoed, is a
+// submission (#1204). This job's 0073 is a binding_token this realm did
+// not issue.
 //
 // OWNED HERE (local: true): the AuthZEN API is ours. Posts an outside test
 // Root to the client truststore and removes it.
@@ -38,6 +40,7 @@ const assert = require("assert");
 const https = require("https");
 const K = require("./oauth_wire_kit.js").kit("sts_authzen_search_access");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 const log = K.log;
 const check = K.check;
@@ -147,7 +150,7 @@ function pep(method, path, payload) {
     const request = https.request({
       host: target.hostname, port: target.port || 443,
       path: target.pathname + target.search, method: method,
-      rejectUnauthorized: false, cert: pepCred.certPem,
+      ca: serviceTrust.trustedCa(), cert: pepCred.certPem,
       key: pepCred.keyPem,
       headers: data ? { "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(data) } : {}
@@ -274,7 +277,9 @@ async function search() {
               "a search", function () {
     return pep("POST", SEARCH, base);
   }, function (r) {
-    assert.ok(r.status >= 400, r.status + " " + r.text.slice(0, 300));
+    // 403 since #2208: AuthZEN 1.0 prescribes no status for a switched-off
+    // API, so rcbj's fallback.
+    assert.strictEqual(r.status, 403, r.status + " " + r.text.slice(0, 300));
   });
   await K.unset(realm, "authzen.searchEnabled");
   log.debug("Leaving search().");

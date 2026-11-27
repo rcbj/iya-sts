@@ -118,6 +118,17 @@ const EMPTIED_CODE = 'STS-ADMIN-0822';
  */
 const WITHDRAWN_CODE = 'STS-API-0125';
 
+// ---------------------------------------------------------------------------
+// THE READ PERMISSIONS (#2168, ASVS 5.0.0 10.2.3): a scope that reads what
+// broader ones read and write, authorized by any role that authorizes one of
+// them. The reports application signs in with `report:read` and asks a
+// second authorization for `report:use` or `report:admin` the first time it
+// writes; `/report-api` takes `report:read` on a read and never on a write.
+// ---------------------------------------------------------------------------
+const READ_PERMISSIONS: Record<string, string[]> = Object.freeze({
+  'report:read': ['report:use', 'report:admin']
+}) as Record<string, string[]>;
+
 interface RolePermissionsDeps {
   log: typeof log;
   realms: typeof realms;
@@ -140,6 +151,10 @@ interface Subject {
   kind?: string;
   name?: string;
   authenticated?: boolean;
+  // #1072: the sign-on session whose chosen dynamic roles are held, and
+  // the applications whose choice applies (`roles.js`).
+  sessionId?: string;
+  selectionApplications?: string[];
 }
 
 // What `heldRoles()` answers.
@@ -268,8 +283,10 @@ class RolePermissions {
     };
     // And since #1827 `xacml:pep-audit`, by REMOTE_PEPS: every built-in role
     // that authorizes a permission, not only the owner pair.
+    // And since #2168 a read permission, gated as what it reads for is.
     const native = roles.NATIVE_ROLES.map(permissionOf)
       .concat(roles.AUTHORIZING_BUILT_INS.map(permissionOf))
+      .concat(Object.keys(READ_PERMISSIONS))
       .indexOf(value) >= 0;
     if (native) {
       log.debug("Leaving RolePermissions.isGated(). Native.");
@@ -409,7 +426,12 @@ class RolePermissions {
       const everything = roles.rolesOf({ kind: kind, name: name,
                                          authenticated: who.authenticated !==
                                                         false,
-                                         ids: true });
+                                         ids: true,
+                                         // #1072: the session's choice.
+                                         sessionId: who.sessionId || '',
+                                         selectionApplications:
+                                           who.selectionApplications ||
+                                           undefined });
       const builtIn = everything.filter(function (one) {
         return roles.isBuiltIn(one);
       });
@@ -664,6 +686,21 @@ class RolePermissions {
     roles.NATIVE_ROLES.forEach(function (row) {
       out[row.name] = [row.permission];
     });
+    // A READ PERMISSION (#2168) is authorized by whatever authorizes one of
+    // the permissions it reads for — `report:read` by REPORT_USE and by
+    // REPORT_ADMIN, or by a configured role that authorizes either — so
+    // no role entry changes, and the role a reader holds is the role their
+    // reads are decided on.
+    Object.keys(out).forEach(function (role) {
+      Object.keys(READ_PERMISSIONS).forEach(function (reader) {
+        const covers = READ_PERMISSIONS[reader].some(function (one) {
+          return out[role].indexOf(one) >= 0;
+        });
+        if (covers && out[role].indexOf(reader) < 0) {
+          out[role].push(reader);
+        }
+      });
+    });
     // And the built-in roles that authorize one (#607's two owner roles,
     // #1827's REMOTE_PEPS), each authorizing its own. REMOTE_PEPS has two
     // rows since the PEP's token credential (`xacml:pep-audit`,
@@ -861,7 +898,28 @@ class RolePermissions {
       return unchanged;
     }
     const ctx = context || {};
-    const held = this.heldRoles(who);
+    // THE SESSION'S CHOSEN DYNAMIC ROLES (#1072), for the client the token
+    // is issued to and nothing else — the application its sign-in was for,
+    // as `admin_stats.js`'s resolvedRoleClaims() reads it: never the
+    // resource the token is for. `context.sessionId`, where the issuance
+    // has a session; the client_id itself where no entry registers it.
+    let clientApp = '';
+    if (ctx.sessionId && ctx.clientId) {
+      try {
+        const found = this.deps.applications.forClientId(String(ctx.clientId));
+        clientApp = found && found.identifier ? String(found.identifier)
+                                              : String(ctx.clientId);
+      } catch (e) {
+        log.debug("Caught in RolePermissions.narrowScope(): " +
+                  ((e && e.message) || e));
+        clientApp = String(ctx.clientId);
+      }
+    }
+    const held = this.heldRoles(ctx.sessionId
+      ? Object.assign({}, who, { sessionId: String(ctx.sessionId),
+                                 selectionApplications: clientApp
+                                   ? [clientApp] : [] })
+      : who);
     // AND WHAT THE CLIENT CONFERS ON THEM (#454): a person signing in
     // through a client holds the roles that client confers, on this token,
     // beside their own — the console's client conferring ADMIN_CONSOLE is

@@ -39,5 +39,11 @@
   "groupsFull": "{max} groups are chosen, the most one activity may name.",
   "startNote": "Starting it asks the people it reaches from their next sign-in; mailing starts at the job's next run. A person who has done the activity, whom the realm cannot ask, or whom a named post-login profile switched off excludes, is neither asked nor mailed.",
   "startButton": "Start",
-  "readOnly": "Starting, pausing and ending a post-login activity needs Admin Write."
+  "readOnly": "Starting, pausing and ending a post-login activity needs Admin Write.",
+  "activityName.passkey": "Post-quantum passkey",
+  "activityName.mail": "Post-quantum mail encryption",
+  "activityName.piv": "PIV certificate re-issue",
+  "activityWhat.passkey": "a person holding a classical passkey, or none, is asked to register an ML-DSA passkey, under the post-login profile’s passkey rows.",
+  "activityWhat.mail": "a person whose mail is encrypted to a classical OpenPGP key or S/MIME certificate is asked to register an ML-KEM one, under the profile’s mail-encryption block.",
+  "activityWhat.piv": "a person holding a PIV slot certificate this realm issued is asked to enrol a new one when a classical issuer signed it or it expires soon, under the profile’s PIV block."
 }

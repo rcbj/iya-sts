@@ -124,7 +124,8 @@ module.exports = {
     const named = trust.PURPOSES.map(function (one) {
       return one.setting;
     });
-    t.equal(trust.PURPOSES.length, 24, 'A. twenty-four use cases');
+    // Twenty-six since #1955 P2's piv-attestation and piv-card.
+    t.equal(trust.PURPOSES.length, 26, 'A. twenty-six use cases');
     settingKeys.forEach(function (one) {
       t.check(one.key === 'pki.paranoid' || named.indexOf(one.key) !== -1,
               'A. ' + one.key + ' is a row the table names', '');
@@ -134,16 +135,26 @@ module.exports = {
         return one.key === key;
       }), 'A. ' + key + ' exists in config.js', '');
     });
-    t.equal(settingKeys.length, 25, 'A. the master and one row per use case');
+    t.equal(settingKeys.length, 27, 'A. the master and one row per use case');
     const codes = trust.PURPOSES.map(function (one) {
       return one.code;
     });
-    t.equal(new Set(codes).size, 24, 'A. each use case has its own code');
+    t.equal(new Set(codes).size, 26, 'A. each use case has its own code');
 
     // B. THE DEFAULTS, AND `auto` PER MODE.
     t.log.info('B. the defaults');
     t.equal(defaults.pki.paranoid, 'auto', 'B. env/defaults.js: auto');
-    t.equal(config.value('pki.paranoid'), 'auto', 'B. config.value(): auto');
+    // AGAINST ITS SOURCE (#2155): every packaged appconfig file forces
+    // `pki.paranoid` off (rcbj, 2026-11-10; env/test.js says why), and in
+    // the runner's one process an earlier test may already have loaded the
+    // stack under one, which `delete process.env.CONFIG_FILE` above cannot
+    // undo. The default is the row's and env/defaults.js's; what
+    // `config.value()` reads is that default only where nothing layers it.
+    const paranoidSource = config.sourceOf('pki.paranoid');
+    t.equal(config.value('pki.paranoid'),
+            paranoidSource === 'appconfig' ? 'off' : 'auto',
+            'B. config.value(): auto, or the appconfig layer\'s off (' +
+            paranoidSource + ')');
     trust.PURPOSES.forEach(function (one) {
       const row = settingKeys.filter(function (s) {
         return s.key === one.setting;
@@ -158,8 +169,14 @@ module.exports = {
               'B. ' + one.setting + ' has its environment variable',
               row && row.env);
     });
-    t.equal(trust.inForce().inForce, false, 'B. auto is off in development');
-    await withSettings({ 'global.mode': 'product' }, async () => {
+    // What `auto` means is asked with `auto` in force, whatever an appconfig
+    // layer says (#2155).
+    await withSettings({ 'pki.paranoid': 'auto' }, async () => {
+      t.equal(trust.inForce().inForce, false,
+              'B. auto is off in development');
+    });
+    await withSettings({ 'global.mode': 'product', 'pki.paranoid': 'auto' },
+                       async () => {
       t.equal(trust.inForce().inForce, true, 'B. auto is on in product');
       await withSettings({ 'pki.paranoid': 'off' }, async () => {
         t.equal(trust.inForce().inForce, false,
@@ -347,5 +364,34 @@ module.exports = {
             !/\bm\.(exempt|skip|paranoid|override)/i.test(source),
             'H. and no member of what it is handed can exempt a certificate',
             '');
+    // THE ONE WAIVER (rcbj, 2026-11-24, #2046): `ignoreKeyUsage`, keyUsage
+    // alone, for an encryption recipient alone, passed by the WS-Trust
+    // response encryption and by nothing else.
+    t.check(/opts\.ignoreKeyUsage === true &&\s*verdict\.purpose === 'encryption-recipient'/
+              .test(source),
+            'H. the one waiver is keyUsage, for an encryption recipient only');
+    const passers = [];
+    const walk = function (dir) {
+      fs.readdirSync(dir, { withFileTypes: true }).forEach(function (one) {
+        const full = path.join(dir, one.name);
+        if (one.isDirectory()) {
+          if (!/^(node_modules|tests|docs|debugger|rust|models|\..*)$/
+                .test(one.name)) {
+            walk(full);
+          }
+        } else if (/\.ts$/.test(one.name) ||
+                   (/\.js$/.test(one.name) &&
+                    !fs.existsSync(full.replace(/\.js$/, '.ts')))) {
+          if (/ignoreKeyUsage/.test(fs.readFileSync(full, 'utf8'))) {
+            passers.push(path.relative(path.join(__dirname, '..'), full));
+          }
+        }
+      });
+    };
+    walk(path.join(__dirname, '..'));
+    t.check(JSON.stringify(passers.sort()) === JSON.stringify(
+              ['common/certificate_trust.ts', 'ws-trust/ws_encryption.ts']),
+            'H. and only the WS-Trust response encryption passes it',
+            JSON.stringify(passers));
   }
 };

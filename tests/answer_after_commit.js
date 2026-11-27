@@ -43,7 +43,10 @@
 //      rather than retried (2026-11-18); its key set published afterwards
 //      is not adopted, and its data-key row read back is not either; and
 //      the data keys of a realm this process never defined are not
-//      reported, and are dropped once their row is gone (run #569).
+//      reported, and are dropped once their row is gone (run #569); its
+//      signing-key set is kept for its arrival and never written back,
+//      and goes once its row, or its realm in the store's list, is gone,
+//      with every per-realm store's partition of it (#1938).
 //
 // IN A CHILD PROCESS, for `cluster_barrier_throughput.js`'s reason: the store
 // modules are one per process, and this file installs stubs on them.
@@ -403,6 +406,91 @@ async function keyRows(t, dir) {
             'while a realm whose row is still there keeps its keys for when ' +
             'it arrives', JSON.stringify({ early: earlyIds, never: neverIds,
                                           reported: reported }));
+
+    // G5 (#1938): the signing-key set of a realm this process never defined,
+    // offered on the key channel, is KEPT for the realm's arrival — the
+    // guard against a second set being generated for a realm on its way —
+    // and is never held or written from here. In run #569 the process that
+    // never defined `cbc-mwoe2uxmho123` adopted its set after every other
+    // process had removed the realm, and wrote it back.
+    realms.create({ id: 'aac-src', name: 'aac-src' });
+    realms.run(realms.get('aac-src'), function () {
+      return helpers.stsKeysFor();
+    });
+    await keystore.settleAll();
+    const blob = keystore.sharedBlobFor('aac-src');
+    const adopted = keystore.adoptShared('aac-unarrived', blob);
+    const pendingAfterAdopt = keystore.pendingWrites();
+    await keystore.settleAll();
+    t.check(!!blob && adopted === true &&
+            keystore.sharedBlobFor('aac-unarrived') === blob &&
+            !pendingAfterAdopt && !store.rows.has('aac-unarrived') &&
+            keystore.failing() === false,
+            'G: a key set of a realm not defined here is kept for its ' +
+            'arrival, and is neither held nor written back',
+            JSON.stringify({ blob: !!blob, adopted: adopted,
+                             pending: pendingAfterAdopt,
+                             written: store.rows.has('aac-unarrived') }));
+
+    // G6: and it goes once its row is gone from the store, while a set
+    // whose row the store still lists is kept. The store here does not
+    // arbitrate (no `mergeKeys`), which is the single-node stack of run #569:
+    // `applyStoredChange()` used to keep any set it held no material for.
+    keystore.adoptShared('aac-listed', blob);
+    store.rows.set('aac-listed', store.rows.get('aac-src'));
+    store.loadKey = function (key) {
+      log.debug("Entering loadKey().");
+      log.debug("Leaving loadKey().");
+      return Promise.resolve(store.rows.get(key) || null);
+    };
+    const listedAnswer = await keystore.applyStoredChange('aac-listed');
+    const goneAnswer = await keystore.applyStoredChange('aac-unarrived');
+    delete store.loadKey;
+    store.rows.delete('aac-listed');
+    t.check(keystore.sharedBlobFor('aac-listed') === blob &&
+            keystore.sharedBlobFor('aac-unarrived') === null &&
+            !!goneAnswer && goneAnswer.removed === true,
+            'G: a never-defined realm\'s key set is dropped once its row is ' +
+            'gone from the store, and kept while the row is listed',
+            JSON.stringify({ listed: listedAnswer, gone: goneAnswer }));
+
+    // G7: and once the store's REALM LIST no longer names such a realm,
+    // what this process held for it from before that read is forgotten —
+    // its key set (adopted after the row's delete, so no change of the row
+    // will come again) and every per-realm store's partition of it — while
+    // a realm the list names, a defined realm, and anything adopted after
+    // the read began are kept. Nothing is retired: the id takes rows again.
+    const partitions = realms.keyed(function () {
+      return { rows: 1 };
+    });
+    keystore.adoptShared('aac-vanished', blob);
+    partitions.of('aac-vanished');
+    partitions.of('aac-arriving');
+    keystore.adoptShared('aac-arriving', blob);
+    partitions.of('aac-src');
+    const heldBefore = realms.heldUnarrivedIds();
+    keystore.adoptShared('aac-late', blob);
+    const forgotten = realms.forgetUnarrived(['aac-arriving', 'aac-src'],
+                                             heldBefore);
+    const held = partitions.existing();
+    t.check(heldBefore.has('aac-vanished') && heldBefore.has('aac-arriving') &&
+            heldBefore.has('aac-listed') && !heldBefore.has('aac-src') &&
+            forgotten.indexOf('aac-vanished') >= 0 &&
+            forgotten.indexOf('aac-arriving') < 0 &&
+            keystore.sharedBlobFor('aac-vanished') === null &&
+            !held.has('aac-vanished') &&
+            keystore.sharedBlobFor('aac-arriving') === blob &&
+            held.has('aac-arriving') && held.has('aac-src') &&
+            keystore.sharedBlobFor('aac-late') === blob &&
+            realms.acceptsRows('aac-vanished') &&
+            !store.rows.has('aac-vanished') && !keystore.pendingWrites(),
+            'G: a realm never defined here that the store\'s realm list ' +
+            'no longer names loses its key set and its partitions; a realm ' +
+            'on its way, a defined realm and a set adopted after the read ' +
+            'keep theirs, and nothing is written or retired',
+            JSON.stringify({ heldBefore: Array.from(heldBefore),
+                             forgotten: forgotten,
+                             partitions: Array.from(held.keys()) }));
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;

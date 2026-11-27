@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "此用戶端可要求的 response_type 值——RFC 7591 section 2 的 response_types，來自註冊或由管理員寫入，每個值一種回應類型（\"code\"、\"code id_token\"）。授權端點在每種模式下都會拒絕其他任何值（unauthorized_client）；空清單不限制任何東西。用戶端實際要求過的是 oauthResponseTypeObserved。"
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "此用戶端可以請求的 response_mode 值 —— query、fragment、form_post 以及 JARM 的 jwt、query.jwt、fragment.jwt 與 form_post.jwt —— 由管理員寫入。授權端點拒絕其他任何值（unauthorized_client），未指名任何值的請求依其回應類型的預設模式衡量（code 為 query，其餘為 fragment），在每種模式下皆然；空清單除伺服器的 response_modes_supported 外不作任何限制。沒有 RFC 7591 成員承載它，因此註冊不會寫入它。"
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "在 RFC 9700 模式生效時（產品模式始終生效）此用戶端可以使用的、從授權端點簽發存取權杖的回應類型——token、code token、id_token token、code id_token token。僅當領域豁免 RFC 9700 第 2.1.2 節時生效（oauth2.allowImplicitTokenResponses，在 OAuth 2.1 或 FAPI 下從不生效）；此時未在此列出的類型會被拒絕（unauthorized_client）。預設為空，空表示無。在領域允許這些類型時由管理員或應用程式的擁有者寫入，或由 oauth2.dynamicRegistrationTokenResponseTypes 範圍內的動態註冊寫入。RFC 9700 第 2.1.2 節規定用戶端不應（SHOULD NOT）使用它們。"
@@ -576,8 +580,8 @@
     "text": "此應用程式「要求過」的範圍，隨其要求累積。是觀察所得，從不宣告：它不允許也不拒絕任何東西。應用程式可獲簽發的是 oauthAllowedScope。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "此用戶端可獲簽發的範圍——RFC 7591 第 2 節的 `scope`，「用戶端在請求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍對它的解讀各不相同。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、report:use 與 report:admin（/report-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite，以及一律包含的 ssf.read 與 ssf.manage）和偵錯工具權限——在兩種模式下都只簽發給列出它們的用戶端。對 Shared Signals 而言，寫入包含讀取：列出寫入範圍也會授權讀取範圍，只列出讀取範圍則不會授權寫入範圍。其背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值，會讓已簽發的權杖失效。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他所有範圍**，在產品模式下，只有在此列出時才會簽發——或者在沒有列出任何內容時，位於預設集合中才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下，任何範圍都會簽發。\n\n**指名某個應用程式或委派權限的範圍**保有自己的規則（受眾與 oauthDelegatedPermission），不需要列出。\n\n清單之外的範圍，在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 第 3.3 節），並在更新或權杖交換時被移除。有別於 oauthScope，後者只是用戶端所請求的內容。"
+    "en": "00c084c993d99663",
+    "text": "此用戶端可獲簽發的範圍——RFC 7591 第 2 節的 `scope`，「用戶端在請求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍對它的解讀各不相同。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、report:use 與 report:admin（/report-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite，以及一律包含的 ssf.read 與 ssf.manage）和偵錯工具權限——在兩種模式下都只簽發給列出它們的用戶端。對 Shared Signals 而言，寫入包含讀取：列出寫入範圍也會授權讀取範圍，只列出讀取範圍則不會授權寫入範圍。其背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值，會讓已簽發的權杖失效。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他所有範圍**，在產品模式下，只有在此列出時才會簽發——或者在沒有列出任何內容時，位於 oauth2.undeclaredClientScopes 所選的預設集合中才會簽發：自 1.2.0 起預設僅 openid（ASVS 5.0.0 10.4.11）；identity 再加上 profile、email、address 與 phone；legacy（升級後的儲存庫所保留的）還加上 offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下，任何範圍都會簽發。\n\n**指名某個應用程式或委派權限的範圍**保有自己的規則（受眾與 oauthDelegatedPermission），不需要列出。\n\n清單之外的範圍，在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 第 3.3 節），並在更新或權杖交換時被移除。有別於 oauthScope，後者只是用戶端所請求的內容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "AuthZEN 存取請求回呼（#1180）：此用戶端作為 AuthZEN PEP 可指定為存取請求 callback.endpoint 的 https URL——每個值一個，須完全相符。指定其他任何 URL 的請求都會被拒絕；本服務絕不會僅憑請求中的 URL 就向其發出回呼。由管理員設定，絕不由呼叫端設定。"
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "AUTHZEN 回呼重試（#1202）：一條已登記的回呼 URL，以及為它覆寫 authzen.callbackAttempts 和 authzen.callbackBackoffS 的嘗試次數與退避。值是該 URL，然後是 attempts=N（1 到 20）和 backoff=S（60 到 86400），二者可只寫其一或都寫。該 URL 也必須是一個 appAuthzenCallbackUri 值。缺省時，該 URL 使用領域的設定。由管理員設定，絕不由呼叫端設定。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "選取 WS-Trust 回應加密所用憑證元素的 XPath 運算式：一個 ds:X509Certificate，或 ValueType 以 #X509v3 結尾的 BinarySecurityToken。子集與元素對應相同。設定之後若什麼都不選中，或選中的元素不是這兩種之一，就沒有接收方，並且不會嘗試下一個來源。選中的憑證元素其文字不是憑證時，是一次已完成加密的故障，並且不會嘗試下一個來源。未設定時，接收方是請求的 WS-Security 簽章所點名的第一個簽章者憑證元素——該簽章的參照所指向的 BinarySecurityToken，或該簽章 KeyInfo 中的 ds:X509Certificate。指紋、Subject Key Identifier 或簽發者與序號不是憑證元素。"
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE 或 FALSE：要求 AppliesTo 為此應用程式的請求攜帶 WS-Security 訊息簽章，覆蓋 wstrust.signRequest。開啟時，沒有被接受簽章的請求為 FailedCheck，且 wstrustSignRequestElements 選取的每個元素都必須被該簽章涵蓋。開發模式一如既往地相信簽章，但仍會將對應與該簽章所參照的內容進行核對。"
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "WS-TRUST 請求中必須被簽章的元素，每個一條 XPath 1.0 運算式，採用 wstrustEncryptRequestElements 的子集。每個運算式必須至少選取一個元素，且它選取的每個元素都必須是請求中被接受的 WS-Security 簽章所參照的元素，或位於此類元素之內；否則該請求為 FailedCheck。為空時為 SOAP Body，簽章總是涵蓋它。僅在 wstrustSignRequest（或 wstrust.signRequest）開啟時讀取。"
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE 或 FALSE：以 WS-Security 訊息簽章為此應用程式的 WS-Trust 回應簽章，覆蓋 wstrust.signResponse。回應在其 wsse:Security 標頭中攜帶 wsu:Timestamp 與 ds:Signature，以此領域的 XML 簽章金鑰產生，並透過 BinarySecurityToken 參照其憑證；簽章涵蓋 Timestamp 以及 wstrustSignResponseElements 的元素。故障以未簽章形式傳送。開啟時，若無法產生簽章，該請求在兩種模式下都是故障。"
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "WS-TRUST 回應中其簽章在 wsu:Timestamp 之外所涵蓋的元素，每個一條 XPath 1.0 運算式，採用 wstrustEncryptResponseElements 的子集。為空時為 SOAP Body。沒有 wsu:Id 的元素會被賦予一個。不比對任何內容的運算式，或選取 wsse:Security 標頭本身的運算式，為故障。"
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "兩者都開啟時，此應用程式的 WS-Trust 回應簽章與加密的順序，覆蓋 wstrust.responseProtectionOrder：sign-then-encrypt（簽章的摘要針對明文，為 WS-SecurityPolicy 的預設）或 encrypt-then-sign（摘要針對密文）。wsse:Security 標頭依接收方處理它的順序寫入。"
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE 或 FALSE：同時加密此應用程式的 WS-Trust 回應的 ds:Signature（WS-SecurityPolicy 的 sp:EncryptSignature），覆蓋 wstrust.encryptSignature。僅在回應既簽章又加密且先簽章時讀取；簽章加密給回應的接收方。"
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE 或 FALSE：無論接收方憑證的 keyUsage 為何，都將此應用程式的 WS-Trust 回應加密給它，覆寫 wstrust.recipientIgnoresKeyUsage。領域的訊息簽章憑證只允許 digitalSignature，因此沒有此設定時，加密給請求簽章憑證的回應會被拒絕。只略過 keyUsage 檢查：在偏執 PKI 模式檢查之處，仍會檢查憑證的有效期、路徑與撤銷狀態。"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "發給此應用程式的 WS-TRUST 請求所加密到的憑證，PEM。設定後，發給此應用程式的請求以其私密金鑰而非領域的私密金鑰解密，而加密到領域金鑰的發給它的請求是 FailedCheck。公開：應用程式頁面和 GET /admin-api/applications 會提供它。"
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "當此 UMA 2.0 資源伺服器可透過以 client_credentials 取得的保護 API 權杖，註冊其「自身擁有」的資源時為 TRUE。缺少或 FALSE（預設值）表示 PAT 必須屬於某個人（授權碼流程），並由該人擁有其所註冊的內容。"
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE 或 FALSE：登入此應用程式時是否提供可動態選擇的角色（#1072），覆寫 roles.dynamicSelection。FALSE 不顯示「為此次登入選擇角色」核取方塊，不提供任何角色，此應用程式的權杖也不攜帶任何動態選擇的角色。"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn，以及標準的 owner 與 description。"
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "此原則為之產生的遠端 PEP 和路由，形式為 PEP 的名稱、一個斜線和路由的 id；原則由反向代理路由表單上路由的授權選擇（簡單或公開）或 generate-pep-route-policy 動作（#1760）產生。這樣的原則在儲存路由時重寫，隨路由重新命名，並隨路由移除；它永遠不是根原則。它可以在原則編輯器中編輯，而路由的簡單或公開選擇的下次儲存會重新寫入它——在路由上選擇現有原則即可保留手寫原則。"
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "將此政策作為其資格政策而擁有它的角色（依其在 ou=roles 中的名稱，#1072）：PDP 針對一個人單獨判定它，以說明登入時是否可以向此人提供該可動態選擇的角色。此類政策永遠不是根政策，永遠不會被根政策透過 PolicyIdReference 引用，也永遠不會傳送給遠端 PEP。"
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "已向此 Policy Decision Point 註冊的一個遠端 Policy Enforcement Point。「此列是紀錄而不是權限」——從未註冊的 PEP 仍可提取存放庫並執行強制。一列所換得的，是主控台上的一個位置，以及變更通知的位址。"
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "遠程 PEP 最近一次在心跳中報告的、關於其每個監聽器的情況（#1760），包括其環境的四個和已定義的監聽器：一個 JSON 文檔 { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }，以及到達時間。狀態是 listening、waiting、failed 和 off 之一，原因來自一個封閉集合，從不是操作系統的文本；證書是其所提供證書的主體、簽發者、序列號、subjectAltName、有效期和指紋。其他成員一律丟棄。不含它的心跳保留它，值為 null 的心跳清除它，注冊則刪除它。早於監聽器功能的 PEP 上沒有此項，控制台顯示為未報告。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "註冊的遠端 PEP 類型（#2026，#1206 的一部分）：container，即 xacml-pep 映像；或 embedded，即透過 iya-pep 套件位於驗證程式庫中的 PEP。未說明類型的註冊視為 container，因此較舊的 PEP 仍依原樣讀取。內嵌式 PEP 沒有反向代理、接聽程式或 AuthZEN 邊緣。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "內嵌式遠端 PEP 註冊時聲明其所內嵌的應用程式（#2026）。僅當它是該 PEP 項目所繫結的應用程式（stsPepApplication，由管理員設定）時才接受，因此它與繫結的不一致最多持續到 PEP 的下一次活動訊號，一旦不一致該活動訊號即遭拒絕。容器為空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "內嵌式遠端 PEP 的模式（#2026）：central，每個決策都向本服務的 AuthZEN 評估端點詢問；或 local，它擷取其應用程式的原則並在處理程序內決策。容器為空，且不得傳送。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "遠端 PEP 的套件所使用的 PEP 通訊協定版本，以其註冊或最近一次活動訊號所述為準（#2026）。本服務支援版本 1 並拒絕其他版本，因此落後的程式庫會被看見，而不是悄然出錯。未傳送版本的 PEP（容器）為空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "內嵌式遠端 PEP 所在應用程式的串流能否傳遞 pep-policies-changed 事件，以 PEP 最近一次活動訊號回報為準（#2026）：none（主機沒有訊號串流，因此 PEP 輪詢）、requested、excluded（應用程式的 ssfEvents 將其排除）或 down。回報之前為空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "遠端 PEP 最近一次從 GET /xacml/pep/policies 擷取的內容（#2027）：repository，即除保留原則外的所有已啟用原則（容器的擷取）；或 bound-application，即 local 模式內嵌式 PEP 的擷取：其應用程式自身的原則或領域的根原則，以及其參照閉包。重新註冊時保留；變更以 xacml.pep.scope 稽核。擷取之前為空。"
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

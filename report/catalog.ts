@@ -36,6 +36,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
+// The post-login activities there are (#2009 P4): a leaf that requires
+// nothing of this service (its header says why), so this module keeps
+// requiring nothing of it either and has no copy of the list to keep in step.
+import PostLoginKinds = require('../common/post_login_kinds');
 
 const log = bunyan.createLogger({ name: 'sts-report-catalog' });
 
@@ -162,6 +166,14 @@ interface PresetSpec {
 interface SourceSpec {
   id: string;
   bounded: boolean;
+  // A SOURCE FOR REPORT ADMINISTRATORS ONLY (#2126, ASVS 5.0.0 8.2.3):
+  // what the console keeps behind Admin Read — who did what, from where,
+  // and who holds which credential. A caller without REPORT_ADMIN may not
+  // define, run, preview or download a report over it. DATA, not a list in
+  // `rights.ts`: `rights.ts` reads it here, sends it to the PDP as
+  // `urn:sts:xacml:report-admin-source`, and the API publishes it so the
+  // page can disable what the caller may not use.
+  adminOnly?: boolean;
   // A DIRECTORY-BACKED SOURCE (rcbj, 2026-10-27: a filter on a field the
   // store cannot answer "will never work given the constraints"): a filter
   // on it has to name an indexed field — a leaf of an `and`, every arm of
@@ -224,6 +236,15 @@ function source(id: string, retention: string,
   return spec;
 }
 
+// Marks a source as one only a report administrator may query (#2126),
+// at its declaration, so the mark is read where the source is read.
+function adminOnly(spec: SourceSpec): SourceSpec {
+  log.debug("Entering adminOnly(). " + spec.id);
+  spec.adminOnly = true;
+  log.debug("Leaving adminOnly().");
+  return spec;
+}
+
 // THE POST-LOGIN PROGRESS SOURCE (#1110): `post_login.progress` read back,
 // one row per person and activity the realm has asked or mailed — the
 // post-quantum passkey migration's progress (#1096), and since #1111 what a
@@ -231,7 +252,12 @@ function source(id: string, retention: string,
 // directory, so it is neither anchored nor indexed: an unordered read stops
 // at its limit, and an ordered read or a count walks the rows a page at a
 // time under the usual time caps.
-const POST_LOGIN_ACTIVITIES = ['pqc-passkey-migration'];
+// THE ACTIVITY ENUMERATION IS THE ACTIVITIES' OWN TABLE (#2009 P4), so the
+// filter's dropdown offers every activity a row can name and a definition
+// saved with `pqc-passkey-migration` still validates. Until P4 this was a
+// copy, because `post_login_kinds.ts` required `helpers.js`; it is a leaf
+// now.
+const POST_LOGIN_ACTIVITIES = PostLoginKinds.ids();
 // NO ROLE ENUMERATION SINCE #1135: an activity asks for a passkey, not a
 // passkey in a role, and a row written since carries none. `role` stays
 // in the source, unenumerated, because a row written before keeps the
@@ -256,7 +282,12 @@ function postLoginProgressSource(): SourceSpec {
     [field('username', 'string', 'The directory uid of the person.'),
      field('activity', 'string',
        'The post-login activity: pqc-passkey-migration, a post-quantum ' +
-       '(ML-DSA) passkey where the person holds a classical one or none.',
+       '(ML-DSA) passkey where the person holds a classical one or none; ' +
+       'pqc-mail-encryption, a post-quantum (ML-KEM) OpenPGP key or S/MIME ' +
+       'certificate where mail to the person is encrypted to a classical ' +
+       'one; piv-reissue, a new PIV slot certificate where a classical ' +
+       'issuer signed the one held or it expires soon (#2009). Filter on it ' +
+       'to report one activity.',
        undefined, POST_LOGIN_ACTIVITIES),
      field('profile', 'string',
        'The post-login profile that reached the person when the row was ' +
@@ -308,6 +339,28 @@ function postLoginProgressSource(): SourceSpec {
                    select: ['progress'],
                    where: { op: 'eq', field: 'activity',
                             value: 'pqc-passkey-migration' },
+                   aggregate: 'count', groupBy: ['progress'],
+                   orderBy: [{ field: 'progress', dir: 'asc' }],
+                   limit: 100, format: 'json', mode: 'auto' } },
+     // ONE PRESET PER ACTIVITY (#2009 P4), each the first one's document
+     // with its own activity, so a reader starts from the activity they
+     // started. The first keeps its id and its passkey filter, so a
+     // definition made from it before P4 is what it was.
+     { id: 'progress-mail-encryption',
+       name: 'Progress of the mail-encryption migration',
+       document: { source: 'postLoginProgress',
+                   select: ['progress'],
+                   where: { op: 'eq', field: 'activity',
+                            value: 'pqc-mail-encryption' },
+                   aggregate: 'count', groupBy: ['progress'],
+                   orderBy: [{ field: 'progress', dir: 'asc' }],
+                   limit: 100, format: 'json', mode: 'auto' } },
+     { id: 'progress-piv-reissue',
+       name: 'Progress of the PIV re-issue',
+       document: { source: 'postLoginProgress',
+                   select: ['progress'],
+                   where: { op: 'eq', field: 'activity',
+                            value: 'piv-reissue' },
                    aggregate: 'count', groupBy: ['progress'],
                    orderBy: [{ field: 'progress', dir: 'asc' }],
                    limit: 100, format: 'json', mode: 'auto' } },
@@ -425,7 +478,7 @@ function passkeyHistorySource(): SourceSpec {
   // THE PREDEFINED QUERIES (#1109), in #1110's `presets` shape: each one
   // filter leaf on `scope`, one order on `day`, so the form draws it and
   // a save keeps it. Their longer descriptions are in
-  // `docs/v1.1.0/reporting.md`.
+  // `docs/v1.2.0/reporting.md`.
   const presets: PresetSpec[] = [{
     id: 'post-quantum-adoption-by-day',
     name: 'Post-quantum adoption by day',
@@ -558,7 +611,7 @@ function standardSources(): SourceSpec[] {
        field('policy', 'string',
          'default for a realm row; otherwise the named authentication ' +
          'policy the row\'s list comes from.')]),
-    source('auditEvents',
+    adminOnly(source('auditEvents',
       'The audit rings still held by the service\'s processes, newest ' +
       'first, each capped by audit.maxEvents (5000 unless an operator set ' +
       'another cap). Not a warehouse of sign-ins.',
@@ -566,8 +619,8 @@ function standardSources(): SourceSpec[] {
        field('category', 'string', 'The audit category.'),
        field('action', 'string', 'The audit action.'),
        field('outcome', 'string', 'The audit outcome.'),
-       field('actor', 'string', 'The account name on the audit row.')]),
-    source('authActivity',
+       field('actor', 'string', 'The account name on the audit row.')])),
+    adminOnly(source('authActivity',
       'Sign-in attempts still in the same audit ring as auditEvents, ' +
       'capped by audit.maxEvents. Not a warehouse of sign-ins. A session ' +
       'id, an address, a note and a presented credential are not fields.',
@@ -584,7 +637,7 @@ function standardSources(): SourceSpec[] {
        field('application', 'string',
          'detail.application, or detail.client_id when the row has ' +
          'no application.'),
-       field('protocol', 'string', 'The protocol on the audit row.')]),
+       field('protocol', 'string', 'The protocol on the audit row.')])),
     source('serviceMetrics',
       'Numeric leaves of a live service-counter snapshot. Not a time ' +
       'series. Route rows, token kinds and other lists are not leaves, ' +
@@ -610,7 +663,7 @@ function standardSources(): SourceSpec[] {
          'When the job finished, or null while it has not.'),
        field('byteSize', 'number',
          'The stored artifact size, or null before it exists.')]),
-    source('credentialHolders',
+    adminOnly(source('credentialHolders',
       'Who holds which authentication credential, as the directory is ' +
       'now: one row per person, per mechanism, per role (#1002). A ' +
       'passkey has no role (#1135) and its role is empty; an ' +
@@ -683,7 +736,7 @@ function standardSources(): SourceSpec[] {
          'When the person last completed a multi-factor sign-in.'),
        field('memberOf', 'string',
          'The names of the groups that list this person, joined.',
-         HOLDER_INDEXED.memberOf)], true),
+         HOLDER_INDEXED.memberOf)], true)),
     source('attributeSources',
       'The attribute-source register as it is now. Connection details ' +
       'and secrets are not fields. This source does not run SQL and ' +
@@ -829,7 +882,7 @@ function passkeyCeremonySource(): SourceSpec {
   });
   // THE PREDEFINED QUERIES (#1107), in #1110's `presets` shape: what an
   // operator moving a realm to ML-DSA passkeys asks first. Their longer
-  // descriptions are in `docs/v1.1.0/reporting.md`.
+  // descriptions are in `docs/v1.2.0/reporting.md`.
   const presets: PresetSpec[] = [{
     // Registrations that offered ML-DSA and did not complete, per client;
     // group by clientError instead to see how they failed.
@@ -953,6 +1006,22 @@ class Catalog {
     log.debug("Entering Catalog().");
     this.sources = sources ? sources.slice() : standardSources();
     log.debug("Leaving Catalog().");
+  }
+
+  /**
+   * Whether a source is for report administrators only (#2126): a caller
+   * without REPORT_ADMIN may not define, run, preview or download a
+   * report over it. False for a source the catalog does not have.
+   *
+   * @param sourceId - the source
+   * @returns true for an administrators' source
+   */
+  adminOnly(sourceId: string): boolean {
+    log.debug("Entering Catalog.adminOnly().");
+    const src = this.source(sourceId);
+    const only = !!src && src.adminOnly === true;
+    log.debug("Leaving Catalog.adminOnly(). " + only);
+    return only;
   }
 
   /**

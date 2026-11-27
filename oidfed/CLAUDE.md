@@ -42,7 +42,7 @@ Four of the eight shaped this directory:
 | `subordinate_events.ts` | #137. A subordinate's history, KEPT FOR GOOD: an `events` entry per subordinate, one JSON event per `stsOidfedEvent` value, merged by value across a cluster. The draft's six event types and four of this service's own (`reinstatement`, `constraints_update`, `trust_mark_issuance`, `trust_mark_revocation`). A realm of this service is keyed `realm:<id>` — see below. |
 | `extended_listing.ts` | #135. `/oidfed/extended-list`: every list filter, paging, `updated_after` / `updated_before` / `audit_timestamps` from the history, and `claims`. **An entry is its `id` alone unless `claims` asks for more**, because `subordinate_statement` is a signature on an anonymous endpoint. |
 | `entity_collection.ts` | #136. `/oidfed/collection`, the crawl behind it, the `oidfed.collection-crawl` job and the `oidfed.collections` cache. Its header argues the fetches. |
-| `oidfed_rp.ts` | #134, this service as a federated RP. An `oidc` relationship with `fedTrustAnchor` set has its OP resolved through its chain. It registers automatically under the realm's Entity Identifier, with a request object and `private_key_jwt` signed by the realm's ES256 protocol key, which the Entity Configuration's `openid_relying_party` metadata publishes by value. |
+| `oidfed_rp.ts` | #134, this service as a federated RP. An `oidc` relationship with `fedTrustAnchor` set has its OP resolved through its chain. It registers automatically under the realm's Entity Identifier, with a request object and `private_key_jwt` signed by the realm's ES256 protocol key, which the Entity Configuration's `openid_relying_party` metadata publishes by value. That metadata's `scope` is every word of the federated relationships' `fedScope`, once (#2169): it is the declaration the OP registers automatically, and this service's own OP in product issues a client that declares none `openid` alone (#1589). |
 
 **Where it loads** (`common/protocol_stack.ts`):
 
@@ -88,7 +88,7 @@ resolves anything.
   `helpers.makeFederationKey()`, which uses the curve and post-quantum recipes
   a signing unit's next key uses. Signing is `crypto.js`'s.
 - **Not a PKI leaf**, by nature. A federation trusts a key through the
-  statements above it (`docs/v1.1.0/pki.md`'s "every key pair is a leaf" has this
+  statements above it (`docs/v1.2.0/pki.md`'s "every key pair is a leaf" has this
   exception, with the BBS key and SPIFFE's JWT authority).
 
 **Row states:** `next` → `current` → `retired`.
@@ -121,6 +121,12 @@ subordinate history (#137) is recorded as before. `ssf/CLAUDE.md` argues the
 sibling URN.
 
 ## Resolution, and the fetches it makes
+
+**The anchors a resolution may end at are `Oidfed.anchors()`'s, and since
+#2150 that function reads the `oidfed-anchor` use case**: by default the
+registered anchors and the realm's own topology; a key set bound to
+`oidfed-anchor:<entity id>` adds an anchor, and pasted keys only.
+`common/CLAUDE.md`, *Named truststores*, has the rest.
 
 `trust_chain.ts`'s header is the argument for dialling URLs a caller named. It
 is also a row in the root `CLAUDE.md`'s non-goal index. The bounds:

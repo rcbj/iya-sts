@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "Pour toute personne détenant un rôle de console (Admin Read ou Admin Write) qui ne détient aucun second facteur. `offer` : l’étape qui en configure un lui est présentée, avec un bouton Ignorer, à chaque connexion. `always` : elle doit en configurer un avant d’être connectée — sauf l’administrateur intégré du domaine par défaut (admin.bootstrapUsername), à qui il n’est jamais que proposé, afin qu’un service ne se retrouve jamais sans personne capable de se connecter. `if-held` : comme tout le monde, selon le champ ci-dessus. PLUS FAIBLE QUE `always` : un administrateur protégé par un seul mot de passe est un administrateur que devient quiconque possède ce mot de passe."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Jeton matériel attesté exigé"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no` : aucune exigence au-delà des lignes de mécanismes. `always` : une session ne commence que si l'identifiant qui a achevé la connexion (une clé d'accès, une clé de sécurité, un certificat ou une carte à puce) se trouve sur un jeton matériel actif dont le registre a enregistré l'attestation, le même test que celui du mécanisme `attested-hardware` d'une application. Un mot de passe, une application d'authentification, un code envoyé par courriel, un portefeuille, un partenaire de fédération ou un ticket Kerberos seul est refusé. L'administrateur intégré du royaume par défaut (admin.bootstrapUsername) en est exempté, afin qu'un service ne reste jamais sans personne pour se connecter."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Mot de passe — comme premier facteur"
@@ -314,6 +322,22 @@
   "authn.FIELDS.totpSecondFactor.what": {
     "en": "ea01b0588ad42047",
     "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
+  },
+  "authn.FIELDS.hotpSecondFactor.label": {
+    "en": "8884fbb478be14f1",
+    "text": "Jeton de codes à usage unique (HOTP) — comme deuxième facteur"
+  },
+  "authn.FIELDS.hotpSecondFactor.what": {
+    "en": "33918856782d0904",
+    "text": "Un code à usage unique RFC 4226 issu d'un jeton à compteur (#1955) : l'emplacement OTP d'une YubiKey, ou le jeton d'un fournisseur qu'un administrateur a importé d'un fichier de graines PSKC. Jamais un premier facteur. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume avant que quiconque puisse inscrire, réclamer ou se voir attribuer un jeton HOTP, si bien qu'aucun jeton HOTP n'est utilisé à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE ni en réclamer ; une personne qui en détient déjà un est toujours invitée à le fournir, comme le détenteur d'une application d'authentification."
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.label": {
+    "en": "cba1439d0faf9aaf",
+    "text": "OTP YubiKey — comme deuxième facteur"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "Une YubiKey OTP (le mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume (avec yubiotp.offered) avant que quiconque puisse inscrire, réclamer ou se voir attribuer une YubiKey OTP, si bien qu'aucune n'est utilisée à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE, en attribuer ni en réclamer, même si yubiotp.offered est activé ; une personne qui en détient déjà une est toujours invitée à la fournir."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -360,16 +384,40 @@
     "text": "Certificat client TLS — comme premier facteur"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificat client TLS vérifié qui n'est pas une carte à puce : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion. Un certificat de carte à puce relève de la ligne de carte à puce, qui suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Certificat de carte à puce (PIV/CAC) — comme premier facteur"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificat de carte à puce (PIV/CAC), à GET /tls/sign-in ou par Continuer avec votre certificat : une clé PIV attestée, un certificat inscrit ici sous un profil d'emplacement PIV, une carte externe associée par son UUID de carte (piv.externalIssuers, stsPivCardUuid), ou un certificat relevant d'un profil certSignIn.profiles marqué smartCard. ABSENT, il suit stsAuthnCertificatePrimary, de sorte qu'une politique écrite avant lui garde son sens (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "Clé d'authentification de carte PIV (sans PIN) — comme premier facteur"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificat d'authentification de carte PIV (emplacement 9e), dont la clé fonctionne sans PIN. C'est aussi une carte à puce, donc la ligne de carte à puce doit aussi être activée. ABSENT, il suit le paramètre piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — comme premier facteur"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego avec un ticket Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego avec un ticket Kerberos, hors PKINIT avec une carte à puce, qui a sa propre ligne et suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT avec une carte à puce — comme premier facteur"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego avec un ticket Kerberos portant l'indicateur pkinit-smartcard de ce royaume : le KDC l'a émis par PKINIT depuis une carte à puce. ABSENT, il suit stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -475,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "Pour toute personne détenant un rôle de console (Admin Read ou Admin Write) qui ne détient aucun second facteur. `offer` : l’étape qui en configure un lui est présentée, avec un bouton Ignorer, à chaque connexion. `always` : elle doit en configurer un avant d’être connectée — sauf l’administrateur intégré du domaine par défaut (admin.bootstrapUsername), à qui il n’est jamais que proposé, afin qu’un service ne se retrouve jamais sans personne capable de se connecter. `if-held` : comme tout le monde, selon le champ ci-dessus. PLUS FAIBLE QUE `always` : un administrateur protégé par un seul mot de passe est un administrateur que devient quiconque possède ce mot de passe."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no` : aucune exigence au-delà des lignes de mécanismes. `always` : une session ne commence que si l'identifiant qui a achevé la connexion (une clé d'accès, une clé de sécurité, un certificat ou une carte à puce) se trouve sur un jeton matériel actif dont le registre a enregistré l'attestation, le même test que celui du mécanisme `attested-hardware` d'une application. Un mot de passe, une application d'authentification, un code envoyé par courriel, un portefeuille, un partenaire de fédération ou un ticket Kerberos seul est refusé. L'administrateur intégré du royaume par défaut (admin.bootstrapUsername) en est exempté, afin qu'un service ne reste jamais sans personne pour se connecter."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
@@ -494,6 +546,14 @@
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
     "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
+    "en": "33918856782d0904",
+    "text": "Un code à usage unique RFC 4226 issu d'un jeton à compteur (#1955) : l'emplacement OTP d'une YubiKey, ou le jeton d'un fournisseur qu'un administrateur a importé d'un fichier de graines PSKC. Jamais un premier facteur. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume avant que quiconque puisse inscrire, réclamer ou se voir attribuer un jeton HOTP, si bien qu'aucun jeton HOTP n'est utilisé à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE ni en réclamer ; une personne qui en détient déjà un est toujours invitée à le fournir, comme le détenteur d'une application d'authentification."
+  },
+  "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "Une YubiKey OTP (le mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume (avec yubiotp.offered) avant que quiconque puisse inscrire, réclamer ou se voir attribuer une YubiKey OTP, si bien qu'aucune n'est utilisée à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE, en attribuer ni en réclamer, même si yubiotp.offered est activé ; une personne qui en détient déjà une est toujours invitée à la fournir."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -516,12 +576,24 @@
     "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificat client TLS vérifié qui n'est pas une carte à puce : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion. Un certificat de carte à puce relève de la ligne de carte à puce, qui suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificat de carte à puce (PIV/CAC), à GET /tls/sign-in ou par Continuer avec votre certificat : une clé PIV attestée, un certificat inscrit ici sous un profil d'emplacement PIV, une carte externe associée par son UUID de carte (piv.externalIssuers, stsPivCardUuid), ou un certificat relevant d'un profil certSignIn.profiles marqué smartCard. ABSENT, il suit stsAuthnCertificatePrimary, de sorte qu'une politique écrite avant lui garde son sens (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificat d'authentification de carte PIV (emplacement 9e), dont la clé fonctionne sans PIN. C'est aussi une carte à puce, donc la ligne de carte à puce doit aussi être activée. ABSENT, il suit le paramètre piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego avec un ticket Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego avec un ticket Kerberos, hors PKINIT avec une carte à puce, qui a sa propre ligne et suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego avec un ticket Kerberos portant l'indicateur pkinit-smartcard de ce royaume : le KDC l'a émis par PKINIT depuis une carte à puce. ABSENT, il suit stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -564,12 +636,12 @@
     "text": "À quoi sert le profil, pour la personne suivante."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un mécanisme de premier facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, password-mfa, webauthn, spnego, wallet ou federation, une valeur chacun. Si aucun n’est indiqué, tous ceux qu’autorise le domaine le sont."
+    "en": "783db3d7da8c29c5",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un mécanisme de premier facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, password-mfa, webauthn, attested-hardware (une clé d'accès ou un certificat sur un jeton matériel prouvé par attestation, #1955), spnego, wallet ou federation, une valeur chacun. Si aucun n’est indiqué, tous ceux qu’autorise le domaine le sont."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "7c8e4d8b4cce7c08",
-    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un second facteur qu’autorise une connexion à laquelle elle s’applique — lorsque l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et que sa priorité est la plus faible de celles nommées — password, securityKey, totp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Si aucun n’est indiqué, la politique d’authentification du domaine reste telle quelle."
+    "en": "9302ca05693fd970",
+    "text": "Sur une politique d’authentification NOMMÉE (#1148, #1237) : un deuxième facteur qu’autorise une connexion à laquelle elle s’applique — là où l’application (appAuthnPolicy) ou l’un des groupes de la personne (stsAuthnPolicy) la nomme et où sa priorité est la plus basse nommée — password, securityKey, totp, hotp, yubico-otp, recoveryCode, emailCode, emailLink ou wallet, une valeur chacun. Sans valeur, la politique d’authentification du domaine reste inchangée."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -615,6 +687,22 @@
     "en": "ea01b0588ad42047",
     "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
   },
+  "authn.MECHANISMS.hotp.label": {
+    "en": "f0e2ca73efb6f1c5",
+    "text": "Jeton de codes à usage unique (HOTP)"
+  },
+  "authn.MECHANISMS.hotp.what": {
+    "en": "33918856782d0904",
+    "text": "Un code à usage unique RFC 4226 issu d'un jeton à compteur (#1955) : l'emplacement OTP d'une YubiKey, ou le jeton d'un fournisseur qu'un administrateur a importé d'un fichier de graines PSKC. Jamais un premier facteur. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume avant que quiconque puisse inscrire, réclamer ou se voir attribuer un jeton HOTP, si bien qu'aucun jeton HOTP n'est utilisé à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE ni en réclamer ; une personne qui en détient déjà un est toujours invitée à le fournir, comme le détenteur d'une application d'authentification."
+  },
+  "authn.MECHANISMS.yubico-otp.label": {
+    "en": "01f8772904333b7b",
+    "text": "OTP YubiKey"
+  },
+  "authn.MECHANISMS.yubico-otp.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "Une YubiKey OTP (le mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume (avec yubiotp.offered) avant que quiconque puisse inscrire, réclamer ou se voir attribuer une YubiKey OTP, si bien qu'aucune n'est utilisée à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE, en attribuer ni en réclamer, même si yubiotp.offered est activé ; une personne qui en détient déjà une est toujours invitée à la fournir."
+  },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
     "text": "Code de récupération"
@@ -644,16 +732,40 @@
     "text": "Certificat client TLS"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificat client TLS vérifié qui n'est pas une carte à puce : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion. Un certificat de carte à puce relève de la ligne de carte à puce, qui suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Certificat de carte à puce (PIV/CAC)"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificat de carte à puce (PIV/CAC), à GET /tls/sign-in ou par Continuer avec votre certificat : une clé PIV attestée, un certificat inscrit ici sous un profil d'emplacement PIV, une carte externe associée par son UUID de carte (piv.externalIssuers, stsPivCardUuid), ou un certificat relevant d'un profil certSignIn.profiles marqué smartCard. ABSENT, il suit stsAuthnCertificatePrimary, de sorte qu'une politique écrite avant lui garde son sens (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "Clé d'authentification de carte PIV (sans PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificat d'authentification de carte PIV (emplacement 9e), dont la clé fonctionne sans PIN. C'est aussi une carte à puce, donc la ligne de carte à puce doit aussi être activée. ABSENT, il suit le paramètre piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego avec un ticket Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego avec un ticket Kerberos, hors PKINIT avec une carte à puce, qui a sa propre ligne et suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT avec une carte à puce"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego avec un ticket Kerberos portant l'indicateur pkinit-smartcard de ce royaume : le KDC l'a émis par PKINIT depuis une carte à puce. ABSENT, il suit stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -714,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "un code ou un lien envoyé par e-mail est valable {{n}} secondes — INACTIF : ce domaine ne peut pas envoyer de courrier"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "toute connexion doit se terminer sur un identifiant détenu sur un jeton matériel attesté (sauf l'administrateur intégré)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",
@@ -1247,6 +1363,22 @@
     "en": "5098a9645fefe2ff",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "Protection des identifiants qu’un enregistrement demande à une clé de sécurité"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` PAR DÉFAUT : un enregistrement ne demande aucune protection des identifiants, et ses options sont ce qu’elles ont toujours été. Sinon, un enregistrement demande à l’authentificateur (CTAP 2.1 section 12.1, l’extension credProtect) de protéger le nouvel identifiant à ce niveau : `userVerificationOptional` (niveau 1, ce qu’a un identifiant sans l’extension), `userVerificationOptionalWithCredentialIDList` (niveau 2 : la clé ne révèle ni n’utilise l’identifiant sans vérification de l’utilisateur, à moins que la partie de confiance ne le nomme dans allowCredentials, de sorte que personne détenant la clé ne peut y trouver un identifiant découvrable) ou `userVerificationRequired` (niveau 3 : la clé n’utilise l’identifiant qu’après un code PIN ou une donnée biométrique). Le niveau que signale la clé est enregistré sur la clé d’accès. La plupart des clés d’accès de plateforme et synchronisées ne signalent rien. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "Refuser une clé qui n’applique pas cette protection"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, le navigateur est prié d’imposer la ligne ci-dessus (enforceCredentialProtectionPolicy), et un enregistrement dont l’authentificateur signale un niveau inférieur à celui que demande la ligne ci-dessus est refusé ; une clé qui ne signale rien est au niveau 1. Nécessite que la ligne ci-dessus soit réglée sur un niveau autre que none. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La classe de ce service pour une politique des clés d’accès : le comportement des clés d’accès dans ce domaine. L’entrée est nommée par le PROFIL (`cn=default`)."
@@ -1354,6 +1486,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` PAR DÉFAUT : un enregistrement ne demande aucune protection des identifiants, et ses options sont ce qu’elles ont toujours été. Sinon, un enregistrement demande à l’authentificateur (CTAP 2.1 section 12.1, l’extension credProtect) de protéger le nouvel identifiant à ce niveau : `userVerificationOptional` (niveau 1, ce qu’a un identifiant sans l’extension), `userVerificationOptionalWithCredentialIDList` (niveau 2 : la clé ne révèle ni n’utilise l’identifiant sans vérification de l’utilisateur, à moins que la partie de confiance ne le nomme dans allowCredentials, de sorte que personne détenant la clé ne peut y trouver un identifiant découvrable) ou `userVerificationRequired` (niveau 3 : la clé n’utilise l’identifiant qu’après un code PIN ou une donnée biométrique). Le niveau que signale la clé est enregistré sur la clé d’accès. La plupart des clés d’accès de plateforme et synchronisées ne signalent rien. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, le navigateur est prié d’imposer la ligne ci-dessus (enforceCredentialProtectionPolicy), et un enregistrement dont l’authentificateur signale un niveau inférieur à celui que demande la ligne ci-dessus est refusé ; une clé qui ne signale rien est au niveau 1. Nécessite que la ligne ci-dessus soit réglée sur un niveau autre que none. Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",
@@ -1847,6 +1987,134 @@
     "en": "4fa78beae92d0ce5",
     "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "Demander un chiffrement post-quantique du courrier"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et dont le courrier est chiffré pour une clé classique — une clé OpenPGP dont la clé de chiffrement n’est pas ML-KEM, ou un certificat S/MIME dont la clé n’est pas ML-KEM — est invitée après la connexion à en enregistrer une post-quantique (pqc-mail-encryption) : ce qui est chiffré aujourd’hui pour une clé classique sera lisible quand cette clé tombera. Un profil nommé où ceci est désactivé exclut de cette activité quiconque il sélectionne."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "Chiffrement du courrier : Ignorer le reporte de"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Combien de temps Ignorer reporte l’activité de chiffrement du courrier pour cette personne."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "Chiffrement du courrier : délai accordé"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à l’activité de chiffrement du courrier. Une fois écoulé, Ignorer disparaît et la connexion est retenue jusqu’à l’enregistrement d’une clé post-quantique. 0 signifie aucune échéance."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "Chiffrement du courrier : une personne dont le courrier n’est pas chiffré"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Une personne dont le courrier n’est pas chiffré du tout (stsMailEncryption none ou absent). leave : rien n’est demandé. invite : invitée à enregistrer une clé post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à la fin du délai accordé."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "Chiffrement du courrier : ce qui est proposé"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ce que propose l’étape. either : une clé OpenPGP et un certificat S/MIME, le type que la personne utilise aujourd’hui en premier. openpgp : une clé OpenPGP RFC 9980 seulement. smime : un certificat S/MIME ML-KEM seulement, téléversé (ce domaine n’en émet pas). Un type que le domaine ne peut pas accepter n’est jamais proposé, et personne n’est sollicité là où aucun ne le peut."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "Chiffrement du courrier : conserver la clé OpenPGP classique pendant"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Combien de jours la clé OpenPGP classique d’une personne reste sur son entrée et dans le Web Key Directory à côté de la clé post-quantique qui l’a remplacée, pour qu’un correspondant qui ne peut pas utiliser la nouvelle trouve encore l’ancienne. Le nouveau courrier de ce service va à la clé post-quantique dès maintenant. Ensuite, une tâche du planificateur retire la clé classique de l’entrée et du Web Key Directory. 0 la retire aussitôt."
+  },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Demander la réémission des certificats PIV"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et qui détient un certificat d'emplacement PIV émis par ce domaine, dans un emplacement que pivSlots nomme, est invitée après sa connexion à en inscrire un nouveau (piv-reissue) quand pivTrigger le dit dû : son émetteur l'a signé avec un algorithme classique alors que l'autorité émettrice EST de ce domaine est post-quantique, ou il expire dans pivRenewDays. L'ancien certificat est révoqué (superseded) quand le nouveau sert pour la première fois à une connexion. Un profil nommé où ceci est désactivé exclut de cette activité quiconque pour qui il est choisi."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "Réémission PIV : Ignorer la reporte de"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Combien de temps Ignorer reporte la réémission PIV pour cette personne."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "Réémission PIV : délai accordé"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à la réémission PIV. Une fois passé, Ignorer disparaît et la connexion est retenue jusqu'à ce que chaque emplacement dû ait un nouveau certificat. 0 signifie sans échéance."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "Réémission PIV : emplacements"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Les emplacements PIV dont l'activité examine les certificats, séparés par des virgules : 9a (authentification PIV), 9c (signature numérique), 9d (gestion des clés), 9e (authentification de carte). Un emplacement dont est.allowedProfiles omet le profil n'est jamais demandé."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "Réémission PIV : ce qui rend un certificat dû"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ce qui rend dû le certificat d'un emplacement. classical-issuer : son émetteur l'a signé avec un algorithme classique et l'autorité émettrice EST de ce domaine est post-quantique (un certificat réémis sous une autorité classique ne serait pas meilleur). expiring : il expire dans pivRenewDays. both : l'un ou l'autre."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "Réémission PIV : renouveler ce délai avant expiration"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Combien de jours avant son expiration un certificat d'emplacement PIV est dû pour renouvellement, quand pivTrigger vaut expiring ou both."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "Réémission PIV : ce qui est émis"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sur quoi porte le nouveau certificat. reissue : un nouveau certificat sur une clé que la carte régénère dans le même emplacement, signé par l'autorité émettrice EST du domaine. rekey : une clé post-quantique sur la carte, qu'aucune carte PIV ne sait produire aujourd'hui, si bien qu'un profil réglé sur rekey ne demande rien à personne."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "La classe de ce service pour un profil d’activité après connexion : ce qu’il est demandé à une personne de faire après s’être connectée. Nommée par le PROFIL (`cn=default`, ou un profil nommé que nomme une application ou un groupe)."
@@ -1882,6 +2150,58 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et dont le courrier est chiffré pour une clé classique — une clé OpenPGP dont la clé de chiffrement n’est pas ML-KEM, ou un certificat S/MIME dont la clé n’est pas ML-KEM — est invitée après la connexion à en enregistrer une post-quantique (pqc-mail-encryption) : ce qui est chiffré aujourd’hui pour une clé classique sera lisible quand cette clé tombera. Un profil nommé où ceci est désactivé exclut de cette activité quiconque il sélectionne."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Combien de temps Ignorer reporte l’activité de chiffrement du courrier pour cette personne."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à l’activité de chiffrement du courrier. Une fois écoulé, Ignorer disparaît et la connexion est retenue jusqu’à l’enregistrement d’une clé post-quantique. 0 signifie aucune échéance."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Une personne dont le courrier n’est pas chiffré du tout (stsMailEncryption none ou absent). leave : rien n’est demandé. invite : invitée à enregistrer une clé post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à la fin du délai accordé."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ce que propose l’étape. either : une clé OpenPGP et un certificat S/MIME, le type que la personne utilise aujourd’hui en premier. openpgp : une clé OpenPGP RFC 9980 seulement. smime : un certificat S/MIME ML-KEM seulement, téléversé (ce domaine n’en émet pas). Un type que le domaine ne peut pas accepter n’est jamais proposé, et personne n’est sollicité là où aucun ne le peut."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Combien de jours la clé OpenPGP classique d’une personne reste sur son entrée et dans le Web Key Directory à côté de la clé post-quantique qui l’a remplacée, pour qu’un correspondant qui ne peut pas utiliser la nouvelle trouve encore l’ancienne. Le nouveau courrier de ce service va à la clé post-quantique dès maintenant. Ensuite, une tâche du planificateur retire la clé classique de l’entrée et du Web Key Directory. 0 la retire aussitôt."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et qui détient un certificat d'emplacement PIV émis par ce domaine, dans un emplacement que pivSlots nomme, est invitée après sa connexion à en inscrire un nouveau (piv-reissue) quand pivTrigger le dit dû : son émetteur l'a signé avec un algorithme classique alors que l'autorité émettrice EST de ce domaine est post-quantique, ou il expire dans pivRenewDays. L'ancien certificat est révoqué (superseded) quand le nouveau sert pour la première fois à une connexion. Un profil nommé où ceci est désactivé exclut de cette activité quiconque pour qui il est choisi."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Combien de temps Ignorer reporte la réémission PIV pour cette personne."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à la réémission PIV. Une fois passé, Ignorer disparaît et la connexion est retenue jusqu'à ce que chaque emplacement dû ait un nouveau certificat. 0 signifie sans échéance."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Les emplacements PIV dont l'activité examine les certificats, séparés par des virgules : 9a (authentification PIV), 9c (signature numérique), 9d (gestion des clés), 9e (authentification de carte). Un emplacement dont est.allowedProfiles omet le profil n'est jamais demandé."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ce qui rend dû le certificat d'un emplacement. classical-issuer : son émetteur l'a signé avec un algorithme classique et l'autorité émettrice EST de ce domaine est post-quantique (un certificat réémis sous une autorité classique ne serait pas meilleur). expiring : il expire dans pivRenewDays. both : l'un ou l'autre."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Combien de jours avant son expiration un certificat d'emplacement PIV est dû pour renouvellement, quand pivTrigger vaut expiring ou both."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sur quoi porte le nouveau certificat. reissue : un nouveau certificat sur une clé que la carte régénère dans le même emplacement, signé par l'autorité émettrice EST du domaine. rekey : une clé post-quantique sur la carte, qu'aucune carte PIV ne sait produire aujourd'hui, si bien qu'un profil réglé sur rekey ne demande rien à personne."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -1954,6 +2274,66 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "une personne qui ne détient aucune clé d’accès est invitée à enregistrer une clé d’accès post-quantique, et peut l’ignorer jusqu’à la fin du délai de grâce"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "une personne dont le courrier est chiffré pour une clé OpenPGP ou un certificat S/MIME classique est invitée, après la connexion, à en enregistrer un post-quantique (ML-KEM)"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "elle peut enregistrer une clé OpenPGP ou téléverser un certificat S/MIME"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "elle peut enregistrer une clé OpenPGP"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "elle peut téléverser un certificat S/MIME"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "une personne dont le courrier n’est pas chiffré n’est pas sollicitée"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "une personne dont le courrier n’est pas chiffré est invitée à enregistrer une clé post-quantique, et peut toujours l’ignorer"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "une personne dont le courrier n’est pas chiffré est invitée à enregistrer une clé post-quantique, et peut l’ignorer jusqu’à la fin du délai de grâce"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "une clé OpenPGP classique qu’une clé post-quantique remplace est conservée à côté d’elle, et publiée avec elle, pendant {{days}} jour(s)"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "une clé OpenPGP classique qu’une clé post-quantique remplace est retirée aussitôt"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "une personne détenant un certificat d'emplacement PIV ({{slots}}) est invitée, après sa connexion, à en inscrire un nouveau"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "un certificat est dû quand une autorité classique l'a signé et que l'autorité émettrice EST de ce domaine est post-quantique"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "un certificat est dû {{days}} jour(s) avant son expiration"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "un certificat est dû quand une autorité classique l'a signé et que l'autorité émettrice EST de ce domaine est post-quantique, ou {{days}} jour(s) avant son expiration"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "une clé post-quantique sur la carte est demandée, qu'aucune carte PIV ne sait produire aujourd'hui, donc personne n'est sollicité"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "l'ancien certificat est révoqué quand le nouveau sert pour la première fois à se connecter"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

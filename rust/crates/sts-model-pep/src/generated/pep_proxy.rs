@@ -71,9 +71,8 @@ pub mod components {
     /// A refusal to a request whose Accept does not name text/html (one that does
     /// gets the error page). error follows the status: 400 invalid_request, 401
     /// unauthorized or invalid_token, 403 access_denied, 404 not_found, 405
-    /// method_not_allowed, 413 payload_too_large, 429 too_many_requests, 503
-    /// temporarily_unavailable, 504 gateway_timeout, any other bad_gateway.
-    /// Cache-Control: no-store.
+    /// method_not_allowed, 413 payload_too_large, 429 too_many_requests, 504
+    /// gateway_timeout, any other bad_gateway. Cache-Control: no-store.
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Refusal {

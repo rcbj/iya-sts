@@ -17,7 +17,7 @@
 // such a value still stored), and what product mode still does not check.
 //
 // **THE PROSE CITED THIS PAGE BEFORE IT EXISTED.** `mode.js`'s REQUIREMENTS
-// comment, `global.mode`'s description, `docs/v1.1.0/what-is-not-checked.md`
+// comment, `global.mode`'s description, `docs/v1.2.0/what-is-not-checked.md`
 // and the root CLAUDE.md all said `/admin/mode` and `GET /admin-api/mode`
 // published the report, and neither was registered — only tests read it. So the
 // page is the report, drawn, and adds no fact of its own: a sentence here that
@@ -117,6 +117,18 @@ class ModeAdmin {
           inForce: configDump.maskKeyed(row.key, row.inForce)
         });
       });
+    // TWO-PERSON APPROVAL (#2166): whether it is on and in force here, and
+    // the single-administrator rule's answer when it is not. A library the
+    // composition root builds at 18i-ii, before this page (18k); required
+    // here at the call, as a read that needs it only when it is drawn.
+    report.dualControl = require('../admin-core/dual_control').state();
+    // HOW THIS SERVICE PROVES ITSELF TO ITS DATABASE (#2254): a client
+    // certificate, a password, both, or no database at all. A setting of
+    // either mode, not a mode difference, beside two-person approval for
+    // that one's reason: whether it is so is a question this page answers.
+    // `persistence.js` is loaded first of all (4a), so this is a cache hit.
+    report.databaseCredential =
+      require('../persistence/persistence').databaseCredential();
     log.debug("Leaving ModeAdmin.modeView(). " + report.mode + ", " +
               report.requirements.length + " requirement(s).");
     return report;

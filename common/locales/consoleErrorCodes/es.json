@@ -32,5 +32,5 @@
   "th.whatFailed": "Qué falló",
   "th.clientSees": "Lo que ve el cliente",
   "codes.none": "No hay coincidencias.",
-  "note.table": "La tabla es <code>common/error_codes.js</code> y esta página no tiene controles: un código nunca se renumera ni se reutiliza, porque acaba en reglas de alerta y búsquedas guardadas, y una condición que deja de existir conserva su fila marcada como retirada. La misma tabla se publica como <code>docs/v1.1.0/error-codes.md</code>, generada a partir del código fuente, y esta lista está en <code>GET /admin-api/error-codes</code> con los mismos parámetros. La paginación es <code>?page=</code> y <code>?per=</code> (como máximo {max} filas por página)."
+  "note.table": "La tabla es <code>common/error_codes.js</code> y esta página no tiene controles: un código nunca se renumera ni se reutiliza, porque acaba en reglas de alerta y búsquedas guardadas, y una condición que deja de existir conserva su fila marcada como retirada. La misma tabla se publica como <code>docs/v1.2.0/error-codes.md</code>, generada a partir del código fuente, y esta lista está en <code>GET /admin-api/error-codes</code> con los mismos parámetros. La paginación es <code>?page=</code> y <code>?per=</code> (como máximo {max} filas por página)."
 }

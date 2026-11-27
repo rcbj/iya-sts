@@ -7,7 +7,8 @@
 # Source files this repository owns carry the two SPDX lines in their own
 # header, and tests/copyright_notices.js fails when one does not. This file
 # covers what cannot carry a comment (JSON, Markdown, XML, data, images),
-# the vendored copies that may not be edited here, and the third-party
+# the jobs that began as copies of the parent project's (MIT, edited here
+# since 2026-10-23, #430), and the third-party
 # material. When several annotations match a file, the LAST one wins, so the
 # catch-all is first and every third-party path comes after it.
 #
@@ -56,12 +57,30 @@ precedence = "closest"
 SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
 SPDX-License-Identifier = "BUSL-1.1"
 
-# The id-proto-debugger user guides under docs/v1.1.0/debugger/, copied from
-# that project's release 0.9.3 (#1717): the same owner, and that project's
+# The id-proto-debugger user guides under docs/v1.2.0/debugger/, copied from
+# that project's release 0.9.5 (#1717): the same owner, and that project's
 # MIT licence, like the protocol jobs above. The chapter's own two pages,
-# docs/v1.1.0/debugger/index.md and access.md, are this service's and stay
-# BUSL-1.1 under the catch-all. docs/v1.0.0/ (main at 7907e7e86) has no
-# debugger chapter, so nothing in it needs a line here.
+# docs/v1.2.0/debugger/index.md and access.md, are this service's and stay
+# BUSL-1.1 under the catch-all. The frozen docs/v1.1.0/debugger/ chapter is
+# the same text as 1.1.0 published it, when saml.md and wstrust.md were
+# still single pages; its index.md and access.md stay BUSL-1.1 too.
+# docs/v1.0.0/ (main at 7907e7e86) has no debugger chapter, so nothing in
+# it needs a line here.
+[[annotations]]
+path = [
+  "docs/v1.2.0/debugger/oauth2-oidc/**",
+  "docs/v1.2.0/debugger/what-is-a-protocol-debugger.md",
+  "docs/v1.2.0/debugger/saml/**",
+  "docs/v1.2.0/debugger/saml-assertion.md",
+  "docs/v1.2.0/debugger/saml-decoders.md",
+  "docs/v1.2.0/debugger/wstrust/**",
+  "docs/v1.2.0/debugger/jwt-tools.md",
+  "docs/v1.2.0/debugger/digital-signature.md",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "MIT"
+
 [[annotations]]
 path = [
   "docs/v1.1.0/debugger/oauth2-oidc/**",
@@ -95,6 +114,32 @@ SPDX-FileCopyrightText = [
 ]
 SPDX-License-Identifier = "Apache-2.0"
 
+# The embedded PEP corpus (#2024): every iya-pep-<lang> package's engine is
+# held to it, and those packages are MIT. Its cases are converted from the
+# OASIS suite above and stay Apache-2.0 (a modified form: the request
+# converted, the expected answer the reference engine's); its manifest, the
+# copy of xacml-pep/enforcement_cases.json and its README are MIT.
+# xacml/pep-corpus/README.md says so.
+[[annotations]]
+path = "xacml/pep-corpus/oasis/**"
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2014 AT&T Intellectual Property",
+  "AuthzForce contributors (OW2)",
+  "2026 Iya CyberSecurity Solutions, LLC",
+]
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "xacml/pep-corpus/MANIFEST.json",
+  "xacml/pep-corpus/enforcement.json",
+  "xacml/pep-corpus/README.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "MIT"
+
 # The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the
 # SPIFFE Broker API, copied verbatim. Apache-2.0.
 [[annotations]]
@@ -120,3 +165,19 @@ path = "admin-ui/natural_earth/**"
 precedence = "override"
 SPDX-FileCopyrightText = "Natural Earth (public domain)"
 SPDX-License-Identifier = "LicenseRef-NaturalEarth-PublicDomain"
+
+# The client lab's patch to PivApplet (#2056): a modified form of
+# arekinath/PivApplet's PivApplet.java, so under that file's Mozilla Public
+# License 2.0. It is applied to the pinned upstream source when the TEST image
+# tests/client-lab/ is built; PivApplet, SmartPGP (GPL-2.0), jcardsim
+# (Apache-2.0) and vsmartcard (GPL-3.0) are fetched or installed there and are
+# not in this repository. Never in the product image
+# (tests/client_lab_isolation.js).
+[[annotations]]
+path = "tests/client-lab/patches/pivapplet-yubikey-attestation.patch"
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2017 Alex Wilson <alex@cooperi.net>",
+  "2026 Iya CyberSecurity Solutions, LLC",
+]
+SPDX-License-Identifier = "MPL-2.0"

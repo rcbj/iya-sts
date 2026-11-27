@@ -106,6 +106,7 @@ const { Command, Option } = require("commander");
 const ldapjs = require("ldapjs");
 const bulk = require("./bulk_load.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -166,13 +167,20 @@ async function createTheBinder(where) {
     attributes: { cn: "Bulk Load LDAP Binder", givenName: "Bulk",
                   sn: "LDAP Binder", displayName: "Bulk Load LDAP Binder",
                   mail: BIND_USER + "@bulk-load.test" },
-    credential: "password", password: BIND_PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(BIND_PASSWORD)
   });
   assert.ok(made.status === 200 && made.body && made.body.ok &&
             made.body.passwordSet,
     "POST /admin-api/users/create should create the bind identity " +
     BIND_USER + " with a password; it answered " + made.status + " " +
     JSON.stringify(made.body).slice(0, 300));
+  // Temporary, then the binder's own (#2160, `own_password.js`): an LDAP
+  // bind refuses a temporary password.
+  await ownPassword.ownPassword(base, BIND_USER, BIND_PASSWORD,
+    function (who, value) {
+      return http.postJson(http.api("/users/set-password"),
+                           { user: who, password: value });
+    });
   BIND_DN = String(made.body.dn || ("uid=" + BIND_USER + "," + where.usersDn));
   log.debug("Leaving createTheBinder(). " + BIND_DN);
 }

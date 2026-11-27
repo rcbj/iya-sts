@@ -36,6 +36,9 @@ model OAuthClient {
   @fromAttr(#{attr: "oauthResponseType"})
   responseTypes?: string[];
 
+  @fromAttr(#{attr: "oauthResponseMode"})
+  `responseModes`?: string[];
+
   @fromAttr(#{attr: "oauthTokenEndpointAuthMethod"})
   tokenEndpointAuthMethods?: string[];
 
@@ -662,6 +665,9 @@ model Application {
   @fromAttr(#{attr: "appAuthzenCallbackUri"})
   `authzenCallbackUri`?: string[];
 
+  @fromAttr(#{attr: "appAuthzenCallbackConfig"})
+  `authzenCallbackConfig`?: string[];
+
   @fromAttr(#{attr: "appSoftwareStatementIssuer"})
   `softwareStatementIssuer`?: string;
 
@@ -770,6 +776,9 @@ model Application {
   @fromAttr(#{attr: "umaOwnsResources"})
   `umaOwnsResources`?: string;
 
+  @fromAttr(#{attr: "appDynamicRoleSelection"})
+  `appDynamicRoleSelection`?: string;
+
   @embedded
   `verifiableCredentialPartner`?: VerifiableCredentialPartner;
 
@@ -858,6 +867,27 @@ model WsTrustRelyingParty {
 
   @fromAttr(#{attr: "wstrustResponseRecipientXPath"})
   `responseRecipientXPath`?: string;
+
+  @fromAttr(#{attr: "wstrustSignRequest"})
+  `signRequest`?: string;
+
+  @fromAttr(#{attr: "wstrustSignRequestElements"})
+  `signRequestElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustSignResponse"})
+  `signResponse`?: string;
+
+  @fromAttr(#{attr: "wstrustSignResponseElements"})
+  `signResponseElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustResponseProtectionOrder"})
+  `responseProtectionOrder`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptSignature"})
+  `encryptSignature`?: string;
+
+  @fromAttr(#{attr: "wstrustRecipientIgnoresKeyUsage"})
+  `recipientIgnoresKeyUsage`?: string;
 
   @fromAttr(#{attr: "wstrustDecryptionCertificate"})
   `decryptionCertificate`?: string;

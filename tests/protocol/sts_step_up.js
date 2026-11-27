@@ -111,8 +111,12 @@
 // the client is given a global consent for the one scope it asks for.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -436,7 +440,7 @@ function toSignIn(r) {
 function atClient(r) {
   log.debug("Entering atClient().");
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(REDIRECT) !== 0) {
+      !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -641,14 +645,23 @@ function theGeneratorIsRight() {
   log.debug("Leaving theGeneratorIsRight().");
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so the person is made with a temporary one and chooses PASSWORD
+// at the sign-in screen (`own_password.js`; in development it is set).
 async function ensurePerson(who) {
   log.debug("Entering ensurePerson(). who=" + who);
   await ok(realmApi + "/users/create", {
-    username: who, invent: false, credential: "password", password: PASSWORD,
+    username: who, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Step-up " + who, givenName: "Step-up", sn: who,
                   displayName: "Step-up " + who,
                   mail: who + "@stepup.test" } },
     "created " + who + " in the realm with a password");
+  await ownPassword.ownPassword(base + R, who, PASSWORD,
+    function (one, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: one, password: value });
+    });
   log.debug("Leaving ensurePerson().");
 }
 
@@ -821,7 +834,7 @@ async function aOneFactorTokenIsChallenged() {
         "auth_time, and is addressed to the API", function () {
     assert.strictEqual(at.acr, "1", JSON.stringify(at));
     assert.strictEqual(typeof at.auth_time, "number", JSON.stringify(at));
-    assert.ok([].concat(at.aud).indexOf(API) >= 0, JSON.stringify(at.aud));
+    assert.ok(urls.holds(at.aud, API), JSON.stringify(at.aud));
   });
 
   r = await stepUpResource(tokens.access_token);

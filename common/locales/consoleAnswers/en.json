@@ -122,5 +122,15 @@
   "pepCredential.urn": "Names",
   "pepCredential.env": "Start the PEP with this environment. The private key never left the machine that made the request; this service has none to give.",
   "pepCredential.chain": "The certificate and its chain through the service Root. Public: the PEP does not need it to authenticate, and it is on the entry&rsquo;s key list.",
-  "pepCredential.download": "Download the certificate"
+  "pepCredential.download": "Download the certificate",
+  "once.pivCertificate": "PIV certificate",
+  "once.pivKey": "Escrowed PIV key",
+  "piv.keyWarn": "This is the person's private decryption key. It is shown once, and its recovery is on the audit log. Hand it over as you would the card.",
+  "piv.privateKey": "Private key",
+  "piv.certificate": "Certificate",
+  "piv.import": "Write it to the YubiKey slot with: ykman piv certificates import SLOT cert.pem",
+  "once.sshCertificate": "SSH user certificate",
+  "ssh.certificate": "Certificate",
+  "ssh.pqc": "ML-DSA certificate",
+  "ssh.install": "Save it beside the private key, under the key file's name with -cert.pub on the end, and ssh presents it with the key."
 }

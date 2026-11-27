@@ -104,8 +104,8 @@
     "text": "يُصدر أي scope يطلبه العميل، مهما سرد `oauthAllowedScope` الخاص به. في كلا الوضعين لا تُصدر admin:read وadmin:write وscope الخاصة بـ SCIM وShared Signals وإذن أداة التصحيح إلا لعميل يسردها `oauthAllowedScope` الخاص به."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "يُرفض scope الخارج عن `oauthAllowedScope` الخاص بالعميل بـ invalid_scope عند نقاط نهاية التفويض والتفويض المدفوع والرمز (STS-OAUTH-0578) ويُنزَع من تحديث أو تبادل. يحصل العميل الذي لا يسرد شيئًا على الافتراضي الموثَّق: openid وprofile وemail وaddress وphone وoffline_access وscope الخاصة بـ OpenID4VCI لنطاق الثقة هذا. يحتفظ scope الذي يسمّي تطبيقًا أو إذنًا مفوَّضًا بقواعده الخاصة."
+    "en": "dcdd1cbadd143bd7",
+    "text": "يُرفض scope الخارج عن `oauthAllowedScope` الخاص بالعميل بـ invalid_scope عند نقاط نهاية التفويض والتفويض المدفوع والرمز (STS-OAUTH-0578) ويُنزَع من تحديث أو تبادل. يحصل العميل الذي لا يسرد شيئًا على ما يحدده oauth2.undeclaredClientScopes: openid وحده افتراضيًا (ASVS 5.0.0 10.4.11)؛ و identity يضيف profile وemail وaddress وphone؛ و legacy، وهو ما يحتفظ به مخزن تمت ترقيته، يضيف أيضًا offline_access وscope الخاصة بـ OpenID4VCI لنطاق الثقة هذا. يحتفظ scope الذي يسمّي تطبيقًا أو إذنًا مفوَّضًا بقواعده الخاصة."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",
@@ -118,6 +118,18 @@
   "mode.requirements.declared-protocols.product": {
     "en": "01bf0ea288cde1c4",
     "text": "ترفض قاعدة protocol-not-declared في سياسة الإصدار إصدارًا عبر عائلة بروتوكول لم يُعلَن التطبيق لها (STS-XACML-0084): ID Token لتطبيق أُعلن لـ OAuth 2.0 وحده، وتأكيد SAML لتطبيق أُعلن لـ OpenID Connect. لا يُرفض تطبيق لم يُعلَن لأي شيء."
+  },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "يُقيَّد JSON Schema لنوع الوصول بمجموعة جزئية، وكل نمط من أنماطه بحدّ"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "التعريف المكتوب عبر وحدة التحكم أو واجهة برمجة الإدارة يُبقي مخططه ضمن الكلمات المفتاحية التي يجوز لمخطط الحدود استخدامها، وكل نمط ضمن الحد المفروض على التعبير النمطي؛ ويُرفض ما عدا ذلك (STS-REG-0374). والتعريف المحفوظ قبل تلك القاعدة لا يزال يُستخدم كما حُفظ، ويُبلغ هذا الصف عن ASVS 5.0.0 1.3.12 بأنه غير مستوفى له."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "الأمر نفسه."
   },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
@@ -344,8 +356,8 @@
     "text": "تحترم إنهاءات دفع GNAP وتسليمات دفع SSF والقنوات الخلفية للاتحاد وتنبيهات PEP في XACML إعدادات …SkipTlsVerification الخاصة بها (التحقق متوقف، مع تحذير في كل طلب) وإعدادات …AllowHttp الخاصة بها (http عادي إلى أي مضيف). يُحترَم أيضًا spiffe.k8sSkipKubeletVerification الخاص بـ SPIRE."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "يُتجاهَل كل إعداد …SkipTlsVerification، وكذلك spiffe.k8sSkipKubeletVerification — يُسجَّل مرة واحدة مع رمزه — ويُرفض عند الكتابة عبر /admin و/admin-api (STS-CORE-0103)؛ ويُوصل إلى CA خاص عبر …CaFile الخاص بالعائلة مع التحقق مفعّلًا. يُرفض http العادي لـ SSF والاتحاد وXACML مهما قال …AllowHttp، ولا يُسمح به لإنهاء دفع GNAP إلا إلى عنوان loopback (RFC 9635 القسم 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "يُتجاهَل كل إعداد …SkipTlsVerification، وكذلك spiffe.k8sSkipKubeletVerification — يُسجَّل مرة واحدة مع رمزه — ويُرفض عند الكتابة عبر /admin و/admin-api (STS-CORE-0103)؛ ويُوصل إلى CA خاص عبر …CaFile الخاص بالعائلة مع التحقق مفعّلًا. يُرفض http العادي لـ SSF والاتحاد وXACML مهما قال …AllowHttp، ولا يُسمح به لإنهاء دفع GNAP إلا إلى عنوان loopback (RFC 9635 القسم 2.5.2.1) — وهو ما ترفضه قواعد العناوين الصادرة، فلا يُسلَّم أي دفع عبر http العادي (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",
@@ -551,6 +563,30 @@
     "en": "9dc455e8deb093a6",
     "text": "تستثني سجلات الطلب بيانات الاعتماد والمتون في كل مستوى، ويُسجَّل الرمز الموقَّع أو التأكيد بحجمه وتجزئته فقط، وتوقف كلمة مرور قاعدة البيانات الافتراضية الخدمة ما لم يكن persistence.allowDefaultDatabasePassword مفعّلًا."
   },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "يجب أن يكون ملف بذور الرموز من المورّد مشفّرًا"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "يُستورد ملف بذور PSKC الذي أسرار رموزه نص صريح كما يُستورد الملف المشفّر."
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "يُرفض ملف بذور PSKC الذي أسرار رموزه نص صريح ما لم يكن pskc.allowPlaintextImport مفعّلًا؛ ويُفتح الملف المشفّر بالمفتاح أو كلمة المرور المعطاة مع الرفع، والتي لا تُخزَّن أبدًا."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "يجب ألا يكون ملف بذور OTP لـ YubiKey قائمة بمفاتيح AES"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "يُستورد ملف CSV من الرقم التسلسلي والهوية العامة والهوية الخاصة ومفتاح AES مثل أي ملف مخزون آخر."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "يُرفض ملف CSV ذلك ما لم يكن yubiotp.allowPlaintextImport مفعّلًا. تُختم المفاتيح فور قبول الملف، ولا يُحتفظ بالملف نفسه."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "يسأل تسجيل الدخول الموحَّد قبل أن يسجّل دخول شخص إلى تطبيق"
@@ -562,6 +598,18 @@
   "mode.requirements.sso-consent.product": {
     "en": "0a4ee080bb81a76f",
     "text": "يُسأل الشخص مرة واحدة لكل تطبيق قبل أن يسجّل SAML 2.0 أو SAML 1.1 أو WS-Federation دخوله إليه، ويُحتفَظ بالجواب. يوقف saml2.ssoConsent وsaml11.ssoConsent وwsfed.ssoConsent ذلك لكل بروتوكول، وتتجاوزها قيمة التطبيق الخاصة."
+  },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "لا يُعرض البناء الدقيق إلا للمسؤولين"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "يحمل تذييل كل صفحة، وواجهات تسجيل الدخول والبوابة والتقارير ومستندات OpenAPI الخاصة بها، الإصدارَ ورقم البناء ووقت البناء والـ commit، ويذكر User-Agent كل طلب ترسله هذه الخدمة الإصدارَ."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "لا يحمل أيٌّ منها البناء: لا سطر إصدار في التذييل، ويذكر مستند OpenAPI إصدار الواجهة نفسها، ويكون User-Agent اسم المنتج وحده. ما زالت وحدة التحكم وواجهة الإدارة تُظهران البناء. ضبط security.publishBuildInfo على on يُظهره من جديد."
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
@@ -586,6 +634,18 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "أضف وجهة لتصدير التدقيق، حتى تكون نسخة من السجل بعيدة عن متناول اختراق هنا. إلى أن توجد واحدة تسجّل الخدمة تحذيرًا لنطاق الثقة ذلك."
+  },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "لا يمكن تغيير سجل التدقيق عبر بيانات اعتماد قاعدة البيانات الخاصة بالخدمة نفسها"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "حيث تبقى الحالة المُنشأة محفوظة (عمّال الطلبات أو عدة عُقد، أو keys.source=persisted) يُكتب السجل كما في وضع المنتج. وإلا فهو في الذاكرة ويزول مع العملية."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "كل حدث صف واحد مختوم في sts_audit، حيث يجوز لدور قاعدة بيانات الخدمة إضافة الصفوف وقراءتها ولا شيء غير ذلك؛ ولا تغادر الصفوف القديمة إلا عبر دالة الاحتفاظ التي يملكها مالك الجدول، والتي تُبقي 1000 صف على الأقل في كل نطاق ثقة. وحيث يستطيع الدور تغيير الجدول — إذ يملكه أو يحمل UPDATE أو DELETE أو TRUNCATE عليه — يُبلَّغ بأن هذا غير مستوفى (STS-AUDIT-0019) وتستمر الخدمة في العمل."
   },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
@@ -620,8 +680,8 @@
     "text": "تُكتب كلمة المرور المولَّدة في سجل الخدمة."
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "تُكتب في ملف لا تستطيع قراءته إلا هذه الخدمة، ويقول السجل أين، ما لم يكن admin.logBootstrapPassword مفعّلًا."
+    "en": "f6a1cd8269e19c3e",
+    "text": "تُكتب في ملف لا تستطيع قراءته إلا هذه الخدمة، ويقول السجل أين، ما لم يكن admin.logBootstrapPassword مفعّلًا. يضيف ملف نطاق الثقة إلى ذلك الاسم شرطة ومعرّف النطاق. تحذف عملية بدء لاحقة ملفاً ما إن تتوقف كلمة المرور التي فيه عن فتح حسابها."
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",
@@ -646,6 +706,18 @@
   "mode.requirements.jwe-cbc.product": {
     "en": "b8bdc8b82bb08a9e",
     "text": "لا يُعرَض ولا يُقبل إلا AES-GCM، ويُستخدم حيث لا يسمّي العميل enc، ما لم يكن crypto.allowCbcJwe مفعّلًا."
+  },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "بريد S/MIME تشفير مصادَق عليه"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "البريد المشفّر إلى شهادة S/MIME هو AuthEnvelopedData تحت AES-256-GCM، ما لم تكن قيمة mail.smimeContentEncryption هي aes256-cbc، فحينها يُرسل EnvelopedData تحت AES-256-CBC بلا حماية للسلامة. لا يُبلَّغ عن شيء في الحالتين."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "الأمر نفسه، وما دامت قيمة mail.smimeContentEncryption هي aes256-cbc يبلّغ هذا الصف بأن ASVS 5.0.0 11.3.3 غير مستوفى."
   },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
@@ -1234,6 +1306,30 @@
   "mode.requirements.paranoid-pki.product": {
     "en": "1ddc02b9b0701d2a",
     "text": "مفعّل (pki.paranoid=auto): يُخضع common/certificate_trust.ts كل شهادة — عند مصافحة TLS في أي من الاتجاهين، وتحت توقيع، وكمتلقٍ للتشفير، وفي إثبات — لمسار يصل إلى مرساة أُبلغت بها هذه الخدمة (مخزن ثقة العميل أو الموقّع، أو CA النطاق، أو إعداد العائلة الخاص)، وللصلاحية في الوقت الحالي، وللإبطال، ولـ basicConstraints وkeyUsage وextendedKeyUsage التي تطلبها حالة الاستخدام؛ والفحص الذي لم تُجرِه حالة الاستخدام قط رفض. ويعيد صف واحد من pki.paranoid<UseCase> لكل حالة استخدام سلوكها السابق عند off، ويُرسم بالأحمر في /admin/pki/trust (STS-PKI-0239)."
+  },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "يحتاج اعتماد الشخص لواجهة الإدارة (وحدة التحكم، نطاق admin:*) إلى جهاز مسجّل ومتوافق"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "متوقف (devices.requireCompliantDeviceForAdmin=auto): يسجّل المسؤول الدخول إلى وحدة التحكم من أي متصفح، كما من قبل. اضبطه على on لتجربة القاعدة هنا."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "مفعّل (devices.requireCompliantDeviceForAdmin=auto): ترفض قاعدة device-required-admin في سياسة الإصدار، عند نقطة نهاية الرموز، كل رمز لوحدة التحكم وكل رمز admin:* لشخص لم يأتِ من جهاز مسجّل ومتوافق خاص به (STS-DEVICE-0054). تُفعَّل لكل نطاق ثقة عند أول مرة يُمنح فيها مسؤول وحدة التحكم رمزًا من جهاز متوافق، وحتى ذلك الحين يُقبل كل مسؤول، فلا يُقفل أبدًا تثبيت لا يملك جهازًا متوافقًا؛ وبعد تفعيلها تبقى مفعّلة، والبرنامج (اعتماد الإدارة الخاص بالنشر) هو طريق العودة. يبيّن الدليل > الأجهزة ما إذا كان نطاق الثقة هذا مفعّلًا."
+  },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "كل مستمع TLS يرفق استجابة OCSP للشهادة التي يقدمها"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "معطّل (tls.ocspStapling=auto): العميل الذي يسأل عن حالة الشهادة لا يتلقى شيئًا، كما كان من قبل، ويسأل بنفسه المستجيب المذكور في الشهادة إن كان يتحقق أصلًا. اضبط tls.ocspStapling=on للإرفاق هنا."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "مفعّل (tls.ocspStapling=auto): المنفذ الرئيسي وLDAPS ومصحح الأخطاء وكل مستمع مخصص يرفقون الإجابة التي يعطيها مستجيب OCSP الخاص بهذه الخدمة لشهادتهم، تُنشأ في العملية التي تمسك المقبس وتُجدَّد قبل nextUpdate الخاص بها. لا تُرفق شهادة صادرة عن جهة خارجية، والاستجابة التي يتعذر إنشاؤها تترك المصافحة بدونها (STS-TLS-0079)، ولا تُفشلها أبدًا."
   },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",

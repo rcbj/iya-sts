@@ -93,5 +93,11 @@
   "mail.link": "邮件",
   "mail.noneAfter": "），因此{what}会显示给您，由您转交。",
   "mail.box": "将{what}发送到其条目上的邮件地址，不要显示给我",
-  "grid.required": " &middot; 必填"
+  "grid.required": " &middot; 必填",
+  "create.requiredFields": "必填：{list}。每项都以红色框出并标有 *；其他字段均为可选。",
+  "create.nothingRequired": "此表单没有必填项。",
+  "create.requiredWhen": " &middot; 当 {field} 为 {values} 时必填",
+  "create.requiredWhenFilled": " &middot; 当填写了 {field} 时必填",
+  "create.yes": "是",
+  "create.no": "否"
 }

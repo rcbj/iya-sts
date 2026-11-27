@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "適用於持有主控台角色（Admin Read 或 Admin Write）但未持有第二因素的任何人。`offer`：每次登入時都會向他們顯示設定第二因素的步驟，並附「略過」按鈕。`always`：他們必須先設定一個才能登入——但預設領域的內建管理員（admin.bootstrapUsername）除外，只會向其提供，因此服務永遠不會落得無人能登入。`if-held`：與其他人相同，依上方欄位決定。比 `always` 弱：只憑密碼的管理員，就是任何持有該密碼者都能當的管理員。"
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "要求經過證明的硬體權杖"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`：除機制列外沒有其他要求。`always`：只有當完成登入的憑證（通行金鑰、安全金鑰、憑證或智慧卡）位於登記冊記錄了其證明的有效硬體權杖上時，才會開始工作階段，這與應用程式的 `attested-hardware` 機制所做的檢查相同。僅憑密碼、驗證器應用程式、電子郵件代碼、錢包、聯合夥伴或 Kerberos 票證將被拒絕。預設領域的內建管理員（admin.bootstrapUsername）不受此限，以免服務無人能夠登入。"
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "密碼——作為第一因素"
@@ -314,6 +322,22 @@
   "authn.FIELDS.totpSecondFactor.what": {
     "en": "ea01b0588ad42047",
     "text": "RFC 6238 一次性代碼。絕不作為第一因素：本服務持有與應用程式相同的共用秘密。在此關閉時，沒有人可以「註冊」新的；已持有者仍會被要求提供，因為一個把所有已註冊帳戶降為只憑密碼的關閉開關，做的事會與其所述不符（此列取代了 totp.enabled，並沿用其約定）。"
+  },
+  "authn.FIELDS.hotpSecondFactor.label": {
+    "en": "8884fbb478be14f1",
+    "text": "一次性驗證碼權杖（HOTP）——作為第二因素"
+  },
+  "authn.FIELDS.hotpSecondFactor.what": {
+    "en": "33918856782d0904",
+    "text": "來自以計數器為基礎之權杖的 RFC 4226 一次性代碼（#1955）：YubiKey 的 OTP 插槽，或管理員從 PSKC 種子檔匯入的供應商權杖。絕不作為第一因素。預設關閉，必須為本領域開啟後，任何人才能註冊、認領或被指派 HOTP 權杖，因此在此之前登入時不會使用任何 HOTP 權杖。在此關閉時，任何人都不能註冊或認領；已持有者仍會被要求提供，與驗證器應用程式的持有者相同。"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.label": {
+    "en": "cba1439d0faf9aaf",
+    "text": "YubiKey OTP — 作為第二因素"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密碼，#1955）。絕不作為第一因素：本服務持有 AES 金鑰。預設關閉，必須為本領域開啟（並開啟 yubiotp.offered）後，任何人才能註冊、認領或被指派 YubiKey OTP，因此在此之前登入時不會使用任何 YubiKey OTP。在此關閉時，即使 yubiotp.offered 已開啟，任何人都不能註冊、指派或認領；已持有者仍會被要求提供。"
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -360,16 +384,40 @@
     "text": "TLS 用戶端憑證——作為第一因素"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智慧卡的已驗證 TLS 用戶端憑證：GET /tls/sign-in，或登入畫面上的「使用您的憑證繼續」。智慧卡憑證歸智慧卡列管理，該列在未設定時跟隨本列（#2031）。"
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "智慧卡（PIV/CAC）憑證——作為第一因素"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智慧卡（PIV/CAC）憑證，用於 GET /tls/sign-in 或「使用您的憑證繼續」：經過證明的 PIV 金鑰、在此以 PIV 插槽設定檔註冊的憑證、依卡 UUID 對應的外部卡（piv.externalIssuers、stsPivCardUuid），或屬於標記為 smartCard 的 certSignIn.profiles 設定檔的憑證。未設定時，它跟隨 stsAuthnCertificatePrimary，因此在它之前撰寫的原則保持原有含義（#2031）。"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "PIV 卡驗證金鑰（無需 PIN）——作為第一因素"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡驗證（插槽 9e）憑證，其金鑰無需 PIN 即可使用。它也是智慧卡，因此智慧卡列也必須開啟。未設定時，它跟隨 piv.cardAuthSignIn 設定（#2031）。"
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos（SPNEGO）——作為第一因素"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "以 Kerberos 票證存取 GET /authn/spnego。"
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票證存取 GET /authn/spnego，但使用智慧卡的 PKINIT 除外，它有自己的列，並在未設定時跟隨本列（#2031）。"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "使用智慧卡的 Kerberos PKINIT——作為第一因素"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "使用帶有本領域 pkinit-smartcard 指示符的 Kerberos 票證存取 GET /authn/spnego：KDC 透過智慧卡 PKINIT 簽發了該票證。未設定時，它跟隨 stsAuthnKerberosPrimary（#2031）。"
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -475,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "適用於持有主控台角色（Admin Read 或 Admin Write）但未持有第二因素的任何人。`offer`：每次登入時都會向他們顯示設定第二因素的步驟，並附「略過」按鈕。`always`：他們必須先設定一個才能登入——但預設領域的內建管理員（admin.bootstrapUsername）除外，只會向其提供，因此服務永遠不會落得無人能登入。`if-held`：與其他人相同，依上方欄位決定。比 `always` 弱：只憑密碼的管理員，就是任何持有該密碼者都能當的管理員。"
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`：除機制列外沒有其他要求。`always`：只有當完成登入的憑證（通行金鑰、安全金鑰、憑證或智慧卡）位於登記冊記錄了其證明的有效硬體權杖上時，才會開始工作階段，這與應用程式的 `attested-hardware` 機制所做的檢查相同。僅憑密碼、驗證器應用程式、電子郵件代碼、錢包、聯合夥伴或 Kerberos 票證將被拒絕。預設領域的內建管理員（admin.bootstrapUsername）不受此限，以免服務無人能夠登入。"
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "登入畫面上的密碼。作為「第二」因素時，它是在錢包或其他無密碼第一因素之後要求的密碼。"
@@ -494,6 +546,14 @@
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
     "text": "RFC 6238 一次性代碼。絕不作為第一因素：本服務持有與應用程式相同的共用秘密。在此關閉時，沒有人可以「註冊」新的；已持有者仍會被要求提供，因為一個把所有已註冊帳戶降為只憑密碼的關閉開關，做的事會與其所述不符（此列取代了 totp.enabled，並沿用其約定）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
+    "en": "33918856782d0904",
+    "text": "來自以計數器為基礎之權杖的 RFC 4226 一次性代碼（#1955）：YubiKey 的 OTP 插槽，或管理員從 PSKC 種子檔匯入的供應商權杖。絕不作為第一因素。預設關閉，必須為本領域開啟後，任何人才能註冊、認領或被指派 HOTP 權杖，因此在此之前登入時不會使用任何 HOTP 權杖。在此關閉時，任何人都不能註冊或認領；已持有者仍會被要求提供，與驗證器應用程式的持有者相同。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密碼，#1955）。絕不作為第一因素：本服務持有 AES 金鑰。預設關閉，必須為本領域開啟（並開啟 yubiotp.offered）後，任何人才能註冊、認領或被指派 YubiKey OTP，因此在此之前登入時不會使用任何 YubiKey OTP。在此關閉時，即使 yubiotp.offered 已開啟，任何人都不能註冊、指派或認領；已持有者仍會被要求提供。"
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -516,12 +576,24 @@
     "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為信箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智慧卡的已驗證 TLS 用戶端憑證：GET /tls/sign-in，或登入畫面上的「使用您的憑證繼續」。智慧卡憑證歸智慧卡列管理，該列在未設定時跟隨本列（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智慧卡（PIV/CAC）憑證，用於 GET /tls/sign-in 或「使用您的憑證繼續」：經過證明的 PIV 金鑰、在此以 PIV 插槽設定檔註冊的憑證、依卡 UUID 對應的外部卡（piv.externalIssuers、stsPivCardUuid），或屬於標記為 smartCard 的 certSignIn.profiles 設定檔的憑證。未設定時，它跟隨 stsAuthnCertificatePrimary，因此在它之前撰寫的原則保持原有含義（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡驗證（插槽 9e）憑證，其金鑰無需 PIN 即可使用。它也是智慧卡，因此智慧卡列也必須開啟。未設定時，它跟隨 piv.cardAuthSignIn 設定（#2031）。"
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "以 Kerberos 票證存取 GET /authn/spnego。"
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票證存取 GET /authn/spnego，但使用智慧卡的 PKINIT 除外，它有自己的列，並在未設定時跟隨本列（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "使用帶有本領域 pkinit-smartcard 指示符的 Kerberos 票證存取 GET /authn/spnego：KDC 透過智慧卡 PKINIT 簽發了該票證。未設定時，它跟隨 stsAuthnKerberosPrimary（#2031）。"
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -564,12 +636,12 @@
     "text": "此設定檔的用途，供下一位接手的人參考。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第一因素機制——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、password-mfa、webauthn、spnego、wallet 或 federation，每個值一項。一項都沒有時，允許本領域允許的全部機制。"
+    "en": "783db3d7da8c29c5",
+    "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第一因素機制——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、password-mfa、webauthn、attested-hardware（經證明的硬體權杖上的密碼金鑰或憑證，#1955）、spnego、wallet 或 federation，每個值一項。一項都沒有時，允許本領域允許的全部機制。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "7c8e4d8b4cce7c08",
-    "text": "用於具名驗證原則（#1148、#1237）：其所適用之登入允許的一種第二因素——在應用程式（appAuthnPolicy）或此人的某個群組（stsAuthnPolicy）指定了它，且其優先順序是所指定者中最低時適用——password、securityKey、totp、recoveryCode、emailCode、emailLink 或 wallet，每個值一項。一項都沒有時，本領域的驗證原則維持不變。"
+    "en": "9302ca05693fd970",
+    "text": "在一個具名驗證原則上（#1148，#1237）：該原則所適用的登入允許的第二因素——即應用程式（appAuthnPolicy）或此人所屬的某個群組（stsAuthnPolicy）指定了該原則，且其優先順序為所指定者中最低——password、securityKey、totp、hotp、yubico-otp、recoveryCode、emailCode、emailLink 或 wallet，每個值一項。不設任何值則維持領域的驗證原則不變。"
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -615,6 +687,22 @@
     "en": "ea01b0588ad42047",
     "text": "RFC 6238 一次性代碼。絕不作為第一因素：本服務持有與應用程式相同的共用秘密。在此關閉時，沒有人可以「註冊」新的；已持有者仍會被要求提供，因為一個把所有已註冊帳戶降為只憑密碼的關閉開關，做的事會與其所述不符（此列取代了 totp.enabled，並沿用其約定）。"
   },
+  "authn.MECHANISMS.hotp.label": {
+    "en": "f0e2ca73efb6f1c5",
+    "text": "一次性驗證碼權杖（HOTP）"
+  },
+  "authn.MECHANISMS.hotp.what": {
+    "en": "33918856782d0904",
+    "text": "來自以計數器為基礎之權杖的 RFC 4226 一次性代碼（#1955）：YubiKey 的 OTP 插槽，或管理員從 PSKC 種子檔匯入的供應商權杖。絕不作為第一因素。預設關閉，必須為本領域開啟後，任何人才能註冊、認領或被指派 HOTP 權杖，因此在此之前登入時不會使用任何 HOTP 權杖。在此關閉時，任何人都不能註冊或認領；已持有者仍會被要求提供，與驗證器應用程式的持有者相同。"
+  },
+  "authn.MECHANISMS.yubico-otp.label": {
+    "en": "01f8772904333b7b",
+    "text": "YubiKey OTP"
+  },
+  "authn.MECHANISMS.yubico-otp.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密碼，#1955）。絕不作為第一因素：本服務持有 AES 金鑰。預設關閉，必須為本領域開啟（並開啟 yubiotp.offered）後，任何人才能註冊、認領或被指派 YubiKey OTP，因此在此之前登入時不會使用任何 YubiKey OTP。在此關閉時，即使 yubiotp.offered 已開啟，任何人都不能註冊、指派或認領；已持有者仍會被要求提供。"
+  },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
     "text": "復原碼"
@@ -644,16 +732,40 @@
     "text": "TLS 用戶端憑證"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智慧卡的已驗證 TLS 用戶端憑證：GET /tls/sign-in，或登入畫面上的「使用您的憑證繼續」。智慧卡憑證歸智慧卡列管理，該列在未設定時跟隨本列（#2031）。"
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "智慧卡（PIV/CAC）憑證"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智慧卡（PIV/CAC）憑證，用於 GET /tls/sign-in 或「使用您的憑證繼續」：經過證明的 PIV 金鑰、在此以 PIV 插槽設定檔註冊的憑證、依卡 UUID 對應的外部卡（piv.externalIssuers、stsPivCardUuid），或屬於標記為 smartCard 的 certSignIn.profiles 設定檔的憑證。未設定時，它跟隨 stsAuthnCertificatePrimary，因此在它之前撰寫的原則保持原有含義（#2031）。"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "PIV 卡驗證金鑰（無需 PIN）"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡驗證（插槽 9e）憑證，其金鑰無需 PIN 即可使用。它也是智慧卡，因此智慧卡列也必須開啟。未設定時，它跟隨 piv.cardAuthSignIn 設定（#2031）。"
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos（SPNEGO）"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "以 Kerberos 票證存取 GET /authn/spnego。"
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票證存取 GET /authn/spnego，但使用智慧卡的 PKINIT 除外，它有自己的列，並在未設定時跟隨本列（#2031）。"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "使用智慧卡的 Kerberos PKINIT"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "使用帶有本領域 pkinit-smartcard 指示符的 Kerberos 票證存取 GET /authn/spnego：KDC 透過智慧卡 PKINIT 簽發了該票證。未設定時，它跟隨 stsAuthnKerberosPrimary（#2031）。"
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -714,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "以電子郵件寄送的代碼或連結有效期為 {{n}} 秒——未啟用：此領域無法傳送郵件"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "每次登入都必須以保存在經過證明的硬體權杖上的憑證完成（內建管理員除外）"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",
@@ -1247,6 +1363,22 @@
     "en": "5098a9645fefe2ff",
     "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "註冊時向安全金鑰要求的憑證保護"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "預設為 `none`：註冊不要求任何憑證保護，其選項與以往相同。否則，註冊會請求驗證器（CTAP 2.1 第 12.1 節，credProtect 延伸）以該等級保護新憑證：`userVerificationOptional`（等級 1，沒有該延伸時憑證所具有的等級）、`userVerificationOptionalWithCredentialIDList`（等級 2：除非信賴方在 allowCredentials 中列出該憑證，否則金鑰在未經使用者驗證時既不透露也不使用它，因此持有金鑰的人無法在其上找到可探索的憑證）或 `userVerificationRequired`（等級 3：金鑰只有在 PIN 或生物辨識之後才使用該憑證）。金鑰回報的等級會記錄在通行金鑰上。大多數平台通行金鑰和同步通行金鑰不會回報任何內容。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "拒絕未套用該保護的金鑰"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "預設關閉。開啟後，會請求瀏覽器強制執行上一列（enforceCredentialProtectionPolicy），驗證器回報的等級低於上一列所要求等級的註冊會被拒絕；不回報任何內容的金鑰處於等級 1。需要將上一列設為 none 以外的等級。儲存時省略此項，則保留內建預設值。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服務用於密碼金鑰原則的類別：密碼金鑰在此領域中的行為方式。項目以「設定檔」命名（`cn=default`）。"
@@ -1354,6 +1486,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "預設為 `none`：註冊不要求任何憑證保護，其選項與以往相同。否則，註冊會請求驗證器（CTAP 2.1 第 12.1 節，credProtect 延伸）以該等級保護新憑證：`userVerificationOptional`（等級 1，沒有該延伸時憑證所具有的等級）、`userVerificationOptionalWithCredentialIDList`（等級 2：除非信賴方在 allowCredentials 中列出該憑證，否則金鑰在未經使用者驗證時既不透露也不使用它，因此持有金鑰的人無法在其上找到可探索的憑證）或 `userVerificationRequired`（等級 3：金鑰只有在 PIN 或生物辨識之後才使用該憑證）。金鑰回報的等級會記錄在通行金鑰上。大多數平台通行金鑰和同步通行金鑰不會回報任何內容。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "預設關閉。開啟後，會請求瀏覽器強制執行上一列（enforceCredentialProtectionPolicy），驗證器回報的等級低於上一列所要求等級的註冊會被拒絕；不回報任何內容的金鑰處於等級 1。需要將上一列設為 none 以外的等級。儲存時省略此項，則保留內建預設值。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",
@@ -1847,6 +1987,134 @@
     "en": "4fa78beae92d0ce5",
     "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "要求郵件加密使用後量子金鑰"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "預設關閉。開啟後，此設定檔所涵蓋、且其郵件以傳統金鑰加密的每個人——加密金鑰不是 ML-KEM 的 OpenPGP 金鑰，或金鑰不是 ML-KEM 的 S/MIME 憑證——在登入後都會被要求註冊一個後量子金鑰（pqc-mail-encryption）：如今以傳統金鑰加密的內容，在該金鑰被破解後即可被讀取。關閉此項的具名設定檔會把它所選中的人排除在此活動之外。"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "郵件加密：略過後延後"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "略過會為此人把郵件加密活動延後多久。"
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "郵件加密：允許的時間"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "從此人第一次被邀請參加郵件加密活動時起計算。期滿後不能再略過，登入會被暫停，直到註冊了後量子金鑰。0 表示沒有期限。"
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "郵件加密：郵件未加密的人"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "郵件完全未加密的人（stsMailEncryption 為 none 或未設定）。leave：不詢問。invite：請其註冊後量子金鑰，且永遠可以略過。require：詢問，且只能在允許的時間內略過。"
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "郵件加密：提供什麼"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "此步驟提供什麼。either：OpenPGP 金鑰與 S/MIME 憑證，先提供此人現在使用的那種。openpgp：僅提供 RFC 9980 OpenPGP 金鑰。smime：僅提供上傳的 ML-KEM S/MIME 憑證（本領域不簽發）。本領域無法接受的種類絕不提供；兩種都不能時不詢問任何人。"
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "郵件加密：保留傳統 OpenPGP 金鑰"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "一個人的傳統 OpenPGP 金鑰在其項目與 Web Key Directory 中、在取代它的後量子金鑰旁保留多少天，讓無法使用新金鑰的通信對象仍能找到舊金鑰。本服務的新郵件會立即使用後量子金鑰。之後由排程工作把傳統金鑰從項目與 Web Key Directory 中移除。0 表示立即移除。"
+  },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "要求重新簽發 PIV 憑證"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "預設關閉。開啟後，凡本設定檔涵蓋、並在 pivSlots 所列插槽中持有本領域簽發之 PIV 插槽憑證的人，當 pivTrigger 認定到期時，都會在登入後被要求註冊一張新憑證（piv-reissue）：其簽發者以傳統演算法簽署而本領域的 EST 簽發 CA 為後量子，或憑證將在 pivRenewDays 內到期。新憑證首次用於登入時，舊憑證會被撤銷（superseded）。關閉此項的具名設定檔會將被選取的人排除在本活動之外。"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "PIV 重新簽發：略過會將其延後"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "略過會為該人延後 PIV 重新簽發多久。"
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "PIV 重新簽發：允許的時間"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "自該人第一次受邀參加 PIV 重新簽發起算。時間一過便不能再略過，登入會被暫停，直到每個到期插槽都有新憑證。0 表示沒有期限。"
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "PIV 重新簽發：插槽"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "本活動檢查其憑證的 PIV 插槽，以逗號分隔：9a（PIV 驗證）、9c（數位簽章）、9d（金鑰管理）、9e（卡片驗證）。其設定檔未列入 est.allowedProfiles 的插槽永遠不會被要求。"
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "PIV 重新簽發：什麼使憑證到期"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "什麼使插槽的憑證到期。classical-issuer：其簽發者以傳統演算法簽署，且本領域的 EST 簽發 CA 為後量子（在傳統 CA 下重新簽發的憑證並不會更好）。expiring：它將在 pivRenewDays 內到期。both：兩者之一。"
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "PIV 重新簽發：在到期前提早續約的天數"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "當 pivTrigger 為 expiring 或 both 時，PIV 插槽憑證在到期前多少天需要續約。"
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "PIV 重新簽發：簽發什麼"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "新憑證針對什麼。reissue：針對卡片在同一插槽中重新產生的金鑰簽發新憑證，由本領域的 EST 簽發 CA 簽署。rekey：卡片上的後量子金鑰，目前沒有 PIV 卡能產生，因此設為 rekey 的設定檔不會要求任何人。"
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "本服務用於登入後活動設定檔的類別：某人登入後被要求做的事。以「設定檔」命名（`cn=default`，或由應用程式或群組指定的具名設定檔）。"
@@ -1882,6 +2150,58 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "預設關閉。開啟後，此設定檔所涵蓋、且其郵件以傳統金鑰加密的每個人——加密金鑰不是 ML-KEM 的 OpenPGP 金鑰，或金鑰不是 ML-KEM 的 S/MIME 憑證——在登入後都會被要求註冊一個後量子金鑰（pqc-mail-encryption）：如今以傳統金鑰加密的內容，在該金鑰被破解後即可被讀取。關閉此項的具名設定檔會把它所選中的人排除在此活動之外。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "略過會為此人把郵件加密活動延後多久。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "從此人第一次被邀請參加郵件加密活動時起計算。期滿後不能再略過，登入會被暫停，直到註冊了後量子金鑰。0 表示沒有期限。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "郵件完全未加密的人（stsMailEncryption 為 none 或未設定）。leave：不詢問。invite：請其註冊後量子金鑰，且永遠可以略過。require：詢問，且只能在允許的時間內略過。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "此步驟提供什麼。either：OpenPGP 金鑰與 S/MIME 憑證，先提供此人現在使用的那種。openpgp：僅提供 RFC 9980 OpenPGP 金鑰。smime：僅提供上傳的 ML-KEM S/MIME 憑證（本領域不簽發）。本領域無法接受的種類絕不提供；兩種都不能時不詢問任何人。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "一個人的傳統 OpenPGP 金鑰在其項目與 Web Key Directory 中、在取代它的後量子金鑰旁保留多少天，讓無法使用新金鑰的通信對象仍能找到舊金鑰。本服務的新郵件會立即使用後量子金鑰。之後由排程工作把傳統金鑰從項目與 Web Key Directory 中移除。0 表示立即移除。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "預設關閉。開啟後，凡本設定檔涵蓋、並在 pivSlots 所列插槽中持有本領域簽發之 PIV 插槽憑證的人，當 pivTrigger 認定到期時，都會在登入後被要求註冊一張新憑證（piv-reissue）：其簽發者以傳統演算法簽署而本領域的 EST 簽發 CA 為後量子，或憑證將在 pivRenewDays 內到期。新憑證首次用於登入時，舊憑證會被撤銷（superseded）。關閉此項的具名設定檔會將被選取的人排除在本活動之外。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "略過會為該人延後 PIV 重新簽發多久。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "自該人第一次受邀參加 PIV 重新簽發起算。時間一過便不能再略過，登入會被暫停，直到每個到期插槽都有新憑證。0 表示沒有期限。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "本活動檢查其憑證的 PIV 插槽，以逗號分隔：9a（PIV 驗證）、9c（數位簽章）、9d（金鑰管理）、9e（卡片驗證）。其設定檔未列入 est.allowedProfiles 的插槽永遠不會被要求。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "什麼使插槽的憑證到期。classical-issuer：其簽發者以傳統演算法簽署，且本領域的 EST 簽發 CA 為後量子（在傳統 CA 下重新簽發的憑證並不會更好）。expiring：它將在 pivRenewDays 內到期。both：兩者之一。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "當 pivTrigger 為 expiring 或 both 時，PIV 插槽憑證在到期前多少天需要續約。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "新憑證針對什麼。reissue：針對卡片在同一插槽中重新產生的金鑰簽發新憑證，由本領域的 EST 簽發 CA 簽署。rekey：卡片上的後量子金鑰，目前沒有 PIV 卡能產生，因此設為 rekey 的設定檔不會要求任何人。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -1954,6 +2274,66 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "沒有密碼金鑰的人會被要求註冊一個後量子密碼金鑰，且在寬限期結束前可以略過"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "郵件以傳統 OpenPGP 金鑰或 S/MIME 憑證加密的人，在登入後會被要求註冊一個後量子（ML-KEM）的金鑰或憑證"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "他們可以註冊 OpenPGP 金鑰或上傳 S/MIME 憑證"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "他們可以註冊 OpenPGP 金鑰"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "他們可以上傳 S/MIME 憑證"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "郵件未加密的人不會被詢問"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "郵件未加密的人會被邀請註冊後量子金鑰，且永遠可以略過"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "郵件未加密的人會被要求註冊後量子金鑰，且只能在寬限期結束前略過"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "被後量子金鑰取代的傳統 OpenPGP 金鑰會在其旁保留並一同發布 {{days}} 天"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "被後量子金鑰取代的傳統 OpenPGP 金鑰會立即移除"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "持有 PIV 插槽憑證（{{slots}}）的人在登入後會被要求註冊一張新憑證"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "當憑證由傳統 CA 簽署且本領域的 EST 簽發 CA 為後量子時，憑證到期"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "憑證在到期前 {{days}} 天需要更換"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "當憑證由傳統 CA 簽署且本領域的 EST 簽發 CA 為後量子時，或在到期前 {{days}} 天，憑證到期"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "要求卡片上的後量子金鑰，而目前沒有 PIV 卡能產生，因此不會要求任何人"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "新憑證首次用於登入時，舊憑證會被撤銷"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

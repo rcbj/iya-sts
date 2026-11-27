@@ -597,6 +597,48 @@ function deserialiseKemEncKeys(blob) {
 }
 
 // ---------------------------------------------------------------------------
+// A RETIRED REQUEST-DECRYPTION KEY (#2220): a request object encryption
+// pair, the OpenID4VCI request-encryption key or one KEM key, replaced by
+// `helpers.rotateEncryptionKeys()` and kept ONLY to decrypt what a client
+// encrypted to it before it read the new one, until `retiredUntil`. Each kind
+// in the shape its own member is written in above, so one reader opens both.
+// ---------------------------------------------------------------------------
+function serialiseRetiredEncKeys(one) {
+  log.debug("Entering serialiseRetiredEncKeys(). " + (one && one.kind));
+  let keys = null;
+  if (one && one.kind === 'ro') {
+    keys = serialiseRequestObjectKeys(one.keys);
+  } else if (one && one.kind === 'vci' && one.keys &&
+             one.keys.privateKey && one.keys.publicJwk) {
+    keys = { privateKeyPem: one.keys.privateKey.export({ type: 'pkcs8',
+                                                         format: 'pem' }),
+             publicJwk: one.keys.publicJwk };
+  } else if (one && one.kind === 'kem') {
+    keys = serialiseKemEncKeys([one.keys])[0] || null;
+  }
+  log.debug("Leaving serialiseRetiredEncKeys(). " + (keys ? 'Kept.'
+                                                          : 'None.'));
+  return keys ? { kind: one.kind, kid: one.kid, retiredAt: one.retiredAt,
+                  retiredUntil: one.retiredUntil, keys: keys } : null;
+}
+
+function deserialiseRetiredEncKeys(row) {
+  log.debug("Entering deserialiseRetiredEncKeys(). " + (row && row.kind));
+  let keys = null;
+  if (row && row.kind === 'ro') {
+    keys = deserialiseRequestObjectKeys(row.keys);
+  } else if (row && row.kind === 'vci' && row.keys &&
+             row.keys.privateKeyPem) {
+    keys = { privateKey: crypto.privateKeyFrom(row.keys.privateKeyPem),
+             publicJwk: row.keys.publicJwk };
+  } else if (row && row.kind === 'kem') {
+    keys = (deserialiseKemEncKeys([row.keys]) || [])[0] || null;
+  }
+  log.debug("Leaving deserialiseRetiredEncKeys().");
+  return keys;
+}
+
+// ---------------------------------------------------------------------------
 // THE BROWSER DEVICE KEYS (2026-09-26, #265): the realm's key pair that signs
 // a remembered browser's device token and the key pair it is encrypted to —
 // used for nothing else, so a token can never be minted with a key that signs
@@ -855,6 +897,49 @@ const STANDBY_META = ['unit', 'role', 'alg', 'crv', 'kid', 'kind', 'useCase',
                       'reason', 'publicJwk', 'certPem', 'certB64',
                       'publicKeyB64', 'group', 'memberKind', 'pairedSlot'];
 
+// ---------------------------------------------------------------------------
+// A POST-QUANTUM PRIVATE KEY AS IT TRAVELS (#2220): base64 of its raw bytes,
+// as ever — or, for an ML-DSA or SLH-DSA key the realm made IN THE HSM
+// (`helpers.js`'s `pqPairFor()`), its reference, `pkcs11-key:v1:…`, as is.
+// The two cannot be confused: the reference has a colon, and base64 none.
+// A blob written before #2220 holds base64 only and reads as it did.
+// ---------------------------------------------------------------------------
+/**
+ * Encodes a post-quantum private key for storage.
+ *
+ * @param key - the raw bytes, or an HSM key's reference
+ * @returns the stored text
+ */
+function pqPrivateOut(key) {
+  log.debug("Entering pqPrivateOut().");
+  if (typeof key === 'string' && crypto.isHsmKey(key)) {
+    log.debug("Leaving pqPrivateOut(). An HSM reference.");
+    return key;
+  }
+  log.debug("Leaving pqPrivateOut().");
+  return Buffer.from(key).toString('base64');
+}
+
+/**
+ * Decodes a stored post-quantum private key.
+ *
+ * @param stored - what `pqPrivateOut()` wrote, or bytes already
+ * @returns the raw bytes, or the HSM key's reference
+ */
+function pqPrivateIn(stored) {
+  log.debug("Entering pqPrivateIn().");
+  if (Buffer.isBuffer(stored)) {
+    log.debug("Leaving pqPrivateIn(). Bytes.");
+    return stored;
+  }
+  if (typeof stored === 'string' && crypto.isHsmKey(stored)) {
+    log.debug("Leaving pqPrivateIn(). An HSM reference.");
+    return stored;
+  }
+  log.debug("Leaving pqPrivateIn().");
+  return Buffer.from(String(stored), 'base64');
+}
+
 // Does a standby row's private half travel as raw bytes (base64) — a
 // post-quantum or BBS key, or a signer-group member that is one (#68)?
 function standbyIsRaw(row) {
@@ -881,7 +966,7 @@ function serialiseGenerations(held) {
         }
       });
       if (standbyIsRaw(one)) {
-        row.privateKey = Buffer.from(one.privateKey).toString('base64');
+        row.privateKey = pqPrivateOut(one.privateKey);
       } else if (one.kind === 'rsa') {
         row.privateKeyPem = one.privateKeyPem;
       } else {
@@ -900,6 +985,14 @@ function serialiseGenerations(held) {
                keys: serialiseRefreshTokenKeys(one.keys) };
     })
   };
+  // THE RETIRED REQUEST-DECRYPTION KEYS (#2220), the retired refresh-token
+  // sets' arrangement. Omitted when empty, so a blob written before the
+  // field existed still compares equal to one that has never rotated them.
+  const retiredEnc = (held.retiredEnc || []).map(serialiseRetiredEncKeys)
+    .filter(Boolean);
+  if (retiredEnc.length) {
+    out.retiredEnc = retiredEnc;
+  }
   // THE BIRTH CERTIFICATES THIS GENERATION DESCENDS FROM (2026-11-01).
   // Omitted when empty, so a blob written before the field existed still
   // compares equal to one that has never rotated. A later generation names
@@ -924,8 +1017,7 @@ function deserialiseStandbyEntry(row) {
     }
   });
   if (standbyIsRaw(row)) {
-    one.privateKey = Buffer.isBuffer(row.privateKey) ? row.privateKey
-      : Buffer.from(String(row.privateKey), 'base64');
+    one.privateKey = pqPrivateIn(row.privateKey);
   } else {
     one.privateKey = crypto.privateKeyFrom(row.privateKeyPem);
     if (row.kind === 'rsa') {
@@ -957,6 +1049,13 @@ function deserialiseGenerations(blob) {
       return { kid: row.kid, retiredAt: row.retiredAt,
                retiredUntil: row.retiredUntil,
                keys: deserialiseRefreshTokenKeys(row.keys) };
+    }).filter(function (one) {
+      return !!one.keys;
+    }),
+    retiredEnc: (blob.retiredEnc || []).map(function (row) {
+      return { kind: row.kind, kid: row.kid, retiredAt: row.retiredAt,
+               retiredUntil: row.retiredUntil,
+               keys: deserialiseRetiredEncKeys(row) };
     }).filter(function (one) {
       return !!one.keys;
     })
@@ -1093,7 +1192,8 @@ function serialise(keys) {
     pqKeys: (keys.pqKeys || []).map(function (one) {
       return {
         alg: one.alg,
-        privateKey: Buffer.from(one.privateKey).toString('base64'),
+        // An HSM key's reference as is (#2220, pqPrivateOut()).
+        privateKey: pqPrivateOut(one.privateKey),
         publicJwk: one.publicJwk
       };
     }),
@@ -1187,7 +1287,7 @@ function deserialise(blob) {
       ? blob.pqKeys.map(function (one) {
           return {
             alg: one.alg,
-            privateKey: Buffer.from(one.privateKey, 'base64'),
+            privateKey: pqPrivateIn(one.privateKey),
             publicJwk: one.publicJwk
           };
         })
@@ -1260,6 +1360,25 @@ async function readCellKey() {
   if (read === null || read === undefined) {
     cellKek = null;
     log.debug("Leaving readCellKey(). None configured.");
+    return;
+  }
+  // A CELL KEY IN AN HSM (#1955) is a handle, like a KMS key-encryption
+  // key: it has no bytes to compare, and `secrets.readCellKek()` has already
+  // refused a location that is the service key's. Two handles naming one
+  // HSM key are refused here instead, by their reference.
+  if (isRemote(read)) {
+    if (isRemote(kek) && kek.provider === read.provider &&
+        kek.keyRef === read.keyRef) {
+      throw new Error(errorCodes.tag('STS-CELL-0012') + 'the cell ' +
+                      'key-encryption key is the same HSM key as the ' +
+                      'service key-encryption key. A cell key that is the ' +
+                      'service key keeps nothing in its cell.');
+    }
+    cellKek = read;
+    log.info('keystore: this cell\'s own key-encryption key is the HSM key ' +
+             read.label + '; what the cell stores of its own is wrapped ' +
+             'under it and opens in no other cell.');
+    log.debug("Leaving readCellKey(). A handle.");
     return;
   }
   const bytes = crypto.kekBytes(read);
@@ -1435,6 +1554,30 @@ async function startOnce() {
   } else {
     cellKek = null;
   }
+  // THE PREVIOUS CELL KEY (#2220), only where one is configured, for the
+  // reason the line above gives about an `await`. Without a cell key it has
+  // nothing to be the previous one of, and is refused.
+  previousCellKek = null;
+  if (secrets.configuredFor(secrets.PREVIOUS_CELL_KEK)) {
+    if (!cellKek) {
+      throw new Error(errorCodes.tag('STS-CELL-0213') + 'keys.' +
+                      'previousCellKekProvider is set and no cell key is ' +
+                      '(keys.cellKekProvider is none). The previous cell ' +
+                      'key is read only to re-wrap under a new cell key.');
+    }
+    previousCellKek = await secrets.readPreviousCellKek();
+    if (!isRemote(previousCellKek)) {
+      crypto.kekBytes(previousCellKek);
+    }
+  }
+  // THE SIGNING KEYS' TOKEN (#1955 P8), opened in this process BEFORE a key
+  // set is read: a realm's signing keys in the HSM are stored as references,
+  // and a reference is resolved synchronously through a token already held
+  // (`secrets.openSigningToken()`). A token that will not open stops the
+  // start, as a key-encryption key that will not read does.
+  if (String(config.value('keys.signingKeyToken') || '').trim()) {
+    await secrets.openSigningToken();
+  }
   let rows = [];
   try {
     rows = (await store.loadKeys()) || [];
@@ -1460,6 +1603,9 @@ async function startOnce() {
   let loaded = 0;
   let pkiLoaded = 0;
   let dekRows = 0;
+  // The HSM key references the key sets hold, resolved off the event loop
+  // below before this process serves (#1955 P8 follow-up).
+  const hsmRefs = [];
   // THE DATA-KEY ROWS FIRST (#391): every other row is sealed under one of
   // their DEKs. A DEK of this process's scope that will not unwrap stops the
   // start here, for the reason the error below gives about a signing key.
@@ -1516,6 +1662,9 @@ async function startOnce() {
     // was made to stop. `JSON.parse` runs too, so a row that decrypts to
     // something malformed also fails at startup rather than at first use.
     const blob = JSON.parse(plain);
+    if (realmId.indexOf(PKI_ROW_PREFIX) !== 0) {
+      Array.prototype.push.apply(hsmRefs, crypto.hsmRefsIn(blob));
+    }
     // ---------------------------------------------------------------------
     // **A `pki:` ROW IS A CERTIFICATE AUTHORITY AND NOT A KEY SET.** They
     // share this table on purpose — see attachPki() — and they are told apart
@@ -1556,6 +1705,17 @@ async function startOnce() {
            'THIS PROCESS IS THE CIPHERTEXT: a private key is decrypted when ' +
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
+  // A REALM'S HSM KEYS, FOUND BEFORE THIS PROCESS SERVES (#1955 P8
+  // follow-up): every reference above is resolved through the token's
+  // control thread now, so a key set read later finds its keys held and no
+  // first use searches the token on the event loop
+  // (`crypto.resolveHsmKeysAsync()`). Never refuses: a reference that does
+  // not resolve here is resolved, and refused, where it is used.
+  if (hsmRefs.length) {
+    const found = await crypto.resolveHsmKeysAsync(hsmRefs);
+    log.info('keystore: ' + found + ' of ' + hsmRefs.length + ' signing ' +
+             'key(s) in the HSM were found on the token off the event loop.');
+  }
   started = true;
   await purgeOrphanRows(orphans, 'at this start');
   log.debug('Leaving startOnce(). ' + loaded + ' realm(s).');
@@ -1764,7 +1924,25 @@ function adoptShared(realmId, blob) {
   // over it, so the row converges on the set everybody is using rather than on
   // whichever process wrote last.
   // ---------------------------------------------------------------------
-  if (persists() && store && kek) {
+  // **BUT NOT FOR A REALM THAT IS NOT DEFINED HERE (2026-11-20, #1938).**
+  // Such a set is kept in `shared` — the guard above lets it in, so that a
+  // realm still on its way here arrives to the set the rest of the service
+  // signs with rather than generating a second one (`sharedFor()`; the
+  // multi-key-set race this channel exists to close) — and it is NOT held or
+  // written. Nothing here signs with it, and a process that never defined
+  // the realm has no set of its own in the store to converge: in run #569 a
+  // process that never defined `cbc-mwoe2uxmho123` adopted its set a moment
+  // after every other process had removed the realm, and wrote it back.
+  // When the realm does arrive, `helpers.js` adopts the set from `shared`
+  // and writes it down there (`remember()`), as any adopting process does.
+  // What is kept is forgotten once the store no longer lists the realm or
+  // its row (`forgetUnarrivedKeys()`, `applyStoredChange()`).
+  const undefinedHere = undefinedRealmOf(id) !== '';
+  if (undefinedHere) {
+    log.debug('adoptShared(): the "' + id + '" realm is not defined here, ' +
+              'so its set is kept for its arrival and not written.');
+  }
+  if (persists() && store && kek && !undefinedHere) {
     try {
       hold(id, blob, 'adopted from another process in this service');
     } catch (e) {
@@ -2473,9 +2651,7 @@ function privateMaterialFor(realmId) {
       ? blob.pqKeys.map(function (one) {
           return {
             alg: one.alg,
-            privateKey: Buffer.isBuffer(one.privateKey)
-              ? one.privateKey
-              : Buffer.from(String(one.privateKey), 'base64'),
+            privateKey: pqPrivateIn(one.privateKey),
             publicJwk: one.publicJwk
           };
         })
@@ -2531,6 +2707,12 @@ function privateMaterialFor(realmId) {
   ((blob.generations && blob.generations.standby) || []).forEach(
     function (row) {
       parsed.standby.set(row.kid, deserialiseStandbyEntry(row));
+    });
+  // And the retired request-decryption keys (#2220), by kid.
+  parsed.retiredEnc = new Map();
+  ((blob.generations && blob.generations.retiredEnc) || []).forEach(
+    function (row) {
+      parsed.retiredEnc.set(row.kid, deserialiseRetiredEncKeys(row));
     });
   parsed.retiredRefresh = new Map();
   ((blob.generations && blob.generations.retiredRefresh) || []).forEach(
@@ -2897,6 +3079,135 @@ realms.onRemove(function (id) {
               'later created under the same name would inherit them.');
   });
 });
+
+// ---------------------------------------------------------------------------
+// AND A REALM THAT NEVER ARRIVED HERE, WHICH THE STORE NO LONGER LISTS, TAKES
+// WHAT THIS PROCESS ADOPTED FOR IT (2026-11-20, #1938).
+//
+// The purge above runs only where `realms.remove()` runs, which is only where
+// the realm was defined. A process that never defined it — the realm was
+// created and removed elsewhere between two of its realm reads — still
+// adopted its rows (`realms.acceptsRows()` takes a realm that has not
+// arrived) and its key set from the key channel (`adoptShared()`), and kept
+// them: in run #569 the data keys (#1937, `forgetUnlistedDeks()`) and the
+// signing-key set, re-adopted a moment after the removal and held for the
+// life of the process — a removed realm's private keys, which a realm later
+// created under the same id would have been handed by `sharedFor()`.
+//
+// Two doors, both the store's answer and neither a timer:
+//
+//   * the realm's KEY-SET ROW is gone — `applyStoredChange()` (where the
+//     store does not arbitrate; where it does, `adoptKeyRow()` always
+//     dropped a set whose row went);
+//   * the realm is not in `sts_realms` — `realms.forgetUnarrived()`, called
+//     by `persistence.js`'s realm applier with what was held before its
+//     read, which covers a set adopted after the row's delete, where no
+//     change of the row will come again. Its signing-key set, certificate
+//     authority and data keys are dropped together.
+//
+// Memory only, and never a row with a write of this process queued or
+// failed: that write decides. Dropping is safe even when wrong: the realm is
+// not retired, so its rows are adopted again whenever they are listed, and
+// a set is made or adopted again when it is first needed.
+// ---------------------------------------------------------------------------
+function dropUnarrivedKeySet(id, why) {
+  log.debug("Entering dropUnarrivedKeySet(). realm=" + id);
+  const had = material.has(id) || shared.has(id);
+  purgeFor(id);
+  material.delete(id);
+  shared.delete(id);
+  if (had && adoptListener) {
+    try {
+      adoptListener(id);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KEYS-0200') + 'keystore: the "' + id +
+                '" realm, never defined here, had its signing keys dropped (' +
+                why + ') and its cached key set could not be: ' +
+                ((e && e.message) || e) + '.');
+    }
+  }
+  if (had) {
+    log.info('keystore: the "' + id + '" realm was never defined in this ' +
+             'process and ' + why + ', so the signing-key set this process ' +
+             'adopted for it was dropped.');
+  }
+  log.debug("Leaving dropUnarrivedKeySet().");
+  return had;
+}
+
+// The realms not defined here that this process holds a key set, a
+// certificate authority or a data key for. For `realms.heldUnarrivedIds()`.
+function heldUnarrivedKeyRealms() {
+  log.debug("Entering heldUnarrivedKeyRealms().");
+  const out = new Set();
+  const note = function (rowKey) {
+    log.debug("Entering note().");
+    const realmId = undefinedRealmOf(rowKey);
+    if (realmId) {
+      out.add(realmId);
+    }
+    log.debug("Leaving note().");
+  };
+  shared.forEach(function (blob, id) {
+    note(id);
+  });
+  material.forEach(function (entry, id) {
+    note(id);
+  });
+  pkiHeld.forEach(function (chain, id) {
+    note(PKI_ROW_PREFIX + id);
+  });
+  pkiBase.forEach(function (cipher, id) {
+    note(PKI_ROW_PREFIX + id);
+  });
+  deks.forEach(function (rec) {
+    if (!rec.derived) {
+      note(dekRowKey(rec.scope, rec.realm));
+    }
+  });
+  log.debug("Leaving heldUnarrivedKeyRealms(). " + out.size);
+  return out;
+}
+
+// What `realms.forgetUnarrived()` asks of this module for one realm: every
+// part whose row has no write of this process queued or failed.
+function forgetUnarrivedKeys(realmId) {
+  log.debug("Entering forgetUnarrivedKeys(). realm=" + realmId);
+  const id = String(realmId || '');
+  if (!undefinedRealmOf(id)) {
+    log.debug("Leaving forgetUnarrivedKeys(). Defined here.");
+    return;
+  }
+  const busy = function (rowKey) {
+    log.debug("Entering busy().");
+    log.debug("Leaving busy().");
+    return writes.has(rowKey) || failedWrites.has(rowKey);
+  };
+  if (!busy(id)) {
+    dropUnarrivedKeySet(id, 'the store no longer lists the realm');
+  }
+  const pkiRow = PKI_ROW_PREFIX + id;
+  if (!busy(pkiRow) && (pkiHeld.has(id) || pkiBase.has(id))) {
+    pkiHeld.delete(id);
+    pkiBase.delete(id);
+    log.info('keystore: the "' + id + '" realm was never defined in this ' +
+             'process and the store no longer lists it, so the certificate ' +
+             'authority this process adopted for it was dropped.');
+  }
+  const dekRealmId = dekRealm(id);
+  const dropped = dropDeks(function (rec) {
+    return !rec.derived && rec.realm === dekRealmId &&
+           !busy(dekRowKey(rec.scope, rec.realm));
+  });
+  if (dropped) {
+    log.info('keystore: ' + dropped + ' data encryption key(s) of the "' +
+             id + '" realm, never defined in this process and no longer ' +
+             'listed by the store, were dropped.');
+  }
+  log.debug("Leaving forgetUnarrivedKeys().");
+}
+
+realms.onForget(forgetUnarrivedKeys, heldUnarrivedKeyRealms);
 
 // What the console and the metadata report draw. Says WHERE and never WHAT.
 /**
@@ -3978,6 +4289,27 @@ function unionDekRows(current, mine) {
 // re-wraps it and changes nothing it made), never rotated, never superseded
 // and never destroyed. Where data keys are derived per run, nothing a digest
 // names outlives the process and the KEK-derived key is kept.
+//
+// **WHY IT IS NOT ROTATED (#2220, ASVS 5.0.0 13.3.4).** It is a BLIND-INDEX
+// key, not a key that protects a value: every digest it makes is STORED and
+// later LOOKED UP by recomputing it — the cell routing index, each sealed
+// directory value's lookup column (`persistence/directory_codec.js`), the
+// session index's subject, username and parent keys (`authn/`), the minted
+// store's row keys, the shared claims' keys (`cluster/cluster_claims.js`)
+// and the cluster's settings fingerprint. A rotation would ORPHAN every one:
+// a lookup under the new key finds nothing stored under the old, so a person
+// would vanish from the routing index, a session from its index and a claim
+// from its table, and nothing about the old key could be verified "with an
+// overlap", because a lookup is not a verification — it would have to be
+// made under every key ever used, at every lookup, for ever. A rotation that
+// worked would have to RE-INDEX every stored digest from its plaintext,
+// which for a claim or a settings fingerprint no longer exists. So, as the
+// pairwise subject secret is (`cluster/cluster_secrets.ts`), it is an
+// identifier's key and is kept: what protects it is the key-encryption key
+// it is wrapped under, which DOES rotate and re-wraps it without changing
+// it. What it costs to lose is bounded: a stolen digest key and a copy of
+// the store let a guessable lookup value (a username) be confirmed, never a
+// sealed value be read.
 // ---------------------------------------------------------------------------
 const DIGEST_CLASS = 'keyed-digest';
 
@@ -4271,12 +4603,18 @@ function dataKeys() {
 //     the previous key is no longer needed.
 // ---------------------------------------------------------------------------
 let previousKek = null;
+// THE PREVIOUS CELL KEY (#2220), read beside the cell key while it is being
+// rotated: a data key of this cell's scope that unwraps only under it is
+// re-wrapped under `cellKek`, exactly as `previousKek` does for the service
+// scope. Null everywhere else.
+let previousCellKek = null;
 let rewrapped = 0;
 
 // ---------------------------------------------------------------------------
 // A KEY-ENCRYPTION KEY IN A KEY MANAGEMENT SERVICE (#391 P3). `secrets.js`
-// hands back a HANDLE for `vault-transit`, `aws-kms`, `gcp-kms` and
-// `azure-keys` rather than bytes:
+// hands back a HANDLE for `vault-transit`, `aws-kms`, `gcp-kms`,
+// `azure-keys` and `pkcs11` (#1955; the cell key may be one too) rather
+// than bytes:
 // it wraps and unwraps a DEK in the KMS, asynchronously, and the key never
 // enters this process. Everything below asks `isRemote()` and either calls
 // the handle or does what it always did with bytes.
@@ -4364,12 +4702,16 @@ async function unwrapWithRotation(rec, wk) {
     log.debug("Leaving unwrapWithRotation(). Under the current key.");
     return key;
   } catch (e) {
-    if (!previousKek || rec.scope !== 'service') {
+    // THE SCOPE'S OWN PREVIOUS KEY: the service key's for the service
+    // scope, the cell key's (#2220) for this cell's.
+    const previous = rec.scope === 'service' ? previousKek
+      : rec.scope === ownCellScope() ? previousCellKek : null;
+    if (!previous) {
       throw e;
     }
     log.debug("Caught in unwrapWithRotation(): " + ((e && e.message) || e) +
-              "; trying the previous key-encryption key.");
-    const key = await unwrapUnder(previousKek, rec.wrapped, rec);
+              "; trying the scope's previous key-encryption key.");
+    const key = await unwrapUnder(previous, rec.wrapped, rec);
     rec.rewrap = true;
     log.debug("Leaving unwrapWithRotation(). Under the previous key.");
     return key;
@@ -4427,7 +4769,9 @@ function rewrapRotated() {
              ' data encryption key(s) were wrapped under the PREVIOUS ' +
              'key-encryption key and have been re-wrapped under the current ' +
              'one. Once every node has started with the current key, ' +
-             'keys.previousKekProvider can be set back to none.');
+             'keys.previousKekProvider can be set back to none' +
+             (previousCellKek ? ', and keys.previousCellKekProvider once ' +
+                                'every node of this cell has' : '') + '.');
   }
   if (count > previous) {
     log.info('keystore: ' + (count - previous) + ' data encryption key(s) ' +
@@ -4529,8 +4873,18 @@ async function rotateKek() {
   }
   if (typeof wk.rotate !== 'function') {
     log.debug("Leaving rotateKek(). No rotate().");
+    // `pkcs11` (#1955) is the one that lands here: a PKCS#11 key has no
+    // versions, so its successor is a new object named in keys.kek* with the
+    // old one in keys.previousKek*, as for a key read into the process.
     return { ok: false, why: 'The ' + wk.provider + ' provider cannot ' +
-                             'rotate its key from here.' };
+                             'rotate its key from here.' +
+                             (wk.provider === 'pkcs11'
+                               ? ' A PKCS#11 key has no versions: make a ' +
+                                 'new key in the HSM, name it in ' +
+                                 'keys.kekRef, name the old one in ' +
+                                 'keys.previousKek*, and restart every ' +
+                                 'node.'
+                               : '') };
   }
   const done = await wk.rotate();
   const count = rewrapRotated();
@@ -5128,7 +5482,64 @@ const PKI_ROW_PREFIX = 'pki:';
 // The scope `pki.js` keeps the service Root in (its SERVICE_SCOPE), whose
 // `revoked.root` list is where a replaced Intermediate is superseded.
 const PKI_SERVICE_SCOPE = '*service';
-const pkiHeld = new Map();       // realm id -> the hierarchy, in the clear
+// THE HELD HIERARCHIES TELL WHOEVER ASKED WHEN ONE CHANGES (#2292). The TLS
+// listeners name every realm's Intermediate and client Issuing CAs in their
+// CertificateRequest, so a branch built, adopted from another process or
+// dropped has to reach them. Ten places in this file write the Map, so the
+// Map notifies rather than each of them: a write site added later cannot
+// forget. An observer's throw is logged and never reaches the writer.
+const pkiObservers = [];
+
+class ObservedPkiMap extends Map {
+  set(key, value) {
+    super.set(key, value);
+    notifyPkiObservers(key);
+    return this;
+  }
+
+  delete(key) {
+    const had = super.delete(key);
+    if (had) {
+      notifyPkiObservers(key);
+    }
+    return had;
+  }
+}
+
+/**
+ * Tells every observer that a held hierarchy changed.
+ *
+ * @param scopeId - the scope whose hierarchy was set or dropped
+ */
+function notifyPkiObservers(scopeId) {
+  log.debug("Entering notifyPkiObservers(). scope=" + scopeId);
+  pkiObservers.forEach(function (fn) {
+    try {
+      fn(String(scopeId));
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-KEYS-0218') + 'keystore: an observer ' +
+               'of the certificate authority hierarchies failed: ' +
+               ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving notifyPkiObservers().");
+}
+
+/**
+ * Registers a function told the scope id each time a held hierarchy is set
+ * or dropped, in this process.
+ *
+ * @param fn - the observer
+ */
+function onPkiChange(fn) {
+  log.debug("Entering onPkiChange().");
+  if (typeof fn === 'function') {
+    pkiObservers.push(fn);
+  }
+  log.debug("Leaving onPkiChange().");
+}
+
+const pkiHeld = new ObservedPkiMap(); // realm id -> the hierarchy, in the clear
 
 // Described to `/admin/caches` (#74, rule 3ap): a row is a scope and
 // nothing of the hierarchy, which holds CA private keys. A hit is a signing
@@ -5524,6 +5935,19 @@ function realmOfRow(rowKey) {
   log.debug("Leaving realmOfRow().");
   return id === 'default' || id === PKI_SERVICE_SCOPE ||
          isInternalScope(id) || id === realms.DEFAULT_ID ? '' : id;
+}
+
+// The realm a row belongs to when that realm is NOT DEFINED in this process,
+// or '' — '' also for the default realm and every internal scope, which are
+// always defined (#1938). A row of such a realm is adopted (its realm may be
+// on its way, `realms.acceptsRows()`) and never written from here: nothing
+// in this process seals or signs under it, and where the realm was removed
+// before it arrived a write is a removed realm's written back.
+function undefinedRealmOf(rowKey) {
+  log.debug("Entering undefinedRealmOf().");
+  const realmId = realmOfRow(rowKey);
+  log.debug("Leaving undefinedRealmOf().");
+  return realmId !== '' && !realms.get(realmId) ? realmId : '';
 }
 
 // Whether a write queued at `seq` is of a row whose realm was removed since
@@ -6376,6 +6800,43 @@ function applyStoredChange(rowKey, round) {
   // row's ciphertext only when the set inside is the one already held, and
   // leaves a different set, or a removal, to the pool's key channel as before.
   if (!isPki && !arbitrates()) {
+    // A SET HELD FOR A REALM NOT DEFINED HERE GOES WITH ITS ROW (#1938):
+    // where the store arbitrates, `adoptKeyRow()` drops a set whose row is
+    // gone; here nothing did, so a never-defined realm's set — adopted from
+    // the key channel, or read from the store — outlived the realm's
+    // removal. The store is the judge: the row read now is gone.
+    const unarrivedRealm = undefinedRealmOf(key);
+    if (unarrivedRealm && !writes.has(key) && !failedWrites.has(key) &&
+        (material.has(id) || shared.has(id)) && store &&
+        typeof store.loadKey === 'function') {
+      log.debug("Leaving applyStoredChange(). A set of a realm not " +
+                "defined here; reading its row.");
+      return Promise.resolve().then(function () {
+        return store.loadKey(key);
+      }).then(function (cipher) {
+        if (cipher) {
+          // Still listed: the re-seal below, as for any held set.
+          return (namesUnheldDek(cipher) ? refreshDekRows()
+                                         : Promise.resolve(0))
+            .then(function () {
+              return adoptResealedKeyRow(id, cipher);
+            });
+        }
+        if (writes.has(key) || failedWrites.has(key)) {
+          return { kind: kind, realm: id, adopted: false };
+        }
+        dropUnarrivedKeySet(id, 'its row is no longer in the store');
+        return { kind: kind, realm: id, adopted: true, removed: true };
+      }).catch(function (e) {
+        log.debug("Caught in applyStoredChange(): " + ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-KEYS-0058') + 'keystore: the "' + key +
+                  '" row another process wrote could not be opened: ' +
+                  ((e && e.message) || e) + '. This process keeps what it ' +
+                  'holds.');
+        return { kind: kind, realm: id, adopted: false,
+                 error: String((e && e.message) || e) };
+      });
+    }
     if (writes.has(key) || !material.has(id) || !store ||
         typeof store.loadKey !== 'function') {
       log.debug("Leaving applyStoredChange(). The store does not " +
@@ -6608,6 +7069,7 @@ function reset() {
   dekReloading = null;
   durableKek = false;
   previousKek = null;
+  previousCellKek = null;
   kek = null;
   cellKek = null;
   derivedDigestKeys.clear();
@@ -6707,6 +7169,9 @@ module.exports = {
   // without driving the key channel to get one. Pure; it writes nothing.
   serialise: serialise,
   deserialise: deserialise,
+  // How a post-quantum private key travels, raw or an HSM reference (#2220).
+  pqPrivateOut: pqPrivateOut,
+  pqPrivateIn: pqPrivateIn,
   rotate: rotate,
   // The certificate authority material. See the block above attachPki() for
   // why it is in this file and why it has a channel of its own.
@@ -6714,6 +7179,7 @@ module.exports = {
   adoptPki: adoptPki,
   pkiAll: pkiAll,
   pkiFor: pkiFor,
+  onPkiChange: onPkiChange,
   attachPki: attachPki,
   // THE STORE AS THE ARBITER BETWEEN NODES (#46). See the block above
   // `arbitrates()`.

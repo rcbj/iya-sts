@@ -133,11 +133,15 @@
 //     compared.
 //   * **EVERY LINK ON EVERY PAGE RESOLVES.** Every same-origin `<a href>` the
 //     console draws, deduplicated and then really visited, has to answer under
-//     400. This is what makes the console routes with no nav row —
+//     400. Visiting them is what makes the console routes with no nav row —
 //     the three delegation drill-downs, all THREE pictures,
 //     `/admin/tokens/credential`, `/admin/tokens/set`, `/admin/users/new`,
 //     `/admin/applications/new` and the realm switcher — covered by
 //     construction rather than by a list somebody has to remember to extend.
+//     The fragment is stripped before the visit and the only question is the
+//     document's status, so a link that changes tab or opens a dialog is
+//     unseen here. `theCertificateDialogStaysOnItsTab()` presses View
+//     details on a Hierarchy CA certificate and reads the tab and the dialog.
 //   * **EVERY GET FORM IS FILLED IN AND SUBMITTED**, and what comes back is
 //     checked: the URL carries the fields, the page redraws, and a filter
 //     really narrows what is listed.
@@ -195,6 +199,9 @@
 //
 // Needs the STS mock and a Chrome. No Keycloak, no client, no other service.
 // ---------------------------------------------------------------------------
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { Builder, By, until } = require("selenium-webdriver");
@@ -205,6 +212,12 @@ const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
+// What the console asks for after a Save — a recent sign-in (#2173), the
+// write scope by a popup (#2189) — completed as an administrator would
+// (#2196).
+const consoleSteps = require("./console_steps.js");
+// A password the person holds as their own (#2160).
+const ownPassword = require("./own_password.js");
 // The redirect URI the token-minting client registers: tokens come from the
 // authorization code flow (a product-mode service has no password grant).
 const CONSOLE_REDIRECT_URI = "https://admin-console-job.example.test/cb";
@@ -290,6 +303,12 @@ async function apiPostJson(url, payload) {
 // `/admin-api` or this realm's) with real attributes and CONSOLE_PASSWORD.
 // Answers true when this call created them and false when somebody already
 // had — a name the directory already holds is left exactly as it was.
+//
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a password an administrator
+// types is temporary in product, and the sign-in screen asks for a new one
+// (`/authn/password-change`), so the person is created with a temporary one
+// and chooses CONSOLE_PASSWORD at that step (`own_password.js`; in
+// development the administrator's door sets it).
 async function ensurePerson(apiBase, username) {
   log.debug("Entering ensurePerson(). username=" + username);
   const key = apiBase + " user " + username;
@@ -297,18 +316,28 @@ async function ensurePerson(apiBase, username) {
     log.debug("Leaving ensurePerson(). Already handled.");
     return ensured[key];
   }
+  const temporary = ownPassword.temporaryFor(CONSOLE_PASSWORD);
   const r = await apiPostJson(apiBase + "/users/create", {
     username: username, invent: false,
     attributes: { cn: "Console " + username, givenName: "Console",
                   sn: username, displayName: "Console " + username,
                   mail: username + "@admin-console-job.test" },
-    credential: "password", password: CONSOLE_PASSWORD
+    credential: "password", password: temporary
   });
   const made = r.status === 200 && !!r.body && r.body.ok === true;
   assert.ok(made || (r.body && r.body.existing),
     "POST " + apiBase + "/users/create should create " + username + " or say " +
     "they already exist; it answered " + r.status + " " +
     String(r.raw).slice(0, 300));
+  if (made) {
+    await ownPassword.chooseOwn(apiBase.replace(/\/admin-api$/, ""),
+      username, temporary, CONSOLE_PASSWORD, function (who, value) {
+        log.debug("Entering setPassword().");
+        log.debug("Leaving setPassword().");
+        return apiPostJson(apiBase + "/users/set-password",
+                           { user: who, password: value });
+      });
+  }
   ensured[key] = made;
   log.debug("Leaving ensurePerson(). " +
             (made ? "Created." : "Already there."));
@@ -431,6 +460,89 @@ function since(from) {
   return responses.slice(from);
 }
 
+// WHETHER A RESPONSE IS THE RUNTIME'S CHALLENGE rather than the form's
+// answer (#2196): a 403 `insufficient_scope` that starts the write scope's
+// second authorization (#2189), a 401 `insufficient_user_authentication`
+// that starts a fresh sign-in (#2173), a 401 `use_dpop_nonce` sent again at
+// once. After one, the runtime sends the SAME write again, so a press that
+// stepped makes two POSTs and the second is the answer.
+function isChallenge(r) {
+  log.debug("Entering isChallenge().");
+  log.debug("Leaving isChallenge().");
+  return consoleSteps.isStepChallenge(r.status, r.headers);
+}
+
+// A POST the RUNTIME makes, which no form does: its token requests (#446)
+// and, where it signs in on the page, the sign-in screen's own.
+function isTheRuntimes(r) {
+  log.debug("Entering isTheRuntimes().");
+  const path = new URL(r.url).pathname.replace(/^\/realm\/[^/]+/, "");
+  log.debug("Leaving isTheRuntimes().");
+  return /^\/oauth2\//.test(path) || /^\/authn(-api)?\//.test(path);
+}
+
+// The form's own answer since a mark: a POST that is not the runtime's and
+// not a challenge. Null until it is in.
+function formAnswerSince(from) {
+  log.debug("Entering formAnswerSince().");
+  const found = since(from).filter(function (r) {
+    return r.method === "POST" && !isTheRuntimes(r) && !isChallenge(r);
+  })[0] || null;
+  log.debug("Leaving formAnswerSince(). " + !!found);
+  return found;
+}
+
+// THE STEPS AFTER A PRESS (#2196), completed by `console_steps.js` as the
+// signed-in account: a popup, a Continue, a sign-in again. Done when the
+// form's own answer is in (`formAnswerSince()`), and kept waiting while a
+// challenge is the last word.
+let steps = null;
+async function completeTheSteps(start, from) {
+  log.debug("Entering completeTheSteps().");
+  const out = await steps.after(start, {
+    settled: async function () {
+      return !!formAnswerSince(from);
+    },
+    stepping: async function () {
+      return since(from).some(function (r) {
+        return r.method === "POST" && isChallenge(r);
+      });
+    }
+  });
+  log.debug("Leaving completeTheSteps().");
+  return out;
+}
+
+// THE FRAME MAY HAVE BEEN REDRAWN DURING A STEP (#2196), before the answer
+// was drawn, so a press's "the page it was pressed on is gone" says nothing
+// about the answer. The frame there now — the answer has just arrived and is
+// drawn next — is marked, and the answer's drawing is what replaces it:
+// waited for, bounded, since a press answered with a file replaces none.
+async function answerDrawnAfterStep(driver, stepped) {
+  log.debug("Entering answerDrawnAfterStep().");
+  if (!stepped.popups && !stepped.continued) {
+    log.debug("Leaving answerDrawnAfterStep(). No step.");
+    return;
+  }
+  await driver.executeScript(
+    "const f = document.querySelector('.shell');" +
+    "if (f) { f.__stsStepped = true; }").catch(function (e) {
+      log.debug("Caught marking the frame: " + ((e && e.message) || e));
+    });
+  await driver.wait(function () {
+    return driver.executeScript(
+      "const f = document.querySelector('.shell');" +
+      "return !!f && !f.__stsStepped;").catch(function (e) {
+        log.debug("Caught reading the frame: " + ((e && e.message) || e));
+        return false;
+      });
+  }, 5000).catch(function (e) {
+    log.debug("Caught waiting for the answer's frame: " +
+              ((e && e.message) || e));
+  });
+  log.debug("Leaving answerDrawnAfterStep().");
+}
+
 // The one POST in a stretch of responses. A console interaction makes exactly
 // one; more than one means a page grew a second request and the caller's
 // assertion about "the POST" would silently be about the wrong one.
@@ -439,9 +551,17 @@ function thePostIn(stretch, what) {
   // The console's own token requests are not the form's (#446): a page
   // that renews its token while answering a form makes a POST to
   // /oauth2/token that is the runtime's and not the control's.
-  const posts = stretch.filter(function (r) {
-    return r.method === "POST" && !/\/oauth2\/token$/.test(r.url);
+  const sent = stretch.filter(function (r) {
+    return r.method === "POST" && !isTheRuntimes(r);
   });
+  // A CHALLENGE IS NOT THE ANSWER WHERE ONE FOLLOWED IT (#2196): the write
+  // was sent again with the token the step got, and that is the answer. A
+  // step that got no write scope (a reader) sends nothing again, and then
+  // the challenge IS the answer — the refusal the caller asserts.
+  const answers = sent.filter(function (r) {
+    return !isChallenge(r);
+  });
+  const posts = answers.length ? answers : sent.slice(-1);
   assert.strictEqual(posts.length, 1,
     "expected exactly one POST while " + what + "; the browser made " +
     posts.length + ": " + JSON.stringify(posts.map(function (r) {
@@ -471,8 +591,7 @@ async function go(driver, url) {
   // switcher, which keeps their token and moves the page under the realm's
   // prefix. So a realm page is visited that way, as a person would.
   const inRealm = base + "/realm/" + REALM + "/admin";
-  if (url === inRealm || url.indexOf(inRealm + "/") === 0 ||
-      url.indexOf(inRealm + "?") === 0 || url.indexOf(inRealm + "#") === 0) {
+  if (urls.isUnder(url, inRealm)) {
     const reached = await goThroughTheSwitcher(driver,
       url.slice((base + "/realm/" + REALM).length));
     log.debug("Leaving go(). Through the switcher, status=" + reached.status);
@@ -1122,7 +1241,24 @@ async function fillAndPress(driver, formIndex, values, options) {
                 ((e && e.message) || e));
       return null;
     });
+  const start = await steps.before();
   await clickInView(driver, button);
+  if (typed.method === "POST") {
+    // WHAT THE CONSOLE ASKS FOR FIRST (#2196), done as a person does it.
+    const stepped = await completeTheSteps(start, from);
+    if (stepped.leftToSignIn && !opts.pressedAgain) {
+      // THE PAGE LEFT TO SIGN IN AND SENT NOTHING: the console puts the page
+      // back and says so, and the reader fills it in and presses again.
+      await waitForDrawn(driver);
+      log.info("[steps] form " + formIndex + " was not sent: the console " +
+               "signed in again on the page. Pressed again.");
+      const again = await fillAndPress(driver, formIndex, values,
+        Object.assign({}, opts, { pressedAgain: true }));
+      log.debug("Leaving fillAndPress(). Pressed again.");
+      return again;
+    }
+    await answerDrawnAfterStep(driver, stepped);
+  }
   if (leaving) {
     await pageReplaced(driver, leaving, 20000).catch(function (e) {
       log.debug("Caught waiting for the page to be replaced (a download " +
@@ -1648,6 +1784,16 @@ const SCRIPTED_PAGES = {
     "draws the page."
 };
 
+// THE SHELL'S OWN SCRIPTS, which every console page carries and no row of
+// SCRIPTED_PAGES argues: the console's (#446) and, since #2220, the browser
+// check `common/shell_document.ts` puts before it on EVERY static surface's
+// shell — an ECMAScript 5 file that tells an old browser why nothing will be
+// drawn. It is the shell's, not the page's, so it belongs beside the
+// console's script here rather than in a per-page row (#2258); a script that
+// is neither is still measured against SCRIPTED_PAGES.
+const CONSOLE_SCRIPT = /^(\/realm\/[^/]+)?\/admin\/console\.js$/;
+const BROWSER_CHECK_SCRIPT = /^\/web\/browser-check\.js$/;
+
 async function everyPageIsDrawn(driver, pages) {
   log.debug("Entering everyPageIsDrawn().");
   log.info("=== Every console page ===");
@@ -1738,13 +1884,19 @@ async function everyPageIsDrawn(driver, pages) {
     check(path + (scripted ? " carries the console's script and its own"
                            : " carries the console's script and no other"),
       function () {
+        const shell = page.scriptSrcs.filter(function (src) {
+          return BROWSER_CHECK_SCRIPT.test(src);
+        });
         const own = page.scriptSrcs.filter(function (src) {
-          return !/^(\/realm\/[^/]+)?\/admin\/console\.js$/.test(src);
+          return !CONSOLE_SCRIPT.test(src) && !BROWSER_CHECK_SCRIPT.test(src);
         });
         assert.ok(page.scriptSrcs.length >= 1 && own.length ===
-                  page.scriptSrcs.length - 1,
+                  page.scriptSrcs.length - 1 - shell.length,
           path + " should carry /admin/console.js once; the browser built " +
           JSON.stringify(page.scriptSrcs) + ".");
+        assert.ok(shell.length <= 1,
+          path + " should carry /web/browser-check.js at most once; the " +
+          "browser built " + JSON.stringify(page.scriptSrcs) + ".");
         if (scripted) {
           assert.ok(own.length === 1 && /^(\/realm\/[^/]+)?\/admin\//
                       .test(own[0]),
@@ -1975,7 +2127,7 @@ async function everyLinkResolves(driver, links) {
     const href = String(raw).split("#")[0];
     if (!href || seen[href]) { return; }
     seen[href] = true;
-    if (href.indexOf(base + "/") !== 0 && href !== base) {
+    if (!urls.isUnder(href, base)) {
       elsewhere.push(href);
       return;
     }
@@ -2076,6 +2228,159 @@ async function everyLinkResolves(driver, links) {
            "endpoint outside this console, and " + skipped.length +
            " sign-out door(s) that would end this run's session.");
   log.debug("Leaving everyLinkResolves().");
+}
+
+// ---------------------------------------------------------------------------
+// PROTOCOLS → PKI, HIERARCHY: VIEW DETAILS OPENS OVER THAT TAB.
+//
+// The crawl above would stay green for the failure a reader hit. It strips
+// the fragment, loads what remains with `driver.get`, and asks only that the
+// document answered under 400. Every `/admin` path answers that one
+// document, so a View details link that dropped `#pki-tree` and never asked
+// `GET /admin-api/certificates` still "resolved": the script redrew the page
+// with no fragment, the tab bar fell back to Metadata, and no dialog was
+// drawn. This section does what that crawl does not. It opens the Hierarchy
+// tab, presses View details on a CA certificate the way a person does, and
+// reads the page the script drew: the dialog is up, it is that certificate,
+// and Hierarchy is the tab on show. Close returns to the same section.
+// ---------------------------------------------------------------------------
+async function theCertificateDialogStaysOnItsTab(driver) {
+  log.debug("Entering theCertificateDialogStaysOnItsTab().");
+  log.info("=== Protocols → PKI, Hierarchy: View details ===");
+  await open(driver, root("/admin/pki"));
+  const tab = await driver.findElement(
+    By.css('.tabbar a[href="#pki-tab-hierarchy"]'));
+  await tab.click();
+  await driver.wait(async function () {
+    return await driver.executeScript(`
+      const panel = document.getElementById('pki-tab-hierarchy');
+      const link = panel && panel.querySelector('a.certdlg-open');
+      return !!(link && getComputedStyle(panel).display !== 'none');
+    `).catch(function (e) {
+      log.debug("Caught waiting for Hierarchy: " + ((e && e.message) || e));
+      return false;
+    });
+  }, 15000, "Hierarchy drew no visible View details link");
+  const offered = await driver.executeScript(`
+    const link = document.querySelector(
+      '#pki-tab-hierarchy a.certdlg-open');
+    const raw = link.getAttribute('href');
+    const url = new URL(raw, location.href);
+    const from = url.searchParams.get('from') || '';
+    const section = from ? document.getElementById(from) : null;
+    const panel = document.getElementById('pki-tab-hierarchy');
+    return {
+      raw: raw,
+      fp: (url.searchParams.get('certificate') || '').toLowerCase(),
+      from: from,
+      hash: url.hash,
+      inHierarchy: !!(section && panel && panel.contains(section))
+    };
+  `);
+  check("View details on a Hierarchy CA certificate names that " +
+        "certificate and the section's own fragment", function () {
+    assert.ok(/^[0-9a-f]{64}$/.test(offered.fp),
+      "the link's certificate is " + JSON.stringify(offered.fp) +
+      " on " + offered.raw);
+    assert.ok(offered.from === "pki-tree" || offered.from === "pki-chain",
+      "the link's section is " + JSON.stringify(offered.from) +
+      " on " + offered.raw);
+    assert.strictEqual(offered.hash, "#" + offered.from,
+      "the link's fragment is " + offered.hash + " on " + offered.raw);
+    assert.strictEqual(offered.inHierarchy, true,
+      "the section " + offered.from + " lies outside the Hierarchy panel");
+  });
+
+  const leaving = await driver.findElement(By.css(".pagehead"));
+  const pressed = await driver.findElement(
+    By.css("#pki-tab-hierarchy a.certdlg-open"));
+  await pressed.click();
+  await pageReplaced(driver, leaving, 20000);
+  await waitForDrawn(driver);
+  await driver.wait(async function () {
+    return await driver.executeScript(`
+      const dialog = document.querySelector('[role="dialog"]');
+      return !!(dialog && dialog.checkVisibility());
+    `).catch(function (e) {
+      log.debug("Caught waiting for the dialog: " +
+                ((e && e.message) || e));
+      return false;
+    });
+  }, 15000, "View details drew no certificate dialog");
+  const openState = await driver.executeScript(`
+    const dialog = document.querySelector('[role="dialog"]');
+    const hierarchy = document.getElementById('pki-tab-hierarchy');
+    const metadata = document.getElementById('pki-tab-metadata');
+    const tab = document.querySelector(
+      '.tabbar a[href="#pki-tab-hierarchy"]');
+    const metaTab = document.querySelector(
+      '.tabbar a[href="#pki-tab-metadata"]');
+    const shown = function (el) {
+      return !!el && getComputedStyle(el).display !== 'none';
+    };
+    return {
+      href: location.href,
+      hash: location.hash,
+      search: location.search,
+      text: dialog ? dialog.innerText : '',
+      hierarchyShown: shown(hierarchy),
+      metadataShown: shown(metadata),
+      hierarchyCurrent: !!(tab && tab.classList.contains('tab-current')),
+      metadataCurrent: !!(metaTab &&
+        metaTab.classList.contains('tab-current'))
+    };
+  `);
+  check("pressing it opens that certificate over the Hierarchy tab",
+        function () {
+    const where = openState.href + " | " + openState.text.slice(0, 240);
+    const shownFp = openState.text.toLowerCase().replace(/[^0-9a-f]/g, "");
+    assert.strictEqual(openState.hash, "#" + offered.from, where);
+    assert.ok(openState.search.indexOf("certificate=" + offered.fp) >= 0,
+      where);
+    // The dialog prints the fingerprint with colons. Stripping every
+    // non-hex leaves the digits in order, so the pressed certificate is
+    // still found.
+    assert.ok(shownFp.indexOf(offered.fp) >= 0,
+      "the dialog's certificate is not the one pressed. " + where);
+    assert.ok(openState.text.indexOf("Certificate not available") < 0,
+      where);
+    assert.strictEqual(openState.hierarchyShown, true, where);
+    assert.strictEqual(openState.metadataShown, false, where);
+    assert.strictEqual(openState.hierarchyCurrent, true, where);
+    assert.strictEqual(openState.metadataCurrent, false, where);
+  });
+
+  const closing = await driver.findElement(By.css(".pagehead"));
+  const close = await driver.findElement(By.css(".certdlg-foot button"));
+  await close.click();
+  await pageReplaced(driver, closing, 20000);
+  await waitForDrawn(driver);
+  const closed = await driver.executeScript(`
+    const dialog = document.querySelector('[role="dialog"]');
+    const hierarchy = document.getElementById('pki-tab-hierarchy');
+    const metadata = document.getElementById('pki-tab-metadata');
+    const shown = function (el) {
+      return !!el && getComputedStyle(el).display !== 'none';
+    };
+    return {
+      href: location.href,
+      hash: location.hash,
+      search: location.search,
+      dialog: !!(dialog && dialog.checkVisibility()),
+      hierarchyShown: shown(hierarchy),
+      metadataShown: shown(metadata)
+    };
+  `);
+  check("Close returns to that same Hierarchy section, with the " +
+        "dialog gone and the certificate query dropped", function () {
+    const where = closed.href;
+    assert.strictEqual(closed.dialog, false, where);
+    assert.strictEqual(closed.hash, "#" + offered.from, where);
+    assert.ok(closed.search.indexOf("certificate=") < 0, where);
+    assert.strictEqual(closed.hierarchyShown, true, where);
+    assert.strictEqual(closed.metadataShown, false, where);
+  });
+  log.debug("Leaving theCertificateDialogStaysOnItsTab().");
 }
 
 // A GET FORM WITH target="_blank" (#717's Preview, the one such form): the
@@ -3625,15 +3930,36 @@ async function theDirectoryPagesWork(driver) {
       "and stores one family out of three.");
   });
 
+  // THE PERSON'S OWN FIGURE, READ FROM THE STORE, and the realm's total only
+  // where it is the whole realm's (GitHub run 45732176952, cluster). On a
+  // database store the users register is on demand and `/admin-api/metrics`
+  // counts the records the ANSWERING process holds — it says so with
+  // `users.heldOnly`, and `common/admin_stats.js`'s `snapshot()` says a
+  // person's own figure is `userDetail()`'s, read from every origin's row.
+  // `/admin-api` is fanned out across workers and nodes, so the two
+  // readings above came from different processes and went from 1 to 0
+  // with nothing counted or uncounted. The person's drill-down asks the
+  // store, whichever process answers it.
   const after = await apiJson("/realm/" + REALM + "/admin-api/metrics");
+  const detail = await apiJson("/realm/" + REALM + "/admin-api/users?user=" +
+                               encodeURIComponent(person));
   check("creating somebody is not a sign-in", function () {
+    const own = (detail.body || {}).user || {};
+    assert.strictEqual(Number(own.authentications || 0), 0,
+      "creating a directory entry must not count as an authentication. " +
+      person + "'s own record, read from the store, counts " +
+      JSON.stringify(own.authentications) + ". An administrator adding " +
+      "somebody is not that person signing in, and a console that recorded " +
+      "one would inflate every number on /admin/metrics and every count on " +
+      "/admin/users.");
+    const held = !!((before.body.users || {}).heldOnly ||
+                    (after.body.users || {}).heldOnly);
     const signInsAfter = Number((after.body.users || {}).authentications || 0);
-    assert.strictEqual(signInsAfter, signInsBefore,
-      "creating a directory entry must not count as an authentication. It " +
-      "went from " + signInsBefore + " to " + signInsAfter + ". An " +
-      "administrator adding somebody is not that person signing in, and a " +
-      "console that recorded one would inflate every number on " +
-      "/admin/metrics and every count on /admin/users.");
+    if (!held) {
+      assert.strictEqual(signInsAfter, signInsBefore,
+        "and the realm's total, held whole by every process here, went " +
+        "from " + signInsBefore + " to " + signInsAfter + ".");
+    }
   });
 
   log.info("[directory] OK — a person and an application created on the " +
@@ -4114,7 +4440,13 @@ function writeForms(stamp) {
     // it carries TWO names on one line to drive the comma split as well as the
     // newline one, since a members box that only ever received a single value
     // would be a control this suite presses without exercising.
-    { path: "/admin/groups", button: "Create",
+    //
+    // THE FORM MOVED TO ITS OWN PAGE ON 2026-11-20 (#1132): every Directory
+    // object's create is `/admin/<object>/new` now, and the list's Create tab
+    // is a link to it. So the form is pressed on `/admin/groups/new` and the
+    // value is read back off the list, `/admin/groups` — which is what
+    // `readBack` names, a create page drawing nothing it created.
+    { path: "/admin/groups/new", readBack: "/admin/groups", button: "Create",
       values: { group: "console-group-" + stamp.slice(0, 8),
                 note: "Created by the console UI test.",
                 members: GROUP_MEMBER_A + ", " + GROUP_MEMBER_B },
@@ -4154,7 +4486,7 @@ async function everyWriteRoundTrips(driver) {
 
     // AND THE VALUE COMES BACK. This is the half a notice cannot give.
     if (one.expect.text) {
-      const redrawn = await open(driver, realm(one.path));
+      const redrawn = await open(driver, realm(one.readBack || one.path));
       // THE WHOLE PAGE, NOT THE VISIBLE TAB: since the console's pages became
       // tabs (#428, Metadata first), the list a write lands in is often a
       // panel the page does not open on, and `innerText` leaves a hidden
@@ -4163,7 +4495,7 @@ async function everyWriteRoundTrips(driver) {
         "return document.body ? document.body.textContent : '';"));
       check(one.path + " draws the value it was given", function () {
         assert.ok(drawn.indexOf(one.expect.text) >= 0,
-          "AFTER THE WRITE, " + one.path + " MUST DRAW " +
+          "AFTER THE WRITE, " + (one.readBack || one.path) + " MUST DRAW " +
           JSON.stringify(one.expect.text) + ". The console answered with a " +
           "notice and the page does not show it — which is exactly what a " +
           "handler that accepts a field, reports success and stores " +
@@ -4675,7 +5007,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
 
   const defined = await survey(driver);
   check("the permission is on the page, by its whole identifier", function () {
-    assert.ok(defined.text.indexOf(baseUri + "write") >= 0,
+    assert.ok(urls.namesAddress(defined.text, baseUri + "write"),
       "AND THE PAGE MUST SHOW THE COMPOSED IDENTIFIER, not the name alone: " +
       baseUri + "write is the string a client actually puts in a `scope`, " +
       "and it is the one thing on this page somebody copies. The page says " +
@@ -4713,7 +5045,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
 
   const granted = await survey(driver);
   check("the grant is read back on the client's own page", function () {
-    assert.ok(granted.text.indexOf(baseUri + "write") >= 0,
+    assert.ok(urls.namesAddress(granted.text, baseUri + "write"),
       "AND THE READ-BACK IS OFF THE PAGE THAT DREW THE CONTROL. The grant " +
       "lands on the CLIENT's entry as a value of oauthDelegatedPermission, " +
       "so a form that wrote it to the RESOURCE instead would still answer " +
@@ -4745,7 +5077,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
   const register = await open(driver, realm(
     "/admin/delegation#delegation-tab-register"));
   check("the delegation page's register agrees with it", function () {
-    assert.ok(register.text.indexOf(baseUri + "write") >= 0,
+    assert.ok(urls.namesAddress(register.text, baseUri + "write"),
       "ONE WRITE, TWO PAGES. The grant was typed on the application's page " +
       "and the register that draws every grant in the service must show the " +
       "same one — the two are the same directory attribute read through the " +
@@ -4782,11 +5114,11 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "and /admin/delegation-settings should draw a Remove button on the row " +
       "of every " +
       "permission defined; it drew remove=" + removeForm);
-    assert.ok(revoked.text.indexOf(baseUri + "write") < 0 ||
+    assert.ok(!urls.namesAddress(revoked.text, baseUri + "write") ||
               /It holds none/i.test(revoked.text),
       "after the revoke the client should no longer hold it. Its page still " +
       "says: " + revoked.text.slice(0, 400));
-    assert.ok(cleared.text.indexOf(baseUri + "write") < 0,
+    assert.ok(!urls.namesAddress(cleared.text, baseUri + "write"),
       "and afterwards the permission should be gone from the register too. " +
       "It still says: " + cleared.text.slice(0, 400));
   });
@@ -4809,7 +5141,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
                      { name: "read", description: "Pressed on its own page" });
   const afterDefine = await survey(driver);
   check("and the permission is read back on that page", function () {
-    assert.ok(afterDefine.text.indexOf(baseUri + "read") >= 0,
+    assert.ok(urls.namesAddress(afterDefine.text, baseUri + "read"),
       "a permission defined on the resource's page should be listed there " +
       "by its whole identifier. The page says " +
       afterDefine.text.slice(0, 400));
@@ -4858,7 +5190,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
     "/admin/applications?application=" + encodeURIComponent(client) +
     "#tab-permissions"));
   check("and the grant lands on the CLIENT's entry", function () {
-    assert.ok(clientPage.text.indexOf(baseUri + "read") >= 0,
+    assert.ok(urls.namesAddress(clientPage.text, baseUri + "read"),
       "a grant made from the resource's page is still a value of " +
       "oauthDelegatedPermission on the CLIENT, so the client's own page " +
       "must list it as something it holds. It says " +
@@ -4880,7 +5212,7 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "the resource's page should draw Revoke on each grant of its " +
       "permissions and Remove on each permission; it drew revoke=" +
       ownRevoke + " remove=" + ownRemove);
-    assert.ok(ownCleared.text.indexOf(baseUri + "read") < 0,
+    assert.ok(!urls.namesAddress(ownCleared.text, baseUri + "read"),
       "and afterwards the permission should be gone from it. It says " +
       ownCleared.text.slice(0, 400));
   });
@@ -4977,13 +5309,13 @@ async function theObservedAddressesArePressed(driver) {
                                 encodeURIComponent(rpId));
     listed = ((reply.body && reply.body.returnAddressesObserved) || [])
       .map(function (row) { return row.value; });
-    if (listed.indexOf(ONE) >= 0 && listed.indexOf(TWO) >= 0) {
+    if (urls.holds(listed, ONE) && urls.holds(listed, TWO)) {
       break;
     }
     await new Promise(function (resolve) { setTimeout(resolve, 250); });
   }
   check("both shires are marked observed on the entry", function () {
-    assert.ok(listed.indexOf(ONE) >= 0 && listed.indexOf(TWO) >= 0,
+    assert.ok(urls.holds(listed, ONE) && urls.holds(listed, TWO),
       "GET /admin-api/applications?application=" + rpId + " should list both " +
       "sighted addresses under returnAddressesObserved; it " +
       "listed " + JSON.stringify(listed));
@@ -4995,7 +5327,8 @@ async function theObservedAddressesArePressed(driver) {
   check("the application page draws the observed addresses with both buttons",
         function () {
     assert.ok(/Return addresses nobody registered/.test(drawn.text) &&
-              drawn.text.indexOf(ONE) >= 0 && drawn.text.indexOf(TWO) >= 0,
+              urls.namesAddress(drawn.text, ONE) &&
+              urls.namesAddress(drawn.text, TWO),
       "the drill-down should draw a section listing both observed addresses; " +
       "it says " +
       drawn.text.slice(0, 500));
@@ -5036,10 +5369,10 @@ async function theObservedAddressesArePressed(driver) {
   const still = (entry.returnAddressesObserved || []).map(
       function (row) { return row.value; });
   check("Confirm kept its address and Discard removed its own", function () {
-    assert.ok(still.indexOf(ONE) < 0 && acs.indexOf(ONE) >= 0,
+    assert.ok(!urls.holds(still, ONE) && urls.holds(acs, ONE),
       "after Confirm the address must be REGISTERED — on the entry with no " +
       "mark; the entry holds " + JSON.stringify({ acs: acs, observed: still }));
-    assert.ok(still.indexOf(TWO) < 0 && acs.indexOf(TWO) < 0,
+    assert.ok(!urls.holds(still, TWO) && !urls.holds(acs, TWO),
       "after Discard the address must be gone, mark and value; the entry holds " +
       JSON.stringify({ acs: acs, observed: still }));
   });
@@ -5269,7 +5602,7 @@ async function theFieldGridIsPressed(driver) {
   // Presses the first VISIBLE-TO-A-PERSON button the css and the text pick,
   // having first set `values` in that button's form. A real click, then a
   // wait for the page it replaces, as fillAndPress() does.
-  const press = async function (css, text, values) {
+  const press = async function (css, text, values, pressedAgain) {
     log.debug("Entering press(). " + css + " " + (text || ""));
     const button = await driver.executeScript(`
       const css = arguments[0];
@@ -5317,7 +5650,20 @@ async function theFieldGridIsPressed(driver) {
     // switch, +, the trash can — is drawn in place by the static console,
     // which replaces the frame and never loads a document.
     const leaving = await driver.findElement(By.css(".shell"));
+    const start = await steps.before();
     await button.click();
+    // WHAT THE CONSOLE ASKS FOR FIRST (#2196); a page that left to sign in
+    // sent nothing, and is pressed again.
+    const stepped = await completeTheSteps(start, from);
+    if (stepped.leftToSignIn && !pressedAgain) {
+      await waitForDrawn(driver);
+      log.info("[steps] the grid's " + (text || css) + " was not sent: " +
+               "the console signed in again on the page. Pressed again.");
+      await press(css, text, values, true);
+      log.debug("Leaving press(). Pressed again.");
+      return;
+    }
+    await answerDrawnAfterStep(driver, stepped);
     await pageReplaced(driver, leaving, 20000);
     await settleAfterSubmit(driver, from, "POST");
     log.debug("Leaving press().");
@@ -6084,14 +6430,17 @@ async function theGroupPageAddsAMember(driver) {
 
   // The group this control needs, made through the control beside it — so a
   // Create that broke would fail HERE too rather than leaving this section
-  // silently skipped for want of a group.
-  await open(driver, realm("/admin/groups"));
+  // silently skipped for want of a group. The control is on its own page
+  // since #1132 (2026-11-20), `/admin/groups/new`, which the list links to.
+  await open(driver, realm("/admin/groups/new"));
   const createForm = await formIndexFilling(driver, ["group", "members"]);
-  check("/admin/groups draws a create control", function () {
+  check("/admin/groups/new draws a create control", function () {
     assert.ok(createForm >= 0,
-      "/admin/groups should draw a form carrying `group` and `members`. It " +
-      "was a read-only page until 2026-09-06; a form that is not here is " +
-      "that change reverted rather than renamed.");
+      "/admin/groups/new should draw a form carrying `group` and " +
+      "`members`. /admin/groups was a read-only page until 2026-09-06 and " +
+      "its create moved to a page of its own on 2026-11-20 (#1132); a form " +
+      "that is not here is one of those changes reverted rather than " +
+      "renamed.");
   });
   await fillAndPress(driver, createForm,
                      { group: name, note: "Created by the console UI test.",
@@ -6108,9 +6457,9 @@ async function theGroupPageAddsAMember(driver) {
       "creating " + name + " on /admin/groups was refused: " +
       outcomeOf(landedOn, "error"));
     assert.ok(landedOn.indexOf("group=") >= 0,
-      "after a create, /admin/groups should send the reader to the group it " +
-      "just made — the Add member control is there and nowhere else. It " +
-      "landed on " + landedOn + ".");
+      "after a create, /admin/groups/new should send the reader to the " +
+      "group it just made — the Add member control is there and nowhere " +
+      "else. It landed on " + landedOn + ".");
   });
 
   // THE DN, TAKEN OFF THE URL THE CONSOLE ITSELF BUILT rather than scraped out
@@ -6678,13 +7027,15 @@ async function theTwoDrawingsAreServerSide(driver) {
       svg.forEach(function (one) { nodes += one.querySelectorAll('*').length; });
       return { count: svg.length, nodes: nodes,
                images: document.querySelectorAll('img, image').length,
-               // The console's own script runs every page since #446; what
-               // is counted is any OTHER — a graph library, say.
+               // The console's own script runs every page since #446, and
+               // the shell's browser check (#2220) every shell; what is
+               // counted is any OTHER — a graph library, say.
                // A string test, not a regex: this script is a template
                // literal, which would eat a regex's backslashes.
                scripts: Array.from(document.scripts).filter(function (one) {
-                 return !(one.getAttribute('src') || '')
-                   .endsWith('/admin/console.js');
+                 const src = one.getAttribute('src') || '';
+                 return !src.endsWith('/admin/console.js') &&
+                   src !== '/web/browser-check.js';
                }).length,
                // The sentence render() puts where the drawing goes when the
                // LAYOUT threw. It is a 200 with everything else on the page
@@ -6729,8 +7080,9 @@ async function theTwoDrawingsAreServerSide(driver) {
         "and the SVG should have something in it; it has " + drawn.nodes +
         " element(s).");
       assert.strictEqual(drawn.scripts, 0,
-        path + " must carry no script but the console's own. Every graph " +
-        "library a person would reach for runs in the browser, and the whole " +
+        path + " must carry no script but the console's and the shell's. " +
+        "Every graph library a person would reach for runs in the browser, " +
+        "and the whole " +
         "point of laying this out on the server is that no picture needs " +
         "one.");
       assert.strictEqual(drawn.images, 0,
@@ -7943,6 +8295,13 @@ async function test() {
 
   try {
     const handle = await driver.getWindowHandle();
+    steps = consoleSteps.forDriver(driver, {
+      credentials: function () {
+        return { username: signedInAs || CONSOLE_USER,
+                 password: CONSOLE_PASSWORD };
+      },
+      log: log
+    });
     const inspector = await NetworkInspector(driver, [handle]);
     await inspector.responseCompleted(recordResponse);
 
@@ -7957,6 +8316,7 @@ async function test() {
     const walked = await everyPageIsDrawn(driver, pages);
     await noPageNestsAForm(driver, pages);
     await everyLinkResolves(driver, walked.links);
+    await theCertificateDialogStaysOnItsTab(driver);
     await everyControlReachesSomething(driver, pages);
 
     await theRealmIsCreatedOnTheForm(driver);

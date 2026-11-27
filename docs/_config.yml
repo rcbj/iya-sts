@@ -15,7 +15,7 @@
 # preferring Jekyll over MkDocs was not adding a second toolchain.
 title: iya-sts
 description: >-
-  An identity service in one Node process: OAuth 2.0 and OpenID Connect,
+  An identity service in a single container: OAuth 2.0 and OpenID Connect,
   SAML, WS-Trust and WS-Federation, Kerberos, LDAP, SCIM, SPIFFE, OpenID4VC,
   certificate enrollment and more. Development mode exercises clients; product
   mode is deployable.
@@ -54,8 +54,17 @@ plugins:
 # The navigation is the sidebar, drawn by _layouts/default.html and
 # _includes/sidebar.html (overrides of minima's own) from the page's own
 # version's _data/navigation/<nav>.yml. THE SITE IS VERSIONED: each
-# release's pages are a folder (v1.1.0/, v1.0.0/), _data/versions.yml lists
+# release's pages are a folder (v1.2.0/, v1.1.0/, v1.0.0/), _data/versions.yml lists
 # them, and index.md here is the landing page that chooses one
 # (docs/CLAUDE.md, *The versioned site*).
 # There is no `header_pages`: at twenty-six pages a row across the top was not
 # navigation, so the header carries only the title.
+
+# RELEASE NOTES ARE ONE FILE PER CHANGE (#2218, rcbj 2026-11-25). The
+# release being written keeps its entries in _release_notes/<folder>/, one
+# `<issue>-<slug>.md` each, and its release-notes.md gathers them with a
+# Liquid loop. `output: false`: a note is a part of that page, never a page
+# of its own (docs/CLAUDE.md, *Release notes*).
+collections:
+  release_notes:
+    output: false

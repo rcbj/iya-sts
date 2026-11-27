@@ -697,7 +697,13 @@ async function throughDriver(t) {
     driver = driverModule.create({
       url: scoped + (scoped.indexOf('?') >= 0 ? '&' : '?') +
         'sslmode=require',
-      log: log, verifyTls: false, tlsCa: '', poolMax: 4, engine: 'mariadb'
+      log: log, verifyTls: true,
+      // Chain and host name, against STS_TEST_MARIADB_CA's file or, with
+      // none, node's default store and NODE_EXTRA_CA_CERTS.
+      tlsCa: process.env.STS_TEST_MARIADB_CA
+        ? require('fs').readFileSync(process.env.STS_TEST_MARIADB_CA, 'utf8')
+        : '',
+      poolMax: 4, engine: 'mariadb'
     });
     const mark = driver.committedMark();
     await driver.saveRealms(null, { removed: [], upserts: [{

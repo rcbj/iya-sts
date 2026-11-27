@@ -231,6 +231,54 @@
     "en": "228f7d738861aa3c",
     "text": "May pagbabago sa authenticator-app na tinanggihan dahil sa maling CSRF token"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "May pinakitaan ng bagong secret ng one-time code token"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "May nag-set up ng one-time code token sa sarili niyang account"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "Hindi nakumpirma ang pag-set up ng isang one-time code token"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "May nag-alis ng one-time code token sa sarili niyang account"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "May nag-resynchronize ng kanyang one-time code token"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "Hindi na-resynchronize ang isang one-time code token"
+  },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "May pinakitaan ng programming line ng YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "May nag-set up ng YubiKey OTP sa sarili niyang account"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "Hindi nakumpirma ang pag-set up ng isang YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "May nag-alis ng YubiKey OTP sa sarili niyang account"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "May nag-claim ng na-import na YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "Hindi na-claim ang isang YubiKey OTP"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "May authenticator-app secret na ipinakita habang ginagamit ang isang activation link"
@@ -354,6 +402,34 @@
   "audit.actions.keys.retire.label": {
     "en": "04a39be278dba264",
     "text": "Tinanggal ang mga retiradong signing key na lampas na sa kanilang grace"
+  },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "Ang sertipiko ng isang certificate authority ay na-renew sa sarili nitong susi"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "Ang sertipiko ng listener ay na-renew"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "Ang mga susi ng nakalaang tagapirma ng credential ay na-rotate"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "Ang mga susi sa pag-encrypt ng request object, KEM at kahilingan ng credential ay na-rotate"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "Ang isang ibinabahaging lihim ng cluster ay na-rotate"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "Ang client secret ng isang application ay awtomatikong na-rotate"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "Ang password ng database ay binasa muli at nagbago"
   },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
@@ -486,6 +562,138 @@
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "Hindi na pinagkakatiwalaan ang attestation ng isang security key: binabawi ng Android attestation status list ng Google ang chain nito"
+  },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "Naitala ang isang hardware token mula sa attestation nito"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "Nagdagdag ng credential sa isang hardware token"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "Inirehistro ang isang hardware token ng ibang tao kaysa sa may hawak nito"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "Iniulat na nawala ang isang hardware token at inalis ang mga credential nito"
+  },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "Inalis ang isang hardware token sa entry ng isang tao, at umalis sa rehistro ang kanilang mga credential dito"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "Tinanggihan ang isang token na isinulat sa entry ng isang tao at ibinalik ayon sa pagkakatala"
+  },
+  "audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "Na-import, o tinanggihan, ang PSKC seed file ng isang vendor"
+  },
+  "audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "Na-assign sa isang tao, o na-claim niya, ang isang na-import na OATH token"
+  },
+  "audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "Tinanggihan ang pag-claim ng isang tao sa isang na-import na OATH token"
+  },
+  "audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "Inalis sa inventory ang isang hindi naka-assign na OATH token"
+  },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "Inalis sa serbisyo ang isang nakatalagang OATH token dahil inalis ito sa entry ng may hawak"
+  },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "Na-import ang isang YubiKey OTP CSV, o tinanggihan"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "Na-assign ang isang imported YubiKey OTP sa isang tao"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "May taong nag-claim ng imported YubiKey OTP, o tinanggihan ang claim"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "Inalis sa inventory ang isang hindi naka-assign na YubiKey OTP"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "Inalis sa serbisyo ang isang nakatalagang YubiKey OTP dahil inalis ito sa entry ng may hawak"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "Nilikha ang isang YK-VAL client"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "Inalis ang isang YK-VAL client"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "Nagtanong ang isang YK-VAL client kung wasto ang isang YubiKey OTP"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Nabawi ang isang naka-escrow na PIV key-management key"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "May na-issue na challenge para sa pagrehistro ng OpenPGP key"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "May OpenPGP key na nairehistro batay sa proof of possession"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "May OpenPGP key na hindi nairehistro"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "May OpenPGP key na inalis"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "May OpenPGP key na inilathala sa, o binawi mula sa, Web Key Directory"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "Binago kung paano naka-encrypt ang mail para sa isang tao"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "Naitakda o naalis ang S/MIME certificate ng isang tao"
+  },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "Nag-issue ng ML-KEM S/MIME na challenge para sa patunay ng pag-aari"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "Hindi na-issue ang isang ML-KEM S/MIME certificate"
+  },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "Isang klasikong OpenPGP key ang itinabi sa tabi ng post-quantum key na pumalit dito"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "Tinanggal ang isang itinabing klasikong OpenPGP key"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "Muling inisyu ang isang PIV certificate pagkatapos mag-sign in"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "Binawi ang isang PIV certificate nang gamitin sa pag-sign in ang kapalit nito"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -667,6 +875,14 @@
     "en": "478c7ee15248637f",
     "text": "May operator na nag-clear ng authenticator app ng isang tao"
   },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "Ni-clear ng isang operator ang one-time code token ng isang tao"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "Inalis ng isang operator ang YubiKey OTP ng isang tao"
+  },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",
     "text": "May operator na nag-alis ng security key ng isang tao"
@@ -674,6 +890,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "May operator na nagpalit ng pangalan ng passkey ng isang tao"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "Nag-import ang isang operator ng U2F security key para sa isang tao"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -802,6 +1022,10 @@
   "audit.actions.admin.pki.trust.change.label": {
     "en": "ab34b1a9778d5c8e",
     "text": "Binago ang signer truststore o isang paranoid na PKI setting"
+  },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "Binago ang isang pinangalanang truststore o ang pagtatalaga ng truststore ng isang use case"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -991,6 +1215,46 @@
     "en": "432e877d55af1913",
     "text": "Naipadala o nabigo ang callback ng isang AuthZEN access request"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Nabigo ang isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "Puno ang imbakan ng mga AuthZEN denial na maaaring hilingin"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "Hinawakan ang isang aksyon ng administrator para sa ikalawang administrator"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "Inaprubahan at pinatakbo ang isang hinawakang aksyon ng administrator"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "Tinanggihan ang isang hinawakang aksyon ng administrator"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "Binawi ng humiling ang isang hinawakang aksyon ng administrator"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "Nag-expire nang walang desisyon ang isang hinawakang aksyon ng administrator"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "Inaprubahan at hindi pinatakbo ang isang hinawakang aksyon ng administrator"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "May tinanggihang magpasya sa isang hinawakang aksyon ng administrator"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "Tumakbo nang walang ikalawang administrator ang isang mataas-na-panganib na aksyon ng administrator"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Tumanggi ang issuance PEP na hayaan ang serbisyong ito na mag-mint ng isang bagay"
@@ -1014,6 +1278,14 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "Na-certify ang assertion key ng isang remote PEP mula sa request nito"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "Ang isang naka-embed na remote PEP ay itinali sa application nito, o tinanggal ang pagkakatali"
+  },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "Nagsimulang kumuha ang isang remote PEP ng ibang saklaw ng patakaran"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -1230,6 +1502,10 @@
   "audit.actions.persistence.minted-drop.label": {
     "en": "065f403ac7419f76",
     "text": "Itinapon ang isang minted na row na hindi kailanman maaaring ma-commit"
+  },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "Ang client certificate ng database ay binasa muli at nagbago"
   },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
@@ -1643,6 +1919,18 @@
     "en": "55c1155d5daa1c68",
     "text": "Binawi ng isang tao ang isa sa kanyang mga pares ng susi sa paglagda"
   },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "Binigyan ang isang tao ng SSH user certificate"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "Binawi ng isang tao ang isa sa kanyang mga SSH user certificate"
+  },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Tinanggihan ang isang SSH user certificate na isinulat sa entry ng isang tao: hindi ito inisyu sa kanila ng CA, o binawi o nag-expire na"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "Naglathala ang isang tao ng sarili niyang did:web"
@@ -1778,6 +2066,34 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "Naitakda ang description, display name o mga member type ng isang role"
+  },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "Ginawang static o dynamic na mapipili ang isang tungkulin"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "Itinakda kung paano pinipili ang isang dynamic na tungkulin sa pag-sign in"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "Napagpasyahan ang pagiging karapat-dapat ng isang tao sa isang dynamic na tungkulin"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "Inialok ang mga dynamic na tungkulin sa isang pag-sign in"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "Pinili ang mga dynamic na tungkulin sa isang pag-sign in"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "Tinanggihan ang pagpili ng mga dynamic na tungkulin ng isang pag-sign in"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "Inalis sa isang token ang isang piniling dynamic na tungkulin"
   },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
@@ -2118,6 +2434,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "Itinakda ang risk level ng isang nakarehistrong device"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Kailangan na ngayon ng mga administrator ng realm ang compliant na nakarehistrong device"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

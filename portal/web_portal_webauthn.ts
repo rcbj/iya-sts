@@ -33,6 +33,8 @@
 // ---------------------------------------------------------------------------
 
 import WebWebAuthn = require('../common/web_webauthn');
+import WebSafeDom = require('../common/web_safe_dom');
+import kit = require('./web_portal_kit');
 
 type Json = any;
 
@@ -93,10 +95,8 @@ class PortalWebAuthn {
         excludeCredentials: exclude.map(function (id: string): Json {
           return { type: 'public-key', id: PortalWebAuthn.bytes(id) };
         }),
-        extensions: (o.credProps || o.minPinLength)
-          ? Object.assign(o.credProps ? { credProps: true } : {},
-                          o.minPinLength ? { minPinLength: true } : {})
-          : undefined,
+        // The extensions the server asks for (#1955 P7: one copy).
+        extensions: WebWebAuthn.creationExtensions(o),
         hints: o.hints && o.hints.length ? o.hints : undefined,
         attestation: o.attestation || 'direct',
         timeout: o.timeout || 60000 } }).then(PortalWebAuthn.created);
@@ -108,6 +108,8 @@ class PortalWebAuthn {
       }) : undefined,
       userVerification: o.userVerification || 'preferred',
       hints: o.hints && o.hints.length ? o.hints : undefined,
+      // The legacy U2F appid (#1955 P7), where the server asks it.
+      extensions: WebWebAuthn.requestExtensions(o),
       timeout: o.timeout || 60000 } }).then(PortalWebAuthn.asserted);
   }
 
@@ -116,6 +118,27 @@ class PortalWebAuthn {
   // person's passkeys this service still accepts, and their name.
   // Feature-detected and best-effort. ONCE PER LANE (#643): `#wa-signal-pqc`
   // carries the post-quantum lane's own handle, name and ids, sent apart.
+  /**
+   * Says, once, beside the ceremony, that this browser cannot use passkeys,
+   * and hides the button that would start it.
+   *
+   * @param doc - the document
+   * @param d - the `#wa-data` element
+   * @param go - the `#wa-go` button, or null
+   * @param t - the page's translator, or null
+   * @returns nothing
+   */
+  static sayUnable(doc: Json, d: Json, go: Json, t?: Json): void {
+    if (go) {
+      go.hidden = true;
+    }
+    if (doc.getElementById('wa-unable')) {
+      return;
+    }
+    WebSafeDom.insert(d, 'beforeend', '<div class="err" id="wa-unable" ' +
+      'role="alert">' + kit.esc(WebWebAuthn.missingText(t)) + '</div>');
+  }
+
   /**
    * Sends the signals a `#wa-signal` element describes.
    *
@@ -245,7 +268,7 @@ class PortalWebAuthn {
    * @returns nothing
    */
   static wire(doc: Json, window: Json, submit: (form: Json) => void,
-              quiet?: (form: Json, body: Json) => void): void {
+              quiet?: (form: Json, body: Json) => void, t?: Json): void {
     PortalWebAuthn.signal(doc.getElementById('wa-signal'), window);
     PortalWebAuthn.signal(doc.getElementById('wa-signal-pqc'), window);
     const d = doc.getElementById('wa-data');
@@ -262,6 +285,14 @@ class PortalWebAuthn {
     const run = function (event: Json): void {
       if (event && event.preventDefault) {
         event.preventDefault();
+      }
+      // NO WEBAUTHN HERE (#2220): said in place, in the page's language,
+      // and nothing is sent — the finish would draw its answer over it, as
+      // #961 found for the guidance, and the pending ceremony expires.
+      if (WebWebAuthn.missing(window && window.navigator, window,
+          d.getAttribute('data-mode') === 'create' ? 'create' : 'get')) {
+        PortalWebAuthn.sayUnable(doc, d, go, t);
+        return;
       }
       const send = function (payload: Json): void {
         const field = doc.getElementById('wa-credential');

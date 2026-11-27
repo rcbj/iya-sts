@@ -1,0 +1,6 @@
+{
+  "denialTitle": "Demander l’accès",
+  "denialDescription": "Cet accès peut être demandé. Un approbateur désigné par la politique décide, puis l’application redemande.",
+  "taskTitle": "{status, select, pending {Demande d’accès envoyée} approved {Demande d’accès approuvée} denied {Demande d’accès refusée} expired {Demande d’accès expirée} cancelled {Demande d’accès annulée} failed {Demande d’accès en échec} other {Demande d’accès}}",
+  "taskDescription": "{status, select, pending {Les approbateurs ont été sollicités. L’application redemande dès que l’un d’eux a décidé.} approved {Un approbateur a approuvé cette demande. L’application redemande en présentant l’approbation.} denied {Un approbateur a refusé cette demande.} expired {Personne n’a décidé de cette demande avant son expiration.} cancelled {Cette demande a été annulée.} failed {Cette demande n’a pas pu aboutir. Demandez de nouveau.} other {Cette demande est {status}.}}"
+}

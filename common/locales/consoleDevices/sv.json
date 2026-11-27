@@ -153,6 +153,7 @@
   "registrationHtml.signalsNote": "CAEP: {caep}. RISC, för en persons enhet som komprometterats eller tagits bort: {risc}. Subjektet är {subject}. En efterlevnadsändring skickas bara ut när det en mottagare kan få veta har ändrats: CAEP känner till compliant och not-compliant, och unknown skickas som not-compliant.",
   "registrationHtml.decidesHeading": "Vad som avgör för en enhet",
   "registrationHtml.decidesNote": "Riskbedömning: signalerna {signals} — de två sista sänker poängen; unregistered-device utlöses {expect, select, yes {för alla här (devices.expectRegistered)} other {bara för en person som har registrerat en enhet}}. Utfärdandepolicyn ({policy}): en komprometterad enhet {refuse, select, yes {<strong>nekas</strong>} other {är bara en risksignal}}; en efterlevande registrerad enhet {require, select, yes {<strong>krävs</strong>} attested {<strong>krävs</strong>, och attesterad} other {krävs inte (av som standard)}}. Acr:en <code>{acr}</code>, och anspråket {claim}.",
+  "registrationHtml.adminDeviceNote": "Administrationskonsolen och en persons admin:*-token: {state, select, armed {en kompatibel registrerad enhet <strong>krävs</strong> av varje administratör (devices.requireCompliantDeviceForAdmin), aktiverat sedan {armedAt}.} pending {<strong>ännu inte i kraft</strong>: ingen administratör har loggat in från en kompatibel registrerad enhet, så varje administratör släpps in. Registrera din enhet på sidan Enheter i användarportalen, markera den som kompatibel i enhetslistan och logga in med nyckeln eller certifikatet på den: den inloggningen aktiverar kravet, och det förblir aktiverat.} other {ingen enhet krävs (devices.requireCompliantDeviceForAdmin är av här; i produktläge är det på som standard).}}",
   "registrationHtml.settings": "Inställningar",
   "monitorHtml.devices": "enheter",
   "monitorHtml.keys": "nycklar",
@@ -187,5 +188,8 @@
   "monitorHtml.thRegistered": "Registrerade",
   "monitorHtml.thRemoved": "Borttagna",
   "monitorHtml.thEvicted": "Utträngda",
-  "monitorHtml.thCompliance": "Efterlevnad: {source}"
+  "monitorHtml.thCompliance": "Efterlevnad: {source}",
+  "newDevice.button": "Registrera en enhet",
+  "newDevice.key": "Första nyckel",
+  "newDevice.keyHint": "sparas bara tillsammans med sin typ"
 }

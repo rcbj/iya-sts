@@ -122,5 +122,15 @@
   "pepCredential.urn": "Nombre",
   "pepCredential.env": "Inicie el PEP con este entorno. La clave privada nunca salió de la máquina que hizo la solicitud; este servicio no tiene ninguna que entregar.",
   "pepCredential.chain": "El certificado y su cadena hasta la raíz del servicio. Público: el PEP no lo necesita para autenticarse, y figura en la lista de claves de la entrada.",
-  "pepCredential.download": "Descargar el certificado"
+  "pepCredential.download": "Descargar el certificado",
+  "once.pivCertificate": "Certificado PIV",
+  "once.pivKey": "Clave PIV en custodia",
+  "piv.keyWarn": "Esta es la clave privada de descifrado de la persona. Se muestra una sola vez, y su recuperación consta en el registro de auditoría. Entréguela como entregaría la tarjeta.",
+  "piv.privateKey": "Clave privada",
+  "piv.certificate": "Certificado",
+  "piv.import": "Escríbalo en la ranura de la YubiKey con: ykman piv certificates import SLOT cert.pem",
+  "once.sshCertificate": "Certificado de usuario SSH",
+  "ssh.certificate": "Certificado",
+  "ssh.pqc": "Certificado ML-DSA",
+  "ssh.install": "Guárdelo junto a la clave privada, con el nombre del archivo de la clave terminado en -cert.pub, y ssh lo presenta con la clave."
 }

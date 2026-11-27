@@ -63,6 +63,14 @@
     "en": "ce51e3182e53d854",
     "text": "डायल नहीं किया गया — persistence.databaseTlsCaFile {{file}} का नाम लेता है, जिसे पढ़ा नहीं जा सकता या जिसमें कोई प्रमाणपत्र नहीं है, इसलिए यह सेवा उस पर आरंभ नहीं होती।"
   },
+  "persistence.status.clientCertificate": {
+    "en": "803d02a07753ab1b",
+    "text": "यह सेवा {{file}} (persistence.databaseTlsClientCertFile) के क्लाइंट प्रमाणपत्र से डेटाबेस के सामने प्रमाणित होती है, जिसे हर persistence.databasePasswordRefreshS पर फिर से पढ़ा जाता है।"
+  },
+  "persistence.status.clientCertificateUnusable": {
+    "en": "79cae22fc2547022",
+    "text": "कनेक्ट नहीं किया गया — {{file}} (persistence.databaseTlsClientCertFile) का क्लाइंट प्रमाणपत्र पढ़ा नहीं जा सकता, या उसकी कुंजी उसकी अपनी नहीं है, इसलिए यह सेवा इस पर शुरू नहीं होती।"
+  },
   "persistence.status.refusedClear": {
     "en": "7a7f8a490bcde6cf",
     "text": "डायल नहीं किया गया — sslmode={{sslmode}} अनएन्क्रिप्टेड कनेक्शन माँगता है, जिसे यह सेवा कभी नहीं खोलती, इसलिए यह इस कनेक्शन स्ट्रिंग पर आरंभ नहीं होती।"

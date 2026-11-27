@@ -169,8 +169,8 @@ class Saml2Assertions {
    * @returns the signed assertion
    */
   signAssertion(xml: string): string {
-    const { documentSettings, stsCrypto } = this.deps;
-    const { STS, log, logArtifact } = this.deps.helpers;
+    const { stsCrypto } = this.deps;
+    const { log, logArtifact } = this.deps.helpers;
     log.debug("Entering Saml2Assertions.signAssertion().");
     logArtifact('SAML assertion', 'before signing', xml);
     // AFTER the <Issuer>, which is where the SAML 2.0 schema puts a signature
@@ -182,8 +182,40 @@ class Saml2Assertions {
     // `saml.signatureAlgorithm` and `saml.canonicalizationAlgorithm`. Until
     // then this call passed neither and the signer's defaults decided, which is
     // a choice no page could report.
+    const signed = stsCrypto.signXml(xml, this.assertionSignatureOptions());
+    logArtifact('SAML assertion', 'after signing', signed);
+    log.debug("Leaving Saml2Assertions.signAssertion().");
+    return signed;
+  }
+
+  /**
+   * `signAssertion()`, with a realm key in the HSM signing off the event
+   * loop (`stsCrypto.signXmlOffLoop()`, #1955 P8 follow-up); a software key
+   * signs the same bytes, in place, as `signAssertion()` does.
+   *
+   * @param xml - the assertion
+   * @returns a promise of the signed assertion
+   */
+  async signAssertionAsync(xml: string): Promise<string> {
+    const { stsCrypto } = this.deps;
+    const { log, logArtifact } = this.deps.helpers;
+    log.debug("Entering Saml2Assertions.signAssertionAsync().");
+    logArtifact('SAML assertion', 'before signing', xml);
+    const signed = await stsCrypto.signXmlOffLoop(xml,
+      this.assertionSignatureOptions());
+    logArtifact('SAML assertion', 'after signing', signed);
+    log.debug("Leaving Saml2Assertions.signAssertionAsync().");
+    return signed;
+  }
+
+  // What both signers hand `signXml()`.
+  private assertionSignatureOptions(): any {
+    const { documentSettings, stsCrypto } = this.deps;
+    const { STS, log } = this.deps.helpers;
+    log.debug("Entering Saml2Assertions.assertionSignatureOptions().");
     const how = documentSettings.signatureOptions();
-    const signed = stsCrypto.signXml(xml, {
+    log.debug("Leaving Saml2Assertions.assertionSignatureOptions().");
+    return {
       // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
       // `STS.xmlSigner`, the one for the configured algorithm (#68).
       privateKeyPem: STS.xmlSigner.privateKeyPem,
@@ -195,10 +227,7 @@ class Saml2Assertions {
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       what: 'SAML 2.0 assertion'
-    });
-    logArtifact('SAML assertion', 'after signing', signed);
-    log.debug("Leaving Saml2Assertions.signAssertion().");
-    return signed;
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -334,9 +363,87 @@ class Saml2Assertions {
    */
   buildSamlAssertion(subject: string, audience?: string | null,
                      lifetimeMin?: number, opts?: BuildOptions): string {
-    const { authnContext, config, errorCodes, stats } = this.deps;
-    const { genId, iso, log, xmlEscape } = this.deps.helpers;
+    const { log } = this.deps.helpers;
     log.debug("Entering Saml2Assertions.buildSamlAssertion().");
+    const draft = this.draftSamlAssertion(subject, audience, lifetimeMin,
+                                          opts);
+    if (draft.unsigned) {
+      log.debug("Leaving Saml2Assertions.buildSamlAssertion(). Unsigned.");
+      return draft.xml;
+    }
+    try {
+      log.debug("Leaving Saml2Assertions.buildSamlAssertion().");
+      return this.signAssertion(draft.xml);
+    } catch (e) {
+      log.debug("Caught in Saml2Assertions.buildSamlAssertion(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Assertions.buildSamlAssertion().");
+      return this.signingFailed(draft, e);
+    }
+  }
+
+  /**
+   * `buildSamlAssertion()`, with a realm key in the HSM signing off the
+   * event loop (#1955 P8 follow-up): the same assertion, the same record,
+   * and the same answer to a failed signature. Every service caller with a
+   * realm key awaits this one.
+   *
+   * @param subject - as `buildSamlAssertion()`'s
+   * @param audience - as `buildSamlAssertion()`'s
+   * @param lifetimeMin - as `buildSamlAssertion()`'s
+   * @param opts - as `buildSamlAssertion()`'s
+   * @returns a promise of the assertion's XML
+   */
+  async buildSamlAssertionAsync(subject: string, audience?: string | null,
+                                lifetimeMin?: number,
+                                opts?: BuildOptions): Promise<string> {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Assertions.buildSamlAssertionAsync().");
+    const draft = this.draftSamlAssertion(subject, audience, lifetimeMin,
+                                          opts);
+    if (draft.unsigned) {
+      log.debug("Leaving Saml2Assertions.buildSamlAssertionAsync(). " +
+                "Unsigned.");
+      return draft.xml;
+    }
+    try {
+      const signed = await this.signAssertionAsync(draft.xml);
+      log.debug("Leaving Saml2Assertions.buildSamlAssertionAsync().");
+      return signed;
+    } catch (e) {
+      log.debug("Caught in Saml2Assertions.buildSamlAssertionAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Saml2Assertions.buildSamlAssertionAsync().");
+      return this.signingFailed(draft, e);
+    }
+  }
+
+  // A signature that failed: the assertion goes out unsigned, and the record
+  // says so.
+  private signingFailed(draft: any, e: any): string {
+    const { errorCodes } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Assertions.signingFailed().");
+    // The record is corrected rather than left as it was, because the console
+    // now SHOWS whether an assertion was signed and an unsigned one is the
+    // single most useful thing that column can say. Counting it as signed
+    // because it was counted before the attempt would be a page that agrees
+    // with itself and not with what went out.
+    draft.record.signed = false;
+    log.error(errorCodes.tag('STS-SAML-0023') + 'sign failed, returning ' +
+                                                'unsigned: ' + e.message);
+    log.debug("Leaving Saml2Assertions.signingFailed().");
+    return draft.xml;
+  }
+
+  // Everything `buildSamlAssertion()` does but the signature: the assertion,
+  // its record, and whether the caller asked for it unsigned.
+  private draftSamlAssertion(subject: string, audience?: string | null,
+                             lifetimeMin?: number,
+                             opts?: BuildOptions): any {
+    const { authnContext, config, stats } = this.deps;
+    const { genId, iso, log, xmlEscape } = this.deps.helpers;
+    log.debug("Entering Saml2Assertions.draftSamlAssertion().");
     opts = opts || {};
     const id = genId();
     const now = iso(0);
@@ -400,9 +507,16 @@ class Saml2Assertions {
     // caller resolved it — WS-Trust names the AppliesTo's application, which
     // the audience string alone does not reach (see wstrust.ts). Absent, the
     // audience is looked up as it always was.
+    // `session_id` (#1072): the sign-on session, whose chosen dynamic roles
+    // the roles attribute may carry. A browser profile's SessionIndex is
+    // the session's id (`saml2_sso.ts`, `wsfed.ts`); a WS-Trust Issue has
+    // none, and carries none.
     const custom = stats.samlAttributes('saml2',
                                         Object.assign({ subject: subject,
-                                                        audience: audience },
+                                                        audience: audience,
+                                                        session_id:
+                                                          opts.sessionIndex ||
+                                                          '' },
                                           opts.application
                                             ? { application: opts.application }
                                             : {}));
@@ -521,27 +635,12 @@ class Saml2Assertions {
     // an unsigned one is the single most useful thing that column can say.
     if (opts.sign === false) {
       record.signed = false;
-      log.debug("Leaving Saml2Assertions.buildSamlAssertion(). Unsigned, " +
+      log.debug("Leaving Saml2Assertions.draftSamlAssertion(). Unsigned, " +
                 "because the caller asked for that.");
-      return xml;
+      return { xml: xml, record: record, unsigned: true };
     }
-    try {
-      log.debug("Leaving Saml2Assertions.buildSamlAssertion().");
-      return this.signAssertion(xml);
-    } catch (e) {
-      log.debug("Caught in Saml2Assertions.buildSamlAssertion(): " +
-                ((e && e.message) || e));
-      // The record is corrected rather than left as it was, because the console
-      // now SHOWS whether an assertion was signed and an unsigned one is the
-      // single most useful thing that column can say. Counting it as signed
-      // because it was counted before the attempt would be a page that agrees
-      // with itself and not with what went out.
-      record.signed = false;
-      log.error(errorCodes.tag('STS-SAML-0023') + 'sign failed, returning ' +
-                                                  'unsigned: ' + e.message);
-      log.debug("Leaving Saml2Assertions.buildSamlAssertion().");
-      return xml;
-    }
+    log.debug("Leaving Saml2Assertions.draftSamlAssertion().");
+    return { xml: xml, record: record, unsigned: false };
   }
 
   // ---------------------------------------------------------------------------
@@ -673,6 +772,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   signAssertion: slot.forward('signAssertion'),
   buildSamlAssertion: slot.forward('buildSamlAssertion'),
+  buildSamlAssertionAsync: slot.forward('buildSamlAssertionAsync'),
+  signAssertionAsync: slot.forward('signAssertionAsync'),
   encryptAssertion: slot.forward('encryptAssertion'),
   encryptElement: slot.forward('encryptElement'),
   decryptElement: slot.forward('decryptElement'),

@@ -32,6 +32,13 @@
 // read, and a shell drawn with NO footer — a specification's document —
 // gets none from its runtime either (`drawnIn()` answers '').
 //
+// A FOOTER WITH NO VERSION HAS NO VERSION LINE (#2142). In product the
+// server leaves the build off every shell, which anybody can fetch
+// (`mode.publishesBuildDetail()`), so the facts carry an empty version and
+// the line is not drawn. The console is the one surface that draws it again
+// after sign-in: its shell ANSWER, read with an administrator's token,
+// carries the version, and `drawnIn()` takes it over the shell's facts.
+//
 // IT NEEDS NO SCRIPT. The links and icons are plain markup, so a page whose
 // script is blocked still shows the footer the shell drew, and a
 // server-drawn page under `script-src 'none'` carries it as it is.
@@ -76,7 +83,7 @@ interface FooterFacts {
  */
 const LINKS = [
   { key: 'documentation', english: 'Documentation',
-    href: 'https://rcbj.github.io/iya-sts/v1.1.0/' },
+    href: 'https://rcbj.github.io/iya-sts/v1.2.0/' },
   { key: 'contact', english: 'Contact',
     href: 'https://github.com/rcbj/iya-sts/issues' },
   { key: 'about', english: 'About',
@@ -272,9 +279,13 @@ class WebFooter {
       esc(WebFooter.word(t, 'copyright',
                          { years: WebFooter.years(facts.year) })) +
       '</div>' +
-      '<div class="sts-footer-version" title="' + esc(facts.buildInfo) +
-      '">' + esc(WebFooter.word(t, 'version', { version: facts.version })) +
-      '</div></footer>';
+      (facts.version
+        ? '<div class="sts-footer-version" title="' + esc(facts.buildInfo) +
+          '">' +
+          esc(WebFooter.word(t, 'version', { version: facts.version })) +
+          '</div>'
+        : '') +
+      '</footer>';
   }
 
   /**
@@ -319,10 +330,19 @@ class WebFooter {
    *
    * @param doc - the document, before its body is replaced
    * @param t - the page's translator
+   * @param known - optional; the version and build line an authenticated
+   *   answer gave (the console's shell answer, #2142), drawn in place of the
+   *   shell's where it names a version
    * @returns the markup, or ''
    */
-  static drawnIn(doc: Json, t: FooterTranslator | null): string {
+  static drawnIn(doc: Json, t: FooterTranslator | null,
+                 known?: { version?: unknown, buildInfo?: unknown } | null):
+    string {
     const facts = WebFooter.factsOf(doc);
+    if (facts && known && known.version) {
+      facts.version = String(known.version);
+      facts.buildInfo = String(known.buildInfo || '');
+    }
     return facts ? WebFooter.html(t, facts) : '';
   }
 

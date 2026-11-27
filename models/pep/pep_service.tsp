@@ -142,6 +142,14 @@ namespace IyaSts.Pep.Service {
   @js(#{`minimum`:1,`maximum`:1000}) `maxEvaluations`: int64;
   @js(#{`minimum`:1024,`maximum`:5242880}) `maxBodyBytes`: int64;
   `returnReasons`: boolean;
+  @js(#{`description`:"The realm's authzen.obligationsProfile, as pulled. Before a pull, and when the catalogue did not send it, off."})
+  `obligationsProfile`: boolean;
+  @js(#{`description`:"The realm's authzen.tokenExchange, as pulled. Before a pull, and when the catalogue did not send it, on: the binding's tuples are answered 403 (a PEP failure)."})
+  `tokenExchange`: boolean;
+  @js(#{`description`:"The declared authorization_details types, as pulled; null before a pull, when the catalogue did not send them, or when the service could not read them."})
+  `tokenExchangeDetailTypes`: string[] | null;
+  @js(#{`description`:"The registered token types, as pulled; null before a pull or when the catalogue did not send them."})
+  `tokenExchangeTokenTypes`: string[] | null;
 }
 
 @component model `Catalogue` {

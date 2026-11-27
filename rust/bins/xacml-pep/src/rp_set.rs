@@ -492,6 +492,37 @@ impl RpSet {
         Ok(party)
     }
 
+    /// EVERY RECEIVER STOPPED, NOW, and every party dropped (#1935): what a
+    /// test harness does when it is dropped. A receiver polls on a thread
+    /// of the library's own (`SignalsReceiver::start`), which nothing but
+    /// `stop()` ends — not the drop of this set, of the proxy, or of the
+    /// runtime the test ran on, and this set is never dropped anyway (the
+    /// proxy's reporters hold it). So a harness left a thread polling its
+    /// mock service's port for the rest of the test binary, and when the
+    /// kernel gave that port to a later harness's mock application, that
+    /// application saw a `POST /ssf/poll` nobody sent it. The product
+    /// builds one proxy for the life of the process and stops a receiver
+    /// whenever it replaces or drops one (`party()`, `reconcile()`), so
+    /// only a test needs this.
+    ///
+    /// `stop()` waits for a poll in flight, which here may be a poll of a
+    /// mock served by the very runtime the caller is blocking, so it runs
+    /// on a thread of its own; what this waits for is the first thing
+    /// `stop()` does, marking the receiver not running, after which its
+    /// loop starts no other poll.
+    #[cfg(test)]
+    pub fn stop_all(&self) {
+        let parties: Vec<Entry> =
+            lock(&self.entries).drain().map(|(_, e)| e).collect();
+        for receiver in parties.into_iter().filter_map(|e| e.party.receiver) {
+            let stopping = receiver.clone();
+            std::thread::spawn(move || stopping.stop());
+            while receiver.health().running {
+                std::thread::yield_now();
+            }
+        }
+    }
+
     /// The party held for a client, whatever the pull says now (a callback
     /// finishes the sign-in it started).
     pub fn held(&self, client_id: &str) -> Option<Party> {

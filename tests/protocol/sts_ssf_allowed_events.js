@@ -35,6 +35,9 @@
 // OWNED HERE (local: true): the attribute is this repository's own.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -214,7 +217,12 @@ async function test() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
                                                 domain: REALM + ".example.net",
                                                 name: "SSF " +
-      "allowed events" }, "created " +
+      "allowed events",
+      // EVERY PERSON'S EVENTS ON AN APPLICATION'S STREAM, AS BEFORE #2234:
+      // this job's receivers hear about people never signed in to them
+      // (`ssf.applicationStreamScope`; the scope itself is
+      // `sts_ssf_application_sessions.js`'s).
+      overrides: { "ssf.applicationStreamScope": "all" } }, "created " +
       "the realm");
   const refusedCreate = await call("POST", realmApi + "/applications/create",
     application("ssf-bad-" + REALM, ["oauth2", "ssf"],
@@ -329,7 +337,7 @@ async function test() {
   // and lost in the cluster mode, where the verification and the poll can
   // be answered by different nodes. Poll until it arrives, for ten seconds.
   got = [];
-  for (let i = 0; i < 20 && got.indexOf(VERIFICATION) < 0; i++) {
+  for (let i = 0; i < 20 && !urls.holds(got, VERIFICATION); i++) {
     if (i > 0) {
       await new Promise(function (done) {
         setTimeout(done, 500);
@@ -341,7 +349,7 @@ async function test() {
         "(SSF's own events are always allowed)",
         function () {
     assert.ok(r.status === 204 || r.status === 200, r.text);
-    assert.ok(got.indexOf(VERIFICATION) >= 0, JSON.stringify(got));
+    assert.ok(urls.holds(got, VERIFICATION), JSON.stringify(got));
   });
 
   log.info("=== 5. a PATCH is agreed against the entry too ===");

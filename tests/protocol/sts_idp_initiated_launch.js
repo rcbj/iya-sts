@@ -88,10 +88,14 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urlMatch = require("./url_match.js");
 // The sign-in screen and the consent screen over `/authn-api` (#571, #576).
 const authnSignin = require("./authn_signin");
 // The static portal's sign-in and its `/account-api` calls (#568).
 const portalSignin = require("./portal_signin");
+const ownPassword = require("./own_password");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -331,8 +335,14 @@ async function createPerson(username) {
     attributes: { cn: "Launch " + username, givenName: "Launch",
                   sn: username, displayName: "Launch " + username,
                   mail: username + "@" + REALM + ".example.net" },
-    credential: "password", password: PASSWORD },
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD) },
   "creating " + username);
+  // Temporary, then the person's own (#2160, `own_password.js`).
+  await ownPassword.ownPassword(realmBase(), username, PASSWORD,
+    function (who, value) {
+      return api("POST", "/users/set-password",
+                 { user: who, password: value });
+    });
   log.debug("Leaving createPerson().");
 }
 
@@ -781,7 +791,7 @@ async function authorize(alice, client) {
 
 function answeredWithCode(r) {
   log.debug("Entering answeredWithCode().");
-  const ok = isRedirect(r) && r.location.indexOf(REDIRECT) === 0 &&
+  const ok = isRedirect(r) && urlMatch.isAt(r.location, REDIRECT) &&
     /[?&]code=/.test(r.location) &&
     r.location.indexOf("error=") < 0;
   log.debug("Leaving answeredWithCode(). " + ok);
@@ -790,7 +800,7 @@ function answeredWithCode(r) {
 
 function refusedUnauthorized(r) {
   log.debug("Entering refusedUnauthorized().");
-  const ok = isRedirect(r) && r.location.indexOf(REDIRECT) === 0 &&
+  const ok = isRedirect(r) && urlMatch.isAt(r.location, REDIRECT) &&
     r.location.indexOf("error=unauthorized_client") > 0;
   log.debug("Leaving refusedUnauthorized(). " + ok);
   return ok;

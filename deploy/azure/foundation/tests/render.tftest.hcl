@@ -49,6 +49,11 @@ mock_provider "azurerm" {
       resource_versionless_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/v/secrets/tls"
     }
   }
+  mock_resource "azurerm_key_vault_certificate" {
+    defaults = {
+      resource_manager_versionless_id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/v/certificates/gateway"
+    }
+  }
   mock_resource "azurerm_log_analytics_workspace" {
     defaults = {
       id = "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg/providers/Microsoft.OperationalInsights/workspaces/w"
@@ -113,8 +118,8 @@ run "every_unit" {
     error_message = "a global group per multi-region environment, in its primary's region"
   }
   assert {
-    condition     = length(azurerm_role_assignment.deployer_groups) == 10
-    error_message = "the deployer's role on eight units and two global groups"
+    condition     = length(azurerm_role_assignment.deployer_groups) == 11
+    error_message = "the deployer's role on eight units, two global groups and the one PEP environment (#1284)"
   }
   assert {
     condition     = jsonencode(sort(jsondecode(azurerm_resource_group_policy_assignment.global_locations["globalidp"].parameters).listOfAllowedLocations.value)) == jsonencode(["germanywestcentral", "southeastasia", "westus2"])
@@ -154,5 +159,44 @@ run "every_unit" {
   assert {
     condition     = length(azurerm_role_assignment.nodes_read_global_vault) == 5 && length(azurerm_role_assignment.deployer_global_vaults) == 2 && length(azurerm_role_assignment.admin_kek_vault) == 5
     error_message = "every cell reads its global vault; the deployer writes secrets in it; the administrator makes each key"
+  }
+}
+
+# A REMOTE PEP ENVIRONMENT (#1284, pep_units.tf): its own group, two
+# identities and a vault — no key-encryption key, no node identity, and
+# none of the units' database or key grants.
+run "a_pep_environment" {
+  variables {
+    subscription_id        = "00000000-0000-0000-0000-000000000001"
+    state_storage_account  = "iyaststate0000000000000"
+    deployer_principal_ids = ["00000000-0000-0000-0000-0000000000d1"]
+  }
+  assert {
+    condition     = keys(azurerm_resource_group.pep) == ["testpep"] && azurerm_resource_group.pep["testpep"].name == "iya-sts-testpep"
+    error_message = "testpep's own resource group"
+  }
+  assert {
+    condition     = !contains(keys(local.units), "testpep") && !contains(keys(azurerm_key_vault_key.kek), "testpep")
+    error_message = "a PEP environment is not a unit: no key-encryption key"
+  }
+  assert {
+    condition     = length(local.pep_vault_names["testpep"]) <= 24 && startswith(local.pep_vault_names["testpep"], "mptestpep-")
+    error_message = jsonencode(local.pep_vault_names)
+  }
+  assert {
+    condition     = azurerm_key_vault_certificate.pep_gateway["testpep"].certificate_policy[0].issuer_parameters[0].name == "Self" && azurerm_key_vault_certificate.pep_gateway["testpep"].certificate_policy[0].key_properties[0].exportable
+    error_message = "the gateway's placeholder certificate is Key Vault's own self-signed one, its key made in the vault"
+  }
+  assert {
+    condition     = azurerm_role_assignment.pep_members_import_gateway["testpep"].scope == azurerm_key_vault_certificate.pep_gateway["testpep"].resource_manager_versionless_id
+    error_message = "the members may import the gateway's certificate, scoped to that certificate"
+  }
+  assert {
+    condition     = azurerm_role_assignment.pep_gateway_read_vault["testpep"].role_definition_name == "Key Vault Secrets User"
+    error_message = "the gateway's identity reads its certificate and nothing more"
+  }
+  assert {
+    condition     = length(azurerm_role_assignment.deployer_pep_vaults) == 1
+    error_message = "the deployer may write the members' secrets"
   }
 }

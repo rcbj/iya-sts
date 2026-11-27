@@ -492,6 +492,20 @@ model Application {
     what: "The response_type values this client may ask for — RFC 7591 section 2's response_types, from a registration or written by an administrator, each value one response type (\"code\", \"code id_token\"). The authorization endpoint refuses any other (unauthorized_client), in every mode; an empty list restricts nothing. What the client has actually asked for is oauthResponseTypeObserved."
   })
   oauthResponseType?: string[];
+  // THE RESPONSE MODES A CLIENT MAY ASK FOR (#2247, ASVS 5.0.0 10.4.12).
+  // RFC 7591 defines no member for them and the OAuth Dynamic Client
+  // Registration Metadata registry holds none (`response_modes_supported`
+  // is the server's, RFC 8414), so this is this service's own attribute,
+  // written by an administrator and never by a registration. EMPTY RESTRICTS
+  // NOTHING, oauthResponseType's rule, so every client is answered as it was
+  // until somebody lists its modes; the server's list still applies first.
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "OAuth 2.0 / OIDC",
+    what: "The response_mode values this client may ask for — query, fragment, form_post and JARM's jwt, query.jwt, fragment.jwt and form_post.jwt — written by an administrator. The authorization endpoint refuses any other (unauthorized_client), and a request that names none is held to its response type's default mode (query for code, fragment for the rest), in every mode; an empty list restricts nothing beyond the server's response_modes_supported. No RFC 7591 member carries it, so a registration does not write it."
+  })
+  oauthResponseMode?: string[];
   // ---------------------------------------------------------------------
   // THE TOKEN RESPONSE TYPES, ENABLED PER APPLICATION (#1296, rcbj's
   // decision, 2026-11-03: "a realm allowing the token response types must
@@ -573,7 +587,7 @@ model Application {
     editable: "multi",
     kind: "multi",
     from: "POST /oauth2/register (its `scope`), the console, the management API, or by hand",
-    what: "THE SCOPES THIS CLIENT MAY BE ISSUED — RFC 7591 section 2's `scope`, \"the list that the client can use when requesting access tokens\". One scope token per value. Three kinds of scope read it differently.\n\n**This service's own protected scopes** — admin:read and admin:write (/admin-api), report:use and report:admin (/report-api), the SCIM scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals scopes (ssf.authScopeRead, ssf.authScopeWrite, and always ssf.read and ssf.manage) and the debugger permission — are issued ONLY to a client that lists them, IN BOTH MODES. For Shared Signals, write includes read: listing a write scope authorizes the read scope too, and listing only a read scope does not authorize a write scope. The resource server behind each asks again on every call, so removing a value here cuts off tokens already issued. An RFC 7591 registration may not declare them; an administrator does, here.\n\n**Every other scope**, in product mode, is issued only when listed here — or, when nothing is listed, when it is in the default set: openid, profile, email, address, phone, offline_access and this realm's OpenID4VCI credential scopes. In development any scope is issued.\n\n**A scope naming an application or a delegated permission** keeps its own rules (the audience, and oauthDelegatedPermission) and need not be listed.\n\nA scope outside the list is refused invalid_scope at the authorization and token endpoints (RFC 6749 section 3.3), and taken off a refresh or a token exchange. Distinct from oauthScope, which is only what the client has asked for."
+    what: "THE SCOPES THIS CLIENT MAY BE ISSUED — RFC 7591 section 2's `scope`, \"the list that the client can use when requesting access tokens\". One scope token per value. Three kinds of scope read it differently.\n\n**This service's own protected scopes** — admin:read and admin:write (/admin-api), report:use and report:admin (/report-api), the SCIM scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals scopes (ssf.authScopeRead, ssf.authScopeWrite, and always ssf.read and ssf.manage) and the debugger permission — are issued ONLY to a client that lists them, IN BOTH MODES. For Shared Signals, write includes read: listing a write scope authorizes the read scope too, and listing only a read scope does not authorize a write scope. The resource server behind each asks again on every call, so removing a value here cuts off tokens already issued. An RFC 7591 registration may not declare them; an administrator does, here.\n\n**Every other scope**, in product mode, is issued only when listed here — or, when nothing is listed, when it is in the default set oauth2.undeclaredClientScopes chooses: openid alone by default since 1.2.0 (ASVS 5.0.0 10.4.11); identity adds profile, email, address and phone; legacy, what an upgraded store keeps, adds offline_access and this realm's OpenID4VCI credential scopes too. In development any scope is issued.\n\n**A scope naming an application or a delegated permission** keeps its own rules (the audience, and oauthDelegatedPermission) and need not be listed.\n\nA scope outside the list is refused invalid_scope at the authorization and token endpoints (RFC 6749 section 3.3), and taken off a refresh or a token exchange. Distinct from oauthScope, which is only what the client has asked for."
   })
   oauthAllowedScope?: string[];
   // --- delegated permissions: the RESOURCE half, then the CLIENT half -----
@@ -1061,6 +1075,22 @@ model Application {
     what: "AUTHZEN ACCESS REQUEST CALLBACK (#1180): an https URL this client, as an AuthZEN PEP, may name as an access request's callback.endpoint — one per value, matched exactly. A request naming any other is refused; this service never dials a callback URL taken from a request alone. Set by an administrator, never by the caller."
   })
   appAuthzenCallbackUri?: string[];
+  // THE PER-URL RETRY OVERRIDE (#1202). A value is stored only when at
+  // least one of attempts or backoff differs from authzen.callbackAttempts
+  // and authzen.callbackBackoffS. The URL is the same string as a value of
+  // appAuthzenCallbackUri, then `attempts=N` and `backoff=S`, either or
+  // both. A bare URL stays only in appAuthzenCallbackUri and means the
+  // realm's settings. A person has no such attribute: a callback is
+  // registered for an application only.
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "the console (the AuthZEN tab), the management API, or by hand",
+    families: #["oauth2", "oidc"],
+    familyWhy: "It is the retry bound of a callback URL registered for this client at /access/v1, and that API is an OAuth 2.0 resource; on an entry declared for no OAuth family it would read like a delivery in service.",
+    what: "AUTHZEN CALLBACK RETRY (#1202): one registered callback URL and the attempts and backoff that override authzen.callbackAttempts and authzen.callbackBackoffS for it. The value is the URL, then attempts=N (1 to 20) and backoff=S (60 to 86400), either or both. The URL must also be an appAuthzenCallbackUri value. Absent, that URL uses the realm's settings. Set by an administrator, never by the caller."
+  })
+  appAuthzenCallbackConfig?: string[];
   // -------------------------------------------------------------------
   // RFC 9470, STEP-UP AUTHENTICATION (2026-09-13). TWO ATTRIBUTES ON A
   // RESOURCE: what it requires of the authentication behind an access token
@@ -2575,6 +2605,76 @@ model Application {
     what: "AN XPATH EXPRESSION SELECTING THE CERTIFICATE ELEMENT A WS-TRUST RESPONSE IS ENCRYPTED TO: a ds:X509Certificate or a BinarySecurityToken whose ValueType ends in #X509v3. The same subset as the element maps. When it is set and it selects nothing, or it selects an element that is not one of those two, there is no recipient and the next source is not tried. A selected certificate element whose text is not a certificate is a completed-encryption fault, and the next source is not tried. When it is unset the recipient is the first signer certificate element the request's WS-Security signature names — the BinarySecurityToken that signature's reference points at, or a ds:X509Certificate in that signature's KeyInfo. A thumbprint, a Subject Key Identifier or an issuer and serial is not a certificate element."
   })
   wstrustResponseRecipientXPath?: string;
+  // WS-SECURITY MESSAGE INTEGRITY, PER APPLICATION (#1917, with #1918's
+  // response signing). The switches override the service-wide settings;
+  // the maps are this application's alone, in the XPath subset of the
+  // encryption maps. The console's Body and Header checkboxes write fixed
+  // expressions into these maps and the encryption ones, and store nothing
+  // of their own.
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.signRequest",
+    what: "TRUE or FALSE: require a request whose AppliesTo is this application to carry a WS-Security message signature, overriding wstrust.signRequest. On, a request with no accepted signature is a FailedCheck, and every element wstrustSignRequestElements selects must be covered by that signature. Development believes a signature, as it always has, and still holds the map to what that signature references."
+  })
+  wstrustSignRequest?: string;
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "THE ELEMENTS OF A WS-TRUST REQUEST THAT MUST BE SIGNED, one XPath 1.0 expression each, in the subset of wstrustEncryptRequestElements. Each expression must select at least one element, and every element it selects must be one the request's accepted WS-Security signature references, or inside one; otherwise the request is a FailedCheck. Empty, the SOAP Body, which a signature always covers. Read only while wstrustSignRequest (or wstrust.signRequest) is on."
+  })
+  wstrustSignRequestElements?: string[];
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.signResponse",
+    what: "TRUE or FALSE: sign a WS-Trust response for this application with a WS-Security message signature, overriding wstrust.signResponse. The response carries a wsu:Timestamp and a ds:Signature in its wsse:Security header, made with this realm's XML signing key and referencing its certificate through a BinarySecurityToken; the signature covers the Timestamp and the elements of wstrustSignResponseElements. A fault is sent unsigned. On, and the signature cannot be made, the request is a fault in both modes."
+  })
+  wstrustSignResponse?: string;
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "THE ELEMENTS OF A WS-TRUST RESPONSE ITS SIGNATURE COVERS beside the wsu:Timestamp, one XPath 1.0 expression each, in the subset of wstrustEncryptResponseElements. Empty, the SOAP Body. An element with no wsu:Id is given one. An expression that matches nothing, or one that selects the wsse:Security header itself, is a fault."
+  })
+  wstrustSignResponseElements?: string[];
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.responseProtectionOrder",
+    what: "The order a WS-Trust response for this application is signed and encrypted in while both are on, overriding wstrust.responseProtectionOrder: sign-then-encrypt (the signature's digests are of the plaintext, WS-SecurityPolicy's default) or encrypt-then-sign (they are of the ciphertext). The wsse:Security header is written in the order a receiver processes it."
+  })
+  wstrustResponseProtectionOrder?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.encryptSignature",
+    what: "TRUE or FALSE: encrypt the ds:Signature of a WS-Trust response for this application as well (WS-SecurityPolicy's sp:EncryptSignature), overriding wstrust.encryptSignature. Read only while the response is both signed and encrypted, signed first; the signature is encrypted to the response's recipient."
+  })
+  wstrustEncryptSignature?: string;
+  // THE KEYUSAGE WAIVER (rcbj, 2026-11-24, #2046): the one paranoid-PKI check
+  // an application may waive, and only for its WS-Trust response recipient.
+  // common/certificate_trust.ts's header argues it.
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.recipientIgnoresKeyUsage",
+    what: "TRUE or FALSE: encrypt this application's WS-Trust responses to their recipient certificate whatever its keyUsage says, overriding wstrust.recipientIgnoresKeyUsage. The realm's message-signing certificates permit digitalSignature only, so an answer encrypted to the request's signing certificate is refused without it. Only the keyUsage check is waived: the certificate's validity, its path and its revocation are still checked where paranoid PKI mode checks them.",
+  })
+  wstrustRecipientIgnoresKeyUsage?: string;
   // THE APPLICATION'S OWN DECRYPTION KEY PAIR (#1668, rcbj's request of
   // 2026-11-19): what a request for this application may be encrypted TO,
   // in place of the realm's XML Encryption certificate. Written only by
@@ -3914,4 +4014,18 @@ model Application {
     what: "TRUE when this UMA 2.0 resource server may register resources it OWNS ITSELF, through a protection API token obtained with client_credentials. Absent or FALSE, the default, means a PAT must be a person's (the code flow) and that person owns what it registers."
   })
   umaOwnsResources?: string;
+  // -------------------------------------------------------------------
+  // DYNAMIC SELECTABLE ROLES (#1072). The application's half of rcbj's
+  // decision 2: the sign-in page's "Choose roles for this sign-in" box is
+  // offered unless the realm's `roles.dynamicSelection` or this attribute
+  // turns it off. DECLARED, so editable on the console and the API.
+  // -------------------------------------------------------------------
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "the console, the management API, or by hand",
+    overrides: "roles.dynamicSelection",
+    what: "TRUE or FALSE: are dynamic selectable roles offered on sign-ins to this application (#1072), overriding roles.dynamicSelection. FALSE draws no \"Choose roles for this sign-in\" box, offers no role, and a token for this application carries no dynamically selected role."
+  })
+  appDynamicRoleSelection?: string;
 }

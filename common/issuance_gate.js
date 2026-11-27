@@ -293,8 +293,10 @@ function check(request) {
     log.debug('Leaving check(). The account is disabled.');
     return errorCodes.mark({
       allowed: false, decision: 'Deny', disabled: true,
-      why: 'The account "' + subject.name + '" is disabled, so nothing is ' +
-           'issued on its behalf.',
+      // A catalog sentence (#2006); required lazily, this file being a
+      // leaf.
+      why: require('./sentence').say('refusals.account.disabledNoIssue',
+                                     { account: String(subject.name) }),
       roles: [], required: [], policy: null
     }, 'STS-AUTHN-0201');
   }
@@ -327,7 +329,16 @@ function check(request) {
   const deferred = asked.deviceDeferred === true;
   const device = deferred ? null : deviceFactsOf(asked);
   const deviceRequirement = deferred ? [] : deviceRequirementOf();
+  // THE ADMINISTRATIVE SURFACE (#2179): a PERSON being issued a token to the
+  // console or one carrying an admin:* scope, at the token endpoint. A fact
+  // the policy's `device-required-admin` rule reads beside the requirement
+  // bag's `compliant-admin`; it makes the policy asked past both shortcuts
+  // while the requirement is in force, armed or not, so that the allowed
+  // answer below can arm it whatever `roles.enforceIssuance` says.
+  const adminSurface = !deferred && adminDeviceRequirement() !== null &&
+    adminDeviceRequirement().isAdminSurface(asked);
   const deviceMatters = deviceRequirement.indexOf('compliant') >= 0 ||
+    (adminSurface && adminDeviceRequirement().inForce()) ||
     (!!device && device.status === 'compromised' &&
      deviceRequirement.indexOf('not-compromised') >= 0);
   // THE PROTOCOL DECLARATION (2026-10-01) rides along whenever the
@@ -371,6 +382,10 @@ function check(request) {
   // four browser kinds whenever the policy is asked, and does not make it
   // asked — the rules that read it are an operator's choice.
   const phishing = phishingFactsOf(asked);
+  // THE HARDWARE TOKEN THE CREDENTIAL IS ON (#1955 P1), on the same browser
+  // issuances, the same way: it rides along and does not make the policy
+  // asked.
+  const hardwareToken = hardwareTokenFactsOf(asked);
   if (!enforceRoles && !risk && !deviceMatters && !protocolMatters &&
       !mechanisms && !mfa && !deviceBoundMatters) {
     log.debug('Leaving check(). Enforcement is switched off.');
@@ -388,6 +403,7 @@ function check(request) {
     risk: risk,
     device: device,
     deviceRequirement: deviceRequirement,
+    deviceAdminSurface: adminSurface,
     protocolFamilies: protocol ? protocol.families : [],
     declaredProtocols: protocol ? protocol.declared : [],
     mode: mode ? mode.current() : '',
@@ -397,6 +413,7 @@ function check(request) {
     allowedMfaMechanisms: mfa ? mfa.allowed : null,
     authority: authorityFactsOf(asked),
     phishingResistance: phishing,
+    hardwareToken: hardwareToken,
     // #740. The fact token. The PEP holds `pending` and refuses `skipped`
     // and `timedout` when the application's profile requires a binding.
     deviceBoundSession: deviceBoundSession,
@@ -407,16 +424,20 @@ function check(request) {
   try {
     answer = decider(question);
   } catch (error) {
-    // THE ONE PLACE THIS FAILS OPEN ON AN ERROR, and it is deliberate and
-    // narrow. A THROW here is a defect in the PEP or the engine — not a Deny,
-    // not an Indeterminate, both of which the PEP returns as ordinary answers.
-    // A mock whose every protocol family stopped issuing because a policy
-    // module threw would be unusable and, worse, unfixable: the console that
-    // would let somebody correct the policy is reached through a session this
-    // service would then refuse to mint.
+    // A THROW here is a defect in the PEP or the engine — not a Deny, not an
+    // Indeterminate, both of which the PEP returns as ordinary answers. In
+    // DEVELOPMENT it is allowed: a mock whose every protocol family stopped
+    // issuing because a policy module threw would be unusable and, worse,
+    // unfixable, the console that would let somebody correct the policy being
+    // reached through a session this service would then refuse to mint. In
+    // PRODUCT `noDecision()` refuses it (STS-XACML-0183, ASVS 5.0.0 16.5.3:
+    // fail closed), as every other policy fault in this file is refused;
+    // `tests/asvs_product_limits.js` section 17 holds both.
     log.error(errorCodes.tag('STS-XACML-0052') +
-              'issuance_gate: the decider threw and issuance was ALLOWED; ' +
-              'this is a defect in the embedded PEP rather than a decision. ' +
+              'issuance_gate: the decider threw, which is a defect in the ' +
+              'embedded PEP rather than a decision, and the issuance was ' +
+              (require('./mode').failsOpenOnPolicyFault()
+                ? 'ALLOWED (development)' : 'REFUSED (product)') + ': ' +
               error.message);
     log.debug("Leaving check().");
     return noDecision(allow('The embedded PEP threw, which is a defect ' +
@@ -424,9 +445,42 @@ function check(request) {
   }
   const result = answer || noDecision(allow('The embedded PEP answered ' +
                                             'nothing.'));
+  // ARMED ON FIRST PROOF (#2179): an administrative credential ALLOWED from
+  // a compliant device of a console administrator's own arms the realm's
+  // requirement, which until then is in force and not in the bag. The
+  // module decides whether every condition holds; a preview never arms.
+  if (result.allowed && adminSurface && !dryRunRequested(asked)) {
+    adminDeviceRequirement().noteAllowed(asked, device);
+  }
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
+}
+
+// A preview asks the policy what WOULD be decided (`asked.preview`, the
+// /admin/roles preview) and must change nothing.
+function dryRunRequested(asked) {
+  log.debug("Entering dryRunRequested().");
+  log.debug("Leaving dryRunRequested().");
+  return !!(asked && asked.preview);
+}
+
+// `common/admin_device_requirement.ts` (#2179), required LAZILY for
+// `riskFactsOf()`'s reason: this file is a leaf, and the module reaches the
+// realms and the settings. Null in a process that cannot load it, which
+// leaves the administrative rule out of every bag.
+function adminDeviceRequirement() {
+  log.debug("Entering adminDeviceRequirement().");
+  let held = null;
+  try {
+    held = require('./admin_device_requirement');
+  } catch (e) {
+    log.debug("Caught in adminDeviceRequirement(): " +
+              ((e && e.message) || e));
+    held = null;
+  }
+  log.debug("Leaving adminDeviceRequirement().");
+  return held;
 }
 
 // The device-bound fact of the session an issuance rests on (#743, #740):
@@ -676,6 +730,78 @@ function phishingFactsOf(asked) {
     out = null;
   }
   log.debug('Leaving phishingFactsOf(). ' + (out ? out.join(' ') : 'none'));
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE HARDWARE TOKEN FACTS OF A BROWSER ISSUANCE (#1955 P1, design X4): the
+// token the authentication's credential is on, from the event's snapshot
+// (`authn.ts`'s `hardwareTokenOf()`), brought up to date against the
+// register: a token reported lost since reads `attested: false` and its
+// status, and whether the subject is its holder is asked NOW. `{ attested:
+// false }` for a browser authentication with no token; null where the gate
+// described none, so the PEP sends nothing. The register is required
+// LAZILY, for `disabledSubject()`'s reason. Never throws.
+// ---------------------------------------------------------------------------
+function hardwareTokenFactsOf(asked) {
+  log.debug('Entering hardwareTokenFactsOf().');
+  const session = asked.session || null;
+  if (asked.browser === false ||
+      BROWSER_KINDS.indexOf(String(asked.kind)) < 0 ||
+      (!asked.authenticationEvent && !session) ||
+      (String(asked.kind) === ISSUANCE.SESSION && !asked.authenticationEvent)) {
+    log.debug('Leaving hardwareTokenFactsOf(). Not a browser sign-in.');
+    return null;
+  }
+  let event = asked.authenticationEvent || null;
+  try {
+    if (!event) {
+      event = require('./phishing_resistance').latestEventOf(session);
+    }
+  } catch (e) {
+    log.debug('Caught in hardwareTokenFactsOf(): ' + ((e && e.message) || e));
+    event = null;
+  }
+  const snap = ((event && event.context) || {}).credential || {};
+  const token = snap.hardwareToken || null;
+  if (!token || !token.key) {
+    log.debug('Leaving hardwareTokenFactsOf(). No token.');
+    return { attested: false };
+  }
+  let now = null;
+  try {
+    now = require('./hardware_tokens').byKey(String(token.key));
+  } catch (e) {
+    // A register that cannot be asked proves nothing now: not attested.
+    log.debug('Caught in hardwareTokenFactsOf(): ' + ((e && e.message) || e));
+    now = null;
+  }
+  const person = personOf(asked);
+  const out = {
+    attested: !!now && now.status === 'active',
+    key: String(token.key), vendor: String(token.vendor || ''),
+    model: String(token.model || ''), source: String(token.source || ''),
+    smartCard: token.smartCard === true,
+    holderMatches: !!now && !!person && String(now.holder || '') === person,
+    status: now ? String(now.status || 'active') : 'unknown'
+  };
+  // WHAT THE ATTESTATION SAID OF THE KEY (#1955 P2, X4), from the sign-in's
+  // snapshot, and ONLY for a token still attested: a lost token's policies
+  // prove nothing about the key now. Absent where the evidence said none,
+  // so a rule about them is inapplicable rather than matching ''.
+  if (out.attested) {
+    ['pinPolicy', 'touchPolicy', 'firmware', 'formFactor']
+      .forEach(function (name) {
+        if (token[name]) {
+          out[name] = String(token[name]);
+        }
+      });
+    if (token.fips === true) {
+      out.fips = true;
+    }
+  }
+  log.debug('Leaving hardwareTokenFactsOf(). ' + out.key + ' ' +
+            (out.attested ? 'attested' : 'not attested'));
   return out;
 }
 
@@ -1376,7 +1502,9 @@ function deviceFactsOf(asked) {
 // bag the issuance policy reads (`urn:sts:xacml:device-requirement`):
 // `not-compromised` while `devices.refuseCompromised` is on (the default),
 // `compliant` while `devices.requireCompliantDevice` is (off by default in
-// both modes, rcbj's decision), and `attested` beside it while
+// both modes, rcbj's decision), `compliant-admin` while the administrative
+// surface's requirement is in force and armed (#2179, on in product), and
+// `attested` beside either while
 // `devices.compliantDeviceAttested` is. The settings SWITCH the rules and
 // the policy states them — `xacml/xacml_templates.ts` argues it.
 // ---------------------------------------------------------------------------
@@ -1393,11 +1521,20 @@ function deviceRequirementOf() {
   if (config.value('devices.refuseCompromised') !== false) {
     out.push('not-compromised');
   }
-  if (config.value('devices.requireCompliantDevice') === true) {
+  const realmWide = config.value('devices.requireCompliantDevice') === true;
+  if (realmWide) {
     out.push('compliant');
-    if (config.value('devices.compliantDeviceAttested') === true) {
-      out.push('attested');
-    }
+  }
+  // #2179: the administrative surface's requirement, in the bag only while
+  // it is in force AND the realm is armed (`admin_device_requirement.ts`).
+  const admin = adminDeviceRequirement();
+  const adminRequired = admin !== null && admin.enforced();
+  if (adminRequired) {
+    out.push('compliant-admin');
+  }
+  if ((realmWide || adminRequired) &&
+      config.value('devices.compliantDeviceAttested') === true) {
+    out.push('attested');
   }
   log.debug("Leaving deviceRequirementOf(). " + out.join(', '));
   return out;
@@ -1442,7 +1579,9 @@ function noDecision(answer) {
   }
   log.debug("Leaving noDecision(). Refused.");
   return errorCodes.mark({ allowed: false, decision: 'Indeterminate',
-    why: 'No issuance decision could be made.' }, 'STS-XACML-0183');
+    // A catalog sentence (#2006); required lazily, this file being a leaf.
+    why: require('./sentence').say('refusals.policy.noIssuanceDecision') },
+    'STS-XACML-0183');
 }
 
 function allow(why) {
@@ -1450,6 +1589,71 @@ function allow(why) {
   log.debug("Leaving allow().");
   return { allowed: true, decision: 'NotApplicable', why: why,
            roles: [], required: [], policy: null };
+}
+
+// THE GATE ANSWERS ITS `why` AS ENGLISH TEXT, AS IT ALWAYS DID (#2006).
+// A refusal written for a person is a `Sentence` (`common/sentence.ts`),
+// which the sign-in screen draws in the page's language; but every protocol
+// family hands the gate's `why` to its own error answer — an OAuth
+// `error_description`, a SAML StatusMessage, a WS-Trust fault — and some of
+// them test `typeof why === 'string'` or call a string's methods on it
+// (the merger's review of #2006 found `sanitizeDescription()` passing one
+// unsanitised into RFC 6749's character set). So every answer leaves here
+// with `why` as its English, and the sentence beside it as `said`, which
+// only the sign-in screen reads. A few levels deep, for the per-scope and
+// per-right verdicts.
+function asText(answer, depth) {
+  log.debug("Entering asText().");
+  const level = depth || 0;
+  if (!answer || typeof answer !== 'object' || level > 3) {
+    log.debug("Leaving asText(). Nothing to do.");
+    return answer;
+  }
+  if (Array.isArray(answer)) {
+    answer.forEach(function (one) {
+      asText(one, level + 1);
+    });
+    log.debug("Leaving asText(). A list.");
+    return answer;
+  }
+  if (answer.why !== null && typeof answer.why === 'object' &&
+      !Array.isArray(answer.why)) {
+    answer.said = answer.why;
+    answer.why = String(answer.why);
+  }
+  Object.keys(answer).forEach(function (key) {
+    if (key !== 'said' && key !== 'why' && answer[key] &&
+        typeof answer[key] === 'object') {
+      asText(answer[key], level + 1);
+    }
+  });
+  log.debug("Leaving asText().");
+  return answer;
+}
+
+// One exported check, its answer — or its promise's — made text.
+/**
+ * Wraps one exported check so its answer's `why` is English text.
+ *
+ * @template {(...args: any[]) => any} T
+ * @param {T} fn - the check
+ * @returns {T} the same check, answering text
+ */
+function textAnswering(fn) {
+  log.debug("Entering textAnswering().");
+  // NO ENTERING/LEAVING PAIR in `textAnswered()`: it wraps every issuance
+  // check, whose own entry and exit are logged, and a second pair per check
+  // would only double them — the hot-path exception the code style allows.
+  const out = function textAnswered() {
+    const answer = fn.apply(this, arguments);
+    return answer && typeof answer.then === 'function'
+      ? answer.then(function (settled) {
+        return asText(settled, 0);
+      })
+      : asText(answer, 0);
+  };
+  log.debug("Leaving textAnswering().");
+  return /** @type {any} */ (out);
 }
 
 /**
@@ -1465,21 +1669,23 @@ module.exports = {
   KINDS: KINDS,
   setDecider: setDecider,
   deciderInstalled: deciderInstalled,
-  check: check,
-  checkScopes: checkScopes,
-  checkGnapRights: checkGnapRights,
+  check: textAnswering(check),
+  checkScopes: textAnswering(checkScopes),
+  checkGnapRights: textAnswering(checkGnapRights),
   PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
   FAMILIES_OF_KIND: FAMILIES_OF_KIND,
   deviceFactsOf: deviceFactsOf,
+  // #1955 P1: the hardware token facts of a browser issuance.
+  hardwareTokenFactsOf: hardwareTokenFactsOf,
   deviceRequirementOf: deviceRequirementOf,
   // #432 phase 3: the GNAP right question gathers the same risk facts a
   // token's issuance is decided on.
   riskFactsOf: riskFactsOf,
   EXCHANGE: EXCHANGE,
-  checkExchange: checkExchange,
+  checkExchange: textAnswering(checkExchange),
   TRANSFER: TRANSFER,
-  checkTransfer: checkTransfer,
+  checkTransfer: textAnswering(checkTransfer),
   PASSKEY: PASSKEY,
-  checkPasskey: checkPasskey,
+  checkPasskey: textAnswering(checkPasskey),
   strictTransferReading: strictTransferReading
 };

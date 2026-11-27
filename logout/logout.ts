@@ -235,6 +235,8 @@ import clusterSecrets = require('../cluster/cluster_secrets');
 // The origins this service answers on (a LIBRARY, rule 3), for the
 // signed-out document's Origin check: the list the CORS answer is built from.
 import cors = require('../common/cors');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 
 /**
  * The path of the protocol-independent sign-out.
@@ -464,6 +466,15 @@ class Logout {
   // The static sign-out's bundle, read once (#577).
   private bundleFile: ReturnType<typeof ShellDocument.readFile> | null =
     null;
+  // THE SAML 2.0 LogoutRequests SIGNED AHEAD (#1955 P8 follow-up): session
+  // id -> `saml2Sso.logoutTargetsForAsync()`'s rows, set by a door that can
+  // wait for the one synchronous terminate() it runs, and cleared after it.
+  // A module field because that call is ONE synchronous call: nothing else
+  // runs on this thread between the set and the clear.
+  private saml2Ahead: Map<string, Loose[]> | null = null;
+  // The federation partners' sign-outs signed ahead, the same way: session
+  // id -> `federationSlo.partnerLogoutForAsync()`'s answer.
+  private partnerAhead: Map<string, Loose> | null = null;
 
   /**
    * Builds the families and the expiry rules from the modules given.
@@ -625,6 +636,134 @@ class Logout {
       why: '',
       sessionId: ''
     }, detail || {});
+  }
+
+  // WHAT A BROWSER'S SIGN-OUT OFFERS, SIGNED AHEAD (#1955 P8 follow-up):
+  // the SAML 2.0 LogoutRequests and the federation partners' sign-outs
+  // every session of `keys` would be offered, signed off the event loop —
+  // only where the realm's keys are in the HSM, so a software realm's
+  // sign-out builds them in terminate() exactly as it always did. Null
+  // where nothing was signed ahead. `withSignedAhead()` hands them to the
+  // one synchronous terminate() a browser's door runs.
+  private async signedAhead(keys: string[], base: string): Promise<Loose> {
+    const { log, saml2Sso, federationSlo, errorCodes } = this.deps;
+    log.debug("Entering Logout.signedAhead().");
+    if (!helpers.keysInHsm()) {
+      log.debug("Leaving Logout.signedAhead(). Software keys.");
+      return null;
+    }
+    const saml2 = new Map();
+    const partner = new Map();
+    for (let k = 0; k < keys.length; k++) {
+      const sessions = this.sessionsForKey(keys[k]);
+      for (let i = 0; i < sessions.length; i++) {
+        const session = sessions[i];
+        if (!session) {
+          continue;
+        }
+        // A SIGNATURE THAT FAILS leaves its session out of the map, and
+        // terminate() then offers no LogoutRequest (or tells no partner)
+        // for it: an HSM that cannot sign never stops a person signing out.
+        if (session.saml2ServiceProviders &&
+            Object.keys(session.saml2ServiceProviders).length) {
+          try {
+            saml2.set(String(session.id),
+                      await saml2Sso.logoutTargetsForAsync(session));
+          } catch (e) {
+            log.debug("Caught in Logout.signedAhead(): " +
+                      ((e && e.message) || e));
+            log.warn(errorCodes.tag('STS-LOGOUT-0016') + 'logout: the ' +
+                     'SAML 2.0 LogoutRequests of a session could not be ' +
+                     'signed, so none is offered for it: ' +
+                     ((e && e.message) || e));
+          }
+        }
+        const held = session.fedPartnerSession;
+        if (base && held && held.relationship &&
+            federationSlo.canTellPartner(held).ok) {
+          try {
+            partner.set(String(session.id),
+              await federationSlo.partnerLogoutForAsync(session, base));
+          } catch (e) {
+            log.debug("Caught in Logout.signedAhead(): " +
+                      ((e && e.message) || e));
+            log.warn(errorCodes.tag('STS-LOGOUT-0016') + 'logout: a ' +
+                     'federation partner\'s sign-out could not be signed, ' +
+                     'so the partner is not told: ' +
+                     ((e && e.message) || e));
+          }
+        }
+      }
+    }
+    log.debug("Leaving Logout.signedAhead(). " + saml2.size + " / " +
+              partner.size + " session(s).");
+    return { saml2: saml2, partner: partner };
+  }
+
+  // Runs `fn` — one synchronous call, so nothing else runs on this thread
+  // between the set and the clear — with what `signedAhead()` made.
+  private withSignedAhead(ahead: Loose, fn: () => any): any {
+    const { log } = this.deps;
+    log.debug("Entering Logout.withSignedAhead().");
+    this.saml2Ahead = ahead ? ahead.saml2 : null;
+    this.partnerAhead = ahead ? ahead.partner : null;
+    try {
+      const out = fn();
+      log.debug("Leaving Logout.withSignedAhead().");
+      return out;
+    } finally {
+      this.saml2Ahead = null;
+      this.partnerAhead = null;
+    }
+  }
+
+  /**
+   * `signOutAct()`, with what the sign-out offers the browser signed off the
+   * event loop first where the realm's keys are in the HSM (#1955 P8
+   * follow-up); `signOutAct()` itself otherwise.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the act's body
+   * @returns a promise of `signOutAct()`'s answer
+   */
+  async signOutActAsync(req?, res?, body?): Promise<Loose> {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering Logout.signOutActAsync().");
+    const subject = this.subjectOf(req, body || {});
+    // Nothing is signed for an act `signOutAct()` will refuse.
+    const ahead = subject.refused || !subject.key ||
+      this.reauthenticationOwed(subject, body || {}) ? null
+      : await this.signedAhead([subject.key], req ? baseUrlOf(req) : '');
+    log.debug("Leaving Logout.signOutActAsync().");
+    return this.withSignedAhead(ahead, () => {
+      return this.signOutAct(req, res, body);
+    });
+  }
+
+  /**
+   * `signOutAccountsAct()`, with what the sign-out offers signed off the
+   * event loop first where the realm's keys are in the HSM (#1955 P8
+   * follow-up).
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the act's body
+   * @returns a promise of `signOutAccountsAct()`'s answer
+   */
+  async signOutAccountsActAsync(req?, res?, body?): Promise<Loose> {
+    const { log, authn, stats, baseUrlOf } = this.deps;
+    log.debug("Entering Logout.signOutAccountsActAsync().");
+    const all = String((body && body.account) || '') === 'all' &&
+                authn.multipleAccounts();
+    const ahead = all ? await this.signedAhead(
+      authn.signedInAccounts(req).map(function (one) {
+        return stats.identityKeyOf(one.username);
+      }), req ? baseUrlOf(req) : '') : null;
+    log.debug("Leaving Logout.signOutAccountsActAsync().");
+    return this.withSignedAhead(ahead, () => {
+      return this.signOutAccountsAct(req, res, body);
+    });
   }
 
   // The sessions this identity holds, worked out once per inventory because
@@ -970,9 +1109,9 @@ class Logout {
           return ended
             ? { ok: true,
                 message: 'the sign-on session ' + r.handle + ' was ended' }
-            : { ok: false, message: 'there was no session ' + r.handle +
-                                    ' to ' + 'end; it had already expired or ' +
-                                    'already been signed out' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.noSession',
+                             { handle: String(r.handle) }) };
         } },
 
       // -----------------------------------------------------------------------
@@ -1021,9 +1160,8 @@ class Logout {
           const clientId = parts.slice(1).join('|');
           if (!session) {
             log.debug("Leaving oidc-rp.terminate().");
-            return { ok: false, message: 'the session that relying party was ' +
-                                         'signed into on has already ended, ' +
-                                         'which signed it out too' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.rpSessionEnded') };
           }
           // The notification is built BEFORE the client is forgotten, because
           // the list it is built from is the thing about to be removed.
@@ -1114,9 +1252,8 @@ class Logout {
           const session = authn.sessionById(parts[0]);
           if (!session) {
             log.debug("Leaving wsfed-rp.terminate().");
-            return { ok: false, message: 'the session that realm was signed ' +
-                                         'into on has already ended, which ' +
-                                         'took its cleanup list with it' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.realmSessionEnded') };
           }
           // WHICH REALM THE HANDLE NAMES (2026-11-15). `collect()` gives a
           // realm's first address `<sid>|<realm>` and each later one
@@ -1196,11 +1333,14 @@ class Logout {
           log.debug("Entering saml2-sp.collect().");
           const rows = [];
           ctx.sessions.forEach((session) => {
-            saml2Sso.logoutTargetsFor(session).forEach((target) => {
+            // THE ADDRESSES ONLY (#1955 P8 follow-up): a row says whether a
+            // LogoutRequest has somewhere to go, which needs nothing signed,
+            // so listing a session signs nothing with a realm key.
+            saml2Sso.logoutAddressesFor(session).forEach((target) => {
               rows.push(this.row('saml2-sp', 'service provider',
                             session.id + '|' + target.entityId, {
                 label: target.entityId,
-                detail: target.url ? 'a LogoutRequest is ready for ' +
+                detail: target.destination ? 'a LogoutRequest is ready for ' +
                     target.from
                                    : 'no SingleLogoutService is known for ' +
                                      'it, so there is nowhere to send a ' +
@@ -1219,15 +1359,28 @@ class Logout {
           const entityId = parts.slice(1).join('|');
           if (!session) {
             log.debug("Leaving saml2-sp.terminate().");
-            return { ok: false, message: 'the session that service provider ' +
-                                         'was signed into on has already ' +
-                                         'ended, which took its logout list ' +
-                                         'with it' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.spSessionEnded') };
           }
-          const target = saml2Sso.logoutTargetsFor(session).filter((one) => {
-            return one.entityId === entityId;
-          })[0];
-          if (target) ctx.logoutRequests.push(target);
+          // SIGNED AHEAD, off the event loop, where the door could wait and
+          // the realm's keys are in the HSM (#1955 P8 follow-up,
+          // `signedAhead()`); built here otherwise, as before.
+          // With the realm's keys in the HSM and nothing signed ahead — a
+          // sign-out no browser follows (an administrator's, a policy's, a
+          // partner's back channel), or a signature that failed — no
+          // LogoutRequest is offered: it would be a signature on the event
+          // loop, refused (STS-KEYS-0209) or blocking it.
+          const ahead = this.saml2Ahead &&
+                        this.saml2Ahead.get(String(session.id));
+          const unsigned = !ahead && helpers.keysInHsm();
+          const target = unsigned ? null
+            : (ahead || saml2Sso.logoutTargetsFor(session))
+              .filter((one) => {
+                return one.entityId === entityId;
+              })[0];
+          if (target) {
+            ctx.logoutRequests.push(target);
+          }
           // And the store is told, as for `wsfed-rp` above (2026-11-15).
           if (session.saml2ServiceProviders) {
             delete session.saml2ServiceProviders[entityId];
@@ -1301,14 +1454,29 @@ class Logout {
           const session = authn.sessionById(parts[0]);
           if (!session) {
             log.debug("Leaving federation-partner.terminate().");
-            return { ok: false, message: 'the session that partner signed ' +
-                                         'in has already ended' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.partnerSessionEnded') };
           }
-          const built = federationSlo.partnerLogoutFor(session, ctx.base);
+          // Signed ahead, off the event loop, where the realm's keys are in
+          // the HSM (#1955 P8 follow-up, `signedAhead()`).
+          const aheadP = this.partnerAhead &&
+                         this.partnerAhead.get(String(session.id));
+          // Nothing signed ahead with the realm's keys in the HSM: the
+          // partner is not told, rather than signed for on the event loop
+          // (as for `saml2-sp` above).
+          if (!aheadP && helpers.keysInHsm()) {
+            log.debug("Leaving federation-partner.terminate(). Not signed " +
+                      "ahead.");
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.partnerHsm') };
+          }
+          const built = aheadP ||
+                        federationSlo.partnerLogoutFor(session, ctx.base);
           if (!built.ok) {
             log.debug("Leaving federation-partner.terminate(). " + built.why);
-            return { ok: false, message: 'the partner cannot be told: ' +
-                                         built.why };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.partnerCannotBeTold',
+                             { why: String(built.why) }) };
           }
           ctx.partnerLogouts.push(built.target);
           log.debug("Leaving federation-partner.terminate().");
@@ -1364,8 +1532,8 @@ class Logout {
           })[0];
           if (!held) {
             log.debug("Leaving oauth-grant.terminate(). Gone.");
-            return { ok: false, message: 'that grant has already been ' +
-                                         'revoked or has expired' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.grantGone') };
           }
           const done = grantManagement.revoke(r.handle, ctx.key,
             ctx.by || 'a sign-out', ctx.initiatingEntity || 'admin');
@@ -1378,7 +1546,8 @@ class Logout {
           return done && done.ok
             ? { ok: true, message: 'the grant of ' + done.clientId + ' was ' +
                 'revoked, and ' + done.revoked + ' token(s) with it' }
-            : { ok: false, message: 'that grant has already been revoked' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.grantRevoked') };
         } },
 
       // -----------------------------------------------------------------------
@@ -1484,10 +1653,8 @@ class Logout {
           })[0];
           if (!match) {
             log.debug("Leaving code.terminate().");
-            return { ok: false, message: 'that authorization code has ' +
-                                         'already been redeemed or has ' +
-                                         'expired, so there is nothing left ' +
-                                         'to end' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.codeRedeemed') };
           }
           oauth2.dropCode(match.code);
           log.debug("Leaving code.terminate().");
@@ -1551,10 +1718,8 @@ class Logout {
           });
           if (!found) {
             log.debug("Leaving vci-code.terminate().");
-            return { ok: false, message: 'that pre-authorized code has ' +
-                                         'already been redeemed or has ' +
-                                         'expired, so there is nothing left ' +
-                                         'to end' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.preAuthorizedRedeemed') };
           }
           vcOffers.preAuthorizedCodes.deleteDigest(found);
           log.debug("Leaving vci-code.terminate().");
@@ -1605,9 +1770,8 @@ class Logout {
           if (!match || !vcVerifier.withdrawSignIn(match.state,
                                                    'a sign-out')) {
             log.debug("Leaving wallet-signin.terminate(). Nothing left.");
-            return { ok: false, message: 'that wallet sign-in has already ' +
-                                         'been collected or has expired, so ' +
-                                         'there is nothing left to end' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.walletSignInCollected') };
           }
           log.debug("Leaving wallet-signin.terminate().");
           return { ok: true, message: 'a wallet sign-in was withdrawn before ' +
@@ -1695,8 +1859,8 @@ class Logout {
           if (!match || !vcIssued.disown(match.key, ctx.by ||
                                          'a global sign-out')) {
             log.debug("Leaving wallet-credential.terminate(). Gone.");
-            return { ok: false, message: 'that wallet credential has already ' +
-                                         'been disowned or has expired' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.walletCredentialDisowned') };
           }
           log.debug("Leaving wallet-credential.terminate().");
           return { ok: true, message: 'a wallet credential was disowned: it ' +
@@ -1766,8 +1930,8 @@ class Logout {
           })[0];
           if (!grant) {
             log.debug("Leaving gnap.terminate(). Gone.");
-            return { ok: false, message: 'that GNAP grant has already been ' +
-                                         'revoked or finalized' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.gnapGrantGone') };
           }
           const tokens = (grant.tokens || []).length;
           const ended = this.deps.gnapRevocation.endGrant(grant, {
@@ -1779,8 +1943,8 @@ class Logout {
             ? { ok: true, message: 'the GNAP grant ' + grant.id + ' of ' +
                 grant.client.identifier + ' is finalized and its ' + tokens +
                 ' token(s) are revoked' }
-            : { ok: false, message: 'that GNAP grant had already been ' +
-                                    'finalized' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.gnapGrantFinalized') };
         } },
 
       // -----------------------------------------------------------------------
@@ -1823,8 +1987,8 @@ class Logout {
           return gone
             ? { ok: true, message: 'the persisted claims token held by ' +
                 r.label + ' is ended' }
-            : { ok: false, message: 'that persisted claims token had ' +
-                                    'already ended' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.claimsTokenEnded') };
         } },
 
       // -----------------------------------------------------------------------
@@ -2157,12 +2321,8 @@ class Logout {
           const record = stats.artifactByKey(r.handle);
           if (!record) {
             log.debug("Leaving issued.terminate(). No such credential.");
-            return { ok: false, message: 'that credential is no longer in ' +
-                                         'the issued register — it has been ' +
-                                         'forgotten to the cap since this ' +
-                                         'list was drawn, at which point ' +
-                                         'this service has no position on ' +
-                                         'it left to state' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.credentialForgotten') };
           }
           const first = stats.revokeArtifact(record, ctx.by ||
                                              'a global sign-out');
@@ -3406,6 +3566,23 @@ class Logout {
         ctx.endingSessions[session.id] = true;
       }
     });
+    // AND THE PARTIES EACH OF THEM CARRIES ARE KEPT NOW (#2234), before the
+    // `wsfed-rp` and `saml2-sp` rows below take their realm and service
+    // provider off the session, so the session-revoked `dropSession()` sends
+    // at the end still reaches every application the session was signed in
+    // to (`ssf/application_sessions.ts`). Lazily: a library that requires
+    // nothing of this module's, reached only when something ends.
+    ctx.sessions.forEach((session) => {
+      if (!ctx.endingSessions[session.id]) {
+        return;
+      }
+      try {
+        require('../ssf/application_sessions').noteEnded(session);
+      } catch (e) {
+        log.debug("Caught in Logout.terminate(): " + ((e && e.message) || e));
+        // No Shared Signals here: nothing to keep the parties for.
+      }
+    });
 
     // See the block above: the ending order is not the reading order, and a
     // copy is sorted rather than FAMILIES itself — the table's own order is
@@ -3469,13 +3646,15 @@ class Logout {
           // plainly rather than ignoring.
           skipped.push({ id: r.id, family: family.id, kind: r.kind,
                          label: r.label,
-                         message: r.why || 'this cannot be ended' });
+                         message: r.why ||
+                           Sentence.say('refusals.logout.row.cannotBeEnded') });
           return;
         }
         let outcome;
         try {
           outcome = family.terminate(r, ctx) ||
-                    { ok: false, message: 'no answer' };
+                    { ok: false,
+                      message: Sentence.say('refusals.logout.row.noAnswer') };
         } catch (e) {
           log.warn(errorCodes.tag('STS-LOGOUT-0006') +
                    'logout: ending ' + r.id + ' failed: ' + e.message);
@@ -3487,7 +3666,9 @@ class Logout {
                 ' item during a sign-out failed',
             detail: { family: family.id, kind: String(r.kind || ''),
                       why: e.message } });
-          outcome = { ok: false, message: 'ending this failed: ' + e.message };
+          outcome = { ok: false, message:
+              Sentence.say('refusals.logout.row.endingFailed',
+                           { error: String(e.message) }) };
         }
         const entry: Loose = {
           id: r.id, family: family.id, kind: r.kind, label: r.label,
@@ -4068,22 +4249,20 @@ class Logout {
     return /json/i.test(accept) && !/text\/html/i.test(accept);
   }
 
-  // WHY A NAME IS REFUSED, in English (rcbj's decision on #539). THE REASON
-  // NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a setting
-  // somebody can turn back on, or a mode in which it is not offered.
-  private refusedNameMessage(asked?) {
+  // WHY A NAME IS REFUSED, a catalog sentence since #2006 (English until
+  // then, rcbj's decision on #539): the page draws it in its language, and
+  // the JSON door's `error_description` is its English. THE REASON NAMES
+  // WHICH OF THE TWO CLOSED IT, because the fixes differ: a setting somebody
+  // can turn back on, or a mode in which it is not offered.
+  private refusedNameMessage(asked?): Sentence {
     const { log, mode } = this.deps;
     log.debug("Entering Logout.refusedNameMessage().");
     log.debug("Leaving Logout.refusedNameMessage().");
-    return (mode.opensTestControls()
-        ? 'logout.anyUser is off on this instance'
-        : 'This service is in product mode, where a sign-out cannot name ' +
-          'somebody else whatever logout.anyUser says') +
-      ', so /logout acts only on the session you are holding. It was asked ' +
-      'about "' +
-      asked + '". To sign another person out, use /admin/logout (the ' +
-      'console\'s Admin Write role) or POST /admin-api/logout (an access ' +
-      'token carrying admin:write).';
+    return mode.opensTestControls()
+      ? Sentence.say('refusals.logout.nameRefusedAnyUserOff',
+                     { asked: String(asked) })
+      : Sentence.say('refusals.logout.nameRefusedProduct',
+                     { asked: String(asked) });
   }
 
   // The JSON door's answer to a browser holding several accounts that named
@@ -4118,28 +4297,23 @@ class Logout {
 
   // WHY NOBODY CAN BE ACTED ON, in English: the GET's sentence and the
   // act's, as each always read.
-  private nobodyMessage(act?: boolean) {
+  // A catalog sentence since #2006; which of the two closed naming is a
+  // `select` in the message (`anyUser` or `product`), never an English
+  // fragment passed in.
+  private nobodyMessage(act?: boolean): Sentence {
     const { log, mode } = this.deps;
     log.debug("Entering Logout.nobodyMessage().");
-    const closed = (mode.opensTestControls() ? 'logout.anyUser is off' :
-                    'product mode');
+    const closed = mode.opensTestControls() ? 'anyUser' : 'product';
     log.debug("Leaving Logout.nobodyMessage().");
     if (act) {
       return this.anyUserAllowed()
-        ? 'There is nobody to sign out: this request carries no session ' +
-          'cookie and named no username. A POST is never redirected to ' +
-          'the sign-in screen — a 303 would make it a GET and the fields ' +
-          'would be gone.'
-        : 'There is nobody to sign out: this request carries no session ' +
-          'cookie, and naming somebody is closed (' + closed + ').';
+        ? Sentence.say('refusals.logout.nobodyToSignOutOpen')
+        : Sentence.say('refusals.logout.nobodyToSignOutClosed',
+                       { closed: closed });
     }
     return this.anyUserAllowed()
-      ? 'There is no session cookie on this request. Name ' +
-        'somebody with ?username=, or sign in at /authn/login ' +
-        'first.'
-      : 'There is no session cookie on this request, and naming ' +
-        'somebody is closed (' + closed + '), so there is nobody for this ' +
-        'endpoint to act on. Sign in at /authn/login first.';
+      ? Sentence.say('refusals.logout.noSessionOpen')
+      : Sentence.say('refusals.logout.noSessionClosed', { closed: closed });
   }
 
   // The issuer identifier a front-channel notification's `iss` carries. This
@@ -4339,11 +4513,13 @@ class Logout {
         return a.key === asked;
       })[0];
       if (!one) {
+        const chooseAgain =
+          Sentence.say('refusals.logout.accountNotSignedIn');
         log.debug("Leaving Logout.signOutAccountsAct(). Not here.");
         return { status: 409, code: 'STS-LOGOUT-0012', json: { ok: false,
           next: 'refused',
-          errors: ['That account is not signed in in this browser any ' +
-                   'more. Choose again.'],
+          errors: [String(chooseAgain)],
+          messages: Sentence.messagesOf([chooseAgain]),
           view: this.accountStep(req, true) } };
       }
       log.debug("Leaving Logout.signOutAccountsAct(). One account.");
@@ -4388,11 +4564,10 @@ class Logout {
   private accountsOff(): Loose {
     const { log } = this.deps;
     log.debug("Entering Logout.accountsOff().");
+    const off = Sentence.say('refusals.logout.accountsOff');
     log.debug("Leaving Logout.accountsOff().");
     return { status: 400, code: 'STS-LOGOUT-0013', json: { ok: false,
-      errors: ['This trust realm does not keep several signed-in accounts ' +
-               'per browser (authn.multipleAccounts is off), so there is no ' +
-               'account to choose.'] } };
+      errors: [String(off)], messages: Sentence.messagesOf([off]) } };
   }
 
   // Several people's results as the one result a page draws: every list
@@ -4424,7 +4599,8 @@ class Logout {
   // operation table — and this module the logic, as `authn.ts` is for the
   // sign-in screen's operations. Each answers `{ status, code, json }`, and
   // the door sends it. Facts, no words: the page draws them in the
-  // `logout` catalogs' words; refusals are English.
+  // `logout` catalogs' words; a refusal is English in `errors` with its
+  // `refusals.logout.*` message beside it in `messages` (#2006).
   // ---------------------------------------------------------------------------
   // Who may be named here, for the page's closing note.
   private namingOf() {
@@ -4440,15 +4616,18 @@ class Logout {
     const { log, mode } = this.deps;
     log.debug("Entering Logout.subjectRefusal().");
     if (subject.refused) {
+      const named = this.refusedNameMessage(subject.asked);
       log.debug("Leaving Logout.subjectRefusal(). A name.");
       return { status: 403, code: 'STS-LOGOUT-0001', json: { ok: false,
-        errors: [this.refusedNameMessage(subject.asked)],
+        errors: [String(named)], messages: Sentence.messagesOf([named]),
         view: { state: 'refused',
                 verifiesCredentials: !!mode.verifiesCredentials() } } };
     }
+    const nobody = this.nobodyMessage(act);
     log.debug("Leaving Logout.subjectRefusal(). Nobody.");
     return { status: 401, code: 'STS-LOGOUT-0002', json: { ok: false,
-      errors: [this.nobodyMessage(act)], view: { state: 'nobody' } } };
+      errors: [String(nobody)], messages: Sentence.messagesOf([nobody]),
+      view: { state: 'nobody' } } };
   }
 
   /**
@@ -4561,9 +4740,10 @@ class Logout {
                   note: 'ending your other sessions needs a recent ' +
                         'sign-in (account.recentAuthMinutes)' }]
     });
+    const again = Sentence.say('refusals.logout.signInAgain');
     log.debug("Leaving Logout.reauthenticationRefusal().");
     return { status: 403, code: 'STS-LOGOUT-0015', json: { ok: false,
-      errors: ['Sign in again, then come back to end your other sessions.'],
+      errors: [String(again)], messages: Sentence.messagesOf([again]),
       view: { state: 'reauthenticate', signIn: signIn } } };
   }
 
@@ -4580,13 +4760,21 @@ class Logout {
 
   // The result as the page draws it where there is nothing to fan out:
   // `resultPage()`'s facts. The messages are the model's words, as on the
-  // server-drawn page.
+  // server-drawn page; a row's failure that is a catalog sentence (#2006)
+  // carries its key as `said`, which the page draws in its language.
   private resultView(result?, remaining?) {
     const { log } = this.deps;
     log.debug("Entering Logout.resultView().");
     const rows = function (list) {
       return (list || []).map(function (one) {
-        return { id: one.id, label: one.label || '', message: one.message };
+        const row: Loose = { id: one.id, label: one.label || '',
+                             message: String(one.message == null
+                               ? '' : one.message) };
+        const said = Sentence.stored(one.message);
+        if (said) {
+          row.said = said;
+        }
+        return row;
       });
     };
     log.debug("Leaving Logout.resultView().");
@@ -4638,14 +4826,19 @@ class Logout {
     const dot = text.lastIndexOf('.');
     if (dot <= 0) {
       log.debug("Leaving Logout.openResult(). Not a sealed result.");
-      return { why: 'That is not a sign-out result.' };
+      return { why: Sentence.say('refusals.logout.resultNotOne') };
     }
     const packed = text.slice(0, dot);
-    const expected = crypto.hmac('sha256', clusterSecrets.get(RESULT_SECRET),
-                                 RESULT_LABEL + '.' + packed, 'base64url');
-    if (!crypto.constantTimeEquals(text.slice(dot + 1), expected)) {
+    // UNDER ANY KEY A VERIFIER ACCEPTS (#2220): a sign-out answered just
+    // before a rotation draws its result after it.
+    const presented = text.slice(dot + 1);
+    const ours = clusterSecrets.keys(RESULT_SECRET).some(function (key) {
+      return crypto.constantTimeEquals(presented,
+        crypto.hmac('sha256', key, RESULT_LABEL + '.' + packed, 'base64url'));
+    });
+    if (!ours) {
       log.debug("Leaving Logout.openResult(). The MAC.");
-      return { why: 'That sign-out result was not made by this service.' };
+      return { why: Sentence.say('refusals.logout.resultNotOurs') };
     }
     let payload: Loose = null;
     try {
@@ -4658,16 +4851,15 @@ class Logout {
     }
     if (!payload || !payload.result) {
       log.debug("Leaving Logout.openResult(). Unreadable.");
-      return { why: 'That sign-out result could not be read.' };
+      return { why: Sentence.say('refusals.logout.resultUnreadable') };
     }
     if (String(payload.realm) !== String(realms.currentId() || '')) {
       log.debug("Leaving Logout.openResult(). Another realm.");
-      return { why: 'That sign-out result was made in another trust realm.' };
+      return { why: Sentence.say('refusals.logout.resultOtherRealm') };
     }
     if (!(Number(payload.exp) > Date.now())) {
       log.debug("Leaving Logout.openResult(). Expired.");
-      return { why: 'That sign-out result has expired. What is still live ' +
-                    'is at /logout.' };
+      return { why: Sentence.say('refusals.logout.resultExpired') };
     }
     log.debug("Leaving Logout.openResult().");
     return { result: payload.result };
@@ -4684,7 +4876,10 @@ class Logout {
          this.page(t, realms.currentPrefix() + LOGOUT_PATH,
               t.text('logout.title'),
               '<h1>' + t.html('logout.heading') + '</h1><div ' +
-                   'class="err">' + xmlEscape(why) +
+                   'class="err">' +
+                   // In the page's language (#2006): the document is drawn
+                   // here, so the server says the sentence in `t`.
+                   xmlEscape(Sentence.is(why) ? why.textIn(t) : String(why)) +
                    '</div><p class="sub"><a href="' +
                    xmlEscape(LOGOUT_PATH) +
                    '">' + t.html('logout.startAgain') + '</a>' +
@@ -4703,6 +4898,8 @@ class Logout {
   private shell(req?, res?, person?) {
     const { log, app } = this.deps;
     log.debug("Entering Logout.shell().");
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const said = ShellDocument.translator({ username: String(person || '') });
     const html = ShellDocument.document({
       title: 'Sign out',
       attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
@@ -4718,10 +4915,14 @@ class Logout {
       script: SIGNOUT_SCRIPT_PATH,
       open: '',
       close: '',
-      noscript: '<h1>Sign out</h1><div class="err">This sign-out page is ' +
+      noscript: '<h1>' + ShellDocument.said(said,
+        'browser.noscript.signout.title', 'Sign out') +
+        '</h1><div class="err">' + ShellDocument.said(said,
+        'browser.noscript.signout', 'This sign-out page is ' +
         'a script that runs in your browser, and with scripts blocked ' +
         'there is nothing it can show. Allow scripts for this page to see ' +
-        'what you are still signed into and to sign out.</div>',
+        'what you are still signed into and to sign out.') + '</div>',
+      translator: said,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     ShellDocument.serve(app, req, res, html,
@@ -4872,7 +5073,10 @@ class Logout {
     // bookmark of a result — is sent to the page with a 303, which ends
     // nothing and shows what there is to end.
     // -------------------------------------------------------------------------
-    app.post(LOGOUT_PATH, (req, res) => {
+    // Async since #1955 P8 follow-up: the SAML 2.0 LogoutRequests are signed
+    // off the event loop before the sign-out runs, where the realm's keys
+    // are in the HSM; the promise is returned to the express guard.
+    app.post(LOGOUT_PATH, async (req, res) => {
       log.debug("Entering the logout action endpoint.");
       if (!this.wantsJson(req)) {
         errorCodes.mark(res, 'STS-LOGOUT-0010');
@@ -4950,15 +5154,19 @@ class Logout {
       }
       if (this.reauthenticationOwed(subject, body)) {
         errorCodes.mark(res, 'STS-LOGOUT-0015');
+        const again = Sentence.say('refusals.logout.signInAgainFirst');
         res.status(403).type('application/json').set('Cache-Control',
                                                      'no-store')
            .send(JSON.stringify({ error: 'reauthentication_required',
-             errors: ['Sign in again at /authn/login, then come back to end ' +
-                      'your other sessions.'] }, null, 2));
+             errors: [String(again)],
+             messages: Sentence.messagesOf([again]) }, null, 2));
         log.debug("Leaving the logout action endpoint. Sign in again.");
         return;
       }
-      const ended = this.endFor(req, res, subject, body);
+      const ahead = await this.signedAhead([subject.key], baseUrlOf(req));
+      const ended = this.withSignedAhead(ahead, () => {
+        return this.endFor(req, res, subject, body);
+      });
       res.status(200).type('application/json').set('Cache-Control',
                                                    'no-store')
          .send(JSON.stringify(Object.assign({ username: subject.username,
@@ -5017,18 +5225,19 @@ class Logout {
         site === 'same-origin';
       if (!sameSite && (!origin || own.indexOf(origin) < 0)) {
         this.refusedDocument(res, 403, 'STS-LOGOUT-0009',
-          'This page is posted by the sign-out page of this service: the ' +
-          'request carried ' + (origin && origin !== 'null'
-            ? 'another origin' : 'no origin of this service') + '.');
+          Sentence.say(origin && origin !== 'null'
+            ? 'refusals.logout.postedOtherOrigin'
+            : 'refusals.logout.postedNoOrigin'));
         log.debug("Leaving the signed-out document. Not this origin.");
         return;
       }
       const posted = validation.checkParsed(parseBody(req) || {}, 'body',
                                             SIGNED_OUT_FORM);
       const opened = posted.ok ? this.openResult(posted.value.result)
-                               : { why: 'There is no sign-out result here.' };
+                               : { why: Sentence.say(
+                                   'refusals.logout.resultNone') };
       if (!opened.result) {
-        this.refusedDocument(res, 400, 'STS-LOGOUT-0008', String(opened.why));
+        this.refusedDocument(res, 400, 'STS-LOGOUT-0008', opened.why);
         log.debug("Leaving the signed-out document. " + opened.why);
         return;
       }
@@ -5134,10 +5343,12 @@ export = {
   SIGNED_OUT_PATH: SIGNED_OUT_PATH,
   signOutView: slot.forward('signOutView'),
   signOutAct: slot.forward('signOutAct'),
+  signOutActAsync: slot.forward('signOutActAsync'),
   // The sign-out's account step (#561), for `GET` and `POST
   // /authn-api/logout/accounts`.
   signOutAccountsView: slot.forward('signOutAccountsView'),
   signOutAccountsAct: slot.forward('signOutAccountsAct'),
+  signOutAccountsActAsync: slot.forward('signOutAccountsActAsync'),
   surfacePaths: slot.forward('surfacePaths'),
   // The list of families, for /admin/logout and the management API's OpenAPI
   // document — both describe what this endpoint reaches, and a second list

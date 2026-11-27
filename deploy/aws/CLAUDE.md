@@ -11,11 +11,12 @@ Dockerfile removes this directory from the image.
 | `environment/` | per run | VPC, NLB (443, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `certificate/` | **kept across destroys** | **the public ACM certificate (2026-10-01, rcbj)**: the exportable certificate the nodes present, its DNS validation records — one state per environment (`environment/<env>/certificate.tfstate`) and per cell (`environment/<env>/<cell>/certificate.tfstate`). Applied before every environment apply, NEVER destroyed with the environment, and its first apply ADOPTS an existing certificate rather than requesting one (*The public certificate is kept*, below) | the deployer role, through `entrypoint.sh` |
 | `spiffe-realm/` | per realm | one additional realm's SPIRE Server API on an existing environment's NLB: one listener, one target group with the nodes registered BY ADDRESS, and the security-group rules. The Workload API is not published (#324). State at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
+| `pep-cluster/` | per PEP environment | **a remote XACML PEP cluster as an environment of its own (#1284)**: its own VPC, an ALB with a regional AWS WAF, a public ACM certificate and alias, a NAT gateway (the one egress address the identity service admits), an ECS cluster with a service per member (or one shared), an execution role; it reads no iya-sts state and reaches the service at `idp_url`. Keys come from Secrets Manager secrets `provision.sh` writes, never from this state. Values in `pep-cluster/envs/<env>.tfvars` (`testpep`); state at `environment/<env>/pep-cluster/<cluster>.tfstate` (*A remote PEP cluster*, below) | the deployer role (after `foundation/`); `provision.sh` by a person |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction and VPC CIDR, which cell holds the global database's writer, and (since #367) each jurisdiction's pinned countries. Its presence is what makes an environment multi-cell; `testidpna` (two cells) and `globalidp` (six, the target test case) are the two there are | the deployer role |
 | `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
 | `convert-to-cells.sh` | per conversion | the conversion's runbook: checks (read only, the default), `--carry-secrets`, `--copy-snapshot`, and the `terraform-local.sh` commands in order — never an apply or a destroy itself | a person |
-| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/`, `environment/` and `certificate/`, and (#695) `suite-callbacks/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
+| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/`, `environment/` and `certificate/`, (#695) `suite-callbacks/` and (#1284) `pep-cluster/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
 | `global/` | per multi-cell environment | the global tier of a multi-cell environment (#98): the global PostgreSQL writer and a cross-region read replica per other cell, the global secrets and their replicas, the peering mesh and the inter-cell name associations — state at `environment/<env>/global.tfstate` (*Cells*, below) | the deployer role, through `entrypoint.sh` |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -444,7 +445,7 @@ by side. **Keep it that way across #820's status-list change**: from
 2026-10-21 a process leases blocks of access-token status indexes, and an
 older build claims single indexes that a block's owner cannot see — a mixed
 cluster could give two live tokens one index, and a revocation of one would
-then show the other INVALID in the status list. `docs/v1.1.0/aws-cluster.md` tells
+then show the other INVALID in the status list. `docs/v1.2.0/aws-cluster.md` tells
 an operator the same.
 
 ## The key-encryption key: a key in KMS that never leaves it (#391, 2026-10-01)
@@ -1672,6 +1673,154 @@ which realms an environment was given, and a dependent that will not destroy
 stops the environment's destroy instead of being discovered afterwards. It
 runs while the environment still EXISTS, which this stack requires: it reads
 the environment's remote state and finds the load balancer by name.
+
+## A remote PEP cluster: `pep-cluster/` (#1284, 2026-11-23)
+
+**The remote XACML PEP as a plain scaled service, IN AN ENVIRONMENT OF ITS
+OWN, and nothing new in the service.** #676 concluded the PEP needs no
+clustering mechanism (instances share nothing and converge on the PDP on
+their own), so this is the PEP image on Fargate behind a load balancer. The
+service's *PEP cluster* (shared configuration, `create-pep-cluster`) is used
+as it is: `provision.sh` creates one of the stack's name and adds the
+members. `docs/v1.2.0/aws-cluster.md`, *A remote PEP cluster*, is the user's
+half.
+
+**IT WAS FIRST BUILT CHAINED TO THE iya-sts ENVIRONMENT, AND rcbj REVERSED
+THAT THE SAME DAY** ("No one would build something like this. Make the
+remote pep-cluster a separate environment. don't chain it to the iya-sts
+cluster's environment … I want the full aws waf in front of its load
+balancer"). The chained version read `environment/`'s state, put its
+listeners on testidp's NLB beside the service's and its rules on testidp's
+two groups, and reached the service at the name testidp's private zone
+resolved inside the VPC. What showed it was wrong: TLS passed through the
+NLB, so a browser saw EACH MEMBER'S OWN realm-issued certificate, and every
+redeploy moved a source-IP-sticky browser to the other member and the other
+certificate. Nothing of that version remains but this paragraph.
+
+**WHAT IT IS NOW.** Its own VPC (`vpc_cidr`, peered with nothing), two
+zones, an internet-facing ALB in the public subnets, the members in the
+private subnets with no public address, ONE NAT gateway, its own ECS
+cluster, its own execution role. It reads no remote state: the identity
+service is `idp_url`, its public base URL, dialled over the internet. A PEP
+environment is named by TF_ENV like any other (`testpep`), its values in
+`pep-cluster/envs/<env>.tfvars`, its state at
+`environment/<env>/pep-cluster/<cluster>.tfstate` (the one prefix the
+deployer may write). **It is not a dependent of any iya-sts environment**,
+so `destroy_dependent_stacks` does not know it, and `entrypoint.sh` refuses
+a PEP environment named like a multi-cell iya-sts one.
+
+**AN ALB, BECAUSE AWS WAF ATTACHES TO NOTHING ELSE A LOAD BALANCER CAN BE.**
+WAF goes on an ALB, CloudFront or API Gateway, never an NLB. So the ALB
+ENDS TLS with a public ACM certificate for `public_hostname` (made and
+DNS-validated here; not the iya-sts `certificate/` stack's exportable one,
+because nothing exports it) and re-encrypts to each member's realm-issued
+pair, which an ALB does not verify. A browser sees one certificate whatever
+member answers, and the proxy's affinity is the ALB's own cookie
+(`lb_cookie`, a day) rather than the client's address. The cost: no client
+certificate reaches a member, so an AuthZEN caller admitted by mutual TLS
+cannot use the published decision API (`publish_decision_api`).
+
+**THE WAF (`waf.tf`).** Regional, on the ALB: AWS's IP reputation list,
+known bad inputs and the common rule set (SizeRestrictions_BODY COUNTED:
+the proxy forwards an application's own POSTs), a per-address rate limit,
+then an ALLOW for `allowed_cidrs`, default BLOCK — testidp's allowlist
+posture. The managed groups come BEFORE the allow, because an allow ends
+evaluation and a group after it would see nothing. The ALB's security group
+admits `allowed_cidrs` as well; the WAF is the rule, the group the floor.
+
+**ONE EGRESS ADDRESS, AND THE IDENTITY SERVICE MUST ADMIT IT.** testidp's
+CloudFront WAF and NLB group admit only its `allowed_cidrs`, so the members'
+pulls are refused until `egress_ip` is added there (an apply of testidp with
+it in ALLOWED_CIDR). A member keeps retrying with its backoff in the
+meantime. One NAT gateway, not one per zone: one address to admit, one
+hourly charge, and a zone outage costs only pulls — a member keeps enforcing
+what it last pulled.
+
+**THE NUDGE IS OFF UNLESS THE IDENTITY SERVICE HAS FIXED ADDRESSES**
+(`notify_cidrs`). The service nudges a PEP by dialling it, which here means
+the ALB. With `notify_cidrs`, each member gets `notify_port_base + n` on the
+ALB, admitted only from those addresses (security group and WAF), and
+advertises `https://<public_hostname>:<port>/notify` — the ALB's public
+certificate names that host and the service's store trusts a public CA. An
+iya-sts environment's nodes leave from task addresses that change with every
+start, so testidp has none to give, and there is NO switch in the PEP to
+advertise nothing (it derives `https://<first cert name>:9443/notify`). So
+`provision.sh` calls `xacml/disable-pep` (*Stop nudging*) on each member's
+row instead, and the members converge on their 15-second poll. A nudge
+admitted from anywhere was refused: it is an unauthenticated request that
+makes a PEP pull.
+
+**NO PRIVATE KEY IN ANY STATE.** The issue's rule. Each member's secret,
+`iya-sts/<pep env>/pep/<cluster>/<member>`, is created and written by
+`provision.sh`; the stack reads it with `aws_secretsmanager_secret`, which
+returns metadata only, and the task definition carries `valueFrom`
+references to four of its JSON members. The container's own `sh -c` writes
+them to `/run/pep` and execs `xacml-pep`. No task role (the PEP calls no AWS
+API). `assertion_cert` is a fifth member the task never reads: it is what
+makes `register-remote-pep.js` idempotent across runs.
+
+**TWO PROVISIONING PASSES AROUND ONE APPLY**, because the realm issues a
+listener pair only to a PEP that has registered (`docs/v1.2.0/remote-pep.md`,
+*An HTTPS listener*). Until the second pass a member has no 9443, so: **no
+container health check** (the image's own reports a pairless PEP unhealthy,
+and ECS would replace an essential container on that), and
+**`health_check_grace_seconds`, 900**, keeps ECS from replacing it on the
+ALB's failing checks. The second pass forces a new deployment of each member
+it issued a pair to, and stops nudging the rows that now exist.
+
+**EVERY TARGET GROUP HEALTH-CHECKS THE MEMBER'S 9443 /healthcheck**: the
+proxy listener answers only once a route exists, and a member with no route
+is still live.
+
+**THE COMPANION IS A SIDECAR, NOT A SERVICE (`companion = true`, rcbj
+2026-11-23: "deploy the companion pep-app to the remote pep cluster").**
+`/pep-app/protected` and `/whoami` take the person from identity HEADERS the
+proxy sets, which is why the local cluster compose publishes no port for it
+(#1972). On Fargate the equivalent is a container in each member's task: the
+route's one upstream, `http://127.0.0.1:9700`, is each member's own
+companion, and no rule names 9700. It is `essential = false`, the task grows
+to 512/1024 for the second node process, and it is given no bootstrap
+secret, so it holds no management power. `provision.sh --pep-app` runs the
+utility's step 8 with the first member only and REDACTS the line where the
+utility prints the new client secret: the PEP receives it on its own pull.
+
+**A TEMPORARY PUBLIC ROUTE LEAVES ITS POLICY BEHIND.** Checking the
+proxy→companion hop without a sign-in (product mode needs a password and
+MFA) was done with a public `/pep-app/public` route saved IN FRONT of
+`/pep-app` (the first route that matches wins); removing it from the
+document did not remove its generated `pepc-<cluster>-<route>` policy,
+which took `POST /admin-api/xacml/delete` with its name.
+
+**`foundation/` owes two things for the deployer role** (the root account
+applies without them): the regional WAF and ALB association grant
+(`WafRegionalOnlyThisProjectsNames`, `AlbSetWebAcl`) and `test-pep.iyasec.io`
+in `public_dns`; and, for `autoscaling_max`, `EcsServiceAutoScaling` and the
+`ecs.application-autoscaling` service-linked role. Application Auto Scaling
+owns a shared service's desired count, so `ignore_changes = [desired_count]`.
+
+**What was checked, 2026-11-23** (testpep, two per-instance members and the
+companion, images `b63b1ef04719`, pulling from testidp): the apply built 46
+resources in two goes (a security-group description may not hold an
+apostrophe); both members registered with testidp through the NAT address
+once testidp admitted it, and pulled; both target groups healthy; the
+browser sees `CN = test-pep.iyasec.io` from Amazon's CA;
+`/pep-app/protected` answered a browser 302 to testidp's authorization
+endpoint with a PAR `request_uri`; `GET /` on 9443 round-robined. A request
+on an open connection from rcbj's machine took 0.28 s against a 0.21 s TCP
+connect: the time is the distance to us-west-2, not the stack. **A WHOLE
+SIGN-IN, in a real headless Chrome over CDP** (a throwaway person holding
+`pep-app`, deleted afterwards): the forced first password change, an
+authenticator app enrolled, consent, the member's callback, and
+`/pep-app/protected` answered by the companion with `X-Remote-User`,
+`X-Iya-Auth: session` and `X-Iya-Amr: pwd,otp`; a second page on the same
+proxy session; 14 s in all. **A script cannot stand in for that browser**:
+the same steps in node's `fetch` were rated HIGH (`automated-client`) by
+the risk engine and refused, which is the engine working. The members'
+CAEP/RISC receiver started only after the `pep-app` client was given
+`client_credentials`, `ssf.read`/`ssf.manage` AND the `SSF_READ`/
+`SSF_MANAGE` roles (`STS-XPEP-0094` until then); `register-remote-pep.js`
+now does all three. Not exercised: `shared` mode and autoscaling,
+`notify_cidrs`. `tests/render.tftest.hcl` holds the shapes offline.
 
 ## The deployer's permissions, and how to extend them
 

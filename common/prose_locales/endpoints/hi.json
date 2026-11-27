@@ -95,6 +95,18 @@
     "en": "4b0c4feb0af59f04",
     "text": "एक अभिगम अनुरोध जमा करें"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "एक्सेस अनुरोध का सबमिशन स्कीमा"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation.name": {
+    "en": "c633cd939009e41d",
+    "text": "एक्सेस अनुरोध का Catalogs Document"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation/entitlements.name": {
+    "en": "2fc2571728b32fa3",
+    "text": "एक्सेस अनुरोध का अधिकार कैटलॉग"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "एक अभिगम अनुरोध की कार्य स्थिति"
@@ -291,6 +303,14 @@
     "en": "f399711ce1261bf4",
     "text": "प्रत्येक CRL और OCSP उत्तरदाता जिसे यह सेवा प्रकाशित करती है"
   },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "क्षेत्र की OpenSSH उपयोगकर्ता CA की सार्वजनिक कुंजी"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "क्षेत्र की OpenSSH उपयोगकर्ता कुंजी निरसन सूची"
+  },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
     "text": "JSON पर XACML कंसोल पृष्ठ"
@@ -431,6 +451,22 @@
     "en": "bfb6c6f542c0607b",
     "text": "/Me, प्रमाणित विषय"
   },
+  "endpoints.route./.well-known/openpgpkey/:domain/hu/:hash.name": {
+    "en": "b042a2652a9771c9",
+    "text": "Web Key Directory कुंजी (advanced विधि)"
+  },
+  "endpoints.route./.well-known/openpgpkey/:domain/policy.name": {
+    "en": "f0c7c4485ab23e66",
+    "text": "Web Key Directory नीति (advanced विधि)"
+  },
+  "endpoints.route./.well-known/openpgpkey/hu/:hash.name": {
+    "en": "a8849e1ec8b477d5",
+    "text": "Web Key Directory कुंजी (direct विधि)"
+  },
+  "endpoints.route./.well-known/openpgpkey/policy.name": {
+    "en": "d9805e391b15a7b9",
+    "text": "Web Key Directory नीति (direct विधि)"
+  },
   "endpoints.route./.well-known/hoba/register.name": {
     "en": "b95adde7badbdef3",
     "text": "एक HOBA सार्वजनिक कुंजी पंजीकृत करें"
@@ -438,6 +474,10 @@
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "क्लाइंट प्रमाणपत्र से साइन इन करें"
+  },
+  "endpoints.route./authn/certificate/continue.name": {
+    "en": "801f4e0b4934b5df",
+    "text": "उसके अपने श्रोता पर प्रमाणपत्र साइन-इन"
   },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
@@ -475,6 +515,10 @@
     "en": "6a36418727489219",
     "text": "सेवा का आइकन"
   },
+  "endpoints.route./web/csp-report.name": {
+    "en": "4c905dd496d09bb9",
+    "text": "Content Security Policy उल्लंघन रिपोर्टें"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "सार्वजनिक सतहों की कार्ड स्टाइलशीट"
@@ -482,6 +526,10 @@
   "endpoints.route./web/footer.css.name": {
     "en": "b1ae9012425d7c77",
     "text": "पृष्ठ फ़ुटर की स्टाइलशीट"
+  },
+  "endpoints.route./web/browser-check.js.name": {
+    "en": "c00f945d4a14cdbe",
+    "text": "ब्राउज़र जाँच जिसे हर शेल सबसे पहले चलाता है"
   },
   "endpoints.route./web/theme.css.name": {
     "en": "955c14dc632bdf90",
@@ -799,6 +847,10 @@
     "en": "91b14d0429eaa0bc",
     "text": "प्रमाणपत्र फ़ॉर्म के सहायक"
   },
+  "endpoints.route./admin-api/console/certificates/:action.name": {
+    "en": "134f5f716b5ca38d",
+    "text": "प्रमाणपत्र साइन-इन का प्रमाणपत्र रीडर"
+  },
   "endpoints.route./admin-api/console/applications/:action.name": {
     "en": "18ea7bf0d0fcc0d4",
     "text": "नए अनुप्रयोग फ़ॉर्म का सहायक"
@@ -834,6 +886,14 @@
   "endpoints.route./admin-api/pki/trust/:action.name": {
     "en": "49eac4924ef09867",
     "text": "हस्ताक्षरकर्ता विश्वास-भंडार या एक अतिसतर्क पंक्ति बदलें, या पिन की पुनः जाँच करें"
+  },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "नामित ट्रस्टस्टोर और उन पर भरोसा करने वाले उपयोग-मामले"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "किसी नामित ट्रस्टस्टोर को या किसी उपयोग-मामले के भरोसे को बदलें"
   },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
@@ -895,6 +955,14 @@
     "en": "cff7055c2db49c6a",
     "text": "मेल क्रियाएँ"
   },
+  "endpoints.route./admin-api/openpgp.name": {
+    "en": "bb22bb5b740e327f",
+    "text": "OpenPGP कुंजियाँ"
+  },
+  "endpoints.route./admin-api/openpgp/:action.name": {
+    "en": "a1147f062fddb7e5",
+    "text": "OpenPGP कुंजी क्रियाएँ"
+  },
   "endpoints.route./admin-api/mail/outbox.name": {
     "en": "d40abea9379f4e22",
     "text": "मेल आउटबॉक्स"
@@ -947,6 +1015,30 @@
     "en": "dcc6aecb3740fef3",
     "text": "WebAuthn सेटिंग्स"
   },
+  "endpoints.route./admin-api/hardware-tokens-settings.name": {
+    "en": "f7c0eac08cccb13f",
+    "text": "हार्डवेयर टोकन सेटिंग्स"
+  },
+  "endpoints.route./admin-api/piv.name": {
+    "en": "3708b64a7c448009",
+    "text": "PIV सेटिंग्स"
+  },
+  "endpoints.route./admin-api/yubiotp.name": {
+    "en": "1b84971a31275a96",
+    "text": "YubiKey OTP सेटिंग्स"
+  },
+  "endpoints.route./admin-api/oath-tokens.name": {
+    "en": "87d8bb1a9df4fe02",
+    "text": "OATH टोकन सेटिंग्स"
+  },
+  "endpoints.route./admin-api/ssh-user-ca.name": {
+    "en": "863acd9a2df9d014",
+    "text": "SSH उपयोगकर्ता प्रमाणपत्र सेटिंग्स"
+  },
+  "endpoints.route./admin-api/openpgp-settings.name": {
+    "en": "60b6f8684877d1e1",
+    "text": "OpenPGP सेटिंग्स"
+  },
   "endpoints.route./admin-api/mfa.name": {
     "en": "63fc7f058d95883b",
     "text": "किसके पास दूसरा कारक है"
@@ -962,6 +1054,14 @@
   "endpoints.route./admin-api/rbac/:action.name": {
     "en": "de7f185fcea232a6",
     "text": "व्यवस्थापक भूमिका क्रियाएँ"
+  },
+  "endpoints.route./admin-api/approvals.name": {
+    "en": "0405f4b67edd2784",
+    "text": "लंबित अनुमोदन"
+  },
+  "endpoints.route./admin-api/approvals/:action.name": {
+    "en": "c00eefb987efe9e3",
+    "text": "लंबित अनुमोदन के निर्णय"
   },
   "endpoints.route./admin-api/sessions.name": {
     "en": "366487a11e4c5380",
@@ -1050,6 +1150,30 @@
   "endpoints.route./admin-api/users/new.name": {
     "en": "911ac7f1d87d5691",
     "text": "नया उपयोगकर्ता फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/groups/new.name": {
+    "en": "e7e8f8038d460304",
+    "text": "नए समूह का फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/roles/new.name": {
+    "en": "2693340ee18861ff",
+    "text": "नई भूमिका का फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/devices/new.name": {
+    "en": "8922b80eac839903",
+    "text": "नए डिवाइस का फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/attribute-sources/new.name": {
+    "en": "24f2d80ebcf05f5e",
+    "text": "नए एट्रिब्यूट स्रोत का फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/secret-destinations/new.name": {
+    "en": "a6b78c1984266387",
+    "text": "नए सीक्रेट गंतव्य का फ़ॉर्म"
+  },
+  "endpoints.route./admin-api/policies/new.name": {
+    "en": "09d937d4dfadbac0",
+    "text": "नई नीति का फ़ॉर्म"
   },
   "endpoints.route./admin-api/applications/new.name": {
     "en": "46a0fea8394de3a4",
@@ -1207,6 +1331,30 @@
     "en": "6bfc2bea96fee884",
     "text": "एक लॉगिन-पश्चात गतिविधि शुरू करें, रोकें, फिर शुरू करें या समाप्त करें"
   },
+  "endpoints.route./admin-api/hardware-tokens.name": {
+    "en": "386404ef0cf5e649",
+    "text": "हार्डवेयर टोकन"
+  },
+  "endpoints.route./admin-api/hardware-tokens/oath.name": {
+    "en": "009f323198517782",
+    "text": "आयात किए गए OATH टोकन"
+  },
+  "endpoints.route./admin-api/hardware-tokens/yubiotp.name": {
+    "en": "038eb465fd8d6235",
+    "text": "आयात किए गए YubiKey OTP"
+  },
+  "endpoints.route./admin-api/hardware-tokens/:action.name": {
+    "en": "33209f967f070175",
+    "text": "हार्डवेयर टोकन क्रियाएँ"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "किसी व्यक्ति के SSH उपयोगकर्ता प्रमाणपत्र"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "एस्क्रो की गई PIV कुंजियाँ"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "जावक SCIM क्लाइंट"
@@ -1218,6 +1366,10 @@
   "endpoints.route./admin-api/roles/preview.name": {
     "en": "c2e62734c4466542",
     "text": "क्या यह जारी होगा?"
+  },
+  "endpoints.route./admin-api/roles/eligibility.name": {
+    "en": "7bf17441c33aaafb",
+    "text": "क्या यह व्यक्ति इस गतिशील भूमिका के लिए पात्र है?"
   },
   "endpoints.route./admin-api/roles/:action.name": {
     "en": "1baadaaa0e1df852",
@@ -1290,6 +1442,10 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "सेल निवासी"
+  },
+  "endpoints.route./admin-api/csp-reports.name": {
+    "en": "ff0444716f951c5e",
+    "text": "CSP उल्लंघन रिपोर्टें"
   },
   "endpoints.route./admin-api/malware-scanning.name": {
     "en": "48adceb89b5e59c8",
@@ -1378,6 +1534,10 @@
   "endpoints.route./admin-api/tls.name": {
     "en": "96b20b887882a558",
     "text": "TLS / पारस्परिक TLS सेटिंग्स"
+  },
+  "endpoints.route./admin-api/tls/key-exchange.name": {
+    "en": "74b3b800a6486eba",
+    "text": "तय हुआ TLS कुंजी विनिमय"
   },
   "endpoints.route./admin-api/tls/trust.name": {
     "en": "7afb6aac81a9a73c",
@@ -1847,6 +2007,14 @@
     "en": "69876d051e66729c",
     "text": "लॉगिन-पश्चात गतिविधि चरण"
   },
+  "endpoints.route./wsapi/2.0/verify.name": {
+    "en": "0734c12f6e3eb870",
+    "text": "YK-VAL 2.0 सत्यापन"
+  },
+  "endpoints.route./authn/roles.name": {
+    "en": "d10487ebcbc8b238",
+    "text": "गतिशील भूमिका चरण"
+  },
   "endpoints.route./authn/totp.name": {
     "en": "a89de574ee2c21ab",
     "text": "एकबारगी कोड का दूसरा-कारक चरण"
@@ -2003,6 +2171,18 @@
     "en": "3d081a5b28f53bd6",
     "text": "एक लॉगिन-पश्चात गतिविधि टाल दें"
   },
+  "endpoints.route./authn-api/mfa/:id/post-login/mail.name": {
+    "en": "07e532c277a3f57e",
+    "text": "पोस्ट-क्वांटम मेल-एन्क्रिप्शन कुंजी पंजीकृत करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/piv.name": {
+    "en": "e0733b33f8ee2cb8",
+    "text": "लॉग-इन के बाद की गतिविधि द्वारा माँगा गया PIV प्रमाणपत्र फिर से जारी करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/roles.name": {
+    "en": "77d2211c8b1e2d93",
+    "text": "इस साइन-इन की गतिशील भूमिकाएँ चुनें"
+  },
   "endpoints.route./authn-api/mfa/:id/email/send.name": {
     "en": "f974b23b7838f712",
     "text": "एक साइन-इन कोड या लिंक मेल करें"
@@ -2106,6 +2286,10 @@
   "endpoints.route./oauth2/userinfo.name": {
     "en": "aebc2aa96e6b1b70",
     "text": "UserInfo एंडपॉइंट"
+  },
+  "endpoints.route./oauth2/groups.name": {
+    "en": "fc727eb9da0b20fe",
+    "text": "groups claim का स्रोत"
   },
   "endpoints.route./oauth2/introspect.name": {
     "en": "328dfd36fb81f446",

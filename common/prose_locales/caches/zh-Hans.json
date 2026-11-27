@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "一个已见过的签名，因此请求被拒绝"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "硬件令牌登记册"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "本领域中每个实体硬件令牌（YubiKey、智能卡）一行，按厂商和序列号索引：谁持有它、它的型号和其上的凭据。序列号只根据证明记录。从不包含机密。"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "b2eadcf654a8cb28",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取；登记册本身受其列出的凭据限制（FIDO 为 webauthn.maxKeysPerPerson）。"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "直到令牌被删除；丢失的令牌会保留，并标记为丢失。"
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "RFC 9278 密钥标识符"
@@ -702,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "一封因与 mail.dedupWindowS 内同一操作已入队的邮件重复而被抑制的邮件"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "OATH 令牌清单"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "管理员从供应商的 PSKC 种子文件（RFC 6030）导入的每个 HOTP 或 TOTP 密钥各占一行，按供应商、序列号和密钥 id 索引：未分配（其密钥已密封）、已分配给某人（密钥已删除，现位于其条目上）或已停用。"
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "c93f702fb2bd8e60",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取；清单受管理员导入的内容限制，每个文件最多 2,000 个密钥。"
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未分配的令牌被移除；已分配或已停用的令牌会被保留。"
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
@@ -1106,6 +1138,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "直到该链过期（其最小的 exp，10.4），且最多 oidfed.resolveCacheS。"
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP 注册质询"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "每个正在注册 OpenPGP 密钥的人一个质询：其用 gpg --clearsign 签署的文本、其随机数（nonce）以及失效时间。只能使用一次，通过对该随机数的集群声明来实现。"
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "bcb019b421b3e33e",
+    "text": "强制：进程持有的质询是每个领域 5,000 个的缓存，最旧的会被丢弃，下次请求时再从存储中读取；存储为每人保存一个（以 entryUUID 为键），每个持续 openpgp.challengeLifetimeS。"
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Web 密钥目录发布"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Web 密钥目录对每个哈希地址返回哪一个 OpenPGP 密钥：持有者（一个 entryUUID）及其发布的指纹。这只是一个指针：密钥本身从条目中读取。从不是机密。"
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "67c6603e0b96fd95",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取；登记册为每位选择加入的人保存一行。"
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "直到此人停止发布或删除密钥。"
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
@@ -1623,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "按摘要找到了一个票据"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico OTP 清单"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "管理员从 CSV 导入的每个 YubiKey OTP 各占一行，按序列号索引：未分配（其 AES 密钥已密封）、已分配给某人（密钥已删除，现位于其条目上）或已停用。"
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "1b2409611ca2ae53",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取。"
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未分配的令牌被移除；已分配或已停用的令牌会被保留。"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "按最近最少使用顺序排列的有界缓存。"
@@ -1710,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已过时：该凭据已被否认"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "已签发的 SSH 用户证书"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "此领域的 SSH 用户 CA 签发的每张 OpenSSH 用户证书一行，按序列号：属于谁（urn:uuid）、密钥指纹、主体、有效期以及是否已吊销。从不包含密钥。"
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "e9eaf8f07040a227",
+    "text": "强制执行：进程持有的行是每个领域 5,000 行的按需窗口；当某行的证书过期时，该行离开存储。"
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "直到证书到期。"
   }
 }

@@ -25,6 +25,9 @@
 // OWNED HERE (local: true): UMA and the API are ours.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const K = require("./oauth_wire_kit.js").kit("sts_uma_pat_codes");
@@ -187,7 +190,7 @@ async function claims() {
                 ticket: "umpc-no-such-ticket", state: "s-1" });
   }, function (r) {
     assert.strictEqual(r.status, 302, K.shown(r));
-    assert.ok(r.location.indexOf(BACK) === 0 &&
+    assert.ok(urls.isAt(r.location, BACK) &&
               /authorization_state=not_authorized/.test(r.location) &&
               /state=s-1/.test(r.location), r.location);
   });

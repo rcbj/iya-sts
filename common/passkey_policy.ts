@@ -76,7 +76,7 @@
 //                            said no. `allow` is the default because most
 //                            passkeys people hold are synced, and refusing
 //                            them is a realm's deliberate choice of
-//                            device-bound keys (docs/v1.1.0/authentication.md).
+//                            device-bound keys (docs/v1.2.0/authentication.md).
 //
 // #529 (2026-10-08) added three rows for a security key's PIN, CTAP 2.1
 // section 12.4's minPinLength extension:
@@ -315,6 +315,34 @@
 // registration question carries it as the `enrolment` fact group, so a
 // realm's own rule can forbid it by policy; no built-in rule reads it.
 //
+// #1955 P7 (2026-11-20) added two rows for CTAP 2.1 section 12.1's
+// credProtect extension, both OPTIONAL on a save:
+//
+//   credProtect              `none`: no extension asked, the options as they
+//                            always were. Otherwise the level a registration
+//                            asks the authenticator to protect the new
+//                            credential at — `userVerificationOptional` (1),
+//                            `userVerificationOptionalWithCredentialIDList`
+//                            (2), `userVerificationRequired` (3) — sent as
+//                            the client extension input
+//                            `credentialProtectionPolicy`. The level the key
+//                            reports in its authenticator data's extensions
+//                            is recorded on the passkey (`credProtect`, an
+//                            integer, null where it reported none).
+//   enforceCredProtect       off. On, `enforceCredentialProtectionPolicy` is
+//                            sent too, and a registration whose key reports
+//                            a LOWER level — none reported is level 1, the
+//                            level every credential has without the
+//                            extension — is refused by the issuance policy
+//                            (`cred-protect`, STS-AUTHN-0559). Saving it on
+//                            with `credProtect` none is refused
+//                            (STS-AUTHN-0560): it would enforce nothing.
+//
+// Registration only, and on purpose: the AUTHENTICATOR enforces the level at
+// every later assertion (a level-3 credential is not used without user
+// verification), and the level of a credential never changes, so there is no
+// sign-in half to hold as #528 and #529 have.
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -344,6 +372,7 @@
 
 import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
+import Sentence = require('./sentence');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
@@ -668,6 +697,22 @@ const BACKUP_ELIGIBILITY_VALUES = ['allow', 'disallow'];
 const MIN_PIN_LENGTH = 4;
 const MAX_PIN_LENGTH = 63;
 /**
+ * What `credProtect` may be (#1955 P7): `none`, or CTAP 2.1 section 12.1's
+ * three `credentialProtectionPolicy` values, in the order of their levels.
+ */
+const CRED_PROTECT_VALUES = ['none', 'userVerificationOptional',
+                             'userVerificationOptionalWithCredentialIDList',
+                             'userVerificationRequired'];
+/**
+ * The level of each `credentialProtectionPolicy` value (CTAP 2.1 section
+ * 12.1: the authenticator reports the level as the integer 1, 2 or 3).
+ */
+const CRED_PROTECT_LEVELS: Readonly<Record<string, number>> = Object.freeze({
+  none: 0, userVerificationOptional: 1,
+  userVerificationOptionalWithCredentialIDList: 2,
+  userVerificationRequired: 3
+});
+/**
  * The WebAuthn hints (Level 3 section 5.4.8) and the attachment each implies
  * (#531). An empty list is written `none`.
  */
@@ -762,7 +807,14 @@ const RECOVERY_DOORS: Readonly<Record<string, { selfService: boolean }>> =
     'activation': { selfService: false },
     'recovery-code': { selfService: true },
     'email-code': { selfService: true },
-    'email-link': { selfService: true }
+    'email-link': { selfService: true },
+    // A SECURITY KEY REPORTED LOST (#1955 P1): not a door that restores
+    // access but the loss that leaves a recovery owed — written by the
+    // lost-key act (`hardware_tokens.ts`) while the person still holds the
+    // passkeys it removes, so the next sign-in a passkey did not answer is
+    // held to this policy as any recovery's is. Not self-service: the doors
+    // the person then uses are judged as their own.
+    'lost-key': { selfService: false }
   });
 /**
  * The credential kinds a sign-in names that are themselves a recovery door
@@ -796,7 +848,8 @@ const FIELDS: PolicyField[] =
   rpNameExtras: { values: RP_NAME_EXTRAS.slice() },
   recoveryAssurance: { values: RECOVERY_ASSURANCE.slice() },
   attestationAlgorithms: { values: ATTESTATION_ALGORITHM_VALUES.slice(), dflt: NO_HINTS },
-  adminEnrolment: { values: ADMIN_ENROLMENT_VALUES.slice() }
+  adminEnrolment: { values: ADMIN_ENROLMENT_VALUES.slice() },
+  credProtect: { values: CRED_PROTECT_VALUES.slice() }
 });
 
 /**
@@ -1590,7 +1643,7 @@ class PasskeyPolicy {
    */
   backupEligibleRefusal(backupEligible: unknown, at: string,
                         profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.backupEligibleRefusal().");
     // A flag never read is not a fact: nothing is asked about it.
@@ -1955,7 +2008,7 @@ class PasskeyPolicy {
   postQuantumRefusal(key: { algorithm?: unknown; name?: unknown;
                             lane?: unknown } | null | undefined,
                      at: string, profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.postQuantumRefusal().");
     const k = key || {};
@@ -2233,7 +2286,7 @@ class PasskeyPolicy {
    */
   recoveryRefusal(facts: Record<string, any>,
                   profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.recoveryRefusal().");
     const given = facts || {};
@@ -2275,7 +2328,7 @@ class PasskeyPolicy {
    */
   enterpriseSerialRefusal(username: string, serial: unknown,
                           profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.enterpriseSerialRefusal().");
     const out = this.refusalFor('registration',
@@ -2425,6 +2478,47 @@ class PasskeyPolicy {
   }
 
   /**
+   * The credProtect rule in force (#1955 P7): the policy name a registration
+   * asks for (`''` for none), its level, and whether it is enforced. An
+   * `enforceCredProtect` with no level enforces nothing and reads false.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `{ policy, level, enforce }`
+   */
+  credProtectRule(profile?: PasskeyProfile | null):
+      { policy: string; level: number; enforce: boolean } {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.credProtectRule().");
+    const rules = profile || this.read();
+    const named = String(rules.credProtect || 'none');
+    const level = CRED_PROTECT_LEVELS[named] || 0;
+    const out = { policy: level ? named : '', level: level,
+                  enforce: level > 0 && rules.enforceCredProtect === true };
+    log.debug("Leaving PasskeyPolicy.credProtectRule(). level=" + level +
+              " enforce=" + out.enforce);
+    return out;
+  }
+
+  /**
+   * The credProtect level an authenticator reported (#1955 P7): CTAP 2.1
+   * section 12.1's `credProtect` output, an integer 1 to 3, in the
+   * authenticator data's extensions; null for anything else.
+   *
+   * @param extensions - the authenticator data's extension outputs, as
+   *   `webauthn.verifyRegistration()` returns them
+   * @returns the level, or null
+   */
+  static reportedCredProtect(extensions: unknown): number | null {
+    log.debug("Entering PasskeyPolicy.reportedCredProtect().");
+    const value = extensions && typeof extensions === 'object'
+      ? (extensions as Record<string, unknown>).credProtect : null;
+    const out = typeof value === 'number' && Number.isInteger(value) &&
+      value >= 1 && value <= 3 ? value : null;
+    log.debug("Leaving PasskeyPolicy.reportedCredProtect(). " + out);
+    return out;
+  }
+
+  /**
    * The refusal of a key's PIN length, or null (#529): a reported minimum
    * below the rule's, or none reported where the rule needs one.
    *
@@ -2436,7 +2530,7 @@ class PasskeyPolicy {
    */
   pinLengthRefusal(reported: unknown, at: string,
                    profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.pinLengthRefusal().");
     const out = this.refusalFor(at, { minPinLength: reported }, profile);
@@ -2505,6 +2599,22 @@ class PasskeyPolicy {
       groups.push('pin-length');
       out.minPinLength = typeof given.minPinLength === 'number' &&
         Number.isInteger(given.minPinLength) ? given.minPinLength : null;
+    }
+    // THE LEVEL THE KEY REPORTED (#1955 P7), at registration: always a
+    // whole number with its group, 1 where the key reported none — CTAP 2.1
+    // section 12.1's level of a credential made without the extension — so
+    // the rule never reads silence as a level.
+    if (has('credProtect')) {
+      groups.push('cred-protect');
+      const reported = PasskeyPolicy.reportedCredProtect(
+        { credProtect: given.credProtect });
+      out.credProtect = reported || 1;
+      out.credProtectReported = reported !== null;
+      // A level the key reported with no trusted attestation behind it
+      // (the #1955 review): the door sent none, and says why.
+      if (given.credProtectUnattested === true) {
+        out.credProtectUnattested = true;
+      }
     }
     const attribute = this.enterpriseSerialAttribute(rules);
     if (has('serial')) {
@@ -2615,6 +2725,7 @@ class PasskeyPolicy {
     }
     out.groups = groups;
     const pin = this.pinLengthRule(rules);
+    const credProtect = this.credProtectRule(rules);
     out.policy = {
       backupEligibility: String(rules.backupEligibility || 'allow'),
       enforcePinLength: pin.enforce,
@@ -2645,7 +2756,11 @@ class PasskeyPolicy {
       registrationAlgorithms: offeredHere.slice(),
       registrationAlgorithmsFrom: this.registrationAlgorithmsFrom(rules),
       // #945: whether an administrator may enrol one, `off` or `on`.
-      adminEnrolment: this.adminEnrolmentAllowed(rules) ? 'on' : 'off'
+      adminEnrolment: this.adminEnrolmentAllowed(rules) ? 'on' : 'off',
+      // #1955 P7: the credProtect level asked for (0 for none) and whether
+      // a lower reported level is refused.
+      credProtectLevel: credProtect.level,
+      enforceCredProtect: credProtect.enforce
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -2679,7 +2794,7 @@ class PasskeyPolicy {
    */
   refusalFor(at: string, facts: Record<string, any>,
              profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log, gate } = this.deps;
     log.debug("Entering PasskeyPolicy.refusalFor().");
     const rules = profile || this.read();
@@ -2706,107 +2821,78 @@ class PasskeyPolicy {
   // the built-in rules do not give — a realm's own rule — gets a sentence
   // naming the issuance policy.
   private sentenceFor(reason: string, at: string, asked: Record<string, any>,
-                      facts: Record<string, any>): string {
+                      facts: Record<string, any>): string | Sentence {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.sentenceFor(). " + reason);
     const registering = at === 'registration';
     const policy = asked.policy || {};
-    let why: string;
+    // A CATALOG SENTENCE (#2006), so the sign-in screen and the portal draw
+    // it in the page's language; `at` chooses the closing advice, and a
+    // value the door did not have is a `known`/`state` choice rather than
+    // an English fragment passed in.
+    const stage = registering ? 'registration' : 'sign-in';
+    let why: string | Sentence;
     if (reason === 'backup-eligible') {
-      why = 'That passkey can be synced or backed up (its authenticator ' +
-            'set the backup-eligible flag), and this realm accepts only ' +
-            'device-bound passkeys (the passkey ' +
-            'policy\'s backupEligibility is disallow). ' +
-            (registering
-              ? 'Use a security key, or a passkey kept on this device only.'
-              : 'Sign in another way, and register a device-bound key.');
+      why = Sentence.say('refusals.passkey.backupEligible', { at: stage });
     } else if (reason === 'pin-length') {
       const value = asked.minPinLength;
-      why = (value === null || value === undefined
-        ? 'That passkey did not report its minimum PIN length, and this ' +
-          'realm requires a PIN of at least ' + policy.minPinLength +
-          ' characters (the passkey policy\'s enforcePinLength). A ' +
-          'security key reports it only to services it was configured to ' +
-          'tell. '
-        : 'That passkey accepts a PIN of ' + value + ' characters, and ' +
-          'this realm requires at least ' + policy.minPinLength +
-          ' (the passkey policy\'s minPinLength). ') +
-        (registering
-          ? 'Use a key configured with a longer minimum PIN.'
-          : 'Sign in another way, and register a key whose minimum PIN ' +
-            'is long enough.');
+      why = value === null || value === undefined
+        ? Sentence.say('refusals.passkey.pinLengthUnreported', {
+            at: stage, min: String(policy.minPinLength) })
+        : Sentence.say('refusals.passkey.pinLengthShort', {
+            at: stage, value: String(value),
+            min: String(policy.minPinLength) });
+    } else if (reason === 'cred-protect') {
+      // #1955 P7: CTAP 2.1 section 12.1, at registration only.
+      why = Sentence.say('refusals.passkey.credProtect', {
+        level: String(asked.credProtect || 1),
+        note: asked.credProtectUnattested === true ? 'unattested'
+          : (asked.credProtectReported === false ? 'unreported' : 'none'),
+        required: String(policy.credProtectLevel || '') });
     } else if (reason === 'serial-missing') {
-      why = 'That security key\'s attestation names no device ' +
-            'serial this service can read, and this realm binds ' +
-            'security keys to the serials issued to each person ' +
-            '(the passkey policy\'s enterpriseSerialAttribute). ' +
-            'Use a key from your organisation, registered where ' +
-            'enterprise attestation is enabled.';
+      why = Sentence.say('refusals.passkey.serialMissing');
     } else if (reason === 'post-quantum') {
-      why = 'That passkey signs with ' +
-            (String(asked.algorithm || '') || 'a classical algorithm') +
-            ', and this realm requires a post-quantum passkey, one that ' +
-            'signs with ML-DSA (the passkey policy\'s postQuantumRequired ' +
-            'is ' + String(policy.postQuantumRequired || '') + '). ' +
-            (registering
-              ? 'Use an authenticator that can make an ML-DSA passkey.'
-              : 'Sign in another way, and register a post-quantum passkey.');
+      why = Sentence.say('refusals.passkey.postQuantum', {
+        at: stage, algorithm: String(asked.algorithm || ''),
+        known: String(asked.algorithm || '') ? 'yes' : 'no',
+        setting: String(policy.postQuantumRequired || '') });
     } else if (reason === 'attestation-algorithm') {
       const a = asked.attestationAlgorithm || {};
       const signed = [].concat(a.statements || [], a.certificates || [])
         .filter(Boolean).slice(0, 8).join(', ');
-      why = (registering ? 'That passkey\'s attestation ' :
-                           'This passkey was registered with an ' +
-                           'attestation that ') +
-            (!a.verified || !a.trusted
-              ? (registering ? 'is not one this service verified and ' +
-                               'trusts'
-                             : 'this service did not verify and trust')
-              : (!(a.certificates || []).length
-                ? 'carries no certificate'
-                : 'is signed with ' +
-                  (signed || 'algorithms never recorded'))) +
-            ', and this realm requires one signed with ' +
-            ((policy.attestationAlgorithms || []).join(', ') || 'nothing') +
-            ' (the passkey policy\'s attestationAlgorithms). ' +
-            (registering
-              ? 'Use an authenticator whose attestation is signed that way.'
-              : 'Sign in another way, and register a passkey whose ' +
-                'attestation is.');
+      const required = (policy.attestationAlgorithms || []).join(', ');
+      why = Sentence.say('refusals.passkey.attestationAlgorithm', {
+        at: stage,
+        state: !a.verified || !a.trusted ? 'untrusted'
+          : (!(a.certificates || []).length ? 'nocert'
+            : (signed ? 'signed' : 'unrecorded')),
+        signed: signed, required: required,
+        anyRequired: required ? 'yes' : 'no' });
     } else if (reason === 'profile-algorithm') {
       // #940: the population's own list, by the profile's name, so the
       // person and the operator read which profile said no.
-      why = 'That passkey signs with ' +
-            (String(asked.algorithm || '') || 'an algorithm never recorded') +
-            ', which is not one the passkey policy offers here (profile ' +
-            String(asked.profile || DEFAULT_PROFILE) + ': ' +
-            ((policy.registrationAlgorithms || []).join(', ') || 'nothing') +
-            ', registrationMode ' + String(policy.registrationMode || '') +
-            '). Use an authenticator that can make one of those.';
+      const offered = (policy.registrationAlgorithms || []).join(', ');
+      why = Sentence.say('refusals.passkey.profileAlgorithm', {
+        algorithm: String(asked.algorithm || ''),
+        known: String(asked.algorithm || '') ? 'yes' : 'no',
+        profile: String(asked.profile || DEFAULT_PROFILE),
+        offered: offered, anyOffered: offered ? 'yes' : 'no',
+        mode: String(policy.registrationMode || '') });
     } else if (reason === 'serial-not-held') {
-      why = 'That security key (serial ' +
-            String(asked.serial || '').slice(0, 64) + ') is not ' +
-            'one issued to you: its serial is not on your directory entry ' +
-            '(' + policy.enterpriseSerialAttribute + '). Use the key your ' +
-            'organisation issued you.';
+      why = Sentence.say('refusals.passkey.serialNotHeld', {
+        serial: String(asked.serial || '').slice(0, 64),
+        attribute: String(policy.enterpriseSerialAttribute) });
     } else if (reason === 'recovery-self-service') {
-      why = 'This account is protected by a passkey, and this realm lets ' +
-            'it be recovered only by whoever manages it (the passkey ' +
-            'policy\'s recoveryAssurance is operator-only). Sign in with ' +
-            'your passkey, or ask an administrator for a reset or ' +
-            'activation link.';
+      why = Sentence.say('refusals.passkey.recoverySelfService');
     } else if (reason === 'recovery-enrol-first') {
-      why = 'This account was recovered without its passkey, and this ' +
-            'realm lets it reach no application until a passkey has signed ' +
-            'you in (the passkey policy\'s recoveryAssurance). Register a ' +
-            'new passkey, then sign in with it.';
+      why = Sentence.say('refusals.passkey.recoveryEnrolFirst');
     } else {
+      // An attestation rule's own sentence stays as the attestation module
+      // wrote it (text); the issuance policy's catch-all is a sentence.
       const sentences = (facts.attestationSentences || {}) as
         Record<string, string>;
       why = sentences[reason] ||
-        'This realm\'s issuance policy ' + (registering
-          ? 'does not let that passkey be registered here.'
-          : 'no longer lets that passkey sign you in. Sign in another way.');
+        Sentence.say('refusals.passkey.issuancePolicy', { at: stage });
     }
     log.debug("Leaving PasskeyPolicy.sentenceFor().");
     return why;
@@ -3235,6 +3321,21 @@ class PasskeyPolicy {
                         'sessions on first.'] },
                              'STS-AUTHN-0461');
     }
+    // CREDENTIAL PROTECTION ENFORCED WITH NONE ASKED FOR (#1955 P7): the
+    // switch would refuse nothing and say it did. Asked of the profile as
+    // it will stand, for the reason above.
+    if (standing.enforceCredProtect === true &&
+        String(standing.credProtect || 'none') === 'none') {
+      log.debug('Leaving PasskeyPolicy.save(). credProtect enforced and ' +
+                'not asked for.');
+      return errorCodes.mark({ ok: false,
+               errors: ['`enforceCredProtect` (' +
+                        FIELD_BY_KEY.enforceCredProtect.label + ') is on, ' +
+                        'and `credProtect` (' +
+                        FIELD_BY_KEY.credProtect.label + ') is none, so ' +
+                        'there is no level to enforce. Choose a level, or ' +
+                        'turn enforcement off.'] }, 'STS-AUTHN-0560');
+    }
     if (!this.haveDirectory()) {
       log.debug('Leaving PasskeyPolicy.save(). No directory.');
       return errorCodes.mark({ ok: false,
@@ -3421,6 +3522,10 @@ export = {
   refusesBackupEligible: slot.forward('refusesBackupEligible'),
   backupEligibleRefusal: slot.forward('backupEligibleRefusal'),
   pinLengthRule: slot.forward('pinLengthRule'),
+  // #1955 P7: credProtect.
+  CRED_PROTECT_VALUES: CRED_PROTECT_VALUES,
+  credProtectRule: slot.forward('credProtectRule'),
+  reportedCredProtect: PasskeyPolicy.reportedCredProtect,
   enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
   // #941.
   ATTESTATION_ALGORITHM_VALUES: ATTESTATION_ALGORITHM_VALUES,

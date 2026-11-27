@@ -32,5 +32,5 @@
   "th.whatFailed": "失败内容",
   "th.clientSees": "客户端看到的内容",
   "codes.none": "没有匹配项。",
-  "note.table": "该表是 <code>common/error_codes.js</code>，此页面没有任何控件：代码永远不会重新编号或重复使用，因为它会进入告警规则和保存的搜索中；不再存在的情况会保留其行并标记为已停用。同一张表发布为 <code>docs/v1.1.0/error-codes.md</code>，由源代码生成，此列表也可通过 <code>GET /admin-api/error-codes</code> 以相同参数获取。分页使用 <code>?page=</code> 和 <code>?per=</code>（每页最多 {max} 行）。"
+  "note.table": "该表是 <code>common/error_codes.js</code>，此页面没有任何控件：代码永远不会重新编号或重复使用，因为它会进入告警规则和保存的搜索中；不再存在的情况会保留其行并标记为已停用。同一张表发布为 <code>docs/v1.2.0/error-codes.md</code>，由源代码生成，此列表也可通过 <code>GET /admin-api/error-codes</code> 以相同参数获取。分页使用 <code>?page=</code> 和 <code>?per=</code>（每页最多 {max} 行）。"
 }

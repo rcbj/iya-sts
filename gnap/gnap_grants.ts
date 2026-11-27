@@ -2038,6 +2038,35 @@ class GnapGrants {
   // a refusal when no mode the client offered can be used and the AS cannot
   // reach the RO any other way (section 2.5: invalid_interaction).
   // ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // A PUSH FINISH URI THE OUTBOUND POLICY WILL NEVER DIAL IS REFUSED AT THE
+  // GRANT REQUEST (#1614, ASVS 5.0.0 1.3.6), so the client learns at once
+  // rather than waiting on a push that never comes. `gnap_http.ts`'s
+  // `addressVerdict()` decides — `federation.outbound`,
+  // `security.outboundAllowedHosts`, and in product an address inside this
+  // service's network — and the push asks it again, pinned, since a name may
+  // resolve elsewhere by then. Asked BEFORE `startInteraction()`, which
+  // stays synchronous; a URI that is not an http(s) URL is left to it.
+  // ---------------------------------------------------------------------------
+  private async pushAddressRefusal(interact) {
+    const { log, transport } = this.deps;
+    log.debug("Entering GnapGrants.pushAddressRefusal().");
+    const finish = interact && interact.finish;
+    if (!finish || finish.method !== 'push' || !finish.uri) {
+      log.debug("Leaving GnapGrants.pushAddressRefusal(). Not a push.");
+      return null;
+    }
+    const verdict = await transport.addressVerdict(finish.uri);
+    if (verdict.ok) {
+      log.debug("Leaving GnapGrants.pushAddressRefusal(). Dialable.");
+      return null;
+    }
+    log.debug("Leaving GnapGrants.pushAddressRefusal(). Refused.");
+    return this.refusal(verdict.errorCode || 'STS-GNAP-0606',
+                        verdict.why + ' (RFC 9635 section 11.34).',
+                        'invalid_interaction');
+  }
+
   private startInteraction(req, grant, app, interact) {
     const { log, nowSec, config, mode, applications, store, request, transport,
           monitor } = this.deps;
@@ -2555,7 +2584,9 @@ class GnapGrants {
           ' and the client offered no way to interact (RFC 9635 section ' +
           '2.5).', 'invalid_interaction');
     }
-    const started = this.startInteraction(req, grant, app, asked.interact);
+    const unreachable = await this.pushAddressRefusal(asked.interact);
+    const started = unreachable ||
+      this.startInteraction(req, grant, app, asked.interact);
     if (!started.ok) {
       this.finalize(grant, 'refused: ' + started.why, 'rejected');
       monitor.record(identifier, 'grant.refused',
@@ -3670,6 +3701,11 @@ class GnapGrants {
           'interact with the resource owner (RFC 9635 section 5.3).',
                                         'request_denied', 403), { extra:
           keepGoing });
+    }
+    const unreachable = await this.pushAddressRefusal(asked.interact);
+    if (unreachable) {
+      log.debug("Leaving GnapGrants.modifyGrant(). Push URI not dialable.");
+      return unreachable;
     }
     grant.decision = null;
     grant.request.interact = asked.interact;

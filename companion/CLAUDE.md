@@ -10,7 +10,7 @@ directory from its copy of the tree (`rm -rf … ./companion`), and the
 companion is built from this directory alone (`context: ./companion`), so
 nothing crosses in either direction.
 
-`docs/v1.1.0/docker-compose.md` (*The companion*) is how a user starts it; this file
+`docs/v1.2.0/docker-compose.md` (*The companion*) is how a user starts it; this file
 is why it is shaped the way it is.
 
 ## What it is
@@ -77,7 +77,14 @@ from the request (`helpers.baseUrlOf()`), and the wallet has to reach them.
 **TLS.** Verified against `COMPANION_STS_CA_FILE` when it is given. A
 development stack makes its service Root when it starts, so no image can hold
 the anchor: `COMPANION_STS_TLS_INSECURE=true` turns the check off, as the
-remote PEP's `PEP_TLS_INSECURE` does, and the start logs a warning. The test
+remote PEP's `PEP_TLS_INSECURE` does, and the start logs a warning.
+**`/pep-app` never follows that switch (2026-11-20, CodeQL):** what it dials
+for a realm's metadata and JWKS is always verified, against
+`COMPANION_STS_CA_FILE` or else the `caPem` its `_setup` was handed (the
+job sends this run's anchor), and only at the exact origin of
+`COMPANION_STS_URL` or `COMPANION_STS_PUBLIC_URL` — a URL at any other
+origin, the token's own `iss` included, is refused before a socket opens
+(`pep_app_identity.js`'s header). The test
 peer has no such switch because a job that proves TLS must not dial
 anything; a person clicking through a demonstration on a laptop is the other
 case.
@@ -183,7 +190,7 @@ customer's**:
 * **TWO SERVICES, ONE HOST NAME, IS THE ONE THING TO WATCH.** A browser on the
   laptop reaches both the service and the companion at `localhost`, and
   Kerberos names a service by host, not port: both would be
-  `HTTP/localhost`. `docs/v1.1.0/docker-compose.md` tells a user to give the
+  `HTTP/localhost`. `docs/v1.2.0/docker-compose.md` tells a user to give the
   companion a host of its own.
 
 ## Dummy social identity providers (#1689)
@@ -195,7 +202,7 @@ and none is kept. `social_idps.js` serves a dummy of each named one at
 that profile asks for. Steam's OpenID 2.0 check, DiscourseConnect and
 Bluesky's DPoP push are the three that are not a code grant. The two
 generic profiles are not served. The document each dummy follows is
-`docs/v1.1.0/federation-consumer-providers.md` (*The companion dummy of each
+`docs/v1.2.0/federation-consumer-providers.md` (*The companion dummy of each
 provider*): the profile's recorded document, and the extra protocol
 page where that document is not the whole answer.
 

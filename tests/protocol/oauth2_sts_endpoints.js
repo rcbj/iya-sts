@@ -35,6 +35,9 @@
 // The STS mock is located from WSTRUST_STS_URL, as the other STS-backed tests
 // are; OAUTH_METADATA_URL overrides the metadata URL outright.
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -42,6 +45,7 @@ const crypto = require("crypto");
 const { Command, Option } = require('commander');
 const { usernameFor } = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 // The mock's consent screen, which stands between a signed-in person and an
 // authorization response since 2026-09-01. A SHARED MODULE for the reason
 // sts_applications.js is one: every job in this suite that signs somebody in
@@ -178,19 +182,24 @@ async function person(username) {
     return;
   }
   const base = registry.baseOf(stsBase);
+  // Temporary, then the person's own (#2160, `own_password.js`).
   const created = await registry.adminPost(base, "/users/create", {
     username: username, invent: false, credential: "password",
-    password: PERSON_PASSWORD,
+    password: ownPassword.temporaryFor(PERSON_PASSWORD),
     attributes: { cn: username, givenName: username, sn: username,
                   displayName: username,
                   mail: username + "@suite.example.test" }
   });
-  if (!(created && created.ok)) {
-    const set = await registry.adminPost(base, "/users/set-password",
-        { user: username, password: PERSON_PASSWORD });
-    assert.ok(set && set.ok, "could not create " + username + " or set its " +
-      "password: " + JSON.stringify(created).slice(0, 200));
-  }
+  await ownPassword.ownPassword(base, username, PERSON_PASSWORD,
+    function (who, value) {
+      return registry.adminPost(base, "/users/set-password",
+                                { user: who, password: value });
+    }).catch(function (e) {
+      log.debug("Caught in person(): " + ((e && e.message) || e));
+      assert.fail("could not create " + username + " or give it its " +
+        "password: " + JSON.stringify(created).slice(0, 200) + " / " +
+        ((e && e.message) || e));
+    });
   peopleMade[username] = true;
   log.debug("Leaving person().");
 }
@@ -336,7 +345,7 @@ async function signInAndAuthorize(meta, params, options) {
         "the authentication service, got HTTP " + r.status + ".");
   const first = r.headers.get("location");
   if (first.indexOf("/authn/") !== 0 &&
-      first.indexOf(meta.issuer + "/authn/") !== 0) {
+      !urls.isUnder(first, meta.issuer + "/authn/")) {
     // THE SESSION STOOD, WHICH IS NOT THE SAME AS THE RESPONSE BEING READY.
     // A person whose session skipped the sign-in screen can still be asked for
     // consent — that question is about the SCOPE and the CLIENT, not about who
@@ -525,7 +534,7 @@ async function testLoginScreen(meta, verify) {
     "login_hint should pre-fill the username field.");
   const rows = JSON.stringify(view.details || []);
   assert.ok(rows.indexOf(CLIENT_ID) !== -1 &&
-            rows.indexOf(REDIRECT_URI) !== -1,
+            urls.namesAddress(rows, REDIRECT_URI),
     "the sign-in screen should say which client and redirect_uri it is " +
     "signing in for — the service knows nothing about OAuth, so those rows " +
         "are what the authorization endpoint passed it.");
@@ -539,12 +548,12 @@ async function testLoginScreen(meta, verify) {
   const signedInParams = fresh();
   const authz = await authorize(meta, signedInParams, { username: username });
   assert.ok(authz.viaAuthorize &&
-            authz.viaAuthorize.indexOf(meta.authorization_endpoint) === 0,
+            urls.isAt(authz.viaAuthorize, meta.authorization_endpoint),
     "submitting the login form should redirect back to the authorization " +
         "endpoint. Got: " + authz.viaAuthorize);
   assert.ok(authz.viaAuthorize.indexOf("prompt") < 0,
     "the redirect back must drop prompt, or the login screen would loop.");
-  assert.ok(authz.location.indexOf(REDIRECT_URI) === 0,
+  assert.ok(urls.isAt(authz.location, REDIRECT_URI),
     "the authorization response should go to the client's redirect_uri. Got: " +
         authz.location);
   const code = authz.params.get("code");
@@ -1322,8 +1331,14 @@ async function testRegistration(meta) {
   assert.ok(reg.client_secret, "registration should return a client_secret.");
   assert.ok(reg.client_id_issued_at > 0,
             "registration should say when the client was issued.");
-  assert.strictEqual(reg.client_secret_expires_at, 0,
-                     "0 means the secret does not expire.");
+  // RFC 7591 section 3.2.1: 0 for a secret that never expires, otherwise
+  // when it does. Since #2178 a secret expires after
+  // oauth2.clientSecretLifetimeDays (365 by default), which a stack may set
+  // to 0, so either is right; anything else is not.
+  assert.ok(reg.client_secret_expires_at === 0 ||
+            reg.client_secret_expires_at > reg.client_id_issued_at,
+            "client_secret_expires_at is 0 (never) or after " +
+            "client_id_issued_at, got " + reg.client_secret_expires_at + ".");
   assert.strictEqual(reg.client_name, "Endpoint Test Client",
                      "the registration should echo the metadata.");
   assert.ok(reg.registration_access_token && reg.registration_client_uri,
@@ -1427,6 +1442,9 @@ async function testNativeRedirectsRegistrationAndRefreshScope(meta) {
       oauthResponseType: ["code"],
       oauthGrantType: ["authorization_code", "refresh_token"],
       oauthScope: ["openid", "profile", "email"],
+      // Declared (#2169): in product a client that declares none is issued
+      // `openid` alone (#1589), and this section asks for all three.
+      oauthAllowedScope: ["openid", "profile", "email"],
       oauthTokenEndpointAuthMethod: "none",
       oauthConfidential: "FALSE"
     },
@@ -1446,7 +1464,8 @@ async function testNativeRedirectsRegistrationAndRefreshScope(meta) {
     "a private-use redirect URI should be answered at itself; the " +
     "authorization response went to " + answered.location);
   const code = answered.params.get("code");
-  assert.ok(code, "no authorization code came back to the native redirect.");
+  assert.ok(code, "no authorization code came back to the native redirect: " +
+            answered.location);
   log.info("[native] OK — a private-use redirect URI is answered.");
 
   const formPost = await get(meta.authorization_endpoint + "?" + form({

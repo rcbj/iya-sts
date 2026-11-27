@@ -252,6 +252,22 @@ class FlowError extends Error {
   }
 }
 
+// Whether a Location is the registered redirect URI: parsed, its origin
+// and path equal, any query after. A text prefix would take
+// `https://rp.example/cbx` or `https://rp.example/cb.other.test/` for
+// `https://rp.example/cb`.
+function atRedirect(loc, redirectUri) {
+  let at = null;
+  try {
+    at = new URL(String(loc));
+  } catch (e) {
+    c.log("not a redirect URI (" + ((e && e.message) || e) + ")");
+    return false;
+  }
+  const want = new URL(String(redirectUri));
+  return at.origin === want.origin && at.pathname === want.pathname;
+}
+
 function dueFromTtl(now, ttlS) {
   const base = ttlS * 1000 * REFRESH_AT;
   // Uniform on [0, 1). crypto.randomInt: the house rule and
@@ -330,7 +346,7 @@ async function signIn(n) {
   res = await http(absolute(answer.location), {}, jar);
   loc = res.headers.get("location") || "";
   await res.arrayBuffer().catch(() => null);
-  if (res.status !== 302 || !loc.startsWith(c.cfg.REDIRECT_URI)) {
+  if (res.status !== 302 || !atRedirect(loc, c.cfg.REDIRECT_URI)) {
     throw new FlowError("code", res.status + " " + loc.slice(0, 160));
   }
   const back = new URL(loc).searchParams;

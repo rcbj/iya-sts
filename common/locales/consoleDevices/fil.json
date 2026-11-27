@@ -153,6 +153,7 @@
   "registrationHtml.signalsNote": "CAEP: {caep}. RISC, para sa device ng isang tao na nakompromiso o inalis: {risc}. Ang subject ay {subject}. Lumalabas lang ang pagbabago sa compliance kapag gumalaw ang masasabi sa receiver: alam ng CAEP ang compliant at not-compliant, at ipinapadala ang unknown bilang not-compliant.",
   "registrationHtml.decidesHeading": "Ano ang nagpapasya tungkol sa isang device",
   "registrationHtml.decidesNote": "Risk scoring: ang mga signal na {signals} — ibinababa ng huling dalawa ang score; nagfa-fire ang unregistered-device {expect, select, yes {para sa sinuman dito (devices.expectRegistered)} other {para lang sa taong nagrehistro ng device}}. Ang issuance policy ({policy}): ang nakompromisong device ay {refuse, select, yes {<strong>tinatanggihan</strong>} other {isang risk signal lang}}; ang compliant na nakarehistrong device ay {require, select, yes {<strong>kailangan</strong>} attested {<strong>kailangan</strong>, at attested} other {hindi kailangan (naka-off bilang default)}}. Ang acr ay <code>{acr}</code>, at ang claim ay {claim}.",
+  "registrationHtml.adminDeviceNote": "Ang admin console at ang admin:* token ng isang tao: {state, select, armed {<strong>kailangan</strong> ng bawat administrator ang compliant na nakarehistrong device (devices.requireCompliantDeviceForAdmin), naka-arm mula {armedAt}.} pending {<strong>hindi pa ipinapatupad</strong>: wala pang administrator na nag-sign in mula sa compliant na nakarehistrong device, kaya pinapapasok ang bawat administrator. Irehistro ang iyong device sa pahinang Devices ng user portal, markahan itong compliant sa listahan ng mga device, at mag-sign in gamit ang passkey o certificate nito: ang sign-in na iyon ang nag-a-arm sa kinakailangan, at mananatili itong naka-arm.} other {walang kailangang device (naka-off dito ang devices.requireCompliantDeviceForAdmin; naka-on ito bilang default sa product).}}",
   "registrationHtml.settings": "Mga setting",
   "monitorHtml.devices": "mga device",
   "monitorHtml.keys": "mga key",
@@ -187,5 +188,8 @@
   "monitorHtml.thRegistered": "Nairehistro",
   "monitorHtml.thRemoved": "Inalis",
   "monitorHtml.thEvicted": "Pinaalis",
-  "monitorHtml.thCompliance": "Compliance: {source}"
+  "monitorHtml.thCompliance": "Compliance: {source}",
+  "newDevice.button": "Magrehistro ng device",
+  "newDevice.key": "Unang key",
+  "newDevice.keyHint": "itinatala lang kasama ang uri nito"
 }

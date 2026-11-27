@@ -1073,5 +1073,10 @@ module.exports = {
   name: 'cluster_lww_stores',
   describe: 'issue #46 section 3: directory merges, saves that delete ' +
             'nothing foreign, tombstoned and merged sessions',
-  run: run
+  run: run,
+  // The database double and its `pg` shape, for `own_flush_wait_bound.js`
+  // (#1934), which holds a directory flush open at its COMMIT as section D
+  // does. Not tests: the runner calls `run` and nothing else.
+  fakeDatabase: fakeDatabase,
+  fakePg: fakePg
 };

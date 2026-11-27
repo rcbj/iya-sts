@@ -104,8 +104,8 @@
     "text": "Jeder Scope, den ein Client verlangt, wird ausgestellt, unabhängig davon, was sein `oauthAllowedScope` aufführt. In BEIDEN Modi werden admin:read, admin:write, die Scopes für SCIM und Shared Signals sowie die Berechtigung des Debuggers nur einem Client ausgestellt, dessen `oauthAllowedScope` sie aufführt."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Ein Scope außerhalb des `oauthAllowedScope` des Clients wird an den Endpunkten für Autorisierung, Pushed Authorization und Token mit invalid_scope abgelehnt (STS-OAUTH-0578) und von einem Refresh oder einem Austausch entfernt. Ein Client, der nichts aufführt, erhält die dokumentierte Vorgabe: openid, profile, email, address, phone, offline_access und die OpenID4VCI-Scopes dieses Bereichs. Ein Scope, der eine Anwendung oder eine delegierte Berechtigung benennt, behält seine eigenen Regeln."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Ein Scope außerhalb des `oauthAllowedScope` des Clients wird an den Endpunkten für Autorisierung, Pushed Authorization und Token mit invalid_scope abgelehnt (STS-OAUTH-0578) und von einem Refresh oder einem Austausch entfernt. Ein Client, der nichts aufführt, erhält, was oauth2.undeclaredClientScopes festlegt: standardmäßig nur openid (ASVS 5.0.0 10.4.11); identity ergänzt profile, email, address und phone; legacy, was ein aktualisierter Speicher behält, ergänzt zudem offline_access und die OpenID4VCI-Scopes dieses Bereichs. Ein Scope, der eine Anwendung oder eine delegierte Berechtigung benennt, behält seine eigenen Regeln."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",
@@ -118,6 +118,18 @@
   "mode.requirements.declared-protocols.product": {
     "en": "01bf0ea288cde1c4",
     "text": "Die Regel protocol-not-declared der Ausstellungsrichtlinie lehnt eine Ausstellung über eine Protokollfamilie ab, für die die Anwendung nicht erklärt ist (STS-XACML-0084): ein ID-Token an eine nur für OAuth 2.0 erklärte Anwendung, eine SAML-Assertion an eine für OpenID Connect erklärte. Eine für nichts erklärte Anwendung wird nicht abgelehnt."
+  },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "Das JSON-Schema eines Zugriffstyps ist auf eine Teilmenge beschränkt und jedes seiner Muster auf eine Grenze"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "Eine über die Konsole oder die Verwaltungs-API geschriebene Definition beschränkt ihr Schema auf die Schlüsselwörter, die ein Limits-Schema verwenden darf, und jedes Muster auf die Grenze für einen regulären Ausdruck; alles andere wird abgelehnt (STS-REG-0374). Eine vor dieser Regel gespeicherte Definition wird weiterhin wie gespeichert verwendet, und diese Zeile meldet für sie ASVS 5.0.0 1.3.12 als nicht erfüllt."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "Dasselbe."
   },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
@@ -344,8 +356,8 @@
     "text": "Abschlüsse eines GNAP-Push, Push-Zustellungen von SSF, die Back-Channels der Föderation und Anstöße des XACML-PEP beachten ihre Einstellungen …SkipTlsVerification (Prüfung aus, bei jeder Anfrage gewarnt) und ihre Einstellungen …AllowHttp (Klartext-http an jeden Host). Auch spiffe.k8sSkipKubeletVerification von SPIRE wird beachtet."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Jede Einstellung …SkipTlsVerification und spiffe.k8sSkipKubeletVerification wird IGNORIERT — einmal mit ihrem Code protokolliert — und beim Schreiben über /admin und /admin-api abgelehnt (STS-CORE-0103); eine private CA wird über die …CaFile der Familie mit eingeschalteter Prüfung erreicht. Klartext-http wird für SSF, die Föderation und XACML abgelehnt, was auch immer …AllowHttp sagt, und für einen Abschluss eines GNAP-Push nur an eine Loopback-Adresse erlaubt (RFC 9635 Abschnitt 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Jede Einstellung …SkipTlsVerification und spiffe.k8sSkipKubeletVerification wird IGNORIERT — einmal mit ihrem Code protokolliert — und beim Schreiben über /admin und /admin-api abgelehnt (STS-CORE-0103); eine private CA wird über die …CaFile der Familie mit eingeschalteter Prüfung erreicht. Klartext-http wird für SSF, die Föderation und XACML abgelehnt, was auch immer …AllowHttp sagt, und für einen Abschluss eines GNAP-Push nur an eine Loopback-Adresse erlaubt (RFC 9635 Abschnitt 2.5.2.1) — was die Regeln für ausgehende Adressen ablehnen, sodass kein Push über Klartext-http zugestellt wird (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",
@@ -551,6 +563,30 @@
     "en": "9dc455e8deb093a6",
     "text": "Anfrageprotokolle lassen auf jeder Ebene Anmeldedaten und Inhalte weg, ein signiertes Token oder eine signierte Assertion wird nur mit Größe und Digest protokolliert, und ein vorgegebenes Datenbankpasswort verhindert den Start des Dienstes, sofern persistence.allowDefaultDatabasePassword nicht on ist."
   },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "Die Token-Seed-Datei eines Herstellers muss verschlüsselt sein"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "Eine PSKC-Seed-Datei, deren Token-Geheimnisse im Klartext vorliegen, wird wie eine verschlüsselte importiert."
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "Eine PSKC-Seed-Datei, deren Token-Geheimnisse im Klartext vorliegen, wird abgelehnt, sofern pskc.allowPlaintextImport nicht eingeschaltet ist; eine verschlüsselte wird mit dem beim Upload angegebenen Schlüssel oder Passwort geöffnet, das nie gespeichert wird."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "Eine YubiKey-OTP-Seed-Datei darf keine Liste von AES-Schlüsseln sein"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "Eine CSV aus Seriennummer, öffentlicher Identität, privater Identität und AES-Schlüssel wird wie jede andere Bestandsdatei importiert."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Diese CSV wird abgelehnt, sofern yubiotp.allowPlaintextImport nicht an ist. Die Schlüssel werden versiegelt, sobald die Datei angenommen wurde, und die Datei selbst wird nicht behalten."
+  },
   "mode.requirements.sso-consent.what": {
     "en": "2b06d195aa0a395d",
     "text": "Single Sign-on fragt, bevor es eine Person bei einer Anwendung anmeldet"
@@ -562,6 +598,18 @@
   "mode.requirements.sso-consent.product": {
     "en": "0a4ee080bb81a76f",
     "text": "Eine Person wird einmal je Anwendung gefragt, bevor SAML 2.0, SAML 1.1 oder WS-Federation sie dort anmeldet, und die Antwort wird behalten. saml2.ssoConsent, saml11.ssoConsent und wsfed.ssoConsent schalten es je Protokoll aus, und der eigene Wert einer Anwendung setzt sie außer Kraft."
+  },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "Der genaue Build wird nur Administratoren gezeigt"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "Jede Seitenfußzeile, die APIs für Anmeldung, Portal und Berichte und ihre OpenAPI-Dokumente enthalten die Version, die Build-Nummer, die Build-Zeit und den Commit, und der User-Agent jeder Anfrage dieses Dienstes nennt die Version."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "Keines davon enthält den Build: Die Fußzeile hat keine Versionszeile, ein OpenAPI-Dokument nennt die eigene Version der API, und der User-Agent ist nur der Produktname. Die Konsole und die Verwaltungs-API zeigen den Build weiterhin. security.publishBuildInfo auf on zeigt ihn wieder."
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
@@ -586,6 +634,18 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "Fügen Sie ein Ziel für den Audit-Export hinzu, damit eine Kopie des Protokolls außer Reichweite einer hiesigen Kompromittierung liegt. Solange keines existiert, protokolliert der Dienst eine Warnung für diesen Bereich."
+  },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "Das Audit-Protokoll lässt sich über die eigene Datenbank-Zugangsberechtigung des Dienstes nicht ändern"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Wo erzeugter Zustand dauerhaft gespeichert wird (Anfrage-Worker oder mehrere Knoten, oder keys.source=persisted), wird das Protokoll wie im Produktmodus geschrieben. Andernfalls liegt es im Arbeitsspeicher und geht mit dem Prozess verloren."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Jedes Ereignis ist eine versiegelte Zeile von sts_audit, in der die Datenbankrolle des Dienstes Zeilen hinzufügen und lesen darf und sonst nichts; alte Zeilen verlassen die Tabelle nur über die Aufbewahrungsfunktion des Tabelleneigentümers, die in jedem Bereich mindestens 1000 behält. Wo die Rolle die Tabelle ändern kann — sie besitzt sie oder hält UPDATE, DELETE oder TRUNCATE darauf —, wird dies als nicht erfüllt gemeldet (STS-AUDIT-0019), und der Dienst läuft weiter."
   },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
@@ -620,8 +680,8 @@
     "text": "Das erzeugte Passwort wird in das Dienstprotokoll geschrieben."
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "Es wird in eine Datei geschrieben, die nur dieser Dienst lesen kann, und das Protokoll nennt den Ort, sofern admin.logBootstrapPassword nicht on ist."
+    "en": "f6a1cd8269e19c3e",
+    "text": "Es wird in eine Datei geschrieben, die nur dieser Dienst lesen kann, und das Protokoll nennt den Ort, sofern admin.logBootstrapPassword nicht on ist. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",
@@ -646,6 +706,18 @@
   "mode.requirements.jwe-cbc.product": {
     "en": "b8bdc8b82bb08a9e",
     "text": "Nur AES-GCM wird angeboten oder akzeptiert, und es wird verwendet, wo ein Client kein enc nennt, sofern crypto.allowCbcJwe nicht on ist."
+  },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "S/MIME-E-Mails sind authentifizierte Verschlüsselung"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "An ein S/MIME-Zertifikat verschlüsselte E-Mails sind ein AuthEnvelopedData unter AES-256-GCM, es sei denn, mail.smimeContentEncryption ist aes256-cbc; dann wird ein EnvelopedData unter AES-256-CBC ohne Integritätsschutz gesendet. In keinem Fall wird etwas gemeldet."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "Dasselbe, und solange mail.smimeContentEncryption aes256-cbc ist, meldet diese Zeile ASVS 5.0.0 11.3.3 als nicht erfüllt."
   },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
@@ -1234,6 +1306,30 @@
   "mode.requirements.paranoid-pki.product": {
     "en": "1ddc02b9b0701d2a",
     "text": "AN (pki.paranoid=auto): common/certificate_trust.ts unterzieht jedes Zertifikat — bei einem TLS-Handshake in beiden Richtungen, unter einer Signatur, als Empfänger einer Verschlüsselung, in einer Attestierung — einem Pfad zu einem Anker, den dieser Dienst genannt bekommen hat (der Client- oder der Signierer-Truststore, die CA des Vertrauensbereichs, die eigene Einstellung einer Familie), der Gültigkeit zum jetzigen Zeitpunkt, dem Widerruf sowie basicConstraints, keyUsage und extendedKeyUsage, wie sein Anwendungsfall sie verlangt; eine Prüfung, die der Anwendungsfall nie ausgeführt hat, ist eine Ablehnung. Eine Zeile pki.paranoid<UseCase> je Anwendungsfall stellt, wenn sie aus ist, das frühere Verhalten dieses Anwendungsfalls wieder her und wird unter /admin/pki/trust rot dargestellt (STS-PKI-0239)."
+  },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "Die Berechtigung einer Person für die Administrationsoberfläche (die Konsole, ein admin:*-Scope) braucht ein konformes registriertes Gerät"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "AUS (devices.requireCompliantDeviceForAdmin=auto): Ein Administrator meldet sich wie bisher von jedem Browser an der Konsole an. Setzen Sie es auf on, um die Regel hier auszuprobieren."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "AN (devices.requireCompliantDeviceForAdmin=auto): Die Regel device-required-admin der Ausstellungsrichtlinie lehnt am Token-Endpunkt jedes Konsolen-Token und jedes admin:*-Token einer Person ab, das nicht von einem eigenen konformen registrierten Gerät kam (STS-DEVICE-0054). Sie wird pro Vertrauensbereich SCHARF GESCHALTET, sobald ein Konsolenadministrator zum ersten Mal eines von einem konformen Gerät erhält, und bis dahin wird jeder Administrator zugelassen, sodass eine Installation ohne konformes Gerät nie ausgesperrt wird; einmal scharf bleibt sie scharf, und ein Programm (die Verwaltungsberechtigung der Bereitstellung) ist der Weg zurück. Verzeichnis > Geräte zeigt, ob dieser Vertrauensbereich scharf geschaltet ist."
+  },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "Jeder TLS-Listener heftet eine OCSP-Antwort für das Zertifikat an, das er präsentiert"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "AUS (tls.ocspStapling=auto): Ein Client, der nach dem Zertifikatsstatus fragt, erhält wie bisher keine Antwort und fragt, falls er überhaupt prüft, den im Zertifikat genannten Responder selbst. Setzen Sie tls.ocspStapling=on, um hier anzuheften."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "AN (tls.ocspStapling=auto): Der Hauptport, LDAPS, der Debugger und jeder benutzerdefinierte Listener heften die Antwort an, die der eigene OCSP-Responder dieses Dienstes für ihr Zertifikat gibt, erzeugt in dem Prozess, der den Socket hält, und vor ihrem nextUpdate erneuert. Ein Zertifikat einer fremden Zertifizierungsstelle wird nicht angeheftet, und eine Antwort, die nicht erzeugt werden kann, lässt den Handshake ohne sie (STS-TLS-0079), nie fehlschlagen."
   },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",

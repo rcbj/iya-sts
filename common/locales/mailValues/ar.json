@@ -11,6 +11,15 @@
   "by.administratorConsoleLogout": "مسؤول (وحدة تحكم المسؤول عند /admin/logout)",
   "act.credentialCompromised": "وُسمت بيانات الاعتماد بأنها مخترقة",
   "act.accountDisabled": "عُطّل الحساب",
+  "signIn.kind": "{kind, select, new-device {جهاز أو متصفح لم يُرَ من قبل} new-country {بلد لم يُرَ من قبل} anonymiser {شبكة إخفاء هوية مثل Tor} after-refusals {كلمات مرور رُفضت قبله مباشرة} unusual {مستوى خطر غير مألوف لهذا الحساب} other {{kind}}}",
+  "signIn.method": "{kind, select, password {كلمة مرور} webauthn {مفتاح مرور أو مفتاح أمان} fido {مفتاح مرور أو مفتاح أمان} federation {مزوّد هوية آخر} kerberos {Kerberos} x509 {شهادة} totp {تطبيق مصادقة} backup-code {رمز استرداد} wallet {محفظة رقمية} yubico-otp {YubiKey OTP} ssh {مفتاح SSH} other {طريقة أخرى}}",
+  "signIn.device": "{browser} على {os}",
+  "signIn.deviceUnknown": "متصفح أو جهاز لم يعرّف بنفسه",
+  "signIn.placeUnknown": "غير معروف",
   "rights.access": "الوصول",
-  "address.none": "(لا شيء)"
+  "address.none": "(لا شيء)",
+  "credentialChange.item": "{kind, select, passkey {مفتاح مرور أو مفتاح أمان} totp {تطبيق مصادقة} app-password {كلمة مرور تطبيق} hotp {رمز مميز لرموز تُستخدم مرة واحدة} yubiotp {YubiKey OTP} recovery-codes {رموز الاسترداد} certificate {شهادة} certificate-binding {ربط شهادة لتسجيل الدخول} smime {شهادة S/MIME} openpgp {مفتاح OpenPGP} other {بيانات اعتماد}}: {change, select, added {أُضيف} generated {أُنشئت} removed {أُزيل} other {تغيّر}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {مفتاح مرور أو مفتاح أمان} totp {تطبيق مصادقة} app-password {كلمة مرور تطبيق} hotp {رمز مميز لرموز تُستخدم مرة واحدة} yubiotp {YubiKey OTP} recovery-codes {رموز الاسترداد} certificate {شهادة} certificate-binding {ربط شهادة لتسجيل الدخول} smime {شهادة S/MIME} openpgp {مفتاح OpenPGP} other {بيانات اعتماد}} «{label}»: {change, select, added {أُضيف} generated {أُنشئت} removed {أُزيل} other {تغيّر}}",
+  "credentialChange.by": "{entity, select, user {بواسطتك، في البوابة أو عند تسجيل الدخول} other {بواسطة مسؤول}}",
+  "expiry.item": "{kind, select, certificate {الشهادة} piv {شهادة البطاقة الذكية PIV} smime {شهادة S/MIME} tls-client {شهادة عميل TLS} signin-certificate {شهادة تسجيل الدخول} other {بيانات الاعتماد}} «{label}»، التي تنتهي صلاحيتها في {date} (UTC): {renew, select, certificates {جدّدها في صفحة الشهادات في بوابتك} tokens {جدّدها في صفحة الرموز والمفاتيح في بوابتك، في PIV} openpgp {استبدلها في صفحة الرموز والمفاتيح في بوابتك، في OpenPGP وS/MIME} signing-key {جدّدها في صفحة مفاتيح التوقيع في بوابتك} other {اطلب من المسؤول تجديدها}}"
 }

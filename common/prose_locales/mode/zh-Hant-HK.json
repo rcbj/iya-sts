@@ -16,8 +16,8 @@
     "text": "客戶端要求的任何範圍都會簽發，不論其 `oauthAllowedScope` 列出什麼。在「兩種」模式下，admin:read、admin:write、SCIM 與 Shared Signals 範圍以及偵錯工具權限，都只簽發給 `oauthAllowedScope` 有列出它們的客戶端。"
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "不在客戶端 `oauthAllowedScope` 中的範圍，會在授權、推送授權與權杖端點以 invalid_scope 拒絕（STS-OAUTH-0578），並從重新整理或交換中移除。未列出任何範圍的客戶端會取得文件所述的預設值：openid、profile、email、address、phone、offline_access 以及此領域的 OpenID4VCI 範圍。指名應用程式或委派權限的範圍，維持其自身的規則。"
+    "en": "dcdd1cbadd143bd7",
+    "text": "不在客戶端 `oauthAllowedScope` 中的範圍，會在授權、推送授權與權杖端點以 invalid_scope 拒絕（STS-OAUTH-0578），並從重新整理或交換中移除。未列出任何範圍的客戶端會取得 oauth2.undeclaredClientScopes 所規定的內容：預設僅 openid（ASVS 5.0.0 10.4.11）；identity 再加上 profile、email、address 與 phone；legacy（升級後的儲存庫所保留的）還加上 offline_access 以及此領域的 OpenID4VCI 範圍。指名應用程式或委派權限的範圍，維持其自身的規則。"
   },
   "mode.requirements.uncatalogued-access.development": {
     "en": "de56636f7e123b4d",
@@ -56,8 +56,8 @@
     "text": "對外請求會驗證回應者的證書，且不會透過純 http 送出"
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "每個 …SkipTlsVerification 設定以及 spiffe.k8sSkipKubeletVerification 都會被「忽略」——以其代碼記錄一次——並在透過 /admin 與 /admin-api 寫入時被拒絕（STS-CORE-0103）；私人 CA 透過該系列的 …CaFile 在開啟驗證的情況下連線。無論 …AllowHttp 如何設定，SSF、聯合與 XACML 都會拒絕純 http，而 GNAP 推送完成只允許對回送地址使用（RFC 9635 第 2.5.2.1 節）。"
+    "en": "32e402ebc2350105",
+    "text": "每個 …SkipTlsVerification 設定以及 spiffe.k8sSkipKubeletVerification 都會被「忽略」——以其代碼記錄一次——並在透過 /admin 與 /admin-api 寫入時被拒絕（STS-CORE-0103）；私人 CA 透過該系列的 …CaFile 在開啟驗證的情況下連線。無論 …AllowHttp 如何設定，SSF、聯合與 XACML 都會拒絕純 http，而 GNAP 推送完成只允許對回送地址使用（RFC 9635 第 2.5.2.1 節）——而對外地址規則會拒絕回送地址，因此不會遞送任何純 http 推送（#1614）。"
   },
   "mode.requirements.deliberate-defects.development": {
     "en": "0b1230d1659875d3",

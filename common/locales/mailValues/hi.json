@@ -11,6 +11,15 @@
   "by.administratorConsoleLogout": "एक व्यवस्थापक (/admin/logout पर व्यवस्थापक कंसोल)",
   "act.credentialCompromised": "क्रेडेंशियल समझौताग्रस्त चिह्नित",
   "act.accountDisabled": "खाता अक्षम",
+  "signIn.kind": "{kind, select, new-device {पहले न देखा गया डिवाइस या ब्राउज़र} new-country {पहले न देखा गया देश} anonymiser {Tor जैसा गुमनामी नेटवर्क} after-refusals {ठीक पहले अस्वीकार किए गए पासवर्ड} unusual {इस खाते के लिए असामान्य जोखिम स्तर} other {{kind}}}",
+  "signIn.method": "{kind, select, password {एक पासवर्ड} webauthn {एक पासकी या सुरक्षा कुंजी} fido {एक पासकी या सुरक्षा कुंजी} federation {कोई अन्य पहचान प्रदाता} kerberos {Kerberos} x509 {एक प्रमाणपत्र} totp {एक ऑथेंटिकेटर ऐप} backup-code {एक रिकवरी कोड} wallet {एक डिजिटल वॉलेट} yubico-otp {एक YubiKey OTP} ssh {एक SSH कुंजी} other {कोई अन्य तरीका}}",
+  "signIn.device": "{os} पर {browser}",
+  "signIn.deviceUnknown": "ऐसा ब्राउज़र या डिवाइस जिसने अपनी पहचान नहीं बताई",
+  "signIn.placeUnknown": "अज्ञात",
   "rights.access": "पहुँच",
-  "address.none": "(कोई नहीं)"
+  "address.none": "(कोई नहीं)",
+  "credentialChange.item": "{kind, select, passkey {पासकी या सुरक्षा कुंजी} totp {ऑथेंटिकेटर ऐप} app-password {ऐप पासवर्ड} hotp {एक-बार कोड टोकन} yubiotp {YubiKey OTP} recovery-codes {रिकवरी कोड} certificate {प्रमाणपत्र} certificate-binding {साइन-इन के लिए प्रमाणपत्र बंधन} smime {S/MIME प्रमाणपत्र} openpgp {OpenPGP कुंजी} other {क्रेडेंशियल}}: {change, select, added {जोड़ा गया} generated {बनाए गए} removed {हटाया गया} other {बदला गया}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {पासकी या सुरक्षा कुंजी} totp {ऑथेंटिकेटर ऐप} app-password {ऐप पासवर्ड} hotp {एक-बार कोड टोकन} yubiotp {YubiKey OTP} recovery-codes {रिकवरी कोड} certificate {प्रमाणपत्र} certificate-binding {साइन-इन के लिए प्रमाणपत्र बंधन} smime {S/MIME प्रमाणपत्र} openpgp {OpenPGP कुंजी} other {क्रेडेंशियल}} “{label}”: {change, select, added {जोड़ा गया} generated {बनाए गए} removed {हटाया गया} other {बदला गया}}",
+  "credentialChange.by": "{entity, select, user {आपके द्वारा, पोर्टल पर या साइन-इन के समय} other {एक व्यवस्थापक द्वारा}}",
+  "expiry.item": "{kind, select, certificate {प्रमाणपत्र} piv {PIV स्मार्ट कार्ड प्रमाणपत्र} smime {S/MIME प्रमाणपत्र} tls-client {TLS क्लाइंट प्रमाणपत्र} signin-certificate {साइन-इन प्रमाणपत्र} other {क्रेडेंशियल}} “{label}”, जिसकी समय-सीमा {date} (UTC) को समाप्त होती है: {renew, select, certificates {इसे अपने पोर्टल के प्रमाणपत्र पृष्ठ पर नवीनीकृत करें} tokens {इसे अपने पोर्टल के टोकन और कुंजियाँ पृष्ठ पर, PIV टैब पर नवीनीकृत करें} openpgp {इसे अपने पोर्टल के टोकन और कुंजियाँ पृष्ठ पर, OpenPGP और S/MIME टैब पर बदलें} signing-key {इसे अपने पोर्टल के हस्ताक्षर कुंजियाँ पृष्ठ पर नवीनीकृत करें} other {इसे नवीनीकृत करने के लिए अपने व्यवस्थापक से कहें}}"
 }

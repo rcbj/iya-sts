@@ -179,7 +179,7 @@ services:
         exec setpriv --reuid=10001 --regid=10001 --clear-groups \
           --inh-caps=-all --bounding-set=-all --no-new-privs node server.js
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "if [ -f /usr/src/sts/common/healthcheck_probe.js ]; then exec node /usr/src/sts/common/healthcheck_probe.js; fi; node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 6

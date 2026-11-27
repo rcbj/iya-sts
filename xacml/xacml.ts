@@ -169,6 +169,14 @@ import xml = require('./xacml_xml');
 import validate = require('./xacml_validate');
 import mtls = require('../oauth-oidc/mtls');
 import peps = require('./xacml_pep_registry');
+// An embedded PEP's binding to its application (#2025), which a
+// registration as an embedded PEP is checked against (#2026). A LIBRARY
+// requiring only leaves, so it can neither move a route nor close a cycle.
+import PepBinding = require('./xacml_pep_binding');
+// THIS SERVICE'S OWN SIGNALS (#2028): a LIBRARY that finds `ssf.ts` in the
+// require cache when an event is due, so this require neither moves a
+// route nor closes a cycle.
+import serviceSignals = require('../ssf/service_signals');
 // Remote PEP clusters (#1760): a member's pulls are answered from its
 // EFFECTIVE row, the cluster's documents with its own addresses.
 import pepClusters = require('./xacml_pep_clusters');
@@ -200,6 +208,25 @@ import accessGate = require('../common/access_gate');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import realms = require('../common/realms');
+
+// WHAT EACH BOUND PEP WAS LAST SENT OR CHECKED AGAINST (#2028): its scope's
+// token and the catalogue's, per realm at the declaration.
+//
+// PERSISTED, SO EVERY PROCESS READS THE SAME ROW (GitHub run 45732176952).
+// It was held in each process alone, and with request workers that is a
+// coin toss: `/xacml` and `/admin-api` are fanned out rather than held to
+// one worker, so the PEP's pull primed the row in one worker and the
+// administrator's change was decided in another, which knew nothing of the
+// PEP, found no token on its row (a PEP need not report one) and sent
+// nothing — `sts_pep_policies_changed` failed in the `mariadb` and
+// `cluster` modes and passed only where one process answers. Declared
+// here, a pull's row is written once per token it moves to and the
+// deciding worker reads it after the read barrier, whichever worker or
+// node served the pull. Written only when a member changes (a PEP polling
+// an unchanged scope writes nothing) and pruned to the realm's bound PEPs
+// at every check.
+const pepTokens: any = realms.map({ persist: 'xacml.pepTokens' });
+
 // The description page's shell and script (#584).
 import DescriptionPages = require('../common/description_pages');
 // THE CONSOLE PAGES. Required from here rather than from
@@ -374,6 +401,14 @@ interface XacmlSurfaceDeps {
   loadAuthzenCatalogue(): { rowsOf(values: unknown):
                               { rows: any[]; problems: string[] };
                             valueOf(row: any): string };
+  // Required when a remote PEP pulls the AuthZEN catalogue (#1205): the
+  // token-exchange binding's token-type registry, and the
+  // `authorization_details` types the realm declares, which together with
+  // `authzen.tokenExchange` decide which tuples the service answers by the
+  // binding's fixed rules.
+  loadAuthzenExchange(): { TOKEN_TYPES: Record<string, string> };
+  loadAuthorizationDetails(): { declaredTypes(): Record<string, unknown> |
+                                                 null };
   sha256Base64(text: string): string;
   // `xacml/pep_token.ts`, the one reading of a remote PEP's access token
   // (#1827's follow-up), built when a token first arrives.
@@ -559,6 +594,16 @@ class XacmlSurface {
         helpers.log.debug("Entering loadAuthzenCatalogue().");
         helpers.log.debug("Leaving loadAuthzenCatalogue().");
         return require('../authzen/authzen_catalogue');
+      },
+      loadAuthzenExchange: function (): any {
+        helpers.log.debug("Entering loadAuthzenExchange().");
+        helpers.log.debug("Leaving loadAuthzenExchange().");
+        return require('../authzen/authzen_exchange');
+      },
+      loadAuthorizationDetails: function (): any {
+        helpers.log.debug("Entering loadAuthorizationDetails().");
+        helpers.log.debug("Leaving loadAuthorizationDetails().");
+        return require('../oauth-oidc/authorization_details');
       },
       sha256Base64: function (text: string): string {
         helpers.log.debug("Entering sha256Base64().");
@@ -951,8 +996,21 @@ class XacmlSurface {
   // settings that change the MAPPING or the answer (`authzen.enabled` with
   // `xacml.enabled`, `authzen.resolveSubjectTypes`, `authzen.batchEnabled`,
   // `authzen.maxEvaluations`, `authzen.maxBodyBytes`,
-  // `authzen.returnReasons`) beside them, so the container's answer follows
-  // the realm's switches rather than a second copy of them.
+  // `authzen.returnReasons`, `authzen.obligationsProfile`) beside them, so
+  // the container's answer follows the realm's switches rather than a
+  // second copy of them.
+  //
+  // **AND WHAT CLASSIFIES A TOKEN-EXCHANGE TUPLE (#1205).** The service
+  // answers the binding's gate, scope and detail tuples by its fixed rules
+  // while `authzen.tokenExchange` is on, and evaluates them as any other
+  // while it is off (`authzen_exchange.ts`'s `plan()`). The edge answers
+  // the first 501 and must evaluate the second, so it is sent the switch,
+  // the token types a token-exchange gate may name, and the
+  // `authorization_details` types the realm declares. An edge reads each
+  // ABSENT one in the closed direction (the binding on; every type beside
+  // a gate a detail), so a list that cannot be read is sent as null
+  // (STS-AUTHZEN-0145) rather than as an empty list, which would be the
+  // open one.
   //
   // **ITS OWN SYNC TOKEN, NOT THE POLICIES'.** A digest of exactly what is
   // sent, so a catalogue change and a policy change are two different
@@ -975,6 +1033,35 @@ class XacmlSurface {
   // enforcing application to the root): the whole catalogue is refused with
   // a 500 (`STS-FGA-0108`), and the edge keeps the one it holds.
   // ===========================================================================
+  /**
+   * The `authorization_details` types this realm's applications declare,
+   * sorted, for the catalogue a remote PEP pulls (#1205) — or null when
+   * they cannot be read, which the edge reads closed.
+   *
+   * @returns the type names, or null
+   */
+  declaredDetailTypes(): string[] | null {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering XacmlSurface.declaredDetailTypes().');
+    try {
+      const types = this.deps.loadAuthorizationDetails().declaredTypes() ||
+        {};
+      log.debug('Leaving XacmlSurface.declaredDetailTypes().');
+      return Object.keys(types).sort();
+    } catch (e) {
+      log.debug('Caught in XacmlSurface.declaredDetailTypes(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0145') + 'xacml: the ' +
+                'authorization-detail types could not be read for the ' +
+                'AuthZEN catalogue a remote PEP pulled, so it is sent ' +
+                'none (null), and the edge treats every other resource ' +
+                'type beside a token-exchange gate as a detail tuple: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving XacmlSurface.declaredDetailTypes(). Unreadable.');
+      return null;
+    }
+  }
+
   /**
    * The AuthZEN catalogue a remote PEP pulls, and its sync token, for the
    * realm the request is answered in.
@@ -1020,7 +1107,19 @@ class XacmlSurface {
       batchEnabled: config.value('authzen.batchEnabled') !== false,
       maxEvaluations: Number(config.value('authzen.maxEvaluations')),
       maxBodyBytes: Number(config.value('authzen.maxBodyBytes')),
-      returnReasons: config.value('authzen.returnReasons') === true
+      returnReasons: config.value('authzen.returnReasons') === true,
+      // Always sent. An edge reads it ABSENT as OFF (#1205), although the
+      // setting's own default is on: a catalogue that does not say cannot
+      // tell the edge to hand obligations, and handing them while the
+      // realm had turned the profile off would be wider than this service.
+      obligationsProfile:
+        config.value('authzen.obligationsProfile') === true,
+      // An edge reads it absent as ON: a 501 decides nothing, while an
+      // ordinary evaluation of a tuple this service keeps could widen.
+      tokenExchange: config.value('authzen.tokenExchange') === true,
+      tokenExchangeDetailTypes: this.declaredDetailTypes(),
+      tokenExchangeTokenTypes: Object.keys(
+        this.deps.loadAuthzenExchange().TOKEN_TYPES).sort()
     };
     let fgaApplications: string[] = [];
     try {
@@ -1053,7 +1152,8 @@ class XacmlSurface {
       note: 'The AuthZEN attribute catalogue of this realm: the rows of ' +
             'authzenAttribute on sts-authzen-api, read as this service ' +
             'reads them for POST /access/v1/evaluation, and the settings ' +
-            'that change the mapping or the answer. An edge PDP maps a ' +
+            'that change the mapping or the answer, including which ' +
+            'tuples the token-exchange binding answers. An edge PDP maps a ' +
             'request with exactly these, or not at all. fgaApplications ' +
             'names the applications that enforce fine-grained ' +
             'authorization: an evaluation about one of them is decided by ' +
@@ -1479,7 +1579,7 @@ class XacmlSurface {
              'token there (the default since 1.1.0), so it was refused. ' +
              'Set xacml.pepAuthentication to either while the realm\'s ' +
              'PEPs move to their assertion key (PEP_ASSERTION_KEY, issued ' +
-             'by issue-pep-credential); docs/v1.1.0/remote-pep.md says how.');
+             'by issue-pep-credential); docs/v1.2.0/remote-pep.md says how.');
     log.debug('Leaving XacmlSurface.warnCertificateRefused().');
   }
 
@@ -1797,6 +1897,164 @@ class XacmlSurface {
    * @param given - the name the caller sent, read only with no certificate
    * @returns the folded name, '' when none is usable
    */
+  // -------------------------------------------------------------------------
+  // THE PULL SCOPED TO THE BOUND APPLICATION (#2027, part of #1206; rcbj's
+  // D3 (b)): `GET /xacml/pep/policies?scope=bound-application`.
+  //
+  // ANSWERED ONLY TO A REGISTERED, BOUND, EMBEDDED PEP IN `local` MODE —
+  // the caller's own row (`pepNameOf()`: the token's or certificate's name,
+  // never `?pep=` with one) says kind embedded and mode local, and the
+  // application it registered for is the one its entry is bound to NOW
+  // (`xacml_pep_binding.ts`). Anybody else is 403 STS-XACML-0345: this
+  // answer carries an application's own policy, which every other pull
+  // withholds, so it goes to that application's PEP and nobody else — not a
+  // container, not a central PEP (which holds no policy), not a PEP whose
+  // binding was moved since it registered.
+  //
+  // WHAT IT SENDS is `PepRegistry.boundPull()`'s: the application's own
+  // policy when it enforces fine-grained authorization, else the realm
+  // root, and the reference closure; never another application's policy
+  // nor the access or issuance policies. Its token is the scope's own, with
+  // the same ETag, `?since=` and `If-None-Match` 304 as the repository
+  // pull, so a change elsewhere in the realm does not move it.
+  // -------------------------------------------------------------------------
+  /**
+   * Answers a local embedded PEP's pull scoped to its bound application.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param identity - the caller the gate admitted
+   */
+  scopedPull(req: Req, res: Res, identity: CallerIdentity): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.scopedPull().');
+    const name = self.pepNameOf(identity, String(req.query.pep || ''));
+    const row = name ? peps.read(name) : null;
+    const bound = row && row.kind === 'embedded'
+      ? PepBinding.shared().of(name) : '';
+    if (!row || row.kind !== 'embedded' || row.mode !== 'local' || !bound ||
+        bound !== row.registeredApplication) {
+      const why = !row
+        ? 'No remote PEP is registered as "' + String(name).slice(0, 120) +
+          '". The pull scoped to an application is a registered local ' +
+          'embedded PEP\'s; register first.'
+        : row.kind !== 'embedded'
+        ? '"' + name + '" registered as a container, which pulls the ' +
+          'repository (no scope).'
+        : row.mode !== 'local'
+        ? '"' + name + '" registered in ' + (row.mode || 'no') + ' mode, ' +
+          'which asks this service for every decision and holds no policy.'
+        : '"' + name + '" registered for "' + row.registeredApplication +
+          '" and its entry is bound to ' + (bound ? '"' + bound + '"'
+                                                  : 'no application') +
+          '; it registers again for the application it is bound to.';
+      log.info('xacml: a scoped policy pull was refused: ' + why);
+      errorCodes.mark(res, 'STS-XACML-0345');
+      self.fail(res, 403, 'access_denied', why);
+      log.debug('Leaving XacmlSurface.scopedPull(). Refused.');
+      return;
+    }
+    self.notePull(name, 'bound-application');
+    const pulled = peps.boundPull(bound);
+    self.notePepPulled(name, 'policies', pulled.token, bound);
+    if (self.unchanged(req, pulled.token)) {
+      res.status(304)
+         .set('Cache-Control', 'no-store')
+         .set('ETag', '"' + pulled.token + '"')
+         .end();
+      log.debug('Leaving XacmlSurface.scopedPull(). Unchanged.');
+      return;
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .set('ETag', '"' + pulled.token + '"')
+       .send(JSON.stringify({
+         syncToken: pulled.token,
+         scope: 'bound-application',
+         application: bound,
+         source: pulled.source,
+         root: pulled.root,
+         rootNote: pulled.root ? undefined
+           : 'The application decides with no policy of its own and this ' +
+             'realm has no root policy, so a PEP loading this decides ' +
+             'NotApplicable to everything, which its bias turns into a ' +
+             'refusal.',
+         policies: pulled.policies,
+         withheld: pulled.withheld,
+         note: (pulled.source === 'application'
+           ? 'The application\'s own policy, as the root, and every ' +
+             'policy it references, transitively.'
+           : 'The application enforces no fine-grained authorization of ' +
+             'its own, so this is the realm root and every policy it ' +
+             'references, transitively.') +
+           ' Never another application\'s policy, and never the access ' +
+           'or issuance policy.'
+       }, null, 2));
+    log.debug('Leaving XacmlSurface.scopedPull(). ' +
+              pulled.policies.length + ' policy(ies) for ' + bound);
+  }
+
+  // A PULL TOUCHES ITS PEP'S ROW, as it always did, and now says WHAT IT
+  // PULLED (#2027): the scope is written on the row when it changes, with
+  // one `xacml.pep.scope` audit row, so a PEP polling every few seconds is
+  // one row on the log and not one a poll.
+  notePull(name: string, scope: string): void {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.notePull(). ' + name + ' ' + scope);
+    const before = peps.read(name);
+    const was = before ? String(before.pullScope || '') : '';
+    peps.heartbeat(name, was === scope ? {} : { pullScope: scope });
+    if (before && was !== scope) {
+      audit.audit({ action: 'xacml.pep.scope', actor: name,
+                    target: name, protocol: 'XACML',
+                    detail: 'Remote PEP "' + name + '" pulls the ' + scope +
+                            ' policy scope' + (was ? ' (it pulled ' + was +
+                            ')' : '') + '.' });
+    }
+    log.debug('Leaving XacmlSurface.notePull().');
+  }
+
+  /**
+   * Reads what a registration or heartbeat says the PEP is (#2026), against
+   * the application its entry is bound to, and answers the refusal when it
+   * may not be that.
+   *
+   * @param res - the response, written on a refusal
+   * @param body - the request body
+   * @param kept - the PEP's row on a heartbeat, null on a registration
+   * @param name - the PEP's name, its entry's username
+   * @returns the identity, or null when a refusal was written
+   */
+  embeddedIdentity(res: Res, body: any, kept: any, name: string): any {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.embeddedIdentity(). ' + name);
+    // THE BINDING IS READ ONLY FOR A PEP THAT SAYS, OR WAS, EMBEDDED: a
+    // container's registration costs no directory read it did not before.
+    const kind = body && body.kind !== undefined ? body.kind
+      : (kept ? kept.kind : 'container');
+    const boundTo = kind === 'embedded' ? PepBinding.shared().of(name) : '';
+    const said = peps.identityOf(body, kept, boundTo);
+    if (!said.ok) {
+      log.info('xacml: remote PEP "' + name + '" refused: ' + said.why);
+      // AUDITED WITH ITS CODE, under the registration's action for both
+      // doors: a PEP refused for its binding is somebody presenting a PEP
+      // key for an application it was not provisioned for, which an
+      // administrator wants to find on the audit log, not only in a log.
+      audit.audit({ action: 'xacml.pep.register', actor: name,
+                    protocol: 'XACML', errorCode: said.code,
+                    detail: 'Remote PEP "' + name + '" was refused (' +
+                            (kept ? 'a heartbeat' : 'a registration') +
+                            '): ' + said.why });
+      errorCodes.mark(res, said.code);
+      // error-code: none — marked on the line above: identityOf()'s code.
+      this.fail(res, said.status, said.error, said.why);
+      log.debug('Leaving XacmlSurface.embeddedIdentity(). Refused.');
+      return null;
+    }
+    log.debug('Leaving XacmlSurface.embeddedIdentity(). ' + said.kind);
+    return said;
+  }
+
   pepNameOf(identity: CallerIdentity | undefined, given: string): string {
     const { log, peps } = this.deps;
     log.debug('Entering XacmlSurface.pepNameOf().');
@@ -2459,6 +2717,158 @@ class XacmlSurface {
     log.debug('Leaving XacmlSurface.nudgeRegisteredPeps().');
   }
 
+  // -------------------------------------------------------------------------
+  // AN EMBEDDED PEP IS TOLD OVER SHARED SIGNALS (#2028, part of #1206;
+  // rcbj's D4): `pep-policies-changed`, on its application's own stream,
+  // because an embedded PEP has no listener for the nudge.
+  //
+  // CALLED AFTER ANY CHANGE THAT CAN MOVE WHAT AN EMBEDDED PEP PULLS: the
+  // policy repository's (the store's change observer, every door), the
+  // AuthZEN catalogue's rows (`authzen_admin.ts`) and an application's
+  // fine-grained enforcement (`fga_policies.ts`, which moves both the
+  // catalogue's `fgaApplications` and which policy a local PEP is sent).
+  // After the commit (`afterCommit()`, the nudge's reason). For each PEP
+  // bound to an application in the ambient realm it works out the token of
+  // the PEP's bound-application scope (`boundPull()`) and the catalogue's,
+  // and sends the event when either MOVED, naming which:
+  //
+  //   * MOVED is against what the PEP was last sent or checked against
+  //     (`pepTokens`, persisted so every worker and node reads one row,
+  //     primed by the PEP's own scoped and catalogue pulls and by each
+  //     check), and, with nothing known yet, against the scope token a
+  //     local PEP's row says it holds. A PEP nothing is known of yet is
+  //     told nothing about the catalogue: its next pull
+  //     takes the catalogue anyway, and a burst on every restart would
+  //     make the event mean nothing;
+  //   * a `central` PEP holds no policy and is told too — the event clears
+  //     its cached Permits (D4);
+  //   * a change to another application's policy moves no token of this
+  //     PEP's, so it sends nothing.
+  //
+  // A HINT: the worker or node that made the change decides, against the
+  // shared row, and a PEP that misses the event converges on its fallback
+  // poll. NOTHING HERE THROWS: a failure is logged under STS-XACML-0348.
+  // -------------------------------------------------------------------------
+  /**
+   * Checks, after the change commits, whether what each embedded PEP pulls
+   * moved, and sends `pep-policies-changed` for each one that did (#2028).
+   *
+   * @param what - a description of the change, for the log
+   */
+  notePepPolicies(what: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.notePepPolicies(). what=' + what);
+    if (!self.remotePepsEnabled()) {
+      log.debug('Leaving XacmlSurface.notePepPolicies(). Remote PEPs off.');
+      return;
+    }
+    self.afterCommit(function () {
+      log.debug('Entering notePepPoliciesNow().');
+      try {
+        self.checkPepPolicies(what);
+      } catch (e) {
+        log.debug('Caught in notePepPoliciesNow(): ' +
+                  ((e && e.message) || e));
+        log.warn(errorCodes.tag('STS-XACML-0348') + 'xacml: after ' + what +
+                 ', whether an embedded PEP\'s policies moved could not be ' +
+                 'decided: ' + ((e && e.message) || e));
+      }
+      log.debug('Leaving notePepPoliciesNow().');
+    });
+    log.debug('Leaving XacmlSurface.notePepPolicies().');
+  }
+
+  /**
+   * The check `notePepPolicies()` makes, synchronously, in the ambient
+   * realm: which bound PEPs' scope or catalogue tokens moved, each sent its
+   * event. Throws only what its caller catches.
+   *
+   * @param what - a description of the change, for the log
+   * @returns the PEPs told, by name
+   */
+  checkPepPolicies(what: string): string[] {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.checkPepPolicies(). what=' + what);
+    const bound = PepBinding.shared().all();
+    // A PEP no longer bound keeps no row: the store holds the realm's bound
+    // PEPs and nobody else, whatever was unbound or deleted since.
+    const names = bound.map(function (one) {
+      return one.name;
+    });
+    Array.from(pepTokens.keys()).forEach(function (name) {
+      if (names.indexOf(String(name)) < 0) {
+        pepTokens.delete(name);
+      }
+    });
+    if (!bound.length) {
+      log.debug('Leaving XacmlSurface.checkPepPolicies(). Nobody bound.');
+      return [];
+    }
+    const catalogue = this.authzenCatalogue();
+    const catalogueToken = catalogue.unreadable ? '' : catalogue.token;
+    const scopes: Record<string, string> = {};
+    const told: string[] = [];
+    bound.forEach(function (one) {
+      if (!Object.prototype.hasOwnProperty.call(scopes, one.application)) {
+        scopes[one.application] = peps.boundPull(one.application).token;
+      }
+      const scopeToken = scopes[one.application];
+      const known = pepTokens.get(one.name);
+      const row = known && known.application === one.application ? null
+        : peps.read(one.name);
+      const policiesMoved = known && known.application === one.application
+        ? known.policies !== scopeToken
+        : !!row && row.kind === 'embedded' && row.mode === 'local' &&
+          !!row.syncToken && row.syncToken !== scopeToken;
+      const catalogueMoved = !!known && !!catalogueToken &&
+        !!known.catalogue && known.catalogue !== catalogueToken;
+      const next = { application: one.application, policies: scopeToken,
+                     catalogue: catalogueToken ||
+                       (known ? known.catalogue : '') };
+      if (!known || known.application !== next.application ||
+          known.policies !== next.policies ||
+          known.catalogue !== next.catalogue) {
+        pepTokens.set(one.name, next);
+      }
+      if (!policiesMoved && !catalogueMoved) {
+        return;
+      }
+      const changed = (policiesMoved ? ['policies'] : [])
+        .concat(catalogueMoved ? ['catalogue'] : []);
+      told.push(one.name);
+      serviceSignals.pepPoliciesChanged({
+        application: one.application, pep: one.name, changed: changed,
+        syncToken: policiesMoved ? scopeToken : catalogueToken });
+    });
+    log.debug('Leaving XacmlSurface.checkPepPolicies(). ' + told.length +
+              ' told.');
+    return told;
+  }
+
+  // What a bound PEP was just SENT, so a later check compares with it
+  // (#2028): its scoped pull's token, or the catalogue's.
+  private notePepPulled(name: string, kind: 'policies' | 'catalogue',
+                        token: string, application?: string): void {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.notePepPulled(). ' + name + ' ' + kind);
+    const bound = application || PepBinding.shared().of(name);
+    if (!bound) {
+      log.debug('Leaving XacmlSurface.notePepPulled(). Not bound.');
+      return;
+    }
+    const known = pepTokens.get(name);
+    if (known && known.application === bound && known[kind] === token) {
+      // NOTHING MOVED: a PEP polling an unchanged scope writes no row.
+      log.debug('Leaving XacmlSurface.notePepPulled(). Unchanged.');
+      return;
+    }
+    const kept = known && known.application === bound ? known
+      : { application: bound, policies: '', catalogue: '' };
+    pepTokens.set(name, Object.assign({}, kept, { [kind]: token }));
+    log.debug('Leaving XacmlSurface.notePepPulled().');
+  }
+
   /**
    * Tells the named remote PEPs that their configuration changed, once the
    * change has committed (#1760, Remote PEP clusters): a cluster's write is
@@ -2527,7 +2937,15 @@ class XacmlSurface {
   installChangeObserver(): void {
     const { log, store } = this.deps;
     log.debug("Entering XacmlSurface.installChangeObserver().");
-    store.setChangeObserver(this.nudgeRegisteredPeps.bind(this));
+    // THE NUDGE, AND AN EMBEDDED PEP'S EVENT (#2028): a repository change
+    // reaches both, each after the commit and each unable to throw into
+    // the write that made it.
+    store.setChangeObserver((what: string): void => {
+      log.debug("Entering changeObserver().");
+      this.nudgeRegisteredPeps(what);
+      this.notePepPolicies(what);
+      log.debug("Leaving changeObserver().");
+    });
     log.debug("Leaving XacmlSurface.installChangeObserver().");
   }
 
@@ -2554,7 +2972,7 @@ class XacmlSurface {
     const withheld = [];
     const policies = store.all().filter(function (row) {
       if (internal.indexOf(String(row.name).toLowerCase()) >= 0 ||
-          row.application) {
+          store.owned(row)) {
         withheld.push(row.name);
         return false;
       }
@@ -2912,7 +3330,20 @@ class XacmlSurface {
       const name = identity.authenticated
         ? (identity.commonName || identity.dn)
         : String(body.name || '');
+      // AN EMBEDDED PEP (#2026, part of #1206): its kind, application,
+      // mode and protocol version, refused here before anything is
+      // written — an embedded registration only for the application its
+      // entry is bound to (`identityOf()` argues each refusal).
+      const said = self.embeddedIdentity(res, body, null, name);
+      if (!said) {
+        log.debug('Leaving POST /xacml/pep/register. The identity.');
+        return;
+      }
       const result = peps.register({
+        kind: said.kind,
+        application: said.application,
+        mode: said.mode,
+        protocolVersion: said.protocolVersion,
         name: name,
         identity: identity.dn,
         certificateSubject: identity.subject,
@@ -2946,6 +3377,10 @@ class XacmlSurface {
         protocol: 'XACML',
         detail: 'Remote PEP "' + result.name + '" ' +
                 (result.created ? 'registered' : 're-registered') +
+                (said.kind === 'embedded'
+                  ? ' as embedded in "' + said.application + '" (' +
+                    said.mode + ', protocol ' + said.protocolVersion + ')'
+                  : '') +
                 (identity.credential === 'token'
                   ? ' on a DPoP-bound access token.'
                   : identity.authenticated ? ' over mutual TLS.'
@@ -3040,6 +3475,24 @@ class XacmlSurface {
                   'refused.');
         return;
       }
+      // THE SCOPE (#2027): none, or `repository`, is the pull below as it
+      // always was; `bound-application` is a local embedded PEP's, answered
+      // by `scopedPull()`; anything else is refused.
+      const scope = String(req.query.scope || '');
+      if (scope === 'bound-application') {
+        self.scopedPull(req, res, access.identity);
+        log.debug('Leaving GET /xacml/pep/policies. Scoped.');
+        return;
+      }
+      if (scope && scope !== 'repository') {
+        log.debug('Leaving GET /xacml/pep/policies. An unknown scope.');
+        errorCodes.mark(res, 'STS-XACML-0346');
+        self.fail(res, 400, 'invalid_request', 'scope is repository (or ' +
+                  'absent), every enabled policy but those withheld, or ' +
+                  'bound-application, a local embedded PEP\'s own ' +
+                  'application\'s policies.');
+        return;
+      }
       const token = peps.syncToken();
       // A PEP that reports the name it registered under gets its `lastSeen`
       // moved by a PULL as well as by a heartbeat, because a PEP that is
@@ -3059,7 +3512,7 @@ class XacmlSurface {
       const asName = self.pepNameOf(access.identity,
                                     String(req.query.pep || ''));
       if (asName && peps.read(asName)) {
-        peps.heartbeat(asName, {});
+        self.notePull(asName, 'repository');
       }
       if (self.unchanged(req, token)) {
         // 304 AND NOT 200 WITH A FLAG, because a PEP polling every few seconds
@@ -3192,6 +3645,14 @@ class XacmlSurface {
         return;
       }
       const catalogue = self.authzenCatalogue();
+      // WHAT A BOUND PEP HOLDS NOW (#2028), so a later change is told.
+      if (!catalogue.unreadable) {
+        const puller = self.pepNameOf(access.identity,
+                                      String(req.query.pep || ''));
+        if (puller) {
+          self.notePepPulled(puller, 'catalogue', catalogue.token);
+        }
+      }
       if (!catalogue.body) {
         // NOT SENT RATHER THAN SENT WITHOUT THE FGA LIST (#564, P7): a
         // catalogue naming no enforcing application would have the edge
@@ -3510,7 +3971,20 @@ class XacmlSurface {
                   'none.');
         return;
       }
+      // AN EMBEDDED PEP'S IDENTITY (#2026), asked again on every heartbeat
+      // with the row's values for what it leaves out, so a binding an
+      // administrator removed or moved refuses the next one.
+      const said = self.embeddedIdentity(res, body, peps.read(name), name);
+      if (!said) {
+        log.debug('Leaving POST /xacml/pep/heartbeat. The identity.');
+        return;
+      }
       const result = peps.heartbeat(name, {
+        kind: said.kind,
+        application: said.application,
+        mode: said.mode,
+        protocolVersion: said.protocolVersion,
+        policyEvents: said.policyEvents,
         syncToken: body.syncToken === undefined ? undefined : body.syncToken,
         policyCount: body.policyCount,
         decisions: body.decisions,
@@ -4001,5 +4475,9 @@ export = {
   // `tests/cluster_observation_counters.js` (2026-09-15):
   // a clustered node nudges only after the commit.
   nudgeRegisteredPeps: slot.forward('nudgeRegisteredPeps'),
-  nudgePeps: slot.forward('nudgePeps')
+  nudgePeps: slot.forward('nudgePeps'),
+  // An embedded PEP told over Shared Signals (#2028): after a catalogue or
+  // enforcement change, by `authzen_admin.ts` and `fga_policies.ts`.
+  notePepPolicies: slot.forward('notePepPolicies'),
+  checkPepPolicies: slot.forward('checkPepPolicies')
 };

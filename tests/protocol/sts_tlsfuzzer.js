@@ -39,6 +39,17 @@
 // name, the borrowed key and the decline sentence are
 // tests/vendored/tlsfuzzer_kit.js's, which tests/tlsfuzzer_plan.js calls.
 //
+// WHETHER A LISTENER STAPLES IS WORKED OUT FROM THE SETTING (#2265), as
+// the service works it out: `tls.ocspStapling` and `global.mode` from
+// `GET /admin-api/config`, `tls.certificateFile` (an outside authority's
+// certificate is never stapled) and whether the listener's certificate is
+// self-signed, through the kit's staplesOcsp(). test-ocsp-stapling then
+// expects a staple where it is due and none where it is not, so a listener
+// stapling in development, or not stapling in product, fails it. Before
+// the plan, a handshake asking for the status must agree six times in a
+// row on each listener (every node behind a balancer, and its staple made
+// before the first script asks).
+//
 // The job passes when every script passes: exit 0, FAIL 0, XPASS 0. Each
 // failure is printed with the probes that failed and the command that
 // reproduces it.
@@ -54,7 +65,9 @@ const names = require("./random_username.js");
 const kit = require("./enroll_clients_kit.js");
 const fuzzer = require("./tlsfuzzer_kit.js");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const expectation = require("./expectation.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -206,6 +219,13 @@ async function test() {
                entry.reason);
     });
   }
+  const staples = {
+    main: await staplesExpected(seen.main),
+    ldaps: await staplesExpected(seen.ldaps)
+  };
+  log.info("an OCSP staple is " + (staples.main ? "" : "not ") +
+           "expected on the main port and " + (staples.ldaps ? "" : "not ") +
+           "on LDAPS");
   const made = await clientCertificates();
   // TLS 1.2 ON FOR THE RUN (#429): every listener is TLS 1.3 only by default,
   // and most of this plan probes TLS 1.2 behaviour. Turned on service-wide
@@ -216,7 +236,8 @@ async function test() {
   await kit.setting(null, "tls.disableTls12", false);
   try {
     await twelveIsOn(where);
-    await runThePlan(where, made, mainCert, ldapsCert);
+    await staplingAgrees(where, staples);
+    await runThePlan(where, made, mainCert, ldapsCert, staples);
   } finally {
     await kit.post(kit.realmApi(null) + "/config/reset",
                    { key: "tls.disableTls12" });
@@ -230,16 +251,23 @@ async function test() {
 // it), or thirty seconds.
 async function twelveIsOn(where) {
   log.debug("Entering twelveIsOn().");
+  // VERIFIED (tools/service_trust.js; both listeners present the shared
+  // certificate): a handshake THIS client refused is the anchor gone stale,
+  // not TLS 1.2 still off, so it ends the wait at once.
   const once = function (port) {
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
       const socket = tls.connect({ host: where.host, port: port,
-        servername: where.host, rejectUnauthorized: false,
+        servername: where.host, ca: serviceTrust.trustedCa(),
         maxVersion: "TLSv1.2" }, function () {
         socket.destroy();
         resolve(true);
       });
       socket.on("error", function (e) {
         log.debug("Caught in twelveIsOn(): " + ((e && e.message) || e));
+        if (serviceTrust.isUntrusted(e)) {
+          reject(e);
+          return;
+        }
         resolve(false);
       });
     });
@@ -256,7 +284,49 @@ async function twelveIsOn(where) {
   log.debug("Leaving twelveIsOn().");
 }
 
-async function runThePlan(where, made, mainCert, ldapsCert) {
+// Whether a listener is to staple an OCSP response (#2265): the kit's
+// staplesOcsp() over the service's own effective settings and the
+// certificate the listener presented (`seen`).
+async function staplesExpected(seen) {
+  log.debug("Entering staplesExpected().");
+  const api = kit.realmApi(null);
+  const staples = fuzzer.staplesOcsp({
+    setting: await facts.setting(api, "tls.ocspStapling"),
+    product: await facts.isProduct(api),
+    certificateFile: await facts.setting(api, "tls.certificateFile"),
+    selfSigned: !!(seen && seen.selfSigned)
+  });
+  log.debug("Leaving staplesExpected(). " + staples);
+  return staples;
+}
+
+// Until a handshake asking for the certificate status agrees with
+// `staples` (per listener) six times in a row on each, or thirty seconds: a
+// staple is made at the first handshake that asks for it, per process
+// (tls/ocsp_stapling.ts), and one slower than three seconds lets that
+// handshake go unstapled, so the first script must not be the one to ask.
+async function staplingAgrees(where, staples) {
+  log.debug("Entering staplingAgrees().");
+  const deadline = Date.now() + 30000;
+  for (const name of ["main", "ldaps"]) {
+    const port = where[name];
+    let streak = 0;
+    let last = null;
+    while (streak < 6) {
+      last = await fuzzer.stapled(where.host, port);
+      streak = last === staples[name] ? streak + 1 : 0;
+      assert.ok(Date.now() < deadline, "port " + port + " " +
+                (last ? "stapled" : "did not staple") + " an OCSP " +
+                "response for thirty seconds, where tls.ocspStapling, " +
+                "global.mode, tls.certificateFile and its certificate " +
+                "say it should " + (staples[name] ? "" : "not ") +
+                "(#2254, #2265)");
+    }
+  }
+  log.debug("Leaving staplingAgrees().");
+}
+
+async function runThePlan(where, made, mainCert, ldapsCert, staples) {
   log.debug("Entering runThePlan().");
   const concurrency = Number(process.env.STS_TLSFUZZER_CONCURRENCY || 4);
   const report = function (r) {
@@ -272,12 +342,14 @@ async function runThePlan(where, made, mainCert, ldapsCert) {
   const [main, ldaps] = await Promise.all([
     fuzzer.runPlan({ host: where.host, port: where.main,
                      certificates: made.certificates,
-                     serverKey: mainCert.type, curve: mainCert.curve },
+                     serverKey: mainCert.type, curve: mainCert.curve,
+                     staples: staples.main },
                    "main",
                    { concurrency: concurrency, onResult: report }),
     fuzzer.runPlan({ host: where.host, port: where.ldaps,
                      certificates: made.certificates,
-                     serverKey: ldapsCert.type, curve: ldapsCert.curve },
+                     serverKey: ldapsCert.type, curve: ldapsCert.curve,
+                     staples: staples.ldaps },
                    "ldaps",
                    { concurrency: concurrency, onResult: report })
   ]);

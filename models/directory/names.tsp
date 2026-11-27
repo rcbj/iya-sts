@@ -299,11 +299,56 @@ namespace IyaSts.Directory;
   // `common/credentials.ts` argues all of it.
   "stsWebauthnCredential", "stsActivationToken", "stsActivationExpires",
   "stsTotpCredential",
+  // THE HOTP CREDENTIAL (#1955 P4): a shared secret like the authenticator
+  // app's, and sealed the same way, for the same reason.
+  "stsHotpCredential",
+  // THE YUBIKEY OTP CREDENTIAL (#1955 P5): a shared secret like the HOTP
+  // credential, sealed the same way. The public identity stays in the clear
+  // so a bind can see which suffix is the OTP.
+  "stsYubiOtpCredential",
   // THE ANDROID MARKER (#615): the credential ids of the keys above whose
   // trusted `android-key` attestation the recheck asks Google's status list
   // about, derived on every write of the keys (`deriveAndroidMarker()`) so
   // that the recheck reads its holders rather than everybody.
   "stsAndroidAttestedCredential",
+  // AN OUTSIDE PIV OR CAC CARD'S FIPS 201 CARD UUID (#1955 P2, D8): the
+  // value a card certificate from one of a realm's `piv.externalIssuers`
+  // names in its `urn:uuid:` subjectAltName, which maps it to this person
+  // (`common/piv_attestation.ts`, `ldap_server.js`'s `pivCardHolders()`).
+  // Not a secret: the card says it to every reader.
+  "stsPivCardUuid",
+  // A CERTIFICATE SIGN-IN BINDING (#2012): what a certificate a realm's
+  // `certSignIn.profiles` covers is bound to this person by — issuer and
+  // serial, issuer and subjectKeyIdentifier, the key's or the certificate's
+  // SHA-256, a subject DN — in the grammar
+  // `common/certificate_binding.ts`'s `bindingValueOf()` canonicalises.
+  // Not a secret: each value is read off a certificate its holder presents.
+  "stsCertificateBinding",
+  // A PERSON'S OpenPGP PUBLIC KEY (#1955 P6): the armored key they proved
+  // they hold by signing a challenge, its fingerprint, and what the page
+  // draws about it (version, algorithms, the matching user ids, whether it
+  // is published in the Web Key Directory). Public by design; never a
+  // secret key, which registration refuses. `common/openpgp_keys.ts`.
+  "stsOpenPgpKey", "stsOpenPgpFingerprint", "stsOpenPgpKeyInfo",
+  // THE CLASSICAL OpenPGP KEY KEPT BESIDE A POST-QUANTUM ONE (#2009 P2,
+  // rcbj's D3): the replaced key and what is drawn about it, until the
+  // post-login mail-encryption activity's `keepClassical` days have passed.
+  // Public, like the key it sits beside. `common/openpgp_keys.ts`.
+  "stsOpenPgpClassicalKey", "stsOpenPgpClassicalKeyInfo",
+  // HOW MAIL TO THE PERSON IS ENCRYPTED (#1955 P6): `none`, `openpgp` or
+  // `smime`, chosen on the portal. `common/openpgp_keys.ts`.
+  "stsMailEncryption",
+  // A PERSON'S LIVE SSH USER CERTIFICATES (#2050, rcbj 2026-11-23): what the
+  // realm's SSH user CA issued them, one JSON value per certificate, on the
+  // entry as `userCertificate` and `userSMIMECertificate` are. The entry is
+  // the master and the CA's register (`ssh_user_ca.issued`) its index, the
+  // KRL's source: removing a value revokes it. `common/ssh_issued.ts`.
+  "stsSshUserCertificate",
+  // A PERSON'S HARDWARE, OATH AND YUBIKEY OTP TOKENS (#2051, rcbj
+  // 2026-11-23): the master data, one JSON value per token; the register
+  // and the two inventories are indexes derived from them.
+  // `common/token_entries.ts`.
+  "stsHardwareToken", "stsOathToken", "stsYubiOtpToken",
   // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
   // person, that every passkey they register is created under and that a
   // discoverable credential hands back to say whose it is. Not a secret —
@@ -347,14 +392,25 @@ namespace IyaSts.Directory;
   // /portal/verify-pseudonym, and it is not a name until that link is spent.
   "stsPseudonym", "stsPseudonymVerifyToken", "stsPseudonymVerifyExpires",
   "stsPseudonymVerifyAddress",
-  // AN AUTHZEN CALLER'S APPLICATION SCOPE AND CALLBACKS, ON A PERSON OR A
-  // SERVICE ACCOUNT (#563, #1180): the applications they may name in
-  // context.application at /access/v1, and the access request callback URLs
-  // registered for them. An application carries the same two as
-  // appAuthzenApplication and appAuthzenCallbackUri. Written by an
-  // administrator only, through authzen/authzen_admin.ts; an `sts*` name is
-  // refused by every other door.
-  "stsAuthzenApplication", "stsAuthzenCallbackUri",
+  // AN AUTHZEN CALLER'S APPLICATION SCOPE, ON A PERSON OR A SERVICE ACCOUNT
+  // (#563): the applications they may name in context.application at
+  // /access/v1. An application carries the same list as
+  // appAuthzenApplication. Written by an administrator only, through
+  // authzen/authzen_admin.ts; an `sts*` name is refused by every other door.
+  "stsAuthzenApplication",
+  // THE PERSON'S CALLBACK URLS (#1180): the access request callback URLs
+  // registered for a person or a service account, as an application's are
+  // appAuthzenCallbackUri. Honoured, and written by set-callbacks, as in
+  // 1.1.0 (restored by the review of #1202); a per-URL retry override is an
+  // application's only. Written by an administrator only, through
+  // authzen/authzen_admin.ts; an `sts*` name is refused by every other door.
+  "stsAuthzenCallbackUri",
+  // AN EMBEDDED REMOTE PEP'S APPLICATION (#2025, part of #1206): on the
+  // service account a PEP embedded in an authentication library signs in
+  // as, the identifier of the one application it is embedded in. Written by
+  // an administrator only, through xacml/xacml_pep_binding.ts; an `sts*`
+  // name is refused by every other door.
+  "stsPepApplication",
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so
@@ -366,6 +422,17 @@ namespace IyaSts.Directory;
   // The signer truststore's two more (#1360); the three above are reused.
   "stsSignerTrustAnchor", "stsSignerTrustAnchorKind",
   "stsSignerTrustAnchorPurpose",
+  // The named truststores (#2118): a truststore under ou=truststores, its
+  // certificates the signer class above, and one entry of assignments.
+  "stsTruststore", "stsTruststoreKind", "stsTruststoreAssignments",
+  "stsTruststoreAssignment",
+  // A key-set truststore's three (#2149): the one party it speaks for, and a
+  // pasted key set or the jwks_uri it is fetched from.
+  "stsTruststoreParty", "stsTruststoreJwks", "stsTruststoreJwksUri",
+  // An SSH CA truststore's keys (#2151).
+  "stsTruststoreSshKeys",
+  // A document truststore's document (#2152).
+  "stsTruststoreDocument",
 
   // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
   // above and it is the SECOND of them that can be read back and used — a set

@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# iya-sts remote PEP: Docker's credential helper for the project's Artifact
+# Registry, with the VM's service account (deploy/gcp/environment's unit).
+[Unit]
+Description=iya-sts remote PEP: registry credentials
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/pep
+ExecStartPre=/bin/mkdir -p /var/lib/pep
+ExecStart=/usr/bin/docker-credential-gcr configure-docker --registries=${registry_host}

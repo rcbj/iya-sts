@@ -79,5 +79,7 @@
   "applicationsText": "Wo jede gehostete Anwendung liegt: die Listener, die sie beantworten, und der, auf dem ihre URLs — ihr Aussteller, ihre Metadaten, Weiterleitungen und per E-Mail versendete Links — aufgebaut werden.",
   "tabDefaults": "Dienstweite Vorgaben",
   "defaultsNote": "Was jeder TLS-Listener erbt, sofern sein eigener Reiter oder seine Definition nichts anderes sagt.",
+  "tabCertSignIn": "Zertifikatsanmeldung",
+  "certSignInNote": "Profile für die Zertifikatsanmeldung, die Sperrprüfung, die eine Anmeldung braucht, die Übergabe an einen benutzerdefinierten Listener, der nach einem Zertifikat fragt, und ein TLS-terminierender Proxy davor. Dieselben Einstellungen stehen unter Protokolle → PIV.",
   "customTabNote": "Gesetzt in der Definition des Listeners, auf dem Reiter Benutzerdefinierte Listener."
 }

@@ -30,6 +30,11 @@
       "text": "Le mot de passe du compte {{username}} a été modifié le {{when}} ({{how}}).\n\nSi ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.\n",
       "html": "<p>Le mot de passe du compte <strong>{{username}}</strong> a été modifié le {{when}} ({{how}}).</p><p>Si ce n’était pas vous, contactez dès maintenant la personne qui gère votre compte.</p>"
     },
+    "credential-changed": {
+      "subject": "Les identifiants de votre compte {{service}} ont changé",
+      "text": "Les identifiants du compte {{username}} ont été modifiés le {{when}}, {{by}} : {{what}}.\n\nSi ce n’était pas vous et que vous ne l’avez pas demandé, connectez-vous maintenant, vérifiez vos paramètres de sécurité et fermez vos autres sessions, ou contactez la personne qui gère votre compte.\n",
+      "html": "<p>Les identifiants du compte <strong>{{username}}</strong> ont été modifiés le {{when}}, {{by}} : {{what}}.</p><p>Si ce n’était pas vous et que vous ne l’avez pas demandé, connectez-vous maintenant, vérifiez vos paramètres de sécurité et fermez vos autres sessions, ou contactez la personne qui gère votre compte.</p>"
+    },
     "account-disabled": {
       "subject": "Votre compte {{service}} a été désactivé",
       "text": "Le compte {{username}} a été désactivé le {{when}}. {{why}}\n\nPersonne ne peut s’y connecter tant qu’il n’est pas réactivé, et toutes ses sessions ont été fermées.\n",
@@ -49,6 +54,16 @@
       "subject": "La récupération de votre compte {{service}} a été lancée",
       "text": "La récupération du compte {{username}} a été lancée le {{when}} par {{by}}.\n\nSi ce n’était ni vous ni une personne à qui vous l’avez demandé, contactez dès maintenant la personne qui gère votre compte.\n",
       "html": "<p>La récupération du compte <strong>{{username}}</strong> a été lancée le {{when}} par {{by}}.</p><p>Si ce n’était ni vous ni une personne à qui vous l’avez demandé, contactez dès maintenant la personne qui gère votre compte.</p>"
+    },
+    "sign-in-alert": {
+      "subject": "Une connexion inhabituelle à votre compte {{service}}",
+      "text": "Quelqu’un s’est connecté au compte {{username}} le {{when}}, et cela semblait inhabituel : {{what}}.\n\nOù, approximativement : {{place}}\nAvec : {{device}}\nComment : {{method}}\n\nSi c’était vous, il n’y a rien à faire. Sinon, ouvrez vos connexions récentes et indiquez-le, ce qui ferme toutes vos sessions, puis changez votre mot de passe :\n\n{{link}}\n",
+      "html": "<p>Quelqu’un s’est connecté au compte <strong>{{username}}</strong> le {{when}}, et cela semblait inhabituel : {{what}}.</p><p>Où, approximativement : {{place}}</p><p>Avec : {{device}}</p><p>Comment : {{method}}</p><p>Si c’était vous, il n’y a rien à faire. Sinon, <a href=\"{{link}}\">ouvrez vos connexions récentes</a> et indiquez-le, ce qui ferme toutes vos sessions, puis changez votre mot de passe.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Tentatives de connexion refusées sur votre compte {{service}}",
+      "text": "{{count}} tentatives de connexion au compte {{username}} avec un mot de passe erroné ont été refusées dans les {{minutes}} minute(s) précédant le {{when}}.\n\nSi c’était vous, il n’y a rien à faire. Sinon, quelqu’un essaie peut-être de deviner votre mot de passe : connectez-vous, vérifiez vos connexions récentes et changez votre mot de passe s’il pourrait être connu.\n\n{{link}}\n",
+      "html": "<p>{{count}} tentatives de connexion au compte <strong>{{username}}</strong> avec un mot de passe erroné ont été refusées dans les {{minutes}} minute(s) précédant le {{when}}.</p><p>Si c’était vous, il n’y a rien à faire. Sinon, quelqu’un essaie peut-être de deviner votre mot de passe : connectez-vous, <a href=\"{{link}}\">vérifiez vos connexions récentes</a> et changez votre mot de passe s’il pourrait être connu.</p>"
     },
     "address-changed": {
       "subject": "L’adresse e-mail de votre compte {{service}} a été modifiée",
@@ -74,6 +89,11 @@
       "subject": "{{service}} : un accès d’urgence a été accordé, à examiner",
       "text": "Un accès d’urgence a été accordé immédiatement, sans approbateur, à une demande qui vous désigne, {{username}}, comme l’un de ses approbateurs : {{subject}} peut {{action}} {{resource}} dans l’application {{application}}, par l’intermédiaire de {{requester}}, pour une courte durée.\n\nLa justification fournie : {{justification}}\n\nLa politique autorise l’accès d’urgence à cette ressource. Examinez-le et révoquez-le s’il n’était pas justifié :\n\n{{link}}\n",
       "html": "<p>Un accès d’urgence a été accordé immédiatement, sans approbateur, à une demande qui vous désigne, <strong>{{username}}</strong>, comme l’un de ses approbateurs : <strong>{{subject}}</strong> peut <strong>{{action}}</strong> <strong>{{resource}}</strong> dans l’application <strong>{{application}}</strong>, par l’intermédiaire de {{requester}}, pour une courte durée.</p><p>La justification fournie : {{justification}}</p><p>La politique autorise l’accès d’urgence à cette ressource. <a href=\"{{link}}\">Examinez-le</a> et révoquez-le s’il n’était pas justifié.</p>"
+    },
+    "authzen-access-revoked": {
+      "subject": "{{service}} : une approbation d’une demande d’accès que vous avez soumise a été révoquée",
+      "text": "Une approbation d’une demande d’accès que vous avez soumise, {{username}}, a été révoquée par {{approver}}.\n\n{{subject}} a demandé de {{action}} {{resource}} dans l’application {{application}}. Cette approbation ne tient plus. Une évaluation ultérieure qui la présente n’est pas approuvée. Soumettez une nouvelle demande d’accès si l’accès est encore nécessaire.\n",
+      "html": "<p>Une approbation d’une demande d’accès que vous avez soumise, <strong>{{username}}</strong>, a été révoquée par <strong>{{approver}}</strong>.</p><p><strong>{{subject}}</strong> a demandé de <strong>{{action}}</strong> <strong>{{resource}}</strong> dans l’application <strong>{{application}}</strong>. Cette approbation ne tient plus. Une évaluation ultérieure qui la présente n’est pas approuvée. Soumettez une nouvelle demande d’accès si l’accès est encore nécessaire.</p>"
     },
     "pki-pin-status": {
       "subject": "{{service}} : un certificat auquel ce domaine se fie a changé d’état",
@@ -114,6 +134,21 @@
       "subject": "Message de test de {{service}}",
       "text": "Ceci est un message de test, envoyé le {{when}} par le transport {{transport}} à la demande de {{username}}.\n",
       "html": "<p>Ceci est un message de test, envoyé le {{when}} par le transport {{transport}} à la demande de <strong>{{username}}</strong>.</p>"
+    },
+    "post-login-reminder-mail-encryption": {
+      "subject": "Enregistrez une clé de chiffrement post-quantique pour vos e-mails {{service}}",
+      "text": "{{service}} demande à {{username}} d’enregistrer une nouvelle clé de chiffrement des e-mails qui utilise la cryptographie post-quantique (ML-KEM) : une clé OpenPGP ou un certificat S/MIME. Les e-mails chiffrés aujourd’hui avec une clé classique pourront être lus dès que cette clé sera cassée.\n\nConnectez-vous ici, et il vous sera demandé de l’enregistrer juste après la connexion :\n\n{{signin}}\n\nLe lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.\n",
+      "html": "<p>{{service}} demande à <strong>{{username}}</strong> d’enregistrer une nouvelle clé de chiffrement des e-mails qui utilise la cryptographie post-quantique (ML-KEM) : une clé OpenPGP ou un certificat S/MIME. Les e-mails chiffrés aujourd’hui avec une clé classique pourront être lus dès que cette clé sera cassée.</p><p><a href=\"{{signin}}\">Connectez-vous</a>, et il vous sera demandé de l’enregistrer juste après la connexion.</p><p>Le lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.</p>"
+    },
+    "post-login-reminder-piv-reissue": {
+      "subject": "Renouvelez votre certificat PIV pour {{service}}",
+      "text": "{{service}} demande à {{username}} d’inscrire un nouveau certificat pour la carte à puce PIV ou la clé de sécurité avec laquelle il se connecte : celui qu’elle contient a été signé avec un algorithme classique, ou expire bientôt. Ayez la carte sur vous, et un outil qui en tire une demande de certificat, comme ykman.\n\nConnectez-vous ici, et il vous sera demandé de l’inscrire juste après la connexion :\n\n{{signin}}\n\nLe lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.\n",
+      "html": "<p>{{service}} demande à <strong>{{username}}</strong> d’inscrire un nouveau certificat pour la carte à puce PIV ou la clé de sécurité avec laquelle il se connecte : celui qu’elle contient a été signé avec un algorithme classique, ou expire bientôt. Ayez la carte sur vous, et un outil qui en tire une demande de certificat, comme ykman.</p><p><a href=\"{{signin}}\">Connectez-vous</a>, et il vous sera demandé de l’inscrire juste après la connexion.</p><p>Le lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.</p>"
+    },
+    "credential-expiring": {
+      "subject": "Un identifiant de votre compte {{service}} expire bientôt",
+      "text": "Ces identifiants du compte {{username}} expirent bientôt : {{what}}.\n\nRenouvelez chacun avant son expiration, sinon il cessera de fonctionner. Lorsqu’une ligne nomme une page de votre portail, connectez-vous ici :\n\n{{link}}\n\nLorsqu’elle vous dit de vous adresser à votre administrateur, contactez la personne qui gère votre compte. Si vous n’utilisez plus l’un d’eux, vous pouvez ignorer sa ligne.\n",
+      "html": "<p>Ces identifiants du compte <strong>{{username}}</strong> expirent bientôt : {{what}}.</p><p>Renouvelez chacun avant son expiration, sinon il cessera de fonctionner. Lorsqu’une ligne nomme une page de votre portail, <a href=\"{{link}}\">connectez-vous à votre portail</a>.</p><p>Lorsqu’elle vous dit de vous adresser à votre administrateur, contactez la personne qui gère votre compte. Si vous n’utilisez plus l’un d’eux, vous pouvez ignorer sa ligne.</p>"
     }
   },
   "layout": {
@@ -122,8 +157,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Vous recevez ce message car il s’agit {{reason}}.</small></p>"
   },
   "categories": {
-    "security": { "reason": "d’un avis de sécurité concernant votre compte, qui ne peut pas être désactivé" },
-    "account": { "reason": "d’une demande faite par vous ou par un administrateur" },
-    "notification": { "reason": "d’une notification, que vous pouvez désactiver sur votre portail" }
+    "security": {
+      "reason": "d’un avis de sécurité concernant votre compte, qui ne peut pas être désactivé",
+      "encryptedSubject": "Un avis de sécurité de {{service}}"
+    },
+    "account": {
+      "reason": "d’une demande faite par vous ou par un administrateur",
+      "encryptedSubject": "Un message de {{service}}"
+    },
+    "notification": {
+      "reason": "d’une notification, que vous pouvez désactiver sur votre portail",
+      "encryptedSubject": "Une notification de {{service}}"
+    }
   }
 }

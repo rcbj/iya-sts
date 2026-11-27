@@ -56,11 +56,17 @@
 // Each port's messages offer encryption only under its own suite
 // (offers()).
 //
-// NO sp:IncludeTimestamp. Section 6.2 makes it a property of every message
-// under the binding, and requires the Timestamp to be integrity protected:
-// the answer would have to carry a signed wsu:Timestamp, and this STS does
-// not sign its answers. The request's Timestamp is still required, by the
-// alternative's sp:SignedParts, as before.
+// sp:IncludeTimestamp ONLY WHILE THE REALM SIGNS ITS ANSWERS (#1918, done
+// in #1917). Section 6.2 makes it a property of every message under the
+// binding, and requires the Timestamp to be integrity protected: the answer
+// has to carry a signed wsu:Timestamp, which it does while
+// `wstrust.signResponse` is on (`ws_integrity.ts`). Off, the property is
+// absent, as it always was; the request's Timestamp is still required, by
+// the alternative's sp:SignedParts. sp:EncryptBeforeSigning and
+// sp:EncryptSignature follow `wstrust.responseProtectionOrder` and
+// `wstrust.encryptSignature` while answers are signed. The WSDL is one
+// document per realm, so these are the realm's settings; an application
+// that overrides one is configured out of band, as its maps are.
 //
 // THE MESSAGE POLICIES (RequestProtection on every wsdl:input,
 // ResponseProtection on every wsdl:output, each with an IyaSuite twin on
@@ -179,6 +185,16 @@ type Flags = {
   // ports carry as their endpoint identity while
   // `advertiseEndpointIdentity` is on.
   encryptionCertificate?: string;
+  // #1917 (#1918): the realm signs its answers (`wstrust.signResponse`),
+  // encrypts before it signs (`wstrust.responseProtectionOrder`), and
+  // encrypts the signature (`wstrust.encryptSignature`).
+  signsResponses?: boolean;
+  encryptsBeforeSigning?: boolean;
+  encryptsSignature?: boolean;
+  // `wstrust.encryptResponse` itself (#2007's review): the signature is
+  // encrypted only while answers are, so sp:EncryptSignature needs it.
+  // Not `encryptsResponses`, which the tests read as the suite.
+  responseEncryptionOn?: boolean;
   // `wstrust.advertiseEndpointIdentity` (rcbj, 2026-11-19): whether each
   // port carries a WS-AddressingIdentity EndpointReference holding the
   // encryption certificate. Off by default: the element is Microsoft's,
@@ -260,7 +276,8 @@ class WsTrustMetadata {
       this.policy('RequesterAuthentication',
                   this.requester(flags, terms)) +
       this.policy('RequesterAuthentication' + IYA,
-                  this.exactlyOne([this.signatureAlternative('iya', terms)])) +
+                  this.exactlyOne([this.signatureAlternative('iya', terms,
+                                                             flags)])) +
       this.policy('IssuedTokenTypes', this.issued(flags, terms)) +
       this.policy('RequestProtection',
                   this.messagePolicy(true, this.offers(flags, true, ''),
@@ -268,12 +285,17 @@ class WsTrustMetadata {
       this.policy('RequestProtection' + IYA,
                   this.messagePolicy(true, this.offers(flags, true, 'iya'),
                                      terms)) +
-      (this.offers(flags, false, '')
+      (this.offers(flags, false, '') || flags.signsResponses
         ? this.policy('ResponseProtection',
-                      this.messagePolicy(false, true, terms)) : '') +
-      (this.offers(flags, false, 'iya')
+                      this.messagePolicy(false, this.offers(flags, false, ''),
+                                         terms, !!flags.signsResponses))
+        : '') +
+      (this.offers(flags, false, 'iya') || flags.signsResponses
         ? this.policy('ResponseProtection' + IYA,
-                      this.messagePolicy(false, true, terms)) : '') +
+                      this.messagePolicy(false,
+                                         this.offers(flags, false, 'iya'),
+                                         terms, !!flags.signsResponses))
+        : '') +
       this.types(terms) +
       this.messages(terms) +
       this.portTypes(terms) +
@@ -363,7 +385,13 @@ class WsTrustMetadata {
       responseSuite: this.responseSuiteOf(),
       encryptionCertificate: this.encryptionCertificate(),
       advertiseEndpointIdentity:
-        config.value('wstrust.advertiseEndpointIdentity') === true
+        config.value('wstrust.advertiseEndpointIdentity') === true,
+      signsResponses: config.value('wstrust.signResponse') === true,
+      encryptsBeforeSigning:
+        config.value('wstrust.responseProtectionOrder') ===
+          'encrypt-then-sign',
+      encryptsSignature: config.value('wstrust.encryptSignature') === true,
+      responseEncryptionOn: config.value('wstrust.encryptResponse') === true
     };
     log.debug("Leaving WsTrustMetadata.liveFlags().");
     return out;
@@ -555,6 +583,13 @@ class WsTrustMetadata {
         'sp:Basic256Sha256 and under the IYA-STS suite ' + SUITE_NS + ' ' +
         SUITE_NAME + ': SHA-256, AES-256-GCM, RSA-OAEP with SHA-256 and ' +
         'MGF1-SHA-256, RSA-SHA256 and exclusive c14n.',
+      flags.signsResponses
+        ? 'Answers are signed: a signed wsu:Timestamp and a ds:Signature ' +
+          'made with this realm\'s XML signing key, whose certificate the ' +
+          'answer carries in a BinarySecurityToken, ' +
+          (flags.encryptsBeforeSigning
+            ? 'after any encryption.' : 'before any encryption.')
+        : 'Answers are not signed.',
       'WS-MetadataExchange (2004/09) answers at ' + base + '/sts/mex, ' +
         'with this document, the token capability document and its ' +
         'schema as three sections. The token capability document, at ' +
@@ -703,7 +738,7 @@ class WsTrustMetadata {
   private static requester(flags: Flags, terms: Terms): string {
     log.debug("Entering WsTrustMetadata.requester().");
     const parts: string[] = [this.signatureAlternative('basic256sha256',
-                                                      terms)];
+                                                      terms, flags)];
     parts.push(
       this.all(this.nested('UsernameToken', '<sp:WssUsernameToken11/>')),
       this.all(this.nested('SamlToken', '<sp:WssSamlV20Token11/>')),
@@ -790,7 +825,7 @@ class WsTrustMetadata {
    *
    * @returns the sp:AsymmetricBinding
    */
-  private static asymmetricBinding(suite: string): string {
+  private static asymmetricBinding(suite: string, flags: Flags): string {
     log.debug("Entering WsTrustMetadata.asymmetricBinding(). " + suite);
     const named = suite === 'iya'
       ? '<' + SUITE_PREFIX + ':' + SUITE_NAME + ' xmlns:' + SUITE_PREFIX +
@@ -807,6 +842,14 @@ class WsTrustMetadata {
       '<sp:AlgorithmSuite><wsp:Policy>' + named + '</wsp:Policy>' +
       '</sp:AlgorithmSuite>' +
       '<sp:Layout><wsp:Policy><sp:Lax/></wsp:Policy></sp:Layout>' +
+      // Section 6.2, 6.3 and 6.4's properties, in the binding's order, only
+      // while the realm signs its answers (#1917): the file's header says
+      // why.
+      (flags.signsResponses ? '<sp:IncludeTimestamp/>' +
+        (flags.encryptsBeforeSigning ? '<sp:EncryptBeforeSigning/>' : '') +
+        (flags.encryptsSignature && flags.responseEncryptionOn &&
+         !flags.encryptsBeforeSigning ? '<sp:EncryptSignature/>' : '')
+        : '') +
       '<sp:OnlySignEntireHeadersAndBody/>' +
       '</wsp:Policy></sp:AsymmetricBinding>';
     log.debug("Leaving WsTrustMetadata.asymmetricBinding().");
@@ -821,9 +864,10 @@ class WsTrustMetadata {
    * @param terms - the model's values
    * @returns the All
    */
-  private static signatureAlternative(suite: string, terms: Terms): string {
+  private static signatureAlternative(suite: string, terms: Terms,
+                                      flags: Flags): string {
     log.debug("Entering WsTrustMetadata.signatureAlternative(). " + suite);
-    const out = this.all(this.asymmetricBinding(suite) + this.wss11() +
+    const out = this.all(this.asymmetricBinding(suite, flags) + this.wss11() +
                          this.signedParts(terms.utility));
     log.debug("Leaving WsTrustMetadata.signatureAlternative().");
     return out;
@@ -862,7 +906,7 @@ class WsTrustMetadata {
    * The IYA-STS algorithm suite's schema: one empty assertion, in the
    * manner of WS-SecurityPolicy 1.2's own (`sp:QNameAssertionType`), for a
    * validator to read beside the published ones. Not served: the suite is
-   * named, and its algorithms listed, in `docs/v1.1.0/ws-trust.md`.
+   * named, and its algorithms listed, in `docs/v1.2.0/ws-trust.md`.
    *
    * @returns the XSD
    */
@@ -915,7 +959,10 @@ class WsTrustMetadata {
    * (WS-SecurityPolicy 1.3 section 4.1.1); a sender leaves out its own
    * wsse:Security header. The endpoint accepts a signature with any
    * further Reference by wsu:Id under exclusive c14n, and verifies each.
-   * An answer is never signed, so ResponseProtection offers no signing.
+   * An answer is signed only while the realm signs its answers (#1917,
+   * `wstrust.signResponse`), and ResponseProtection then offers the same
+   * optional sp:SignedParts; the answer's signature covers its Timestamp
+   * and the Body, or what its application's map names.
    *
    * ENCRYPTION, only where the port's suite is one this realm would
    * accept it under (offers()): a request's where
@@ -940,7 +987,7 @@ class WsTrustMetadata {
    * @returns the policy's content
    */
   private static messagePolicy(input: boolean, encrypts: boolean,
-                               terms: Terms): string {
+                               terms: Terms, signs?: boolean): string {
     log.debug("Entering WsTrustMetadata.messagePolicy().");
     const envelopeHeader = "/*[local-name()='Envelope']" +
       "/*[local-name()='Header']";
@@ -956,6 +1003,18 @@ class WsTrustMetadata {
     if (input) {
       out += this.exactlyOne(['<wsp:All/>',
                               this.all('<sp:SignedParts/>')]);
+    } else if (signs) {
+      // #1918: the answer's signing, optional over everything, as
+      // sp:SignedParts and, for a client that names header blocks by
+      // XPath, sp:SignedElements over every block but the security header
+      // (`web_ws_protection.ts`'s Header preset, the signing map's).
+      out += this.exactlyOne(['<wsp:All/>',
+        this.all('<sp:SignedParts/>'),
+        this.all('<sp:SignedParts><sp:Body/></sp:SignedParts>' +
+                 '<sp:SignedElements XPathVersion="' + XPATH10 + '">' +
+                 xpaths([envelopeHeader + "/*[not(local-name()=" +
+                   "'Security' and namespace-uri()='" + terms.secext +
+                   "')]"]) + '</sp:SignedElements>')]);
     }
     if (encrypts) {
       const others = [envelopeHeader + "/*[not(local-name()='Security' and " +
@@ -1217,14 +1276,18 @@ class WsTrustMetadata {
    * policy subject).
    *
    * @param terms - the model's values
-   * @param flags - which encryption each binding's messages offer
+   * @param flags - which encryption each binding's messages offer, and
+   *   whether answers are signed
    * @returns the binding elements
    */
   private static bindings(terms: Terms, flags: Flags): string {
     log.debug("Entering WsTrustMetadata.bindings().");
     let out = '';
     ['', IYA].forEach((suffix) => {
-      const answered = this.offers(flags, false, suffix ? 'iya' : '');
+      // An answer has a policy where it may be encrypted, or is signed
+      // (#1917).
+      const answered = this.offers(flags, false, suffix ? 'iya' : '') ||
+        !!flags.signsResponses;
       this.versions(terms).forEach((version) => {
         [['Soap11', 'soap'], ['Soap12', 'soap12']].forEach((pair) => {
           const prefix = pair[1];

@@ -35,6 +35,7 @@
 
 const assert = require("assert");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 const names = require("./random_username.js");
 const ssfRoles = require("./ssf_roles.js");
 
@@ -230,7 +231,12 @@ async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " and a poll stream ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
-    domain: REALM + ".example.net", name: "RISC 146 " + STAMP },
+    domain: REALM + ".example.net", name: "RISC 146 " + STAMP,
+    // EVERY PERSON'S EVENTS ON AN APPLICATION'S STREAM, AS BEFORE #2234:
+    // this job's receivers hear about people never signed in to them
+    // (`ssf.applicationStreamScope`; the scope itself is
+    // `sts_ssf_application_sessions.js`'s).
+    overrides: { "ssf.applicationStreamScope": "all" } },
     "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
@@ -257,12 +263,21 @@ async function test() {
   });
   const streamId = created.body.stream_id;
   for (const who of [ALICE, CAROL, BOB, EVE]) {
+    // EVE signs in to the portal, so her password is her own (#2160): a
+    // typed one is temporary in product, and `own_password.js` has her
+    // choose PASSWORD at the sign-in screen. Nobody else signs in.
     await ok(realmApi + "/users/create", { username: who, invent: false,
-      credential: "password", password: PASSWORD,
+      credential: "password",
+      password: who === EVE ? ownPassword.temporaryFor(PASSWORD) : PASSWORD,
       attributes: { cn: "RISC " + who, givenName: "RISC", sn: who,
                     mail: who === BOB ? SHARED : who + "@risc146.test" } },
       "created " + who);
   }
+  await ownPassword.ownPassword(realmBase, EVE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   await drain(token, streamId);
   POOL.length = 0;
 

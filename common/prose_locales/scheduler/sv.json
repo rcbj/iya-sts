@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "Utgång av tvåpersonsgodkännanden"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "Flyttar varje administratörsåtgärd som hålls kvar för en andra administratör (#2166) och vars tidsfrist har passerat till utgången, och skriver dess granskningsrad, tar bort en avslutad en vecka efter att den avslutades och reparerar listan över väntande. En läsning tillämpar tidsfristen själv, så detta är registreringen och städningen, aldrig det som beslutar."
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "Attributkällor: schemalagd uppdatering"
@@ -36,8 +44,8 @@
     "text": "Utgång av AuthZEN-åtkomstbegäranden"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "e0a885271868119c",
-    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) som passerat sin expires_at till expired — skriver dess granskningsrad och skickar dess callback — och tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpt ut om det är senare. En läsning tillämpar själv tidsgränsen, så det här är registret och städningen, aldrig det som avgör."
+    "en": "19cf8cda48af4f1e",
+    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) förbi sitt expires_at till expired – skriver dess granskningsrad och skickar dess återanrop –, tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpte ut om det är senare, tar bort en begärbar nekan en dag efter dess fönster, och försöker igen med en återanropsleverans som misslyckades med ett nätverksfel eller HTTP 5xx, upp till försöksgränsen, varje väntetid dubbelt så lång som den förra (#1202). En avslutad behålls medan dess återanrop fortfarande försöks, och en väntande vars godkännare inte är någon flyttas till failed. En läsning tillämpar själv tidsgränsen, så detta är posten och städningen, aldrig det som avgör."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -78,6 +86,22 @@
   "sched.jobs.cluster.rate-window-purge.describe": {
     "en": "772463775db370a2",
     "text": "Tar bort de hastighetsbegränsningsfönster som har passerats från tabellen som alla noder delar."
+  },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "Uppdatering av delade hemligheter"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "Läser de delade hemligheterna på nytt från lagret i den här processen, så att en rotation som gjorts på vilken nod som helst används här."
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "Rotation av delade hemligheter"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "Roterar varje delad hemlighet som är en nyckel (nycklarna för CSRF, ACME-nonce, mottagare av Shared Signals, OpenID Federation-sida, utloggningsresultat och DBSC) var cluster.secretRotationDays: ett nästa värde publiceras, görs aktuellt tio minuter senare, och det gamla accepteras fortfarande under cluster.secretOverlapS. De parvisa subjekthemligheterna och bootstrap-namnhemligheterna är identifierare och roteras aldrig."
   },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
@@ -143,6 +167,30 @@
     "en": "71471822b228b1b8",
     "text": "Tar bort de löpande summor som hålls för varje GNAP-beviljandes gränser när beviljandet har tagit slut, då ingen av dess token längre kan visas upp (#432)."
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "Maskinvarutoken på poster"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "Skriver de maskinvaru-, OATH- och YubiKey OTP-token vars skrivning till posten inte skedde till innehavarnas poster och kopierar vid sin första körning i en process varje token som registrerades innan token lagrades på poster till dess innehavare."
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "Index för maskinvarutoken återuppbyggda"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "Skriver om maskinvarutokenregistret och OATH- och YubiKey OTP-inventarierna från token på personernas poster, som är huvudkällan: körs för hand efter en återställning eller när ett index motsäger en post."
+  },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "Rotation av intygssignerare"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "Låter varje dedikerad intygssignerares nyckelfamilj gå över till en ny nyckel när dess nyckel är keys.credentialSignerRotationIntervalDays gammal. Nyckeln den ersätter signerar inget mer och förblir publicerad, så varje intyg den signerat fortsätter att verifieras."
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "Antal värden per datakrypteringsnyckel"
@@ -175,6 +223,14 @@
     "en": "a4d23163545ebff6",
     "text": "Roterar varje lagrad datakrypteringsnyckel nu — eller en sfärs, eller en klass; nycklarna de ersätter fortsätter att öppna det de förseglade tills det har förseglats om."
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "Rotation av nycklar för dekryptering av begäranden"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "Ersätter krypteringsnycklarna för begäranobjekt, OpenID4VCI-nyckeln för kryptering av begäranden och KEM-dekrypteringsnycklarna när de är keys.encryptionKeyRotationIntervalDays gamla. Den nya nyckeln publiceras genast; den den ersätter dekrypterar fortfarande i keys.encryptionKeyOverlapDays."
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "Rotation av nyckelkrypteringsnyckeln, manuellt"
@@ -199,6 +255,14 @@
     "en": "6fffa44535aa160d",
     "text": "Roterar sfärens krbtgt-nyckel nu. Med invalidate behålls ingen tidigare version: varje TGT som utfärdats före den avvisas och en Shared Signals-händelse meddelar det."
   },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "Rotation av Kerberos-tjänstnycklar"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "Ersätter nyckeln som den här tjänsten skapade för sin egen mottagare med en ny slumpnyckel på nästa kvno när den är krb5.serviceKeyRotationIntervalDays gammal, behåller den den ersätter så länge en biljett under den kan leva, och aldrig medan det fönstret är öppet. En nyckel vars keytab har lämnats ut rapporteras som förfallen i stället för att roteras: dess tjänst behöver den nya keytab-filen installerad."
+  },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
     "text": "Underhåll av LDAP-anslutningsspegeln"
@@ -206,6 +270,14 @@
   "sched.jobs.ldap.connection-mirror-maintenance.describe": {
     "en": "76f7213ce5e8a506",
     "text": "Tar bort speglade LDAP-anslutningar från noder som inte längre är medlemmar, och utloggningsinstruktioner vars livslängd har gått ut."
+  },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "Påminnelser om utgående inloggningsuppgifter"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "Skickar till varje person vars certifikat upphör att gälla inom en av mail.expiryReminderDays en påminnelse som nämner vart och ett som är aktuellt: vad det är, dagen det upphör att gälla och hur det förnyas, ett meddelande per person, varje certifikat en gång per steg. Läser bara utgångsindexets rader som är aktuella i dag eller under de senaste trettio dagarna, aldrig katalogen, utom en del av personerna per körning tills certifikat som fanns före indexet har registrerats."
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -244,8 +316,8 @@
     "text": "Utgång av klienthemligheter"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "Kontrollerar varje klienthemlighet för varje applikation: en granskningsrad för en applikation som har en som går ut inom oauth2.clientSecretExpiryWarningDays, och för en vars samtliga hemligheter har gått ut; och tar bort de utgångna hemligheter som en applikation har vid sidan av en giltig — aldrig dess sista, som blir kvar och avvisas i produktläge."
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "Kontrollerar varje klienthemlighet för varje applikation: en granskningsrad för en applikation som har en som går ut inom oauth2.clientSecretExpiryWarningDays, och för en vars samtliga hemligheter har gått ut; och tar bort de utgångna hemligheter som en applikation har vid sidan av en giltig — aldrig dess sista, som blir kvar och avvisas i produktläge. Först roterar det hemligheten för varje applikation som listas i oauth2.clientSecretAutoRotate och som går ut inom oauth2.clientSecretAutoRotateDays."
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",
@@ -383,6 +455,14 @@
     "en": "98370fb755b4ba95",
     "text": "I en tjänst som driftsätts som celler tar den bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från den globala nivåns databas, i samma omgångar; dess körning tas i anspråk i den globala nivån, så att en enda cell kör varje tidsfack. Avstängd i en tjänst med en enda databas, där den andra rensningen täcker den."
   },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "Förnyelse av CA-certifikat"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "Förnyar roten, sedan varje mellanliggande CA, sedan varje utfärdande CA inom dess framförhållning (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) med samma nyckel och subjekt, så allt den signerat verifieras fortfarande. En förnyad rot publiceras bredvid den den ersätter tills den går ut. En importerad CA förnyas av operatören."
+  },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
     "text": "Granskning av fästa certifikat"
@@ -396,8 +476,16 @@
     "text": "E-post för aktiviteter efter inloggning"
   },
   "sched.jobs.post-login.activity-mail.describe": {
-    "en": "5081eadb5d5abbeb",
-    "text": "Skickar en påminnelse om att logga in till dem som en pågående aktivitet efter inloggning når (#1111), där aktiviteten sedan ber dem registrera en postkvantnyckel. Läser per körning en del av varje startad aktivitets population (realmen, eller unionen av dess grupper) efter en markör, skriver bara till dem som har aktiviteten att göra, aldrig inom påminnelseintervallet eller över dess maximum, och skriver en granskningsrad per startad aktivitet och körning."
+    "en": "9e62432e54429d50",
+    "text": "Skickar en påminnelse om att logga in till dem som en pågående aktivitet efter inloggning når (#1111), där aktiviteten sedan ber dem göra den: registrera en postkvantnyckel (passkey), en postkvantnyckel för e-postkryptering eller ett nytt PIV-certifikat, varje aktivitet med sitt eget meddelande. Läser per körning en del av varje startad aktivitets population (realmen, eller unionen av dess grupper) efter en markör, skriver bara till dem som har aktiviteten att göra, aldrig inom påminnelseintervallet eller över dess maximum, och skriver en granskningsrad per startad aktivitet och körning."
+  },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "Behållna klassiska OpenPGP-nycklar borttagna"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "Tar bort en klassisk OpenPGP-nyckel som e-postkrypteringens aktivitet efter inloggning behöll bredvid postkvantnyckeln som ersatte den (#2009, D3), när profilens mailKeepClassical dagar har gått: från personens post och därmed från Web Key Directory. Går bara igenom raderna för behållna nycklar, aldrig katalogen, och skriver en granskningsrad per borttagen nyckel. En nyckel vars tid har gått är redan utelämnad ur katalogen och varje sida, oavsett om jobbet har körts."
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
@@ -655,6 +743,38 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Pausar, inaktiverar eller tar bort en ström vars mottagare har varit inaktiv i ssf.inactivityTimeoutS (SSF 1.0 avsnitt 8.1.1), och meddelar en paus eller inaktivering med en stream-updated-händelse först, och skickar en verifieringshändelse till varje aktiverad ström som inte har fått någon från den här sändaren på ssf.verificationEveryS (avsnitt 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "SSH-användarcertifikat på poster"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "Skriver de SSH-användarcertifikat vars skrivning till posten misslyckades vid utfärdandet till innehavarnas poster (stsSshUserCertificate), tar bort utgångna och kopierar vid sin första körning i en process de certifikat som utfärdades innan de lagrades på poster till sina innehavare."
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Återkallelselista för SSH-användar-CA"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Uppdaterar varje sfärs KRL för OpenSSH-användar-CA:n efter återkallelser av utfärdade certifikat och tar bort utgångna återkallelser."
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "Förnyelse av häftat OCSP-svar"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "Skapar om det OCSP-svar som varje lyssnare i den här processen häftar (huvudporten, LDAPS, felsökaren och de anpassade lyssnarna) från den här tjänstens egen svarare, varje fjärdedel av pki.crlLifetimeMinutes, så att ett häftat svar alltid ligger långt före sin nextUpdate och en återkallelse som gjorts någon annanstans når det. Körs i varje nods frontprocess."
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "Förnyelse av lyssnarcertifikatet"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "Förnyar certifikatet som den här processens huvudport, LDAPS och felsökare presenterar, med samma nyckel, när mindre än en tredjedel av giltighetstiden återstår eller det ligger inom tls.serverCertificateRenewLeadDays, och lägger det på varje socket utan omstart. Körs i varje nods frontprocess, som lämnar det förnyade certifikatet till sina begäranarbetare."
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "Rotation av TLS-sessionsbiljettnyckeln"
@@ -670,6 +790,14 @@
   "sched.jobs.uma.sweep.describe": {
     "en": "167f79e724fe8b34",
     "text": "Tar bort varje behörighetsbiljett, beständig anspråkstoken, RPT-post och väntande ägargodkännande för User-Managed Access som passerat sin livstid (#1168). En läsning tillämpar tidsgränsen själv, så detta är städningen, aldrig det som avgör."
+  },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Rensning av Yubico-OTP-nonces"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "Tar bort YK-VAL-nonces som är äldre än fem minuter, och de äldsta över tiotusen, så att nonce-kartan inte växer."
   },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",

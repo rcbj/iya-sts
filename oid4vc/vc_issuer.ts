@@ -136,6 +136,7 @@ import vcDidResolver = require('./vc_did_resolver');
 // requires persistence lazily, so it moves no route and closes no cycle.
 import clusterClaims = require('../cluster/cluster_claims');
 import capabilities = require('../cluster/cluster_capabilities');
+import truststores = require('../common/truststores');
 
 // THE HOLDER KEYS AN ldp_vc MAY BE BOUND TO (#38's follow-ups): the JOSE
 // algorithms whose keys a Data Integrity cryptosuite `vc_data_integrity.ts`
@@ -174,6 +175,7 @@ interface VcIssuerDeps {
   vciError: typeof helpers.vciError;
   signingKeyFor: typeof helpers.signingKeyFor;
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
+  retiredEncryptionKeysFor: typeof helpers.retiredEncryptionKeysFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
   certificateHeaderForAsync: typeof helpers.certificateHeaderForAsync;
   publishedKidFor: typeof helpers.publishedKidFor;
@@ -240,7 +242,9 @@ interface VcIssuerDeps {
   lastCredentialRequestStore: typeof lastCredentialRequestStore;
   // `oauth2.js` itself, for its published-document signer. LAZY: see
   // `sendVciMetadata()`.
-  loadOauth2: () => { signPublishedDocument: (...args: any[]) => any };
+  loadOauth2: () => { signPublishedDocument: (...args: any[]) => any;
+                      signPublishedDocumentAsync:
+                        (...args: any[]) => Promise<any> };
 }
 
 // c_nonce values this issuer has handed out and not yet seen used. A nonce is
@@ -516,6 +520,7 @@ class VcIssuer {
       vciError: helpers.vciError,
       signingKeyFor: helpers.signingKeyFor,
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
+      retiredEncryptionKeysFor: helpers.retiredEncryptionKeysFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
       certificateHeaderForAsync: helpers.certificateHeaderForAsync,
       publishedKidFor: helpers.publishedKidFor,
@@ -1023,7 +1028,7 @@ class VcIssuer {
   // -------------------------------------------------------------------------
   private inInsertedPathRealm(req: any, res: any, wellKnown: string,
                               issuerOf: (r: any) => string,
-                              send: () => void): void {
+                              send: () => any): any {
     const { log, errorCodes } = this.deps;
     log.debug("Entering VcIssuer.inInsertedPathRealm(). " + wellKnown);
     const asked = '/' + String((req.params || {})[0] || '')
@@ -1060,8 +1065,10 @@ class VcIssuer {
       log.debug("Leaving VcIssuer.inInsertedPathRealm(). No such issuer.");
       return;
     }
-    realms.run(found, send);
+    // RETURNED (#1955 P8 follow-up): a document signed off the event loop
+    // answers a promise.
     log.debug("Leaving VcIssuer.inInsertedPathRealm().");
+    return realms.run(found, send);
   }
 
   // -------------------------------------------------------------------------
@@ -1142,16 +1149,19 @@ class VcIssuer {
     return stsCrypto.credentialDigest(String(nonce || ''));
   }
 
-  private sendVciMetadata(req, res) {
+  // `signed_metadata` is signed off the event loop for a realm key in the
+  // HSM (#1955 P8 follow-up), so the answer is a promise the route returns;
+  // a software key signs in place, as before.
+  private async sendVciMetadata(req, res) {
     const { log, logArtifact, errorCodes, loadOauth2 } = this.deps;
     log.debug("Entering VcIssuer.sendVciMetadata().");
     const meta = this.vciMetadata(req);
     const claims = Object.assign({}, meta, { sub: meta.credential_issuer });
     logArtifact('OID4VCI signed_metadata', 'before signing', claims);
     try {
-      meta.signed_metadata = loadOauth2()
-        .signPublishedDocument(claims, meta.credential_issuer, 3600,
-                               'vci-signed-metadata');
+      meta.signed_metadata = await loadOauth2()
+        .signPublishedDocumentAsync(claims, meta.credential_issuer, 3600,
+                                    'vci-signed-metadata');
       logArtifact('OID4VCI signed_metadata', 'after signing',
                   meta.signed_metadata);
     } catch (e) {
@@ -1281,8 +1291,8 @@ class VcIssuer {
   private attesterKeys(): any[] {
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering VcIssuer.attesterKeys().");
-    const text = String(config.value(
-      'oid4vci.keyAttestationTrustedCertificates') || '');
+    const text = truststores.configuredPems('vc-key-attestation')
+      .join('\n');
     const blocks = text.match(
       /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
     const out: any[] = [];
@@ -3226,6 +3236,31 @@ class VcIssuer {
   //
   // Throws with a reason a caller can hand back to the wallet; every failure
   // here is the wallet's request being unusable, not an issuer fault.
+  // The retired request-decryption key of `kind` the header's kid names, or
+  // null — the current key's kid is never one of them.
+  private retiredRequestKeys(kind: string, alg: string, kid: string) {
+    const { log, retiredEncryptionKeysFor } = this.deps;
+    log.debug("Entering VcIssuer.retiredRequestKeys(). " + kind);
+    if (!kid) {
+      log.debug("Leaving VcIssuer.retiredRequestKeys(). No kid.");
+      return null;
+    }
+    let found = null;
+    try {
+      found = (retiredEncryptionKeysFor(kind) || []).filter(function (one) {
+        return one && one.publicJwk && String(one.publicJwk.kid) === kid &&
+               (kind !== 'kem' || one.alg === alg);
+      })[0] || null;
+    } catch (e) {
+      log.debug("Caught in VcIssuer.retiredRequestKeys(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    log.debug("Leaving VcIssuer.retiredRequestKeys(). " +
+              (found ? 'Retired.' : 'None.'));
+    return found;
+  }
+
   /**
    * Decrypts an encrypted credential request: RSA-OAEP-256 unwrap of the
    * content key, then AES-GCM.
@@ -3253,17 +3288,31 @@ class VcIssuer {
     // opens only with the realm's key for exactly that alg, and only where
     // one is published; everything else is the RSA key, as it always was.
     let headerAlg = '';
+    let headerKid = '';
     try {
-      headerAlg = String(JSON.parse(Buffer.from(String(compact || '')
-        .split('.')[0], 'base64url').toString('utf8')).alg || '');
+      const header = JSON.parse(Buffer.from(String(compact || '')
+        .split('.')[0], 'base64url').toString('utf8'));
+      headerAlg = String(header.alg || '');
+      headerKid = String(header.kid || '');
     } catch (e) {
       log.debug("Caught in VcIssuer.decryptJweRequest(): " +
                 ((e && e.message) || e));
       headerAlg = '';
     }
-    const kemKey = this.requestKemKeys().filter(function (one) {
+    let kemKey = this.requestKemKeys().filter(function (one) {
       return one.alg === headerAlg;
     })[0];
+    // A KEY A SCHEDULED ROTATION RETIRED (#2220), named by the header's
+    // kid: it still opens what a wallet encrypted to it before it read the
+    // issuer metadata again, until its overlap ends. The kid is still
+    // required to be one of this issuer's.
+    const retired = this.retiredRequestKeys(kemKey ? 'kem' : 'vci',
+                                            headerAlg, headerKid);
+    if (kemKey && retired) {
+      kemKey = retired;
+    }
+    const rsaKey = !kemKey && retired ? retired
+                                      : this.requestEncryptionKeys();
     const result = kemKey
       ? stsCrypto.decryptJweCompact(compact, {
           privateJwk: kemKey.privateJwk,
@@ -3272,9 +3321,9 @@ class VcIssuer {
           expectedKid: kemKey.publicJwk.kid
         })
       : stsCrypto.decryptJweCompact(compact, {
-          privateKey: this.requestEncryptionKeys().privateKey,
+          privateKey: rsaKey.privateKey,
           allowedEnc: this.requestEncValues(),
-          expectedKid: this.requestEncryptionKeys().publicJwk.kid
+          expectedKid: rsaKey.publicJwk.kid
         });
     logArtifact('OID4VCI Credential Request',
                 'JWE protected header as received', result.header);
@@ -3563,8 +3612,9 @@ class VcIssuer {
             this.sendVciMetadata.bind(this));
 
     app.get('/.well-known/openid-credential-issuer/*', (req, res) => {
-      this.inInsertedPathRealm(req, res, '/.well-known/openid-credential-' +
-        'issuer', (r: any): string => this.vciMetadata(r).credential_issuer,
+      return this.inInsertedPathRealm(req, res, '/.well-known/openid-' +
+        'credential-issuer',
+        (r: any): string => this.vciMetadata(r).credential_issuer,
         () => this.sendVciMetadata(req, res));
     });
 

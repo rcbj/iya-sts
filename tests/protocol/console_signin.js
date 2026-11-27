@@ -65,6 +65,7 @@
 const assert = require("assert");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -145,6 +146,9 @@ function jar() {
 // new random one per process means an account a previous run left behind has
 // a password nobody holds.
 const consolePasswords = {};
+// The accounts this process has already given their password (#2160), by
+// realm base and name.
+const consoleSettled = {};
 
 function consolePasswordFor(user) {
   log.debug("Entering consolePasswordFor().");
@@ -179,30 +183,39 @@ async function ensureConsoleAccount(base, user, say) {
     log.debug("Leaving apiPost().");
     return { status: r.status, body: body };
   }
+  // THE PASSWORD IS MADE THE PERSON'S OWN (#2160): an administrator's typed
+  // password is temporary in product, so the account is created with a
+  // temporary one and `own_password.js` has the person choose `password` at
+  // the change step (in development, it sets it). Once per account per
+  // process: a job signs the same account in twice, and the second time
+  // the password history would refuse the same value.
+  const setPassword = function (who, value) {
+    log.debug("Entering setPassword().");
+    log.debug("Leaving setPassword().");
+    return apiPost("/users/set-password", { user: who, password: value });
+  };
+  const settledKey = base + " " + user;
   const created = await apiPost("/users/create", {
     username: user, invent: false,
     attributes: { cn: "Console " + user, givenName: "Console", sn: String(user),
                   displayName: "Console " + user,
                   mail: String(user) + "@" + domain },
-    credential: "password", password: password
+    credential: "password", password: ownPassword.temporaryFor(password)
   });
   if (created.status === 200 && created.body && created.body.ok) {
-    say("[console] created " + user + " with a password and its attributes " +
-        "before signing in.");
+    await ownPassword.ownPassword(base, user, password, setPassword);
+    consoleSettled[settledKey] = true;
+    say("[console] created " + user + " with a password of its own and its " +
+        "attributes before signing in.");
     log.debug("Leaving ensureConsoleAccount().");
     return password;
   }
   if (created.body && created.body.existing) {
-    const set = await apiPost("/users/set-password",
-                              { user: user, password: password });
-    if (!(set.status === 200 && set.body && set.body.ok)) {
-      // NOT A FAILURE HERE, though the sign-in below will be one: the
-      // password is new to this process, so a refusal is a policy this helper
-      // does not satisfy, and the sign-in names it. The same process asking
-      // twice is the one ordinary refusal — the history holds the same value.
-      say("[console] " + user + " already exists and setting its password " +
-          "again answered " + set.status + " " +
-          JSON.stringify(set.body).slice(0, 200) + ".");
+    if (!consoleSettled[settledKey]) {
+      await ownPassword.ownPassword(base, user, password, setPassword);
+      consoleSettled[settledKey] = true;
+      say("[console] " + user + " already existed and now holds a password " +
+          "of its own from this process.");
     }
     log.debug("Leaving ensureConsoleAccount().");
     return password;
@@ -330,13 +343,111 @@ function consoleBundle() {
 // process holds.
 //
 // Answers the client described at the top of this file.
+// The DPoP key an account signs in with, kept for the process (#2179).
+const dpopKeys = {};
+
+function dpopKeyFor(user) {
+  log.debug("Entering dpopKeyFor().");
+  const name = String(user);
+  if (!dpopKeys[name]) {
+    dpopKeys[name] = dpopKey();
+  }
+  log.debug("Leaving dpopKeyFor().");
+  return dpopKeys[name];
+}
+
+// The label this helper's devices carry, so a later run removes its own and
+// nothing else.
+const DEVICE_LABEL = "console_signin.js device";
+
+// The accounts whose device this process has registered already.
+const registeredDevices = {};
+
+// THE ADMINISTRATIVE SURFACE NEEDS A COMPLIANT REGISTERED DEVICE (#2179) where
+// `devices.requireCompliantDeviceForAdmin` is in force — `auto` is on in
+// product — so every console sign-in this helper makes proves one: the DPoP
+// key it signs the token request with is registered as the account's device
+// (`jwk`, by value — an administrator's act, in both modes) and marked
+// compliant, and the token endpoint recognises the device by that key's
+// thumbprint (`common/device_recognition.ts`). The realm's answer says
+// whether it is in force; where it is not (development's default), nothing
+// is registered, so a development stack's accounts hold no device and their
+// risk scoring is what it was. A device this helper left in an earlier run
+// is removed first, so the per-person cap is never reached.
+async function ensureCompliantDevice(base, user, key, say) {
+  log.debug("Entering ensureCompliantDevice().");
+  const name = String(user);
+  if (registeredDevices[name]) {
+    log.debug("Leaving ensureCompliantDevice(). Registered already.");
+    return;
+  }
+  async function apiCall(method, path, payload) {
+    log.debug("Entering apiCall().");
+    const r = await fetch(base + "/admin-api" + path, {
+      method: method,
+      headers: payload ? { "Content-Type": "application/json" } : {},
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+    const raw = await r.text();
+    let body = {};
+    try {
+      body = JSON.parse(raw);
+    } catch (e) {
+      log.debug("Caught in apiCall(): " + ((e && e.message) || e));
+      // Not JSON: kept raw for the message.
+      body = { raw: raw };
+    }
+    log.debug("Leaving apiCall().");
+    return { status: r.status, body: body };
+  }
+  const registration = await apiCall("GET", "/device-registration");
+  const state = registration.body && registration.body.decisions &&
+    registration.body.decisions.adminDevice;
+  if (!state || !state.inForce) {
+    say("[console] the realm requires no device of its administrators.");
+    log.debug("Leaving ensureCompliantDevice(). Not in force.");
+    return;
+  }
+  const held = await apiCall("GET", "/devices?owner=" +
+                             encodeURIComponent(name) + "&per=100");
+  const mine = ((held.body && held.body.devices) || [])
+    .filter(function (d) {
+      return d && d.label === DEVICE_LABEL;
+    });
+  for (const old of mine) {
+    await apiCall("POST", "/devices/remove", { id: old.id });
+  }
+  const created = await apiCall("POST", "/devices/create", {
+    owner: name, label: DEVICE_LABEL, keyKind: "jwk",
+    key: key.publicJwk });
+  assert.ok(created.status === 200 && created.body && created.body.ok &&
+            created.body.device,
+    "registering " + name + "'s console device through POST " +
+    "/admin-api/devices/create answered " + created.status + " " +
+    JSON.stringify(created.body).slice(0, 300));
+  const marked = await apiCall("POST", "/devices/set-compliance", {
+    id: created.body.device.id, status: "compliant",
+    reason: "console_signin.js: the device management's report" });
+  assert.ok(marked.status === 200 && marked.body && marked.body.ok,
+    "marking " + name + "'s console device compliant through POST " +
+    "/admin-api/devices/set-compliance answered " + marked.status + " " +
+    JSON.stringify(marked.body).slice(0, 300));
+  registeredDevices[name] = created.body.device.id;
+  say("[console] " + name + " holds compliant device " +
+      created.body.device.id + ", proven by the sign-in's DPoP key.");
+  log.debug("Leaving ensureCompliantDevice(). Registered.");
+}
+
 async function signInToTheConsole(base, user, log2, options) {
   log.debug("Entering signInToTheConsole().");
   const say = (log2 && log2.info) ? log2.info.bind(log2) : function () {};
   const opts = options || {};
   const cookies = jar();
   const crypto = require("crypto");
-  const key = dpopKey();
+  // ONE KEY PER ACCOUNT PER PROCESS (#2179), as the passwords are: it is the
+  // key registered as the account's device below, so a job signing the same
+  // account in twice proves the same device rather than registering another.
+  const key = dpopKeyFor(user);
 
   function fromLocation(location) {
     return new URL(String(location || ""), base).toString();
@@ -388,6 +499,18 @@ async function signInToTheConsole(base, user, log2, options) {
     say("[console] " + user + " holds Admin " + roles.join(" and ") + ".");
   }
 
+  // A COMPLIANT REGISTERED DEVICE (#2179), where the realm requires one of
+  // its administrators — product's default. Done the way a managed
+  // deployment does it: the device is registered to the person, and the
+  // device management (here this process's management credential, a
+  // program, which the rule never asks) marks it compliant.
+  // `options.noDevice` signs in with NO registered device whatever the
+  // realm requires — what sts_admin_device_requirement.js asks to see the
+  // unarmed admission and the armed refusal.
+  if (!opts.noDevice) {
+    await ensureCompliantDevice(base, user, key, say);
+  }
+
   // THE SHELL FIRST, as a browser opens the console: serving it registers
   // this realm's `/admin/callback` on the seeded console client
   // (`oidcRp.ensureConsoleCallback()`), which the authorization request
@@ -399,96 +522,113 @@ async function signInToTheConsole(base, user, log2, options) {
     "GET " + base + "/admin should answer the console's shell; it answered " +
     shell.status);
 
-  // THE AUTHORIZATION REQUEST, as the console's page sends it.
-  const verifier = b64u(crypto.randomBytes(32));
-  const state = b64u(crypto.randomBytes(16));
   const redirectUri = base + "/admin/callback";
   const resource = base + "/admin-api";
-  const authorize = base + "/oauth2/authorize?" + new URLSearchParams({
-    response_type: "code", client_id: "sts-admin-console",
-    redirect_uri: redirectUri,
-    // admin:security since #645, as the console's runtime asks.
-    scope: "openid admin:read admin:write admin:security admin:console",
-    state: state, code_challenge: b64u(crypto.createHash("sha256")
-      .update(verifier).digest()),
-    code_challenge_method: "S256", resource: resource,
-    // OpenID Connect's nonce, derived from the verifier as the runtime
-    // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
-    nonce: crypto.createHash("sha256").update("nonce:" + verifier)
-      .digest("base64url") }).toString();
-  const toScreen = await fetchKeeping(authorize);
-  const where = toScreen.headers.get("location") || "";
-  const authn = (where.match(/[?&#]authn=([^&]+)/) || [])[1];
-  assert.ok(authn,
-    "the console's authorization request should send a browser with no " +
-    "sign-on session to the sign-in screen carrying the id of the request " +
-    "waiting there; it answered " + toScreen.status + " to \"" + where +
-    "\". The console signs in as the seeded public client " +
-    "sts-admin-console, with PKCE.");
-
-  // THE SIGN-IN SCREEN, OVER `/authn-api` (#571), through the one helper:
-  // the shell, the view and the act, with this walk's cookies — and an
-  // administrator's OFFERED second factor (#246) ignored there, as rcbj
-  // asked ("update tests to just click ignore for the time being").
-  const signedIn = await authnSignin.signIn(base, fromLocation(where),
-    { action: "login", username: user, password: password },
-    { cookie: cookies.header() });
-  cookies.keep(signedIn);
-  if (signedIn.ignored) {
-    say("[console] " + user + " was offered a second factor and ignored it.");
-  }
-  assert.ok(signedIn.next === "redirect" && (cookies.get("sts_session") || cookies.get("__Host-sts_session")),
-    "signing in at /authn/login should set the sign-on session cookie and " +
-    "answer where to go; it answered " + signedIn.status + " " +
-    signedIn.next + " " + JSON.stringify(signedIn.errors));
-
-  // Back through the authorization endpoint — which now has a session —
-  // until it answers the callback with a code. Bounded, so a loop fails as
-  // a loop; the callback is the console's page and is not fetched.
-  let at = null;
-  let location = signedIn.location;
-  for (let i = 0; i < 5 && !/\/admin\/callback\?/.test(location) &&
-       (!at || at.status === 302 || at.status === 303); i++) {
-    at = await fetchKeeping(fromLocation(location));
-    location = at.headers.get("location") || "";
-  }
-  const back = new URL(fromLocation(location));
-  const code = back.searchParams.get("code");
-  assert.ok(/\/admin\/callback$/.test(back.pathname) && code &&
-            back.searchParams.get("state") === state,
-    "the authorization endpoint should answer the console's callback with " +
-    "a code and the state it was sent; it answered " +
-    (at ? at.status : signedIn.status) + " to \"" +
-    location + "\"");
-
-  // THE TOKEN REQUEST, DPoP-bound, retried once with a nonce.
   const tokenUrl = base + "/oauth2/token";
-  let tokenAnswer = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const r = await fetch(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded",
-                 dpop: key.proof("POST", tokenUrl, "") },
-      body: new URLSearchParams({
-        grant_type: "authorization_code", code: code,
-        redirect_uri: redirectUri, client_id: "sts-admin-console",
-        code_verifier: verifier, resource: resource }).toString()
-    });
-    key.keepNonce(r);
-    tokenAnswer = { status: r.status, json: await r.json().catch(function () {
-      return {};
-    }) };
-    if (!(r.status === 400 && tokenAnswer.json.error === "use_dpop_nonce")) {
-      break;
+
+  // THE CODE FLOW, from the authorization request to the token. `fresh`
+  // (#2161) is the re-sign-in a family of /admin-api operations asks for
+  // with a 401 insufficient_user_authentication on a sign-in older than
+  // account.recentAuthMinutes: the screen is asked again with prompt=login,
+  // with the same password, and the new token's auth_time is now.
+  async function codeFlow(fresh) {
+    log.debug("Entering codeFlow().");
+    // THE AUTHORIZATION REQUEST, as the console's page sends it.
+    const verifier = b64u(crypto.randomBytes(32));
+    const state = b64u(crypto.randomBytes(16));
+    const authorize = base + "/oauth2/authorize?" + new URLSearchParams({
+      response_type: "code", client_id: "sts-admin-console",
+      redirect_uri: redirectUri,
+      // admin:security since #645, as the console's runtime asks.
+      scope: "openid admin:read admin:write admin:security admin:console",
+      state: state, code_challenge: b64u(crypto.createHash("sha256")
+        .update(verifier).digest()),
+      code_challenge_method: "S256", resource: resource,
+      // A FRESH SIGN-IN (#2161) asks the screen again whatever the session,
+      // as the console's popup does after insufficient_user_authentication.
+      prompt: fresh ? "login" : undefined,
+      // OpenID Connect's nonce, derived from the verifier as the runtime
+      // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
+      nonce: crypto.createHash("sha256").update("nonce:" + verifier)
+        .digest("base64url") }).toString().replace(/&prompt=undefined/, "");
+    const toScreen = await fetchKeeping(authorize);
+    const where = toScreen.headers.get("location") || "";
+    const authn = (where.match(/[?&#]authn=([^&]+)/) || [])[1];
+    assert.ok(authn,
+      "the console's authorization request should send a browser with no " +
+      "sign-on session to the sign-in screen carrying the id of the request " +
+      "waiting there; it answered " + toScreen.status + " to \"" + where +
+      "\". The console signs in as the seeded public client " +
+      "sts-admin-console, with PKCE.");
+
+    // THE SIGN-IN SCREEN, OVER `/authn-api` (#571), through the one helper:
+    // the shell, the view and the act, with this walk's cookies — and an
+    // administrator's OFFERED second factor (#246) ignored there, as rcbj
+    // asked ("update tests to just click ignore for the time being").
+    const signedIn = await authnSignin.signIn(base, fromLocation(where),
+      { action: "login", username: user, password: password },
+      { cookie: cookies.header() });
+    cookies.keep(signedIn);
+    if (signedIn.ignored) {
+      say("[console] " + user + " was offered a second factor and ignored it.");
     }
+    assert.ok(signedIn.next === "redirect" &&
+              (cookies.get("sts_session") ||
+               cookies.get("__Host-sts_session")),
+      "signing in at /authn/login should set the sign-on session cookie and " +
+      "answer where to go; it answered " + signedIn.status + " " +
+      signedIn.next + " " + JSON.stringify(signedIn.errors));
+
+    // Back through the authorization endpoint — which now has a session —
+    // until it answers the callback with a code. Bounded, so a loop fails as
+    // a loop; the callback is the console's page and is not fetched.
+    let at = null;
+    let location = signedIn.location;
+    for (let i = 0; i < 5 && !/\/admin\/callback\?/.test(location) &&
+         (!at || at.status === 302 || at.status === 303); i++) {
+      at = await fetchKeeping(fromLocation(location));
+      location = at.headers.get("location") || "";
+    }
+    const back = new URL(fromLocation(location));
+    const code = back.searchParams.get("code");
+    assert.ok(/\/admin\/callback$/.test(back.pathname) && code &&
+              back.searchParams.get("state") === state,
+      "the authorization endpoint should answer the console's callback with " +
+      "a code and the state it was sent; it answered " +
+      (at ? at.status : signedIn.status) + " to \"" +
+      location + "\"");
+
+    // THE TOKEN REQUEST, DPoP-bound, retried once with a nonce.
+    let tokenAnswer = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded",
+                   dpop: key.proof("POST", tokenUrl, "") },
+        body: new URLSearchParams({
+          grant_type: "authorization_code", code: code,
+          redirect_uri: redirectUri, client_id: "sts-admin-console",
+          code_verifier: verifier, resource: resource }).toString()
+      });
+      key.keepNonce(r);
+      tokenAnswer = { status: r.status, json: await r.json().catch(function () {
+        return {};
+      }) };
+      if (!(r.status === 400 && tokenAnswer.json.error === "use_dpop_nonce")) {
+        break;
+      }
+    }
+    assert.ok(tokenAnswer.status === 200 && tokenAnswer.json.access_token &&
+              /^dpop$/i.test(String(tokenAnswer.json.token_type || "")),
+      "the console's code should redeem for a DPoP-bound access token; the " +
+      "token endpoint answered " + tokenAnswer.status + " " +
+      JSON.stringify(tokenAnswer.json).slice(0, 300));
+    log.debug("Leaving codeFlow().");
+    return tokenAnswer.json;
   }
-  assert.ok(tokenAnswer.status === 200 && tokenAnswer.json.access_token &&
-            /^dpop$/i.test(String(tokenAnswer.json.token_type || "")),
-    "the console's code should redeem for a DPoP-bound access token; the " +
-    "token endpoint answered " + tokenAnswer.status + " " +
-    JSON.stringify(tokenAnswer.json).slice(0, 300));
-  let token = tokenAnswer.json.access_token;
-  let refreshToken = tokenAnswer.json.refresh_token || "";
+  const first = await codeFlow(false);
+  let token = first.access_token;
+  let refreshToken = first.refresh_token || "";
 
   // THE REFRESH GRANT WITH THE SAME KEY, as the console renews: the refresh
   // token rotated, the new access token taking the old one's place.
@@ -521,12 +661,18 @@ async function signInToTheConsole(base, user, log2, options) {
     return answer;
   }
 
+  // The scopes a second authorization was asked for and not issued (#2236).
+  const notIssued = {};
+
   // ONE REQUEST TO THE API AS THE CONSOLE, retried once with a nonce.
   async function api(method, path, body) {
     log.debug("Entering api().");
     const url = /^https?:/.test(path) ? path : base + path;
     let answer = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // A step (a renewal, a sign-in again, a second authorization) is made
+    // once per request; the nonce retry may follow it.
+    let stepped = false;
+    for (let attempt = 0; attempt < 3; attempt++) {
       const headers = { authorization: "DPoP " + token,
                         dpop: key.proof(method, url, token),
                         accept: "application/json" };
@@ -552,11 +698,52 @@ async function signInToTheConsole(base, user, log2, options) {
       // AN EXPIRED TOKEN IS RENEWED AND THE REQUEST SENT AGAIN, as the
       // console does: a long job outlives the access token's lifetime.
       if (r.status === 401 && /invalid_token/.test(challenge) &&
-          refreshToken && attempt === 0) {
+          refreshToken && !stepped) {
+        stepped = true;
         const renewed = await refresh();
         if (renewed.status === 200) {
           continue;
         }
+      }
+      // A SIGN-IN TOO OLD FOR THIS OPERATION (#1538, #2161) is made again,
+      // as the console's popup makes it, and the request sent again.
+      if (r.status === 401 &&
+          /insufficient_user_authentication/.test(challenge) &&
+          !stepped) {
+        stepped = true;
+        say("[console] " + user + " signs in again: " + method + " " +
+            path + " asks for a recent sign-in.");
+        const again = await codeFlow(true);
+        token = again.access_token;
+        refreshToken = again.refresh_token || refreshToken;
+        continue;
+      }
+      // A SCOPE THIS TOKEN DOES NOT CARRY (#2168, #2236): RFC 6750's
+      // `insufficient_scope`, which the console answers with a second
+      // authorization for that scope. Here the authorization is asked again
+      // for the scopes this helper always asks, which a person holding the
+      // role is now issued, and the request sent again. A 403 without the
+      // challenge is a refusal, and is the caller's to read; so is one for a
+      // scope a second authorization was already not issued (a reader asking
+      // a write), which is asked no more in this process: a job sending a
+      // reader's writes on purpose is not signed in again for each.
+      const wanted = (challenge.match(/scope="([^"]*)"/) || [])[1] || "";
+      if (r.status === 403 && /insufficient_scope/.test(challenge) &&
+          !stepped && wanted && !notIssued[wanted]) {
+        stepped = true;
+        say("[console] " + user + " authorizes again: " + method + " " +
+            path + " asks for " + wanted + ", which the token does not " +
+            "carry.");
+        const again = await codeFlow(true);
+        token = again.access_token;
+        refreshToken = again.refresh_token || refreshToken;
+        const granted = String(again.scope || "").split(/\s+/);
+        if (wanted.split(/\s+/).some(function (one) {
+          return granted.indexOf(one) < 0;
+        })) {
+          notIssued[wanted] = true;
+        }
+        continue;
       }
       if (!(r.status === 401 && /use_dpop_nonce/.test(challenge))) {
         break;
@@ -702,10 +889,10 @@ async function signInToTheConsole(base, user, log2, options) {
         }));
         const json = Object.assign({}, answer.json);
         answers.forEach(function (one, index) {
-          assert.ok(one.status === 200 && one.json,
+          assert.ok(table.composeKept(known, members[index].member, one),
                     members[index].operation + " answered " +
                     one.status + " composing " + path);
-          json[members[index].member] = one.json;
+          json[members[index].member] = one.json != null ? one.json : one.body;
         });
         return Object.assign({}, answer, { json: json });
       }
@@ -736,11 +923,23 @@ async function signInToTheConsole(base, user, log2, options) {
     draw: async function (path, query) {
       const answer = await this.page(path, query);
       const table = consoleBundle();
-      // DRAWN FOR WHAT THIS TOKEN MAY DO, as the console draws for its
-      // reader: `GET /admin-api/me`'s `write`, asked once.
+      // DRAWN FOR WHAT THE READER MAY DO, NOT WHAT THIS TOKEN CARRIES, as
+      // the console's runtime draws (`drawView()`, #2168): `GET
+      // /admin-api/me`'s `write`, or ADMIN_WRITE among the roles it says the
+      // person `holds` — a write is then one second authorization away, which
+      // act() makes. Asked once. Until #2236 it was `write` alone: where the
+      // token was issued before the role it was asked for had reached the
+      // node that issued it (a dispatching service), the person's page was
+      // drawn without the forms the console draws for them.
       if (this.mayWrite === undefined) {
         const me = await api("GET", "/admin-api/me");
-        this.mayWrite = !!(me.json && me.json.write);
+        const holds = (me.json && Array.isArray(me.json.holds))
+          ? me.json.holds : [];
+        this.mayWrite = !!(me.json && me.json.write) ||
+          holds.indexOf("ADMIN_WRITE") >= 0;
+        // #645: the Security Administrator's role, as the runtime asks it.
+        this.maySecure = !!(me.json && me.json.security) ||
+          holds.indexOf("SECURITY_ADMIN") >= 0;
       }
       // AND IN THE READER'S LANGUAGE, as the console's runtime draws it
       // (#539): a translator built by the bundle from the shell's `locale`
@@ -782,7 +981,8 @@ async function signInToTheConsole(base, user, log2, options) {
       const html = answer.status === 200 && answer.json
         ? table.render(path, drawnFrom,
                        table.kit.context(asked, this.mayWrite,
-                                         this.translator || undefined)) ||
+                                         this.translator || undefined,
+                                         this.maySecure)) ||
           "" : "";
       return { status: answer.status, json: answer.json, html: html };
     },
@@ -824,6 +1024,15 @@ async function signInToTheConsole(base, user, log2, options) {
   };
 }
 
+// The id of the compliant device this process registered for an account
+// (#2179), or '' where it registered none.
+function deviceOf(user) {
+  log.debug("Entering deviceOf().");
+  log.debug("Leaving deviceOf().");
+  return String(registeredDevices[String(user)] || "");
+}
+
 module.exports = { signInToTheConsole: signInToTheConsole, jar: jar,
                    ensureConsoleAccount: ensureConsoleAccount,
-                   consolePasswordFor: consolePasswordFor };
+                   consolePasswordFor: consolePasswordFor,
+                   deviceOf: deviceOf };

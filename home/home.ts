@@ -29,7 +29,7 @@
 // hand-written list of highlights here would be a second, unchecked copy of it
 // — wrong within a month, on the page most likely to be read first and least
 // likely to be re-read. The documentation site makes the same argument in
-// `docs/v1.1.0/endpoints.md` and this page holds to it: LINK to the thing that
+// `docs/v1.2.0/endpoints.md` and this page holds to it: LINK to the thing that
 // generates the list.
 //
 // ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ const REPO_URL = 'https://github.com/rcbj/iya-sts';
 
 const ISSUES_URL = REPO_URL + '/issues';
 
-const DOCS_URL = 'https://rcbj.github.io/iya-sts/v1.1.0/';
+const DOCS_URL = 'https://rcbj.github.io/iya-sts/v1.2.0/';
 
 // Relative on purpose. This service is reached as localhost, as `sts` on a
 // compose network and through a published port, and `baseUrlOf()` exists
@@ -609,12 +609,15 @@ class Home {
     const { mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Home.frontView().");
+    // Empty where the build may not be shown (#2142): the front page is
+    // anybody's.
+    const shown = mode.publishesBuildDetail();
     const out = {
       name: 'IYA STS',
       // The number is what a bug report quotes; `build` is its provenance
       // (the instant, the commit, stamped or computed), the tooltip.
-      version: String(VERSION),
-      build: BUILD_INFO,
+      version: shown ? String(VERSION) : '',
+      build: shown ? BUILD_INFO : '',
       mode: {
         verifiesCredentials: !!mode.verifiesCredentials(),
         // True in both modes since 2026-09-06; carried rather than assumed,
@@ -722,6 +725,8 @@ class Home {
     const { realms } = this.deps;
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Home.shellDocument().");
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from `browser`.
+    const said = ShellDocument.translator();
     const html = ShellDocument.document({
       title: 'IYA STS',
       attributes: [['data-sts-prefix', realms.currentPrefix()],
@@ -735,11 +740,16 @@ class Home {
       // SCRIPT IS REQUIRED (#569), so a browser without it is told what
       // this is and where the documentation is — which is the one link
       // that works without this service drawing anything.
-      noscript: '<div class="warn">This front page is a script that runs ' +
+      // IN THE REQUEST'S LANGUAGE SINCE #2220, from `browser`.
+      noscript: '<div class="warn">' + ShellDocument.said(said,
+        'browser.noscript.home', 'This front page is a script that runs ' +
         'in your browser and draws itself from <code>' + API_BASE +
-        '</code>; with scripts blocked there is nothing it can show. The ' +
-        'documentation is at <a href="' + xmlEscape(DOCS_URL) + '">' +
-        xmlEscape(DOCS_URL) + '</a>.</div>',
+        '</code>; with scripts blocked there is nothing it can show.',
+        { api: API_BASE }) + ' ' + ShellDocument.said(said,
+        'browser.noscript.home.docs', 'The documentation is at') +
+        ' <a href="' + xmlEscape(DOCS_URL) + '">' + xmlEscape(DOCS_URL) +
+        '</a>.</div>',
+      translator: said,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     log.debug("Leaving Home.shellDocument().");

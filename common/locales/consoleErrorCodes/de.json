@@ -32,5 +32,5 @@
   "th.whatFailed": "Was fehlgeschlagen ist",
   "th.clientSees": "Client sieht",
   "codes.none": "Nichts passt.",
-  "note.table": "Die Tabelle ist <code>common/error_codes.js</code>, und diese Seite steuert sie nicht: ein Code wird nie neu nummeriert oder wiederverwendet, weil er in Alarmregeln und gespeicherten Suchen landet, und eine Bedingung, die zu existieren aufhört, behält ihre als stillgelegt markierte Zeile. Dieselbe Tabelle wird als <code>docs/v1.1.0/error-codes.md</code> veröffentlicht, erzeugt aus der Quelle, und diese Liste liegt unter <code>GET /admin-api/error-codes</code> mit denselben Parametern. Die Seitenaufteilung erfolgt über <code>?page=</code> und <code>?per=</code> (höchstens {max} Zeilen je Seite)."
+  "note.table": "Die Tabelle ist <code>common/error_codes.js</code>, und diese Seite steuert sie nicht: ein Code wird nie neu nummeriert oder wiederverwendet, weil er in Alarmregeln und gespeicherten Suchen landet, und eine Bedingung, die zu existieren aufhört, behält ihre als stillgelegt markierte Zeile. Dieselbe Tabelle wird als <code>docs/v1.2.0/error-codes.md</code> veröffentlicht, erzeugt aus der Quelle, und diese Liste liegt unter <code>GET /admin-api/error-codes</code> mit denselben Parametern. Die Seitenaufteilung erfolgt über <code>?page=</code> und <code>?per=</code> (höchstens {max} Zeilen je Seite)."
 }

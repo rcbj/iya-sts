@@ -8,8 +8,14 @@
   "resource": "Auf",
   "application": "Anwendung",
   "requester": "Gefragt von",
+  "entitlement": "Angeforderter Zugriff",
+  "actor": "Gehandelt durch",
   "waits": "Sie wartet bis {when}.",
   "approve": "Genehmigen",
   "deny": "Ablehnen",
-  "done": "{status, select, approved {Die Zugriffsanfrage ist genehmigt. Die Anwendung kann jetzt erneut fragen.} denied {Die Zugriffsanfrage ist abgelehnt.} other {Die Zugriffsanfrage ist {status}.}}"
+  "done": "{status, select, approved {Die Zugriffsanfrage ist genehmigt. Die Anwendung kann jetzt erneut fragen.} denied {Die Zugriffsanfrage ist abgelehnt.} other {Die Zugriffsanfrage ist {status}.}}",
+  "yours": "Genehmigungen, die Sie erteilt haben und die noch gelten. Eine zu widerrufen bedeutet, dass eine spätere Auswertung, die sie mitführt, nicht genehmigt ist.",
+  "until": "Diese Genehmigung gilt bis {when}.",
+  "revoke": "Widerrufen",
+  "revoked": "Die Genehmigung ist widerrufen. Eine spätere Auswertung, die sie mitführt, ist nicht genehmigt."
 }

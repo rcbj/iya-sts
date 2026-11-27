@@ -145,7 +145,10 @@ async function certificate(o) {
   cert.serialNumber = new asn1js.Integer({
     valueHex: new Uint8Array(Buffer.concat([Buffer.from([1]),
                                             nodeCrypto.randomBytes(8)])) });
-  cert.subject = dn(o.subject);
+  // A subject of several RDNs comes ready made (#2081): `dn()` puts every
+  // pair in ONE RDN, a multi-valued one, which no PIV card carries.
+  cert.subject = o.subject instanceof pkijs.RelativeDistinguishedNames
+    ? o.subject : dn(o.subject);
   cert.issuer = o.issuer ? o.issuer.pkijs.subject : cert.subject;
   cert.notBefore.value = new Date(Date.now() - 3600 * 1000);
   cert.notAfter.value = new Date(Date.now() + (o.expired ? -1800 * 1000
@@ -282,11 +285,17 @@ function authenticatorData(o) {
   count.writeUInt32BE(Number(o.signCount || 0), 0);
   const idLength = Buffer.alloc(2);
   idLength.writeUInt16BE(o.credentialId.length, 0);
+  // AUTHENTICATOR EXTENSION OUTPUTS (#1955 P7): a Map given as
+  // `extensions` sets the ED flag and follows the credential public key, as
+  // CTAP 2.1's credProtect and minPinLength outputs do.
+  const flags = (o.flags === undefined ? 0x45 : o.flags) |
+                (o.extensions ? 0x80 : 0);
   log.debug("Leaving authenticatorData().");
   return Buffer.concat([sha256(Buffer.from(o.rpId, 'utf8')),
-                        Buffer.from([o.flags === undefined ? 0x45 : o.flags]),
+                        Buffer.from([flags]),
                         count, o.aaguid || Buffer.alloc(16), idLength,
-                        o.credentialId, cbor(o.cose)]);
+                        o.credentialId, cbor(o.cose)]
+                         .concat(o.extensions ? [cbor(o.extensions)] : []));
 }
 
 // ----- the formats -----------------------------------------------------------
@@ -575,7 +584,8 @@ async function ceremony(o) {
                                            : opts.aaguid;
   const authData = authenticatorData({ rpId: rpId, credentialId: cred.id,
                                        cose: cred.cose, aaguid: aaguid,
-                                       flags: opts.flags });
+                                       flags: opts.flags,
+                                       extensions: opts.extensions });
   const clientDataJSON = Buffer.from(JSON.stringify({
     type: 'webauthn.create', challenge: challenge, origin: origin,
     crossOrigin: false }));
@@ -604,6 +614,8 @@ module.exports = {
   root: root,
   keyPair: keyPair,
   certificate: certificate,
+  // An extension from its DER, for a kit that adds its own (#2012).
+  extension: extension,
   credential: credential,
   ceremony: ceremony,
   packed: packed,

@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-piv-attest
+#
+# ---------------------------------------------------------------------------
+# A PIV KEY ATTESTATION FROM THE LAB'S PIV CARD (#2056), as a person with a
+# YubiKey would make one, under an attestation root made here.
+#
+#   lab-piv-attest <dir> [slot[:alg][,slot[:alg]...]] [f9-subject]
+#
+# <alg> is yubico-piv-tool's (ECCP256, the default, ECCP384, RSA2048).
+#
+#   1. a root CA (P-256) made now, standing for the vendor's PIV root;
+#   2. the card's attestation key GENERATED ON THE CARD in slot f9, and an
+#      attestation CA certificate over it, subject <f9-subject>, issued by
+#      that root and written back to slot f9 — what a vendor does at the
+#      factory. **PivApplet refuses to IMPORT a key into f9** (its
+#      IMPORT ASYMMETRIC accepts 9a-9e and the retired slots only, and
+#      answers 6A86 for f9), so the key is generated there instead, which
+#      is also how a real card's is made. The default subject is a
+#      YubiKey's, "/CN=Yubico PIV Attestation". The yubikey card
+#      (bin/lab-piv-card) names the f9 certificate's subject as the issuer
+#      of what it attests; STOCK PivApplet always writes the fixed issuer
+#      "CN=PIVApplet Attestation", so its attestation chains by name only
+#      under an f9 certificate of exactly that subject (give it as
+#      <f9-subject>), and is refused without it (STS-PIV-0006);
+#   3. a key GENERATED ON THE CARD in each <slot> (default 9a), P-256;
+#   4. `yubico-piv-tool -a attest -s <slot>` for each, and the f9
+#      certificate read back off the card.
+#
+# Writes into <dir>: root.pem, f9.pem (as read off the card), and for each
+# slot slot-<s>.pub and attestation-<s>.pem (the first also as slot.pub and
+# attestation.pem), and a summary on stdout. The root's key is deleted when
+# the script ends; the card keeps its own.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+dir="${1:?a directory}"
+slot="${2:-9a}"
+f9subject="${3:-/CN=Yubico PIV Attestation}"
+reader='Virtual PCD 00 01'
+mkdir -p "${dir}"
+cd "${dir}"
+keys="$(mktemp -d)"
+trap 'rm -rf "${keys}"' EXIT
+
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+  -out "${keys}/root.key"
+openssl req -x509 -new -key "${keys}/root.key" -sha256 -days 30 \
+  -subj "/CN=Client Lab PIV Attestation Root $(openssl rand -hex 4)" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" \
+  -addext "subjectKeyIdentifier=hash" -out root.pem
+
+yubico-piv-tool -r "${reader}" -a generate -s f9 -A ECCP256 -o f9.pub
+# A request needs a private key to sign it, and the card will not sign one
+# for f9; a throwaway key signs it and -force_pubkey puts f9's key in the
+# certificate, which is what the root is certifying.
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+  -out "${keys}/throwaway.key"
+openssl req -new -key "${keys}/throwaway.key" -subj "${f9subject}" \
+  -out "${keys}/f9.csr"
+cat > "${keys}/f9.ext" <<EXT
+basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid
+EXT
+openssl x509 -req -in "${keys}/f9.csr" -force_pubkey f9.pub \
+  -CA root.pem -CAkey "${keys}/root.key" -CAcreateserial -sha256 -days 30 \
+  -extfile "${keys}/f9.ext" -out "${keys}/f9-issued.pem"
+yubico-piv-tool -r "${reader}" -a import-certificate -s f9 \
+  -i "${keys}/f9-issued.pem"
+# Every slot asked (a comma list), each key generated on the card and
+# attested: slot-<s>.pub and attestation-<s>.pem; the first slot's also as
+# slot.pub and attestation.pem.
+first=""
+slots=""
+for spec in ${slot//,/ }; do
+  s="${spec%%:*}"
+  alg=ECCP256
+  if [ "${spec}" != "${s}" ]; then
+    alg="${spec#*:}"
+  fi
+  slots="${slots} ${s}"
+  yubico-piv-tool -r "${reader}" -a generate -s "${s}" -A "${alg}" \
+    -o "slot-${s}.pub"
+  yubico-piv-tool -r "${reader}" -a attest -s "${s}" \
+    -o "attestation-${s}.pem"
+  if [ -z "${first}" ]; then
+    first="${s}"
+    cp "slot-${s}.pub" slot.pub
+    cp "attestation-${s}.pem" attestation.pem
+  fi
+done
+yubico-piv-tool -r "${reader}" -a read-certificate -s f9 -o f9.pem
+
+echo "=== the attestation certificate (slot ${first})"
+openssl x509 -in attestation.pem -noout -text
+echo "=== the f9 certificate, as read off the card"
+openssl x509 -in f9.pem -noout -subject -issuer
+echo "=== the chain, as openssl sees it"
+for s in ${slots}; do
+  openssl verify -CAfile root.pem -untrusted f9.pem "attestation-${s}.pem" \
+    || true
+done

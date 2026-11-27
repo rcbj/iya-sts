@@ -51,6 +51,7 @@ const log = bunyan.createLogger({ name: "schemathesis_kit",
 // The remote XACML PEP's half of the plan (rcbj, 2026-11-16): its surfaces,
 // auth, checks and provisioning. It requires nothing of this file.
 const pep = require("./schemathesis_pep.js");
+const ownPassword = require("./own_password");
 
 // ---------------------------------------------------------------------------
 // THE THREE REALM PROFILES. Each is a realm the job creates on the dedicated
@@ -1059,13 +1060,20 @@ async function provision(serviceBase, profile, say) {
     throw new Error("could not create the fuzz person in " + profile.realm +
       ": " + person.status + " " + JSON.stringify(person.json).slice(0, 300));
   }
-  const password = await adminCall(serviceBase, realmPrefix, "POST",
-    "/admin-api/users/set-password",
-    { user: FUZZ_USER, password: FUZZ_PASSWORD });
-  if (password.status !== 200) {
+  // THE PERSON'S OWN PASSWORD (#2160): a typed one is temporary in
+  // product, so `own_password.js` sets a temporary one and the fuzz person
+  // chooses FUZZ_PASSWORD at the change step.
+  const setFuzzPassword = function (who, value) {
+    return adminCall(serviceBase, realmPrefix, "POST",
+      "/admin-api/users/set-password", { user: who, password: value });
+  };
+  try {
+    await ownPassword.ownPassword(serviceBase + realmPrefix, FUZZ_USER,
+                                  FUZZ_PASSWORD, setFuzzPassword);
+  } catch (e) {
+    log.debug("Caught in provision(): " + ((e && e.message) || e));
     throw new Error("could not set the fuzz person's password in " +
-      profile.realm + ": " + password.status + " " +
-      JSON.stringify(password.json).slice(0, 300));
+      profile.realm + ": " + ((e && e.message) || e));
   }
   for (let i = 0; i < FUZZ_CONSOLE_ROLES.length; i++) {
     const granted = await adminCall(serviceBase, realmPrefix, "POST",
@@ -1195,14 +1203,18 @@ async function reassertRealm(serviceBase, provisioned, say) {
   // NOT weakened: product baseline is what is under test, and this is a
   // random policy-compliant value.
   const nextPassword = freshFuzzPassword();
-  const password = await adminCall(serviceBase, prefix, "POST",
-    "/admin-api/users/set-password",
-    { user: FUZZ_USER, password: nextPassword });
-  if (password.status !== 200) {
-    log.debug("Leaving reassertRealm(). set-password " + password.status);
+  // The person's own, as provision() makes it (#2160).
+  try {
+    await ownPassword.ownPassword(serviceBase + prefix, FUZZ_USER,
+      nextPassword, function (who, value) {
+        return adminCall(serviceBase, prefix, "POST",
+          "/admin-api/users/set-password", { user: who, password: value });
+      });
+  } catch (e) {
+    log.debug("Caught in reassertRealm(): " + ((e && e.message) || e));
+    log.debug("Leaving reassertRealm(). set-password failed.");
     return { ok: false, why: "users/set-password in " + prefix +
-      " answered " + password.status + " " +
-      JSON.stringify(password.json).slice(0, 200) };
+      " failed: " + String((e && e.message) || e).slice(0, 200) };
   }
   provisioned.password = nextPassword;
   for (let i = 0; i < FUZZ_CONSOLE_ROLES.length; i++) {

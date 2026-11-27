@@ -121,6 +121,9 @@ import cellLocator = require('./cell_locator');
 // libraries; none requires this file.
 import devices = require('./devices');
 import deviceAttestation = require('./device_attestation');
+// YubiKey PIV key attestation and the PIV slot profiles' rules (#1955 P2):
+// a library of libraries, which reaches this module back only lazily.
+import pivAttestation = require('./piv_attestation');
 import deviceRecognition = require('./device_recognition');
 
 /**
@@ -170,7 +173,16 @@ const PROFILE_NEEDS = {
                        'the entry',
   'email': 'a person entry with a mail attribute (the rfc822Name)',
   'smartcard-logon': 'a person entry with userPrincipalName or mail ' +
-                     '(the UPN otherName)'
+                     '(the UPN otherName)',
+  // THE PIV SLOT PROFILES (#1955 P2). piv-auth names the person's Kerberos
+  // principal in an id-pkinit-san and their userPrincipalName where the entry
+  // has one; the two S/MIME slots carry the mail address, as `email` does.
+  'piv-auth': 'a person entry (the id-pkinit-san; the UPN otherName when ' +
+              'it has a userPrincipalName)',
+  'piv-sign': 'a person entry with a mail attribute (the rfc822Name)',
+  'piv-key-management': 'a person entry with a mail attribute (the ' +
+                        'rfc822Name)',
+  'piv-card-auth': 'a person entry'
 };
 
 // Attribute names, canonical spelling. The directory lower-cases a name when it
@@ -529,9 +541,67 @@ class CertEnrollment {
   //                                     (#1061). OPTIONAL: a test's stub may
   //                                     leave it out, and then no outside
   //                                     certificate maps to anybody.
+  //   pivCardHolders(uuid)           -> [{ kind, id, dn }] of the entries
+  //                                     whose stsPivCardUuid holds that card
+  //                                     UUID (#1955 P2, D8). OPTIONAL, as
+  //                                     certificateHolders is.
+  //   certificateBindingHolders(kind, value)
+  //                                  -> [{ kind, id, dn }] of the people a
+  //                                     certificate sign-in binding names
+  //                                     (#2012): `binding` a canonical
+  //                                     stsCertificateBinding value, `upn` a
+  //                                     userPrincipalName, `mail` an address.
+  //                                     OPTIONAL, as certificateHolders is.
   //
   // Validated whole, for `setLogoutReader()`'s reason: half a store is a
   // register that can issue a credential it cannot find again.
+  /**
+   * The entries of the ambient realm whose stsPivCardUuid holds a FIPS 201
+   * card UUID (#1955 P2, D8), through the directory slot; null when the slot
+   * offers no such lookup.
+   *
+   * @param uuid - the card UUID, lower case
+   * @returns the holders, or null
+   */
+  pivCardHolders(uuid) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.pivCardHolders().");
+    const directory = this.directory;
+    if (!directory || typeof directory.pivCardHolders !== 'function') {
+      log.debug("Leaving CertEnrollment.pivCardHolders(). No directory.");
+      return null;
+    }
+    const out = directory.pivCardHolders(String(uuid || '')) || [];
+    log.debug("Leaving CertEnrollment.pivCardHolders(). " + out.length + ".");
+    return out;
+  }
+
+  /**
+   * The people of the ambient realm a certificate sign-in binding names
+   * (#2012), through the directory slot; null when the slot offers no such
+   * lookup.
+   *
+   * @param kind - `binding`, `upn` or `mail`
+   * @param value - the canonical value, lower case
+   * @returns the holders, or null
+   */
+  certificateBindingHolders(kind, value) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.certificateBindingHolders(). " + kind);
+    const directory = this.directory;
+    if (!directory ||
+        typeof directory.certificateBindingHolders !== 'function') {
+      log.debug("Leaving CertEnrollment.certificateBindingHolders(). " +
+                "No directory.");
+      return null;
+    }
+    const out = directory.certificateBindingHolders(String(kind || ''),
+                                                    String(value || '')) || [];
+    log.debug("Leaving CertEnrollment.certificateBindingHolders(). " +
+              out.length + ".");
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   /**
    * Installs the directory slot the enrollment records are read and written
@@ -1769,6 +1839,23 @@ class CertEnrollment {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   }
 
+  /**
+   * Whether an ASN.1 value is a SEQUENCE with nothing in it, the value
+   * ykman gives an extensionRequest that requests nothing (#2290).
+   *
+   * @param value - an asn1js value, or anything
+   * @returns true for an empty SEQUENCE only
+   */
+  emptySequence(value) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.emptySequence().");
+    const empty = !!value && value instanceof asn1js.Sequence &&
+      Array.isArray(value.valueBlock.value) &&
+      value.valueBlock.value.length === 0;
+    log.debug("Leaving CertEnrollment.emptySequence(). " + empty);
+    return empty;
+  }
+
   stringOfAsn1(value) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.stringOfAsn1().");
@@ -1918,8 +2005,18 @@ class CertEnrollment {
             self.stringOfAsn1((attribute.values || [])[0]);
         }
         if (attribute.type === '1.2.840.113549.1.9.14') {
-          const extensions = new pkijs.Extensions({
-            schema: (attribute.values || [])[0] });
+          // AN EMPTY extensionRequest REQUESTS NOTHING (#2290). RFC 5280's
+          // Extensions is SIZE (1..MAX), but ykman's `piv certificates
+          // request` writes the attribute with an empty SEQUENCE, and
+          // OpenSSL reads it without complaint. pkijs throws on it, which
+          // refused the whole request here as unreadable
+          // (STS-ENROLL-0034). A value that is not a SEQUENCE still reaches
+          // pkijs and is still refused.
+          const first = (attribute.values || [])[0];
+          if (self.emptySequence(first)) {
+            return;
+          }
+          const extensions = new pkijs.Extensions({ schema: first });
           (extensions.extensions || []).forEach(function (extension) {
             if (extension.extnID !== '2.5.29.17') {
               return;
@@ -2270,6 +2367,38 @@ class CertEnrollment {
       }
       add('email', resolved.mail);
     }
+    // THE PIV SLOT PROFILES (#1955 P2): a person's only, since a PIV card
+    // is somebody's; the S/MIME two carry the mail as `email` does, and
+    // piv-auth the Kerberos principal (RFC 4556 section 3.2.2's
+    // id-pkinit-san) and the UPN where the entry records one.
+    if (pivAttestation.isPivProfile(profileId) && entry.kind !== 'person') {
+      log.debug("Leaving CertEnrollment.namesFor(). A PIV profile for an " +
+                "application.");
+      return self.refuse('STS-ENROLL-0056', 400, 'A ' + profileId +
+                         ' certificate is a PIV card holder\'s, and the ' +
+                         self.entryLabel(entry) + ' is not a person.');
+    }
+    if ((profileId === 'piv-sign' || profileId === 'piv-key-management') &&
+        !emails.length) {
+      if (!resolved.mail) {
+        log.debug("Leaving CertEnrollment.namesFor(). A PIV S/MIME slot " +
+                  "with no mail.");
+        return self.refuse('STS-ENROLL-0055', 400, 'A ' + profileId +
+                           ' certificate carries the holder\'s email ' +
+                           'address, and the ' + self.entryLabel(entry) +
+                           ' has no mail attribute.');
+      }
+      add('email', resolved.mail);
+    }
+    if (profileId === 'piv-auth') {
+      if (!upns.length && resolved.upn) {
+        add('upn', resolved.upn);
+      }
+      const san = self.pkinitSanFor(entry);
+      if (san) {
+        names.push(san);
+      }
+    }
     if (profileId === 'smartcard-logon' && !upns.length) {
       const upn = resolved.upn || resolved.mail;
       if (!upn) {
@@ -2285,6 +2414,42 @@ class CertEnrollment {
     log.debug("Leaving CertEnrollment.namesFor(). " + names.length + " " +
               "name(s).");
     return { ok: true, names: names };
+  }
+
+  // A person's id-pkinit-san (RFC 4556 section 3.2.2): their Kerberos
+  // principal `<username>@<REALM>` as a KRB5PrincipalName, the encoding the
+  // KDC's own certificate uses (`krb5_pkinit_codec`), both reached lazily: a
+  // Kerberos module is never required at this module's load. Null where the
+  // realm has no Kerberos realm to name, and the certificate goes without
+  // one — the KDC binds an enrolled certificate by its register row first.
+  /**
+   * The id-pkinit-san a person's piv-auth certificate carries.
+   *
+   * @param entry - the person's entry
+   * @returns the otherName general name, or null
+   */
+  pkinitSanFor(entry) {
+    const { log, realms } = this.deps;
+    log.debug("Entering CertEnrollment.pkinitSanFor().");
+    let out = null;
+    try {
+      const realm = String(require('../kerberos/krb5_principals')
+        .kerberosRealmOf(realms.currentId()).kerberosRealm || '');
+      if (realm) {
+        const der = require('../kerberos/krb5_pkinit_codec')
+          .encKrb5PrincipalName(realm, { type: 1, name: [String(entry.id)] });
+        out = { kind: 'otherName', oid: '1.3.6.1.5.2.2',
+                value: Buffer.from(der).toString('base64'),
+                label: 'krb5:' + String(entry.id) + '@' + realm };
+      }
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.pkinitSanFor(): " +
+                ((e && e.message) || e));
+      out = null;
+    }
+    log.debug("Leaving CertEnrollment.pkinitSanFor(). " +
+              (out ? 'One.' : 'None.'));
+    return out;
   }
 
   /**
@@ -2420,6 +2585,25 @@ class CertEnrollment {
     }
     log.debug("Leaving CertEnrollment.sealText().");
     return { ok: true, value: sealed };
+  }
+
+  // AN ESCROWED KEY (#1955 P2, D7), sealed under the key-encryption key in
+  // every mode, under its own data-key class so `/admin/encryption` counts
+  // escrowed keys apart; `null` from the keystore is a refusal, never plain.
+  sealEscrow(plain) {
+    const { log, keystore } = this.deps;
+    log.debug("Entering CertEnrollment.sealEscrow().");
+    let sealed = null;
+    try {
+      sealed = keystore.seal(String(plain), 'piv-escrow-key', 'cell');
+    } catch (e) {
+      log.debug("Caught in CertEnrollment.sealEscrow(): " +
+                ((e && e.message) || e));
+      sealed = null;
+    }
+    log.debug("Leaving CertEnrollment.sealEscrow(). " +
+              (sealed ? 'Sealed.' : 'Not sealed.'));
+    return sealed ? { ok: true, value: sealed } : { ok: false };
   }
 
   openText(value, label?) {
@@ -2588,6 +2772,10 @@ class CertEnrollment {
   //   spec.privateKeyPem only when keySource === 'server'
   //   spec.via          what to call the door on audit rows
   //   spec.replaces     a serial this certificate supersedes (re-enrollment)
+  //   spec.attestations the request's id-aa-attestation values (a device's
+  //                     TPM statement, or a YubiKey PIV statement, #1955)
+  //   spec.pivAttestation the enrolment form's `{ slotPem, attestationPem }`
+  //                     (#1955 P2), in place of a statement in the request
   // ---------------------------------------------------------------------------
   /**
    * Issues a certificate: the identity rule, the profile, the names from the
@@ -2689,10 +2877,43 @@ class CertEnrollment {
         'key generation is turned off for EST in this realm ' +
         '(est.serverKeyGeneration).'));
     }
+    // A PIV-KEY-MANAGEMENT KEY THIS SERVICE GENERATES IS AN ESCROWED ONE
+    // (#1955 P2, D7), and only that: off by default, and refused before
+    // anything is issued where there is no key-encryption key to seal it
+    // under — an escrowed key is never kept in plain, whatever the mode.
+    const escrow = profile.profile === 'piv-key-management' &&
+      asked.keySource === 'server';
+    if (escrow && config.value('piv.keyEscrow') !== true) {
+      log.debug("Leaving CertEnrollment.issue(). Escrow is off.");
+      return auditRefusal(self.refuse('STS-PIV-0021', 501, 'A ' +
+        'piv-key-management key generated by this service is an escrowed ' +
+        'key, and this realm does not escrow them (piv.keyEscrow). ' +
+        'Generate the key on the card and send its request instead.'));
+    }
+    if (escrow && !this.deps.keystore.sealed()) {
+      log.debug("Leaving CertEnrollment.issue(). Nothing to seal under.");
+      return auditRefusal(self.refuse('STS-PIV-0020', 503, 'An escrowed ' +
+        'key is kept sealed under the key-encryption key, and none is held ' +
+        'here, so no key was generated for escrow.'));
+    }
     const names = self.namesFor(resolved, profile.profile, asked.requested);
     if (!names.ok) {
       log.debug("Leaving CertEnrollment.issue(). A name was refused.");
       return auditRefusal(names);
+    }
+    // THE PIV ATTESTATION (#1955 P2, `piv_attestation.ts`): read from the
+    // request or the form, verified against the request's key, the realm's
+    // anchors and its PIN and touch policy. One that does not verify is a
+    // refusal; none is `facts: null`, refused only where the realm requires
+    // one for a PIV profile.
+    const piv = await pivAttestation.evidenceForRequest({
+      profile: profile.profile, attestations: asked.attestations,
+      pivAttestation: asked.pivAttestation || null,
+      publicKeyPem: asked.publicKeyPem, keySource: asked.keySource });
+    if (!piv.ok) {
+      log.debug("Leaving CertEnrollment.issue(). The PIV attestation " +
+                "refused it.");
+      return auditRefusal(piv);
     }
     const nowMs = Date.now();
     const existing = self.parseJsonValues(
@@ -2772,7 +2993,7 @@ class CertEnrollment {
       profile: profile.profile,
       subject: subjectDn || String(issued.subject || ''),
       names: names.names.map(function (one) {
-        return one.kind + ':' + one.value;
+        return one.label || one.kind + ':' + one.value;
       }),
       thumbprint: thumbprint,
       keyAlg: String(asked.keyAlg || ''),
@@ -2784,19 +3005,34 @@ class CertEnrollment {
             admin: !!asked.principal.admin }
         : null,
       via: String(asked.via || family),
-      keySource: asked.keySource === 'server' ? 'server' : 'client',
+      // `attested-hardware` for a key a verified PIV attestation covers
+      // (#1955 P2): the design's evidence on the register row, which
+      // `attestation` below carries in full.
+      keySource: asked.keySource === 'server' ? 'server'
+        : (piv.facts ? 'attested-hardware' : 'client'),
       replaces: replacing || null,
       certificatePem: issued.certificatePem,
       chainPem: (issued.issuerChainPem || []).slice()
     };
+    if (piv.facts) {
+      record['attestation'] = piv.facts;
+    }
+    if (escrow) {
+      // An escrowed key is NOT hardware-bound, and says so (D7).
+      record['escrowed'] = true;
+    }
     // The private key FIRST, for `person_assertions.write()`'s reason: a
     // certificate on the entry with no key behind it, when this service made
     // the key, is a credential that was issued and lost.
     const kind = resolved.entry.kind;
     if (record.keySource === 'server') {
-      const sealed = self.sealText(asked.privateKeyPem, kind === 'person'
-        ? 'person-private-key' : 'application-private-key',
-        kind === 'person' ? 'cell' : '');
+      // An escrowed key is sealed whatever the mode (above), never kept in
+      // plain as `sealText()` does where nothing is persisted.
+      const sealed = escrow
+        ? self.sealEscrow(asked.privateKeyPem)
+        : self.sealText(asked.privateKeyPem, kind === 'person'
+          ? 'person-private-key' : 'application-private-key',
+          kind === 'person' ? 'cell' : '');
       if (!sealed.ok) {
         log.debug("Leaving CertEnrollment.issue(). The key could not be " +
                   "sealed.");
@@ -2859,6 +3095,18 @@ class CertEnrollment {
                 keySource: record.keySource, via: record.via,
                 notAfter: record.notAfter }
     });
+    // THE TOKEN (#1955 P2): a verified PIV attestation records the YubiKey
+    // and this certificate on it, a person's only (`namesFor()` refuses a
+    // PIV profile for an application; a non-PIV profile's attestation is
+    // still the person's key).
+    if (piv.facts && kind === 'person') {
+      pivAttestation.recordToken({ username: resolved.entry.id,
+        serialHex: record.serialHex, thumbprint: record.thumbprint,
+        family: family,
+        profile: record.profile, facts: piv.facts,
+        actor: asked.principal ? String(asked.principal.id) : '',
+        via: record.via });
+    }
     // A PERSON's certificate is one of their credentials, and CAEP says so
     // with its issuer and serial (#145); an APPLICATION's is one of its own,
     // said under the application subject (#221 P5).
@@ -3610,6 +3858,101 @@ class CertEnrollment {
                       entry.kind === 'person' ? 'person-private-key'
                                               : 'application-private-key')
       : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ESCROWED PIV KEY-MANAGEMENT KEYS (#1955 P2, D7). A piv-key-management key
+  // EST /serverkeygen generated while `piv.keyEscrow` was on is kept on the
+  // person's entry beside its certificate record (`escrowed: true`), sealed
+  // under the key-encryption key (`sealEscrow()`). These two read it back:
+  // the list says which certificates have one, never the key; the opening is
+  // for the two doors `common/piv_key_escrow.ts` argues — the holder after a
+  // fresh sign-in, and an administrator the access-control policy lets
+  // recover it — and a revoked certificate's key is still opened, because
+  // decrypting old mail after the card is lost is what escrow is for.
+  // ---------------------------------------------------------------------------
+  /**
+   * The escrowed key-management certificates of a person: serial, subject,
+   * validity and revocation, never a key.
+   *
+   * @param username - the person
+   * @returns the rows, newest first
+   */
+  escrowedOf(username) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.escrowedOf().");
+    const resolved = self.resolveEntry('person', String(username || ''));
+    if (!resolved.ok) {
+      log.debug("Leaving CertEnrollment.escrowedOf(). No entry.");
+      return [];
+    }
+    const out = self.parseJsonValues(self.heldValues(resolved, 'certificate'))
+      .filter(function (one) {
+        return one && one.escrowed === true;
+      }).map(function (one) {
+        return { serialHex: String(one.serialHex), profile:
+                   String(one.profile || ''),
+                 subject: String(one.subject || ''),
+                 notAfter: String(one.notAfter || ''),
+                 issuedAt: String(one.issuedAt || ''),
+                 revoked: !!one.revoked };
+      }).sort(function (a, b) {
+        return b.issuedAt.localeCompare(a.issuedAt);
+      });
+    log.debug("Leaving CertEnrollment.escrowedOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * Opens a person's escrowed key-management key, with its certificate.
+   *
+   * @param username - the person
+   * @param serialHex - the certificate's serial
+   * @returns `{ ok, privateKeyPem, certificatePem, chainPem, record }`, or a
+   *   refusal
+   */
+  escrowedKeyOf(username, serialHex) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering CertEnrollment.escrowedKeyOf().");
+    const resolved = self.resolveEntry('person', String(username || ''));
+    const wanted = self.normalSerial(serialHex);
+    const record = resolved.ok ? self.parseJsonValues(
+      self.heldValues(resolved, 'certificate')).filter(function (one) {
+        return one && one.escrowed === true &&
+          self.normalSerial(one.serialHex) === wanted;
+      })[0] : null;
+    if (!record) {
+      log.debug("Leaving CertEnrollment.escrowedKeyOf(). None.");
+      return self.refuse('STS-PIV-0022', 404, 'No escrowed ' +
+        'piv-key-management key is held for certificate ' +
+        String(serialHex || '').slice(0, 64) + ' of ' +
+        String(username || '').slice(0, 128) + '.');
+    }
+    const opened = self.serverKeyOf(resolved.entry, wanted);
+    if (!opened || !require('./crypto').isEncryptedWithKek(
+          String((self.heldValues(resolved, 'privateKey') || [])
+            .filter(function (one) {
+              return String(one).indexOf(wanted + ':') === 0;
+            })[0] || '').slice(wanted.length + 1))) {
+      // Not opened, or held in plain — which an escrowed key never is, so a
+      // plain value is damage and is not handed out as an escrowed key.
+      log.error(errorCodes.tag('STS-PIV-0024') + 'cert_enrollment: the ' +
+                'escrowed key of certificate ' + wanted + ' could not be ' +
+                'opened.');
+      log.debug("Leaving CertEnrollment.escrowedKeyOf(). Not opened.");
+      return self.refuse('STS-PIV-0024', 503, 'The escrowed key of ' +
+        'certificate ' + wanted + ' could not be opened.');
+    }
+    log.debug("Leaving CertEnrollment.escrowedKeyOf(). Opened.");
+    return { ok: true, privateKeyPem: opened,
+             certificatePem: String(record.certificatePem || ''),
+             chainPem: (record.chainPem || []).slice(),
+             record: { serialHex: wanted, subject: String(record.subject ||
+                                                          ''),
+                       notAfter: String(record.notAfter || ''),
+                       revoked: !!record.revoked } };
   }
 
   // ---------------------------------------------------------------------------
@@ -5188,6 +5531,10 @@ export = {
   revokeEnrolled: slot.forward('revokeEnrolled'),
   revokeDeviceCertificates: slot.forward('revokeDeviceCertificates'),
   serverKeyOf: slot.forward('serverKeyOf'),
+  escrowedOf: slot.forward('escrowedOf'),
+  escrowedKeyOf: slot.forward('escrowedKeyOf'),
+  pivCardHolders: slot.forward('pivCardHolders'),
+  certificateBindingHolders: slot.forward('certificateBindingHolders'),
   createEab: slot.forward('createEab'),
   findEab: slot.forward('findEab'),
   bindEab: slot.forward('bindEab'),

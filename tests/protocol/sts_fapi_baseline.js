@@ -47,6 +47,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -55,6 +58,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const portalSignin = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -144,6 +148,24 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+// product, so `who` is made with a temporary one and chooses PASSWORD at
+// the sign-in screen (`own_password.js`; in development it is simply set).
+async function personWithPassword(who, mail) {
+  log.debug("Entering personWithPassword(). " + who);
+  await ok(realmApi + "/users/create", {
+    username: who, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
+    attributes: { cn: "FAPI " + who, givenName: "FAPI", sn: who,
+                  mail: who + mail } }, "created " + who);
+  await ownPassword.ownPassword(base + R, who, PASSWORD,
+    function (one, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: one, password: value });
+    });
+  log.debug("Leaving personWithPassword().");
+}
+
 // One browser, with a cookie jar.
 function browser(name) {
   log.debug("Entering browser(). " + name);
@@ -227,7 +249,7 @@ function pkce() {
 function atClient(r) {
   log.debug("Entering atClient().");
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(REDIRECT) !== 0) {
+      !urls.isAt(r.location, REDIRECT)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -258,7 +280,7 @@ async function follow(b, first, who, onConsent) {
       break;
     }
     const where = absolute(r.location);
-    if (where.indexOf(base) !== 0) {
+    if (!urls.isUnder(where, base)) {
       break;
     }
     if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {
@@ -431,11 +453,7 @@ async function unitsOverTheWire(f) {
                                        value: "false" },
            "turned consent off in the realm");
   const carol = names.usernameFor("fapi-carol");
-  await ok(realmApi + "/users/create", {
-    username: carol, invent: false, credential: "password",
-    password: PASSWORD,
-    attributes: { cn: "FAPI " + carol, givenName: "FAPI", sn: carol,
-                  mail: carol + "@fapi.test" } }, "created " + carol);
+  await personWithPassword(carol, "@fapi.test");
   const cb = browser("carol");
   const pc = pkce();
   const shown = { shown: 0 };
@@ -567,11 +585,7 @@ async function test() {
   await ok(realmApi + "/config/set", { key: "oauth2.openRegistration",
                                        value: true },
            "opened dynamic registration in the realm");
-  await ok(realmApi + "/users/create", {
-    username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
-    attributes: { cn: "FAPI " + ALICE, givenName: "FAPI", sn: ALICE,
-                  mail: ALICE + "@fapi.test" } }, "created " + ALICE);
+  await personWithPassword(ALICE, "@fapi.test");
 
   log.info("=== a. the report ===");
   let r = await send(base + R + "/oauth2/fapi");

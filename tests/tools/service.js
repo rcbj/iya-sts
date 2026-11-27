@@ -69,6 +69,8 @@ const http = require('http');
 const https = require('https');
 
 const bunyan = require('bunyan');
+const serviceTrust = require('./service_trust');
+const trust = require('./trust');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -81,7 +83,7 @@ const log = bunyan.createLogger({ name: 'service',
 
 // The eight listeners, in the order the offsets are handed out. The NAME is the
 // environment variable this service reads for it —
-// docs/v1.1.0/configuration.md's settings table is the authority for these
+// docs/v1.2.0/configuration.md's settings table is the authority for these
 // spellings, and a misspelt one is SILENT: it is ignored and the listener takes
 // its default port, which is the shared one.
 //
@@ -292,11 +294,16 @@ function schemeFor(env) {
   return String(env.STS_HTTPS) === 'true' ? 'https' : 'http';
 }
 
-// Liveness over either scheme, with the certificate unjudged — see the note at
-// the call site. `https.get`/`http.get` rather than fetch() because fetch's
-// dispatcher takes no per-request `rejectUnauthorized`, and a service that
-// regenerates its key every start can be trusted by nothing that ran before it.
-function probe(url) {
+// Liveness over either scheme — see the note at the call site — VERIFIED
+// since 2026-11-20 against the service Root, which `rootPem` carries once
+// the child's plain-HTTP revocation listener has answered with it
+// (tools/trust.js's rootOverHttp(); server.js binds that listener before the
+// main port, so it is there first). Without it, or when THIS client refused
+// the chain, a completed half-handshake still counts as an answer (1): the
+// server is listening on that scheme, and no request was sent over a
+// connection that did not verify. `https.get`/`http.get` rather than
+// fetch() because fetch's dispatcher takes no per-request `ca`.
+function probe(url, rootPem) {
   log.debug("Entering probe().");
   log.debug("Leaving probe().");
   return new Promise(function (resolve) {
@@ -308,25 +315,47 @@ function probe(url) {
       resolve(0);
       return;
     }
-    const mod = target.protocol === 'https:' ? https : http;
-    const req = mod.get({
+    const secure = target.protocol === 'https:';
+    const mod = secure ? https : http;
+    const options = {
       host: target.hostname,
       port: target.port,
       path: target.pathname + target.search,
-      rejectUnauthorized: false,
       timeout: 5000
-    }, function (res) {
+    };
+    if (secure) {
+      options.ca = rootPem ? [rootPem] : [];
+      options.agent = false;
+    }
+    const req = mod.get(options, function (res) {
       res.resume();
       resolve(res.statusCode || 0);
     });
-    req.on('error', function () {
-      resolve(0);
+    req.on('error', function (e) {
+      log.debug("Caught in a callback in probe(): " +
+                ((e && e.message) || e));
+      resolve(secure && serviceTrust.isUntrusted(e) ? 1 : 0);
     });
     req.on('timeout', function () {
       req.destroy();
       resolve(0);
     });
   });
+}
+
+// The child's service Root from its revocation listener, or '' while that
+// listener is not answering yet (the next probe asks again).
+async function childRoot(url, pkiPort) {
+  log.debug("Entering childRoot().");
+  try {
+    const pem = await trust.rootOverHttp(url, 2000, { pkiPort: pkiPort });
+    log.debug("Leaving childRoot(). Read.");
+    return pem;
+  } catch (e) {
+    log.debug("Caught in childRoot(): " + ((e && e.message) || e));
+    log.debug("Leaving childRoot(). Not yet.");
+    return '';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +395,7 @@ async function start(opts) {
   log.info('starting a throwaway IYA STS on ' + url + ' (ports ' + base +
            '-' + (base + PORT_VARS.length - 1) + ', pid ' + child.pid + ')');
   const deadline = Date.now() + (opts.readyTimeoutMs || 60000);
+  let rootPem = '';
   while (Date.now() < deadline) {
     if (exited) {
       log.debug('Leaving start(). The child exited.');
@@ -378,10 +408,15 @@ async function start(opts) {
     // development mode, so the first request would fail verification for the
     // whole timeout and the service would be reported as never having
     // answered.
-    // The question here is whether the port answers, not whether it is
-    // trustworthy — the JOBS get a real anchor, from tests/tools/trust.js.
+    // The question here is whether the port answers; the probe verifies
+    // against the Root the child publishes once it has it, and the JOBS get
+    // a real anchor, from tests/tools/trust.js.
     /* eslint-disable no-await-in-loop */
-    const answered = (await probe(url + '/')) > 0;
+    if (!rootPem && schemeFor(env) === 'https') {
+      rootPem = await childRoot(url,
+                                base + PORT_VARS.indexOf('PKI_HTTP_PORT'));
+    }
+    const answered = (await probe(url + '/', rootPem)) > 0;
     /* eslint-enable no-await-in-loop */
     if (answered) {
       log.info('the throwaway IYA STS is answering on ' + url);

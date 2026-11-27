@@ -232,8 +232,8 @@
     "text": "Registrar la contraseña de arranque generada"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro."
+    "en": "8591cfda7dde139a",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro. El archivo de un dominio de confianza añade a ese nombre un guion y el id del dominio. Un arranque posterior elimina un archivo en cuanto la contraseña que contiene ya no abre su cuenta."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -272,8 +272,24 @@
     "text": "Antigüedad máxima del inicio de sesión para un cambio sensible (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "4bfb2112a9f37a5d",
-    "text": "Hace cuánto, como máximo, en minutos, debe haber iniciado sesión alguien para cambiar cómo inicia sesión una persona. En el portal: sus segundos factores, códigos de recuperación, llaves de acceso, contraseñas de aplicación, certificados, claves de firma, identificadores autoemitidos, dirección de correo o una oferta de credencial para la cartera, y cerrar sus otras sesiones; primero se la envía a iniciar sesión de nuevo. Para un administrador: cambiar la contraseña, el segundo factor, la llave de acceso, los códigos de recuperación, la dirección de correo o las contraseñas de aplicación de una persona a través de la consola o de /admin-api, que responde con insufficient_user_authentication de RFC 9470. 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
+    "en": "b20d406d9605d06f",
+    "text": "Hace cuánto, como máximo, en minutos, debe haber iniciado sesión alguien para cambiar cómo inicia sesión una persona. En el portal: sus segundos factores, códigos de recuperación, llaves de acceso, contraseñas de aplicación, certificados, claves de firma, identificadores autoemitidos, dirección de correo o una oferta de credencial para la cartera, y cerrar sus otras sesiones; primero se la envía a iniciar sesión de nuevo. Para un administrador: cambiar la contraseña, el segundo factor, la llave de acceso, los códigos de recuperación, la dirección de correo o las contraseñas de aplicación de una persona a través de la consola o de /admin-api, que responde con insufficient_user_authentication de RFC 9470. Lo mismo se aplica cuando un administrador concede o retira un rol, crea, cambia o elimina un dominio de confianza, actúa sobre la PKI, las claves de firma, la clave de cifrado de claves o los destinos de envío de secretos, o cambia cualquier ajuste (#2161). Lo mismo ocurre al cambiar una aplicación, una relación de federación, un proveedor de servicios SAML, una política de acceso, un grupo, una política con nombre, las claims que lleva un token o cualquier otra cosa que decida quién puede iniciar sesión, qué se le emite o adónde va (#2247). 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
+  },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Cambios de cuenta por persona y ventana"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Cuántos cambios puede hacer una persona con sesión iniciada en su propia cuenta a través de /account-api (el portal) en una ventana de account.writeWindowS: ediciones del perfil, credenciales registradas o eliminadas, consentimientos retirados, cambios de dispositivos. Se cuenta por el sujeto del token, no por dirección, de modo que las personas detrás de una misma dirección no lo comparten. Por encima, un cambio se rechaza con 429 y Retry-After hasta que pase la ventana; la lectura de la cuenta continúa. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 300 de forma predeterminada."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Ventana de cambios de cuenta (segundos)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "La ventana en la que se cuenta account.writesPerSubject, en segundos. Una ventana fija, como todo límite de frecuencia aquí."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -347,6 +363,30 @@
     "en": "26b0298f1a2bd460",
     "text": "Añade includeSubDomains a Strict-Transport-Security, para que los navegadores usen HTTPS en todos los subdominios del nombre de host de este servicio. Activado por defecto en modo producto. Desactívelo si un subdominio debe seguir respondiendo por HTTP sin cifrar."
   },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Mostrar la compilación exacta a quienes no son administradores"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Si la versión exacta, el número de compilación, la hora de compilación y el commit aparecen donde alguien que no es administrador puede leerlos: el pie de cada página, las API de inicio de sesión, del portal y de informes y sus documentos OpenAPI, y el User-Agent de las solicitudes que este servicio hace a los socios. auto, el valor por defecto, los muestra en modo desarrollo y los oculta en modo producto, donde los documentos indican en su lugar la versión propia de la API y el User-Agent es solo el nombre del producto; on y off lo imponen en cualquier modo. La consola y la API de administración siempre muestran la compilación."
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Solicitar la inclusión en la lista de precarga de HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Añade preload a Strict-Transport-Security, que solo envía el modo producto, para que el nombre de host pueda enviarse a la lista de precarga de los navegadores en hstspreload.org. La precarga compromete todo el dominio registrable y cada subdominio a usar HTTPS en todos los navegadores, y salir de la lista lleva meses. Solo se envía mientras Aplicar HSTS a los subdominios está activado."
+  },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Reenviar los informes de infracciones de CSP a"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Desactivado si está vacío, el valor predeterminado. Una URL https que recibe cada informe de infracción de la Content Security Policy que este servicio acepta, como JSON: el reino, la directiva, la ruta de la página sin su consulta, el origen bloqueado y la disposición, nunca el informe tal como lo envió el navegador. Se envía con las mismas reglas de salida que los canales traseros de la federación."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Aceptar una aserción sin audiencia"
@@ -378,6 +418,22 @@
   "malwareScan.timeoutMs|description": {
     "en": "59a643baa5f14b91",
     "text": "Cuánto esperar al servicio. Un archivo grande dispone de un segundo más por mebibyte."
+  },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Análisis simultáneos"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Cuántos archivos envía un proceso al escáner a la vez, cada uno por su propia conexión. Los demás esperan su turno."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Análisis en espera"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Cuántos archivos pueden esperar un análisis además de los que están en curso. Un archivo que lo supere se rechaza con 503 (STS-CORE-0182), como cuando el escáner no responde."
   },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
@@ -424,8 +480,8 @@
     "text": "Permitir un nombre de administrador predeterminado en producción"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, escrito con su contraseña en el archivo bootstrap-admin-password de persistence.dataDir en el primer inicio (véase admin.logBootstrapPassword). Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas."
+    "en": "7007ae597c41e813",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, escrito con su contraseña en el archivo bootstrap-admin-password de persistence.dataDir en el primer inicio (véase admin.logBootstrapPassword). Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas. El archivo de un dominio de confianza añade a ese nombre un guion y el id del dominio. Un arranque posterior elimina un archivo en cuanto la contraseña que contiene ya no abre su cuenta."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +492,8 @@
     "text": "Cuenta del administrador inicial"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; el nombre y esa contraseña se escriben una sola vez en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio (el registro indica dónde, y solo los incluye él mismo con admin.logBootstrapPassword activado), y son la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles."
+    "en": "938e9e0c7b3b97fa",
+    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; el nombre y esa contraseña se escriben una sola vez en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio (el registro indica dónde, y solo los incluye él mismo con admin.logBootstrapPassword activado), y son la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles. El archivo de un dominio de confianza añade a ese nombre un guion y el id del dominio. Un arranque posterior elimina un archivo en cuanto la contraseña que contiene ya no abre su cuenta."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -1315,6 +1371,46 @@
     "en": "f034b2f597ec08a5",
     "text": "Cuánto tiempo sigue disponible un secreto que se ha MOSTRADO pero aún no se ha confirmado con un código. Se guarda aparte — en memoria, o sellado en el almacén cuando varios procesos comparten uno — y nunca se escribe en el directorio hasta que un código demuestra que la aplicación lo tiene de verdad: un secreto sin confirmar en la entrada de alguien sería un segundo factor que no puede presentar, lo que es un bloqueo y no un control. Diez minutos es tiempo suficiente para encontrar un teléfono y lo bastante corto para que un registro abandonado no se quede ahí."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "Longitud del código HOTP (dígitos)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Cuántos dígitos produce una NUEVA inscripción de token basado en contador (RFC 4226): una ranura OTP de YubiKey programada desde el portal admite 6 u 8. Un token importado del archivo PSKC de su proveedor conserva la longitud que indica el archivo."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "Anticipación HOTP (códigos)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "La anticipación de la sección 7.4 de RFC 4226: cuántas pulsaciones de un token basado en contador que nunca llegaron a este servicio se perdonan. Se acepta un código en el contador guardado o hasta esa cantidad después, y el contador pasa más allá; un código anterior nunca. Cero acepta solo el siguiente código. En vivo, para cada inscripción."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "Ventana de resincronización HOTP (códigos)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Hasta dónde se buscan dos códigos CONSECUTIVOS cuando una persona resincroniza un token que se salió de la anticipación (RFC 4226 sección 7.4). Dos códigos seguidos son mucho más difíciles de adivinar que uno, y eso es lo que hace segura la búsqueda más amplia. En vivo."
+  },
+  "yubiotp.offered|label": {
+    "en": "9f41692d832fec07",
+    "text": "Ofrecer la inscripción de un OTP YubiKey"
+  },
+  "yubiotp.offered|description": {
+    "en": "5a0403877f662a53",
+    "text": "Si una persona puede inscribir una ranura de OTP YubiKey, y si un administrador puede asignar una o una persona reclamar una. Desactivado de forma predeterminada. Una credencial ya en posesión se sigue comprobando en el paso del código de un solo uso. La clave AES permanece en este servicio, así que el inicio de sesión es amr otp y nunca hwk."
+  },
+  "yubiotp.ykval|label": {
+    "en": "f309f289c5ecddcd",
+    "text": "Responder al endpoint de verificación YK-VAL 2.0"
+  },
+  "yubiotp.ykval|description": {
+    "en": "eba10509dc6d104d",
+    "text": "Si GET y POST /wsapi/2.0/verify comprueban un OTP YubiKey para un cliente que firmó la solicitud (YK-VAL 2.0). Desactivado de forma predeterminada, y la ruta responde entonces OPERATION_NOT_ALLOWED. Activado, el id del cliente y el HMAC-SHA1 se comprueban en todos los modos, incluido el de desarrollo. No se envía ninguna solicitud a YubiCloud."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Códigos por juego"
@@ -1378,6 +1474,14 @@
   "webauthn.allowedOrigins|description": {
     "en": "cba85726ee4e8673",
     "text": "Los orígenes — esquema, host y puerto, sin ruta — desde los que se acepta una ceremonia WebAuthn, separados por comas. **VACÍO, el valor predeterminado, deriva el único origen de la dirección por la que se llegó a este servicio**, que es lo que siempre ha hecho y que global.publicBaseUrl ya fija cuando está definido. Definido, es la lista completa: un clientDataJSON cuyo origen no está en ella se rechaza sea cual sea el Host que llevaba la solicitud. Nombre varios cuando una credencial se usa desde hosts hermanos bajo un webauthn.rpId compartido."
+  },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "AppID U2F heredados"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "e17d7febccd7d076",
+    "text": "Los AppID de FIDO U2F — las URL https con las que una parte de confianza U2F heredada registró sus llaves de seguridad — cuyas credenciales pueden importarse en las entradas de las personas y usarse para iniciar sesión aquí, separados por comas. **VACÍO, el valor predeterminado, es la función desactivada**: no se puede importar nada, ninguna ceremonia lleva la extensión appid o appidExclude (WebAuthn Level 3 secciones 10.1.1 y 10.1.2), y una llave importada no inicia sesión. Un AppID solo se usa en un RP ID con el que se relaciona: su host es el RP ID, o uno es sufijo del otro. Donde el host difiere del del origen, el navegador obtiene la URL del AppID en busca de una lista TrustedFacets que nombre este origen, que el servicio heredado debe seguir sirviendo. Una llave importada es solo un segundo factor: una llave U2F no puede verificar a la persona. U2F es ECDSA sobre P-256 y no tiene algoritmo poscuántico."
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -1727,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Qué clave firma las credenciales dc+sd-jwt y jwt_vc_json de este dominio y sus Token Status List Tokens. `dedicated` — el valor predeterminado — es una clave propia, por familia de algoritmos, que no se usa para nada más, bajo un certificado cuyo subjectAltName nombra como URI cada identificador de emisor al que responde el dominio (sin nombre DNS), con el uso extendido de clave id-kp-documentSigning (RFC 9336) y nada que una pila TLS aceptaría, para que una billetera pueda comparar el iss de la credencial con su x5c (HAIP 1.0, sección 6.1.1). El certificado se vuelve a emitir cuando cambian los identificadores de emisor (global.publicBaseUrl, tls.hostnames, un listener). `realm-key` las firma con la clave JOSE general del dominio, como hacía la 1.0.0, cuyo certificado no nombra a ningún emisor. Las credenciales ya emitidas siguen siendo verificables en ambos casos. ldp_vc y mso_mdoc no se ven afectados."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Rotar la clave de firma de credenciales cada (días)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Cuánto tiempo firma la clave de un firmante de credenciales dedicado (keys.credentialSigner dedicated) antes de que la tarea keys.credential-signer-rotate cree la siguiente clave de su familia, que firma a partir de entonces. La clave que reemplaza ya no firma nada y sigue en el JWKS y el documento DID del emisor de credenciales, de modo que cada credencial que firmó sigue verificándose. Se cuenta desde que la tarea vio la clave por primera vez. 0 desactiva la programación. Solo en modo producto."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Claves de descifrado poscuánticas / híbridas"
@@ -1734,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "Los algoritmos JWE ML-KEM y HPKE para los que este dominio tiene una clave de descifrado — un par de claves por algoritmo, publicado en el JWKS del dominio (`use: enc`, con `alg`) y anunciado en `request_object_encryption_alg_values_supported` y `assertion_encryption_alg_values_supported`, para que un cliente pueda cifrar un objeto de solicitud o una aserción RFC 7523 / 7522 para este dominio con establecimiento de clave poscuántico o híbrido PQ/T. HPKE-10-KE es X-Wing (ML-KEM-768 + X25519). Cifrar PARA un cliente que registró uno de estos algoritmos no necesita nada aquí. **Vacío de forma predeterminada, y decisión de un administrador:** todos estos algoritmos proceden de un Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), y una clave AKP en un JWKS es un tipo de clave que las bibliotecas JOSE de muchos clientes aún no analizan — algunas rechazan el conjunto de claves entero. Nombre un algoritmo aquí solo cuando se sepa que los clientes que leen el JWKS de este dominio lo soportan. Quitar uno deja de publicarlo y aceptarlo; volver a nombrarlo recupera la misma clave."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Reemplazar las claves de descifrado de solicitudes cada (días)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Cuánto tiempo se conservan las claves de cifrado de los objetos de solicitud, la clave de cifrado de solicitudes de OpenID4VCI y las claves de descifrado KEM antes de que la tarea keys.encryption-key-rotate las reemplace. La clave nueva se publica de inmediato (/oauth2/jwks, los metadatos del emisor de credenciales) y la que reemplaza sigue descifrando durante keys.encryptionKeyOverlapDays. Se cuenta desde que la tarea vio la clave por primera vez. 0 desactiva la programación. Solo en modo producto."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "Una clave de descifrado de solicitudes reemplazada sigue descifrando durante (días)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Cuánto tiempo una clave de descifrado de solicitudes que reemplazó keys.encryption-key-rotate sigue abriendo lo que un cliente cifró para ella antes de leer la clave nueva. Mientras tanto no se publica en ninguna parte, y signing.retire la elimina cuando ha pasado este plazo."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -1876,8 +2004,8 @@
     "text": "Proveedor de la clave de cifrado de claves"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Dónde está la clave de cifrado de claves que envuelve cada clave de cifrado de datos. `file`, `aws`, `gcp`, `azure` y `vault` LEEN una clave de 32 bytes en este proceso desde un archivo montado o un almacén de secretos; `file` es el valor predeterminado porque no necesita nada. `vault-transit` (Transit de Vault u OpenBao), `aws-kms`, `gcp-kms` (Cloud KMS) y `azure-keys` (una clave de Key Vault o Managed HSM; keys.kekVault es su almacén) son servicios de gestión de claves: la clave NUNCA sale de ellos, keys.kekRef la nombra, y el KMS envuelve y desenvuelve cada clave de datos — una llamada por clave de datos al arrancar, ninguna por valor. Cada proveedor salvo `file` carga de forma diferida su SDK oficial, que a propósito NO es una dependencia de este servicio; si falta uno, se informa con el nombre del paquete que hay que instalar."
+    "en": "bf4e717bed6b7e03",
+    "text": "Dónde está la clave de cifrado de claves que envuelve cada clave de cifrado de datos. `file`, `aws`, `gcp`, `azure` y `vault` LEEN una clave de 32 bytes en este proceso desde un archivo montado o un almacén de secretos; `file` es el valor predeterminado porque no necesita nada. `vault-transit` (Transit de Vault u OpenBao), `aws-kms`, `gcp-kms` (Cloud KMS) y `azure-keys` (una clave de Key Vault o Managed HSM; keys.kekVault es su almacén) son servicios de gestión de claves: la clave NUNCA sale de ellos, keys.kekRef la nombra, y el KMS envuelve y desenvuelve cada clave de datos — una llamada por clave de datos al arrancar, ninguna por valor. `pkcs11` es lo mismo con la clave en un módulo de seguridad de hardware (un YubiHSM 2, SoftHSM2 o cualquier módulo PKCS#11, keys.pkcs11Module), y keys.kekRef es una URI PKCS#11. Cada proveedor salvo `file` carga de forma diferida su SDK oficial, que a propósito NO es una dependencia de este servicio; si falta uno, se informa con el nombre del paquete que hay que instalar."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +2052,8 @@
     "text": "Referencia de la clave de cifrado de claves"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Con qué nombran el secreto los proveedores en la nube: un nombre o ARN de AWS Secrets Manager, un nombre de recurso de GCP (projects/<p>/secrets/<s>, con /versions/latest añadido cuando no se indica versión), un nombre de secreto de Azure Key Vault o una ruta de lectura de HashiCorp Vault. El proveedor `file` no lo usa."
+    "en": "b28c82e37153639d",
+    "text": "Con qué nombran el secreto los proveedores en la nube: un nombre o ARN de AWS Secrets Manager, un nombre de recurso de GCP (projects/<p>/secrets/<s>, con /versions/latest añadido cuando no se indica versión), un nombre de secreto de Azure Key Vault o una ruta de lectura de HashiCorp Vault. Para `pkcs11`, una URI PKCS#11 de RFC 7512, pkcs11:token=<token label>;object=<key label>. El proveedor `file` no lo usa."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2035,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Cuánto puede esperar cualquier sonda detrás de /admin/secrets a que responda un almacén de secretos. Cada una de ellas es una LECTURA de metadatos — un stat del archivo de clave, un endpoint sys, un historial de versiones KV, un DescribeSecret — y ninguna obtiene nunca el valor de un secreto. El límite existe para que abrir una página de la consola nunca pueda quedarse colgado en el almacén de otro; una sonda que agota el tiempo se muestra como una fila que lo indica, exactamente igual que una que se rechazó."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Tiempo de espera de llamadas al almacén de secretos (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Cuánto puede esperar un intento de una llamada a OpenBao o Vault, AWS KMS o Secrets Manager, Google Cloud KMS o Secret Manager, o Azure Key Vault; se entrega a cada SDK como su propia opción de tiempo de espera."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Intentos por llamada al almacén de secretos"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Cuántas veces se intenta en total una llamada a un almacén de secretos o servicio de claves: el propio límite de reintentos de los SDK de la nube, y para OpenBao o Vault una llamada que no obtuvo respuesta, un 5xx o un 429 se repite tras una breve pausa (STS-KEYS-0214 cuando fallaron todos los intentos). Un 4xx nunca se repite."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "Región de AWS"
@@ -2047,13 +2191,149 @@
     "en": "d51b3caaa6125e92",
     "text": "se lee una sola vez al arrancar"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "Módulo PKCS#11"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "La ruta del módulo PKCS#11 que carga el proveedor `pkcs11`: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so para un YubiHSM 2 (con yubihsm-connector en ejecución y YUBIHSM_PKCS11_CONF apuntando a su configuración), /usr/lib/softhsm/libsofthsm2.so para SoftHSM2. Necesita el paquete pkcs11js, que a propósito no es una dependencia de este servicio."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "el módulo se carga una vez, al arrancar"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Cómo envuelve el HSM una clave de datos"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "El mecanismo con el que se envuelve una clave de datos nueva en el HSM. `auto` toma CKM_AES_GCM donde el módulo lo ofrece (SoftHSM2 y la mayoría de los HSM de red), después CKM_AES_KEY_WRAP_PAD y después el CKM_YUBICO_AES_CCM_WRAP propio del YubiHSM 2 (sus objetos de clave de envoltura). Una clave de datos envuelta antes de un cambio se sigue desenvolviendo: la forma almacenada nombra su mecanismo."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "a la clave de cifrado de claves se accede una vez, al arrancar"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Crear la clave del HSM en el primer uso"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "Activado, una clave de cifrado de claves que nombra la URI PKCS#11 y que el token no tiene se genera allí: AES-256, sensible y NO extraíble. Solo el proceso frontal la genera; para un clúster, cree la clave con la propia herramienta del HSM, porque dos nodos que arrancaran a la vez crearían dos. Desactivado, el valor predeterminado, una clave que falta detiene el arranque."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "a la clave de cifrado de claves se accede una vez, al arrancar"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "Sesiones PKCS#11 por proceso"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Cuántas sesiones mantiene abiertas en un token, como máximo, cada proceso y cada worker de solicitudes, cada una ejecutando una operación del HSM a la vez. Un YubiHSM 2 tiene 16 sesiones en total, compartidas por todos los procesos de todos los nodos: mantenga el producto de este valor, los procesos y los nodos por debajo de esa cifra."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "el token se abre una vez, al arrancar"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Tiempo de espera de operaciones del HSM (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Cuánto pueden durar una operación del HSM y la espera de una sesión en la que ejecutarla antes de que se rechace (STS-KEYS-0216). Una sesión cuya operación lo superó se descarta cuando el módulo responde. 0 para sin límite."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "el token se abre una vez, al arrancar"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Operaciones del HSM en espera por token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Cuántas operaciones del HSM pueden esperar una sesión de un token en un proceso o worker. Una que lo supere se rechaza de inmediato (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "el token se abre una vez, al arrancar"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "De dónde se lee el PIN de PKCS#11"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "El almacén de secretos del que se lee el PIN del token del HSM, nunca el valor de un ajuste: un archivo montado, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault o Vault/OpenBao, al que se accede como indica keys.kek*. Para un YubiHSM 2 el PIN es el id de la clave de autenticación en cuatro dígitos hexadecimales seguido de su contraseña (0001password). Un objeto JSON de PIN por etiqueta de token sirve a tokens con PIN distintos. `none` no inicia sesión en nada."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "La ubicación del PIN de PKCS#11"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Dónde está el PIN, en el proveedor que nombra keys.pkcs11PinProvider: una ruta, un ARN, un recurso o una ruta de lectura de Vault. No tiene valor de respaldo."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "El campo en que está el PIN de PKCS#11"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "El miembro de un secreto JSON que contiene el PIN. Vacío toma el valor entero."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "el PIN se lee una vez, cuando se abre el token"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Dónde se crean las claves de firma de un dominio"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, el valor predeterminado, crea las claves de firma de un dominio en este proceso y las guarda selladas en el almacén. `pkcs11` crea las clásicas — la clave RS256, la clave XML y las claves P-256, P-384, P-521, secp256k1 y Ed25519 que el módulo pueda crear — en el HSM que nombra keys.signingKeyToken, no extraíbles, y firma allí; una clave que el módulo no puede crear, y toda clave poscuántica, se queda en software. Se aplica a un conjunto de claves creado o rotado después del cambio, necesita un almacén de claves que persista (modo producto), y cada proceso y nodo necesita el token. Se puede definir por dominio."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "El token del HSM en que se crean las claves de firma"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "La URI PKCS#11 del token en que un dominio con keys.signingKeyStore `pkcs11` crea sus claves de firma: pkcs11:token=<token label>, con serial= o slot-id= cuando dos tokens comparten etiqueta. El módulo, el PIN y las sesiones son los ajustes keys.pkcs11*. Vacío no abre ningún token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "el token se abre una vez, al arrancar, en cada proceso"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "66785a52cf616805",
+    "text": "Permitir llamadas PKCS#11 bloqueantes"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "328ad6368a172a36",
+    "text": "Desactivado, el valor predeterminado: nada de lo que se hace con una clave del dominio en el HSM espera en el bucle de eventos. Cada puerta (un JWS o token de acceso, una firma XML, una aserción SAML, una respuesta de WS-Federation, un token de WS-Trust, un descifrado XML o JWE, los certificados de un conjunto de claves) usa `C_SignAsync`, `C_DecryptAsync` y `C_DeriveKeyAsync`, asíncronos, del enlace. Una llamada bloqueante se rechaza (`STS-KEYS-0209`): es lo que recibe un módulo sin llamada asíncrona. Activado, la aceptación expresa de las llamadas bloqueantes: ese módulo llama a `C_Sign`, `C_Decrypt` o `C_DeriveKey` y el bucle de eventos espera al token. Configurable por dominio."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Origen de la clave de cifrado de claves de la celda"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "El proveedor de la clave de cifrado de claves de ESTA CELDA, que sella lo que la celda guarda como propio (#98). Cinco proveedores, como en `keys.kekProvider`. `none` sella el nivel de celda con la clave de cifrado de claves del servicio, lo que es correcto para el modo de una sola celda y para una prueba; un despliegue de varias celdas en modo producto se NIEGA a arrancar con él, porque entonces una copia de las filas de una celda se abriría en todas las demás."
+    "en": "73b7f0bab09392e8",
+    "text": "El proveedor de la clave de cifrado de claves de ESTA CELDA, que sella lo que la celda guarda como propio (#98). Cinco proveedores, como en `keys.kekProvider`, y `pkcs11`, el HSM propio de la celda. `none` sella el nivel de celda con la clave de cifrado de claves del servicio, lo que es correcto para el modo de una sola celda y para una prueba; un despliegue de varias celdas en modo producto se NIEGA a arrancar con él, porque entonces una copia de las filas de una celda se abriría en todas las demás."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -2196,6 +2476,66 @@
     "text": "La URL de Azure Key Vault o el endpoint de HashiCorp Vault del que se lee la clave anterior. No tiene respaldo."
   },
   "keys.previousKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "se lee una sola vez al arrancar"
+  },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "Origen de la clave de cifrado de claves de celda anterior"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "Para rotar la clave de cifrado de claves de esta celda: apunte keys.cellKek* a la clave NUEVA y esto a la ANTIGUA, y arranque. Cada clave de cifrado de datos de esta celda aún envuelta con la clave antigua se vuelve a envolver con la nueva y se escribe de vuelta; cuando todos los nodos de la celda hayan arrancado así, vuelva a poner esto en none. Se rechaza sin una clave de celda."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "la clave se lee una sola vez, antes de restaurar el almacén"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "Ubicación de la clave de cifrado de claves de celda anterior"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "Dónde está la clave de celda anterior, en el proveedor que nombra keys.previousCellKekProvider: una ruta, un ARN, un recurso o una ruta de lectura de Vault. No tiene respaldo."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "se lee una sola vez al arrancar"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "Campo en el que está la clave de celda anterior"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "El miembro de un secreto JSON que contiene la clave de celda anterior. Vacío toma el valor completo."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "se lee una sola vez al arrancar"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "Región de AWS de la clave de celda anterior"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "La región de AWS de la que se lee la clave de celda anterior. Vacío usa la resolución propia del SDK."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "se lee una sola vez al arrancar"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "URL de Key Vault de la clave de celda anterior"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "La URL de Azure Key Vault o el endpoint de HashiCorp Vault del que se lee la clave de celda anterior. No tiene respaldo."
+  },
+  "keys.previousCellKekVault|restartReason": {
     "en": "d51b3caaa6125e92",
     "text": "se lee una sola vez al arrancar"
   },
@@ -2867,6 +3207,14 @@
     "en": "b4af599a6caff599",
     "text": "La mitad RFC 8705 de la fila anterior, en las mismas superficies: un token de acceso presentado debe llevar `cnf[\"x5t#S256\"]` y la conexión debe llevar ese certificado. **Necesita que el puerto principal esté enlazado como HTTPS** (global.https), y la escucha del depurador empezó a PEDIR un certificado de cliente el 2026-09-15 para que allí pueda presentarse siquiera un token vinculado — se pide, nunca se exige. A un token que este servicio no emitió se le aplica la misma regla: la vinculación que lleva se comprueba aunque el propio token no pueda verificarse."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Emitir solo tokens de acceso restringidos al remitente"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA, y pensado para quedarse así salvo que todos los clientes del dominio puedan vincular sus tokens (ASVS 5.0.0 10.3.5 y 10.4.14, #2183). Activado, el endpoint de token emite un token de acceso solo a una solicitud que lo vincule: una prueba DPoP (RFC 9449) o el certificado de cliente de la conexión (RFC 8705), cualquiera de los dos, para cada tipo de concesión. El endpoint de autorización rechaza un response_type que emitiría un token en el navegador (`token` implícito e híbrido), que nunca podría vincularse. Un cliente que no envía ninguno se rechaza con invalid_dpop_proof nombrando este ajuste. Las dos filas anteriores rechazan un token sin vincular en los recursos; esta se niega a emitirlo."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Registro dinámico de clientes abierto (modo producto)"
@@ -2923,6 +3271,22 @@
     "en": "c20e5f5d3aa6062e",
     "text": "Cuántos secretos de cliente puede tener a la vez una aplicación (cada uno un registro en oauthClientSecret con su propio vencimiento). Añadir o rotar un secreto por encima de esto se rechaza (STS-REG-0208); elimine uno primero. Los secretos vencidos cuentan hasta que la tarea diaria oauth2.client-secret-expiry los elimina."
   },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "Rotar automáticamente los secretos de estos clientes"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "Las aplicaciones cuyo secreto de cliente el trabajo diario oauth2.client-secret-expiry ROTA antes de que caduque, separadas por comas. Cada entrada es un `client_id`, o `client_id=destination/secret-name` para enviar el nuevo secreto a ese destino de secretos (Directorio → Destinos de secretos) antes de confirmarlo; un envío que falla no rota nada y se reintenta al día siguiente. Sin destino, el cliente lee su nuevo secreto de su endpoint de configuración de cliente RFC 7592. El secreto antiguo sigue autenticando durante oauth2.clientSecretOverlapS. sts-api-client nunca se rota aquí. Vacío: no se rota ningún cliente y se avisa de cada uno antes de que caduque."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "Rotar el secreto de un cliente de la lista con estos días de antelación"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "Cuánto antes de que caduque su secreto de cliente principal se rota una aplicación listada en oauth2.clientSecretAutoRotate. Un secreto que nunca caduca nunca se rota."
+  },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
     "text": "Avisar de un secreto de cliente que vence con esta antelación en días"
@@ -2936,8 +3300,8 @@
     "text": "Vigencia del secreto de cliente (días)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. CERO, el valor predeterminado, es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
+    "en": "0282a861551627b6",
+    "text": "La vigencia, en días, de cada secreto de cliente que este servicio genera o recibe, y por tanto el `client_secret_expires_at` que publica la sección 3.2.1 de RFC 7591 para un cliente registrado en POST /oauth2/register — el valor predeterminado para cada secreto generado o recibido (una regeneración, una rotación, un secreto añadido, un valor tecleado en la consola), salvo que el formulario de alta nombre otro, o el formulario de creación lo haga para el primer secreto de una aplicación. El valor predeterminado es 365 días (ASVS 5.0.0 13.3.4); CERO es el propio \"nunca\" de esa sección. Se estampa en cada secreto al crearlo y un cambio posterior no lo mueve."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -3139,6 +3503,158 @@
     "en": "72d46974270d0c03",
     "text": "Cuántas creaciones, eliminaciones, desalojos y cambios de cumplimiento de dispositivos conserva este dominio para Monitoreo → Dispositivos. Al registrar uno nuevo por encima del límite se descarta el más antiguo."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Qué da derecho a declarar una clave de hardware"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "82f545cd2dea952b",
+    "text": "Lo que permite a un inicio de sesión PKINIT reclamar una clave ligada al hardware (el indicador pkinit-hardware y el amr hwk). `inference`, el valor por defecto y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o evidencia de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware, y una passkey obtiene hwk solo cuando su atestación se verificó y es de confianza (swk en otro caso). Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de evidencia en ambos casos, y solo para el titular del certificado."
+  },
+  "pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "Aceptar archivos de semillas PSKC sin cifrar en modo producto"
+  },
+  "pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Si un administrador puede importar, en modo producto, un archivo de semillas PSKC (RFC 6030) cuyos secretos de token NO están cifrados. Desactivado de forma predeterminada: un archivo así ha sido una lista de segundos factores válidos en cada disco y buzón por el que pasó, y un proveedor puede cifrarlo con una clave precompartida o una contraseña (secciones 6.1 y 6.2). El modo desarrollo lo acepta en cualquier caso."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Raíces de atestación PIV (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Las raíces a las que debe encadenarse una atestación de clave PIV de YubiKey, como un paquete PEM. Vacío usa las dos que publica Yubico (Yubico PIV Root CA Serial 263751, y Yubico Attestation Root 1 para el firmware 5.7.4 y posteriores), incluidas en common/pki_piv_anchors.json y fijadas allí por SHA-256, junto con los intermedios PIV de Yubico. Un certificado aquí sustituye a las raíces incluidas."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Exigir una atestación PIV para los perfiles PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Activado, una solicitud de certificado piv-auth, piv-sign, piv-key-management o piv-card-auth se rechaza salvo que lleve una atestación PIV de YubiKey que se verifique (STS-PIV-0010). Una clave piv-key-management en custodia procedente de EST /serverkeygen es la excepción: la generó este servicio. Desactivado, el valor predeterminado, una solicitud así sin atestación se emite sin prueba de hardware; una solicitud que lleva una que no se verifica se rechaza en ambos casos."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Política de PIN más débil que puede tener una clave PIV atestada"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Lo que la política de PIN de la atestación debe ser como mínimo. `once`: el PIN una vez por sesión (cuenta el match-once de una llave Bio); `always`: el PIN antes de cada uso (cuenta match-always). `any`, el valor predeterminado, no exige ninguna política de PIN. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Política de toque más débil que puede tener una clave PIV atestada"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Lo que la política de toque de la atestación debe ser como mínimo. `cached`: un toque, recordado durante 15 segundos; `always`: un toque en cada uso. `any`, el valor predeterminado, no exige ninguna. Una clave cuya atestación sea más débil se rechaza (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Permitir iniciar sesión con un certificado piv-card-auth"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "e9e37c8e6becb7ee",
+    "text": "Una clave piv-card-auth (ranura 9e) funciona sin PIN, para el acceso físico, así que su certificado se rechaza en el inicio de sesión TLS y en PKINIT (STS-PIV-0013) salvo que esto esté activado. Una clave de la ranura 9e solo se certifica con piv-card-auth (STS-PIV-0037) y nunca obtiene hwk ni sc."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Guardar en custodia las claves piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Activado, EST /serverkeygen para el perfil piv-key-management conserva la clave privada generada, sellada con la clave de cifrado de claves, para que su titular (en el portal, tras un nuevo inicio de sesión) o un administrador con el rol de recuperación de claves PIV pueda recuperarla y descifrar correo antiguo tras perder una tarjeta. Se rechaza donde no se tiene ninguna clave de cifrado de claves (STS-PIV-0020). Una clave en custodia nunca es prueba de hardware. Desactivado, el valor predeterminado, /serverkeygen rechaza el perfil piv-key-management (STS-PIV-0021), de modo que una clave 9d se genera en la tarjeta y no se guarda en ningún otro sitio."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "CA emisoras PIV o CAC externas asociadas por UUID de tarjeta (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Las CA emisoras cuyos certificados de tarjeta PIV o CAC inician la sesión de una persona por el UUID de tarjeta FIPS 201: un certificado de cliente emitido directamente por una de ellas, que declare una política de piv.externalPolicyOids y lleve exactamente un subjectAltName urn:uuid, se asocia a la única persona cuyo stsPivCardUuid contiene ese UUID. Nunca por su nombre, y no se crea ninguna entrada. La CA también debe estar en un almacén de confianza de clientes; si no, el protocolo de enlace la rechaza antes. Vacío, el valor predeterminado, no asocia nada."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Políticas PIV Authentication que debe declarar una tarjeta externa"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Las políticas de certificado de las que el certificado de una tarjeta externa debe declarar una para asociarse por su UUID de tarjeta: de forma predeterminada id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) e id-fpki-certpcy-pivi-hardware (PIV-I). Añada aquí las políticas de hardware propias de un emisor de CAC."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publicar claves en el Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Responder al Web Key Directory (draft-koch-openpgp-webkey-service) para los dominios de correo de este dominio de confianza: /.well-known/openpgpkey/<domain>/hu/<hash> (el método avanzado, en openpgpkey.<domain>) y /.well-known/openpgpkey/hu/<hash> (el método directo), además del archivo de política de cada uno. Solo se devuelve la clave de una persona que lo aceptó en el portal. Desactivado de forma predeterminada."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "Dominios de correo que sirve el Web Key Directory"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "Los dominios de correo para los que responde el Web Key Directory de este dominio de confianza, separados por comas. Vacío, el valor predeterminado, significa el propio dominio DNS del dominio de confianza. Una solicitud sin dominio de confianza en su ruta la responde el dominio de confianza que sirve su dominio DNS, primero el predeterminado."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Vigencia del desafío de registro (segundos)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Cuánto tiempo sigue siendo válido el desafío que una persona firma con gpg --clearsign para registrar una clave OpenPGP. Se consume una sola vez, y una persona tiene uno cada vez."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Desfase de reloj admitido en la firma de prueba (segundos)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Cuánto puede diferir el reloj del equipo que firma del de este servicio: se rechaza una prueba firmada antes de la emisión del desafío, o después del momento actual, por más de este valor (STS-OPENPGP-0010)."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Algoritmos aceptados"
+  },
+  "openpgp.algorithms|description": {
+    "en": "f51a30de72243d25",
+    "text": "Los algoritmos OpenPGP que puede usar una clave, en orden de preferencia. Primero los algoritmos poscuánticos de RFC 9980: ML-DSA-65+Ed25519 y ML-DSA-87+Ed448 firman, igual que SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f y SLH-DSA-SHAKE-256s en una clave v6; ML-KEM-768+X25519 y ML-KEM-1024+X448 cifran. Después los nombres clásicos: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sobre nistP256, nistP384 y nistP521, rsaSign y rsaEncryptSign, x25519, x448, ecdh sobre curve25519Legacy y las mismas curvas NIST, y rsaEncrypt. Un nombre ausente de esta lista se rechaza en el registro y en la verificación (STS-OPENPGP-0004). El valor predeterminado los nombra todos."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Registrar solo claves poscuánticas"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "b0c222dfa3cda337",
+    "text": "Activado, una clave recién registrada debe usar un algoritmo poscuántico que nombre openpgp.algorithms: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 o uno de los tres algoritmos SLH-DSA para la clave de firma, y ML-KEM-768+X25519 o ML-KEM-1024+X448 cuando tiene una clave de cifrado. Solo restringe el registro: una clave clásica ya registrada sigue verificándose y sigue recibiendo correo. No puede estar activado mientras lo esté openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Desactivado por defecto."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Clave poscuántica junto a una clásica"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "Activado, una clave recién registrada debe llevar a la vez un algoritmo poscuántico y uno clásico distinto. Un nombre compuesto como ML-DSA-65+Ed25519 cuenta solo como poscuántico, así que la mitad clásica es otra clave, por ejemplo una subclave Ed25519 o X25519 junto a ella. Una clave ya registrada se deja como está. No puede estar activado mientras lo esté openpgp.pqcOnly (STS-OPENPGP-0027). Desactivado de manera predeterminada."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Clave OpenPGP RSA más pequeña"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "cd16018c848ce538",
+    "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448, y los compuestos RFC 9980 ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 y ML-KEM-1024+X448 cuando openpgp.algorithms los nombra. DSA, ElGamal, las curvas Brainpool y SLH-DSA nunca se aceptan (STS-OPENPGP-0004)."
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Aceptar archivos CSV de OTP YubiKey en claro en modo producto"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Si un administrador puede importar, en modo producto, un CSV de secretos de OTP YubiKey (número de serie, identidad pública, identidad privada, clave AES). Desactivado de forma predeterminada: el archivo es una lista de segundos factores válidos. El modo desarrollo acepta uno en cualquier caso. Los secretos se sellan cuando se acepta el archivo, y el archivo no se conserva."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Informes de cumplimiento por solicitud del feed"
@@ -3274,6 +3790,14 @@
   "devices.requireCompliantDevice|description": {
     "en": "0199e95e9d4fd037",
     "text": "DESACTIVADO DE FORMA PREDETERMINADA EN AMBOS MODOS (#164, decisión 3). Activado, la política de emisión rechaza todo token, aserción, ticket y sesión que no provenga del propio dispositivo registrado del sujeto (o de una aplicación), reconocido por una de sus claves, CONFORME y no comprometido (STS-DEVICE-0037). La consola y el portal — donde una persona registra un dispositivo — están exentos en la política integrada. Una vía sin evidencia de dispositivo (un ticket Kerberos, un password grant sin DPoP) se rechaza. Por dominio, como todo ajuste."
+  },
+  "devices.requireCompliantDeviceForAdmin|label": {
+    "en": "accd5e669497d943",
+    "text": "Los administradores necesitan un dispositivo registrado conforme"
+  },
+  "devices.requireCompliantDeviceForAdmin|description": {
+    "en": "de625836b2a5c41f",
+    "text": "Si una PERSONA recibe una credencial para la superficie de administración — un token para la consola de administración, o uno con un alcance admin:* para /admin-api — solo desde un dispositivo registrado conforme propio (o de una aplicación), además atestiguado donde devices.compliantDeviceAttested lo exige (STS-DEVICE-0054). **`auto` está activado en modo producto y desactivado en desarrollo**; `on` y `off` lo fuerzan. Se pregunta en el endpoint de tokens, en cada concesión y cada renovación. A los programas (credenciales de cliente, cuentas de servicio) nunca se les pregunta. SIN BLOQUEO: el requisito se ACTIVA en un dominio la primera vez que un administrador de la consola recibe una credencial así desde un dispositivo conforme; hasta entonces se admite a todo administrador como antes, y una vez activado sigue activado. Registre un dispositivo en la página Dispositivos del portal de usuario, haga que lo marquen como conforme en Directorio > Dispositivos o su gestión de dispositivos, e inicie sesión con la llave de acceso o el certificado que contiene. Por dominio, como todo ajuste."
   },
   "devices.compliantDeviceAttested|label": {
     "en": "90baceaf602a2650",
@@ -3707,6 +4231,62 @@
     "en": "a28c6bc9859fc3aa",
     "text": "La clave poscuántica que una autoridad de certificación construida por este servicio lleva JUNTO A su clave clásica, en las extensiones no críticas subjectAltPublicKeyInfo, altSignatureAlgorithm y altSignatureValue de ITU-T X.509 (2019) cláusula 9.8 — un certificado híbrido. **DESACTIVADO (`none`) DE FORMA PREDETERMINADA** (rcbj, 2026-09-26): un certificado híbrido es demasiado grande o demasiado desconocido para varios productos — libest rechaza cualquier respuesta de inscripción de más de 4 KB, y toda hoja híbrida lo supera — así que el predeterminado es la jerarquía original, con cada caso de uso y cada firma con su propio par de claves clásico. Si se define un valor, cada autoridad construida después firma dos veces cada certificado que emite: de forma clásica en los campos ordinarios, que lee todo validador, y con esta clave sobre el preTBSCertificate, que lee un validador compatible con híbridos. Este servicio es uno de ellos: un certificado emitido por una autoridad que tiene una clave alternativa MUST llevar una firma alternativa válida para verificarse aquí (STS-PKI-0201, STS-PKI-0202), así que la firma clásica sola nunca es una forma de eludirla. ML-DSA-87 (FIPS 204, categoría 5) es el valor recomendado, porque una autoridad sobrevive a las claves que certifica. El valor se lee en la PRÓXIMA construcción de un nivel; una jerarquía conserva aquello con lo que se construyó. SLH-DSA (FIPS 205) se ofrece para un ancla basada en hash y cuesta SEGUNDOS por firma, es decir, por certificado emitido. ADVERTENCIA: con `none` las autoridades son solo clásicas, y un atacante con capacidad cuántica puede falsificar sus certificados."
   },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algoritmos de la CA de usuario SSH"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "5c4c22c2ab500fd4",
+    "text": "Qué algoritmos puede usar la autoridad de certificación de usuarios SSH, por orden de preferencia. ssh-mldsa-65 es ML-DSA-65 (FIPS 204) con un nombre de transporte que define este servicio, porque OpenSSH no define ninguno: la clave pública y la firma van en bruto, con la forma que usa ssh-ed25519. La línea OpenSSH TrustedUserCAKeys que publica este servicio sigue siendo el primer algoritmo clásico de esta lista, o ssh-ed25519 cuando la lista solo nombra ssh-mldsa-65. Un par que no entiende ML-DSA sigue confiando en esa línea. La clave de la autoridad ML-DSA se publica en GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; OpenSSH estándar todavía no puede verificar un certificado ML-DSA. No se ofrece ssh-rsa (SHA-1). La autoridad ML-DSA solo se crea cuando este entorno de ejecución puede generar la clave; en caso contrario los certificados siguen siendo clásicos (se registra STS-PKI-0290 y la autoridad clásica sigue respondiendo), salvo que pki.sshUserCaPqcOnly esté activado."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "Los certificados de usuario SSH son solo poscuánticos"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "dcbf21b3230dcf07",
+    "text": "Si está activado, un nuevo certificado de usuario SSH lo firma la autoridad ML-DSA y nada más. OpenSSH estándar todavía no puede verificar un certificado ML-DSA, así que solo un servidor SSH preparado para verificar ssh-mldsa-65, que confíe en la clave publicada en GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, acepta estos certificados. La línea predeterminada de esa ruta sigue siendo la clave clásica. Cuando el reino no tiene autoridad ML-DSA (este entorno de ejecución no puede generar ML-DSA, o ssh-mldsa-65 no está en pki.sshUserCaAlgorithms) la solicitud se rechaza (STS-PKI-0297) en lugar de responderse con un certificado clásico. Los certificados clásicos ya emitidos se siguen verificando. No puede estar activado a la vez que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Desactivado de forma predeterminada."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "Los certificados de usuario SSH llevan también un certificado poscuántico"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "Activado, un certificado de usuario SSH nuevo se emite dos veces cuando existe la autoridad ML-DSA: el certificado clásico, que es el que usa un cliente OpenSSH, y un certificado ML-DSA junto a él. No puede estar activado mientras lo esté pki.sshUserCaPqcOnly (STS-PKI-0296). Desactivado de manera predeterminada. Un compuesto no es un concepto que tenga OpenSSH; el certificado clásico y el certificado ML-DSA son dos firmas, no una firma híbrida."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Certificado de usuario SSH más largo sin evidencia de hardware (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "La vigencia más larga, en segundos, con la que se puede emitir un certificado de usuario SSH para una clave que no cubre ninguna evidencia de hardware verificada: una clave común, o una llave de seguridad sk- enviada sin atestación de confianza. La solicitud puede pedir menos. Cinco minutos por defecto."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Certificado de usuario SSH más largo con evidencia de hardware (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "La vigencia más larga, en segundos, con la que se puede emitir un certificado de usuario SSH para una clave que cubre una evidencia de hardware verificada: una llave de seguridad sk- cuya atestación se verificó y es de confianza, o una clave que certifica un certificado PIV atestado. La solicitud puede pedir menos. Una hora por defecto, que es también el máximo."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Extensiones de un certificado de usuario SSH"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Las extensiones de certificado OpenSSH (PROTOCOL.certkeys) que lleva un nuevo certificado de usuario SSH, separadas por comas. Por defecto, el conjunto propio de ssh-keygen; un certificado sin ninguna permite a su titular iniciar sesión sin terminal, reenvío ni archivo rc. Se puede añadir no-touch-required. Un nombre que OpenSSH no define se descarta."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Grupos cuyos nombres pueden ser principales SSH"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Los grupos del directorio cuyo nombre común puede pedir un miembro como principal de un certificado SSH, separados por comas, cada uno decidido igualmente por la política de control de acceso (recurso ssh-user-ca, acción issue-ssh-principal). Vacío, el valor por defecto, es ninguno: un certificado nombra solo el uid de la persona, porque un grupo no concede nada por ser un grupo. Un grupo cuyo nombre es el uid de una persona o una cuenta del sistema como root se rechaza en todo caso."
+  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "Nombre de organización predeterminado (O=)"
@@ -3755,6 +4335,30 @@
     "en": "81c5c9dd24774a4b",
     "text": "Cuánto tiempo es válida cada CA emisora cuando la construcción no indica vigencia. Cero son los cinco años del perfil `issuing-ca`. Se recorta a la caducidad de su intermedia."
   },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "Renovar los certificados de CA antes de que caduquen"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Si la tarea diaria pki.ca-renew renueva la raíz, cada CA intermedia y cada CA emisora dentro de su plazo de antelación (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) con la MISMA clave y el mismo sujeto, de modo que cada certificado que firmó sigue verificándose y un anclaje a su clave se mantiene. Una raíz renovada se publica junto a la que reemplaza, en /pki/ca/service/root-previous.cer, hasta que esta caduca. Una CA importada nunca se renueva. Desactivado, nada renueva una CA y caduca como antes de la 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Renovar la raíz con esta antelación a su caducidad (días)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Con cuánta antelación a la caducidad de la CA raíz la renueva pki.ca-renew, como máximo la mitad de su vida útil. Larga por defecto (tres años), porque una raíz renovada es un nuevo certificado de ancla de confianza que cada parte que confía debe recibir antes de que caduque el anterior."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Renovar una CA intermedia o emisora con esta antelación a su caducidad (días)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Con cuánta antelación a la caducidad de una CA intermedia o emisora la renueva pki.ca-renew, como máximo la mitad de su vida útil. Una CA no puede sobrevivir a su CA padre, así que una cuya CA padre caduca antes espera la renovación de esta."
+  },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
     "text": "Certificados y claves que guarda el almacén del banco de trabajo, por dominio"
@@ -3768,16 +4372,16 @@
     "text": "Pares de claves autoemitidos que una persona puede pedir por ventana"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "Cuántas veces puede una persona pulsar Generate en /portal/signing-key en una ventana de security.rateLimitWindowS. Generar un par de claves supone cientos de milisegundos de CPU en el hilo en el que se responde a todos los protocolos de aquí, y por eso se limita."
+    "en": "8395545b6fa2f69c",
+    "text": "Cuántas veces puede una persona pulsar Generate en /portal/signing-key en una ventana de security.rateLimitWindowS. Generar un par de claves supone cientos de milisegundos de CPU en el hilo en el que se responde a todos los protocolos de aquí, y por eso se limita. Se cuenta por realm: el mismo nombre de usuario en otro realm es otra persona con un cupo propio."
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "Pares de claves autoemitidos que una dirección puede pedir por ventana"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "El mismo límite contado por DIRECCIÓN de cliente, sumando a todos los que están detrás de ella. Es una fila propia porque en una implementación cuyas personas llegan a través de un mismo NAT o proxy comparten una dirección, y cinco para una oficina entera es un número distinto de cinco para una persona."
+    "en": "8e71583151b79b18",
+    "text": "El mismo límite contado por DIRECCIÓN de cliente, sumando a todos los que están detrás de ella. Es una fila propia porque en una implementación cuyas personas llegan a través de un mismo NAT o proxy comparten una dirección, y cinco para una oficina entera es un número distinto de cinco para una persona. Se cuenta por realm: las emisiones de un realm no gastan nada del cupo de otro, así que el número que fija un realm rige solo las suyas."
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",
@@ -4098,6 +4702,22 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "Caso de uso `pkinit`: el certificado de cliente en un AS-REQ de RFC 4556. La comprobación ya era completa (ruta hasta las CA de identidad del dominio, validez con krb5.clockSkew, id-pkinit-KPClientAuth o el EKU de tarjeta inteligente de Microsoft, revocación); paranoico la convierte en una llamada de la puerta, de modo que es el mismo código que el de cualquier otro caso de uso. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoico: una cadena de atestación de clave PIV de YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Caso de uso `piv-attestation` (#1955): el certificado de atestación de la ranura y el certificado de atestación f9 de un registro PIV. El modo paranoico comprueba la ventana de validez en el momento actual, la ruta hasta piv.attestationAnchors y la revocación cuando la cadena indica una lista. Desactivado, solo este caso de uso hace la comprobación de ruta sin las comprobaciones de campos, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoico: una tarjeta PIV o CAC externa asociada por UUID de tarjeta"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Caso de uso `piv-card` (#1955): un certificado de cliente de una CA emisora de piv.externalIssuers, asociado por su UUID de tarjeta. El modo paranoico comprueba keyUsage digitalSignature y la ventana de validez del certificado final además de la comprobación del emisor de un salto. Desactivado, solo este caso de uso hace únicamente la comprobación del emisor, mientras que las demás filas y el maestro no cambian; desactivado en modo producto, se registra una vez (STS-PKI-0239) y se muestra en rojo en /admin/pki/trust."
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -4476,8 +5096,8 @@
     "text": "Edad máxima de autenticación (s)"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "Cuánto tiempo hace que un cliente fue autenticado, en segundos, antes de que una solicitud de autorización deba autenticar de nuevo, aunque la solicitud no envíe max_age. 0, el valor predeterminado, no añade un límite propio, así que un cliente ordinario no cambia. Se lee en cada solicitud de autorización: no reescribe una sesión ya almacenada. La consola de administración (sts-admin-console), el portal de usuario (sts-user-portal) y la aplicación de informes (sts-report) llevan cada uno su propio valor y toman el más corto entre ese valor y authn.sessionLifetimeS, de modo que aumentar este ajuste o la vigencia de la sesión nunca alarga esos tres, y disminuir authn.sessionLifetimeS sigue acortándolos. La sustitución por cliente es oauthMaxAuthAgeS. No es una vigencia de token y no está en /admin/token-lifetimes (#825)."
+    "en": "163792a8531f4514",
+    "text": "Cuánto tiempo hace que un cliente fue autenticado, en segundos, antes de que una solicitud de autorización deba autenticar de nuevo, aunque la solicitud no envíe max_age. 0, el valor predeterminado, no añade un límite propio, así que un cliente ordinario no cambia. Se lee en cada solicitud de autorización: no reescribe una sesión ya almacenada. La consola de administración (sts-admin-console), el portal de usuario (sts-user-portal) y la aplicación de informes (sts-report) llevan cada uno su propio valor y toman el más corto entre ese valor y authn.sessionLifetimeS, de modo que aumentar este ajuste o la vigencia de la sesión nunca alarga esos tres, y disminuir authn.sessionLifetimeS sigue acortándolos. La sustitución por cliente es oauthMaxAuthAgeS. No es una vigencia de token: /admin/token-lifetimes la muestra debajo de las vigencias, con el resto de su grupo (#825, #2070)."
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
@@ -4695,6 +5315,14 @@
     "en": "822efb2b3e3dc3ea",
     "text": "La política global de RFC 9126 sección 4: el endpoint de autorización rechaza, con invalid_request y un 400 en este servidor, toda solicitud que no lleve un request_uri emitido por este servicio en /oauth2/par. Se publica como require_pushed_authorization_requests. DESACTIVADO de forma predeterminada, porque se rechazaría a todo cliente que envía una solicitud de autorización plana. Un cliente puede exigirse lo mismo con oauthRequirePushedAuthorizationRequests en su entrada (require_pushed_authorization_requests en el registro), y el perfil de un servidor de autorización con nombre puede publicarlo."
   },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "Aceptar authorization_details solo en una solicitud enviada por PAR"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA (ASVS 5.0.0 10.4.15, #2185). Activado, el endpoint de autorización rechaza, con invalid_request y un 400 en este servidor, una solicitud que lleva authorization_details de RFC 9396 y no llegó mediante un request_uri emitido en /oauth2/par, de modo que una solicitud de autorización enriquecida nunca viaja en la dirección del navegador. También se rechaza un objeto de solicitud firmado pasado por valor: también viaja en el navegador. Una solicitud sin authorization_details no se ve afectada; la fila anterior hace que toda solicitud sea enviada por PAR."
+  },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
     "text": "Vigencia del request_uri enviado (segundos)"
@@ -4766,6 +5394,14 @@
   "oauth2.keyBinding|description": {
     "en": "2394ee67a689920d",
     "text": "Aplica OpenID Connect Key Binding 1.0 (#150). Activado: el documento de descubrimiento incluye el ámbito `bound_key`, un cliente que no declara ámbitos puede pedirlo, y una solicitud que lo pida debe indicar `dpop_jkt` y usar el flujo de código (si no, se rechaza, STS-OAUTH-0704 y 0705); el ID Token nombra entonces la clave DPoP (`cnf.jwk`, `typ: dpop+id_token`), la solicitud de token debe probarla con `c_s256`, y cada actualización debe venir de la misma clave. **Desactivado, no existe, y el servicio es solo OpenID Connect Core**: `bound_key` no se anuncia, una solicitud que lo incluya no se rechaza — el ámbito se ignora y no se concede, como Core trata un ámbito sobre el que un OP no actúa — y ningún ID Token queda vinculado. Desactívelo donde las partes de confianza pidan todos los ámbitos anunciados y no sepan nada de Key Binding (#315). Una concesión ya vinculada antes de desactivarlo conserva la comprobación de su clave al actualizarse."
+  },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "Ámbitos para un cliente que no declara ninguno"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "81354ac467a58be0",
+    "text": "Lo que el modo de producto emite a un cliente cuyo oauthAllowedScope no enumera nada — normalmente uno que se registró por sí mismo (RFC 7591) sin un miembro scope. openid, el valor predeterminado desde 1.2.0: solo openid, de modo que todo otro ámbito debe declararse (ASVS 5.0.0 10.4.11). identity: los ámbitos de identidad de OpenID Connect — openid, profile, email, address y phone — y bound_key mientras OpenID Connect Key Binding esté activado, pero nunca offline_access ni un ámbito de OpenID4VCI. legacy: lo que daban las versiones anteriores a 1.2.0 — los ámbitos de identidad, offline_access (tokens de actualización que sobreviven a la sesión) y los ámbitos de credenciales de OpenID4VCI de este dominio; el script de actualización 1.1.0 lo guarda una sola vez, en el dominio predeterminado, al que recurre todo dominio sin un valor propio, cuando el almacén contenía alguna aplicación; /admin/mode avisa mientras esté en vigor. El modo de desarrollo emite cualquier ámbito que un cliente pida, diga lo que diga esto; los ámbitos protegidos de este servicio siempre necesitan una declaración. (#1589)"
   },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
@@ -4927,6 +5563,22 @@
     "en": "296a8d5721391215",
     "text": "El cn del grupo del directorio cuyos miembros son Administradores de seguridad: solo ellos pueden cambiar una política en Directorio → Políticas, asignar una política a una aplicación, un grupo o una persona, conceder este rol o actuar sobre la cuenta de una persona que lo tiene. Admin Write por sí solo no puede. EL ROL IMPLICA ADMIN READ y nada más, de modo que puede tenerlo alguien que no sea administrador por lo demás. El grupo del dominio predeterminado son los Administradores de seguridad del servicio, en todos los dominios; el grupo propio de un dominio limita a sus miembros a ese dominio."
   },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Aprobación de dos personas para actos de alto riesgo"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "Activado, un acto de administración de alto riesgo no se realiza cuando lo pide el primer administrador: eliminar un dominio, conceder un rol de administrador, renovar la clave de una CA o revocarla, sustituir un ancla de confianza, rotar, importar o retirar una clave de firma, rotar la clave de cifrado de claves y desactivar este ajuste. Queda retenido en Aprobaciones pendientes hasta que un segundo administrador, distinto, con la misma autoridad lo apruebe —entonces se ejecuta como acto del primero— o lo rechace. Cuando menos de dos personas podrían decidir un acto, se ejecuta de inmediato y el registro de auditoría indica que nadie lo aprobó, para que un dominio nunca quede bloqueado. Desactivado, el valor predeterminado, cada acto se ejecuta cuando su administrador lo pide."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Cuánto espera un acto retenido a un segundo administrador (horas)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Cuánto espera una decisión un acto retenido para aprobación de dos personas. Después, el acto ha caducado y nunca se ejecuta; quien lo pidió vuelve a pedirlo."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Exigir un token de acceso en /admin-api"
@@ -4954,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Lo que debe nombrar el claim `aud` para que un token se acepte aquí. De forma predeterminada es la URL base de la API de gestión — global.publicBaseUrl seguido de /admin-api donde esté definido, y en otro caso el esquema, host y puerto propios de este proceso. Mientras esté en ese predeterminado, también se acepta un token con audiencia /admin-api bajo el host por el que llegó la solicitud, que es lo que obtiene un cliente al pedir `resource=<base>/admin-api` en el endpoint de token (RFC 8707) bajo el nombre con el que llegó a este servicio. Defínalo para fijar un único valor donde a una implementación se llega por varios nombres."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Cambios por persona y ventana en la API de administración"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Cuántos cambios puede hacer un administrador con sesión iniciada a través de /admin-api (incluida la consola de administración) en una ventana de adminApi.writeWindowS. Se cuenta por el sujeto del token, no por la dirección. Cuenta cada POST que escribe; las lecturas no. Pasado ese número, un cambio se rechaza con 429 y Retry-After hasta que pase la ventana, y la lectura continúa. El token de un programa se cuenta en cambio por adminApi.programWritesPerSubject. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 1200 por defecto."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Cambios por programa y ventana en la API de administración"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Cuántos cambios puede hacer un programa a través de /admin-api en una ventana de adminApi.writeWindowS: un token client_credentials, contado por su cliente, o el de una cuenta de servicio, contado por su sujeto. Pasado ese número, un cambio se rechaza con 429 y Retry-After hasta que pase la ventana. 0, el valor predeterminado en todos los modos, significa sin límite, porque un aprovisionamiento o una migración hace legítimamente miles de cambios en minutos; ajústelo a lo que necesiten sus programas."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Ventana de cambios de la API de administración (segundos)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "La ventana en la que se cuentan adminApi.writesPerSubject y adminApi.programWritesPerSubject, en segundos. Una ventana fija, como toda limitación de tasa aquí."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
@@ -5166,6 +5842,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "Cuánto esperar a que responda un socio antes de abandonar. Importa más de lo que suele importar un tiempo de espera porque el navegador está ESPERANDO — un inicio de sesión federado es una persona mirando una pestaña en blanco mientras este servicio canjea un código — así que es lo bastante corto para que un socio caído produzca una página de error y no un bloqueo, y el error nombra el tiempo de espera. Era 5000 hasta el 2026-08-30, y lo que cambió es que el socio aquí es NORMALMENTE ESTE PROCESO: un dominio de confianza es una copia lógica de este servicio, y lo primero que alguien pide a un dominio recién creado es su JWKS — que es lo que hace nacer las once claves poscuánticas de ese dominio, una de las cuales es una generación de clave SLH-DSA-SHAKE-128s de unos cinco segundos. 5000 era un presupuesto que solo funcionaba porque este servicio ANTES SE BLOQUEABA mientras respondía: con el bucle de eventos detenido, el temporizador que aplicaba ese presupuesto no podía dispararse hasta que la respuesta ya estaba hecha. Ahora las claves se generan en el pool de hilos de libuv (common/pq_native.js) y se precalientan al crear un dominio, así que la obtención normal tarda milisegundos — este es el presupuesto para la que llega mientras un dominio aún está naciendo."
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Conexiones salientes por destino"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Cuántas conexiones mantiene abiertas un proceso a la vez hacia un destino (un socio, un receptor, la URL de un cliente), para cada llamada HTTP saliente. Una solicitud que lo supere espera una conexión, dentro de su plazo total, y se registra una advertencia cuando las solicitudes empiezan a esperar (STS-HTTP-0032). Las conexiones se mantienen vivas y se reutilizan."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Conexiones salientes en total"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Cuántas conexiones HTTP salientes mantiene abiertas un proceso en total. Una solicitud que lo supere espera una conexión, dentro de su plazo total (STS-HTTP-0032). Nunca menos que federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Plazo total de las llamadas salientes (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Lo máximo que puede durar en total una llamada HTTP saliente: la espera de una conexión, la conexión, el handshake y la respuesta completa. Los demás tiempos de espera son de inactividad, de modo que un par que responde lentamente mantendría la llamada abierta. Una llamada cuyo propio tiempo de espera es mayor obtiene ese en su lugar. Al vencer el plazo la llamada termina como tiempo de espera agotado (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Tiempo de espera de conexión saliente (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Cuánto puede tardar en conectarse una nueva conexión saliente, con su handshake TLS. Una conexión reutilizada del pool no se cronometra. Al alcanzar el límite la llamada termina como tiempo de espera agotado (STS-HTTP-0034)."
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -5759,6 +6467,46 @@
     "en": "ffc141f1ac37ec59",
     "text": "Cómo se envuelve la clave de contenido de un solo uso de una respuesta WS-Trust hacia la clave pública RSA del destinatario. `rsa-oaep` es el RSA-OAEP de XML Encryption 1.1 con SHA-256 y MGF1-SHA-256; `rsa-oaep-mgf1p` es OAEP sobre SHA-1. Un destinatario cuyo certificado es EC se cifra mediante acuerdo de claves ECDH-ES diga lo que diga este ajuste. El wstrustKeyTransportAlgorithm de una aplicación prevalece. `rsa-1_5` es RSAES-PKCS1-v1_5 y está roto, y se ofrece porque un solicitante desplegado puede no aceptar ningún otro. ADVERTENCIA: rsa-1_5 es solo del modo de desarrollo — en modo producto se ignora donde se lee, en este ajuste y en el wstrustKeyTransportAlgorithm de una aplicación (se usa rsa-oaep-mgf1p, se registra una vez, STS-CORE-0106), y fijarlo se rechaza (STS-CORE-0103, STS-REG-0193). Un elemento wst:EncryptWith puede nombrar este algoritmo solo mientras el cifrado de la respuesta está activado."
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "Exigir una solicitud firmada"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "Si un RequestSecurityToken cuyo AppliesTo no nombra ninguna aplicación propia debe llevar una firma de mensaje WS-Security. El wstrustSignRequest de una aplicación reemplaza este valor para una solicitud cuyo AppliesTo la nombra, y su wstrustSignRequestElements nombra qué más debe cubrir la firma además del SOAP Body. Activado, una solicitud sin una firma aceptada, o una cuya firma no cubre un elemento nombrado, es un wsse:FailedCheck. El modo de desarrollo cree una firma, como siempre ha hecho."
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "Firmar una respuesta"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "Si un RequestSecurityTokenResponse lleva un wsu:Timestamp y una firma de mensaje WS-Security sobre él y el SOAP Body, hecha con la clave de firma XML de este dominio y que nombra su certificado en un BinarySecurityToken. El wstrustSignResponse de una aplicación prevalece, y su wstrustSignResponseElements nombra lo que la firma cubre en lugar del Body. Una falta se envía sin firmar. El binding del WSDL lleva sp:IncludeTimestamp mientras esto está activado. Activado, y si la firma no puede hacerse, la solicitud es una falta en ambos modos."
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "Orden de protección de la respuesta"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "El orden en que se firma y se cifra una respuesta WS-Trust cuando ambos están activados. `sign-then-encrypt` firma el texto en claro y es el valor predeterminado de WS-SecurityPolicy; `encrypt-then-sign` firma el texto cifrado, y el binding del WSDL lleva entonces sp:EncryptBeforeSigning. La cabecera wsse:Security se escribe en el orden en que un receptor la procesa. El wstrustResponseProtectionOrder de una aplicación prevalece."
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "Cifrar la firma de una respuesta"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "Si la ds:Signature de una respuesta WS-Trust también se cifra (sp:EncryptSignature de WS-SecurityPolicy), para el destinatario de la respuesta. Solo se lee mientras la respuesta se firma y después se cifra. El binding del WSDL lleva sp:EncryptSignature mientras esto está activado. El wstrustEncryptSignature de una aplicación prevalece."
+  },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "Cifrar una respuesta para un certificado sea cual sea su keyUsage"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "Si una respuesta WS-Trust puede cifrarse para un certificado cuyo keyUsage no permite ni keyEncipherment ni keyAgreement; casi siempre, el certificado de firma de la solicitud: los certificados de firma de mensajes de este dominio solo permiten digitalSignature. Solo se omite esa comprobación; la validez, la ruta y la revocación del certificado se siguen comprobando donde el modo PKI paranoico las comprueba. Desactivado de forma predeterminada. El wstrustRecipientIgnoresKeyUsage de una aplicación lo sustituye."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
@@ -5802,6 +6550,46 @@
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
     "text": "la raíz del servicio se pone en el almacén de confianza de clientes de las escuchas cuando se construye su contexto TLS"
+  },
+  "certSignIn.profiles|label": {
+    "en": "45c9a918accd04eb",
+    "text": "Perfiles de inicio de sesión con certificado (JSON)"
+  },
+  "certSignIn.profiles|description": {
+    "en": "4a9b75892efe6f41",
+    "text": "Una matriz JSON de perfiles de inicio de sesión con certificado para certificados de cliente de autoridades que este servicio no gestiona. Cada uno es {\"id\", \"issuers\", \"keyUsage\", \"extendedKeyUsage\", \"policies\", \"bindings\", \"lowAffinity\"}: issuers es el SHA-256 de la SubjectPublicKeyInfo de cada CA cubierta, y un certificado cuya ruta validada contiene una de ellas queda cubierto por el primer perfil de ese tipo; keyUsage, los bits que debe llevar todos; extendedKeyUsage, los propósitos de los que debe llevar uno; policies, las políticas de las que el procesamiento de políticas de RFC 5280 debe llevar una a lo largo de su ruta (respetando las asignaciones de políticas); bindings, los métodos que nombran su cuenta (certificate-sha256, issuer-serial, issuer-ski, spki-sha256 y card-uuid, y solo con lowAffinity true los métodos por nombre upn, email, issuer-subject y subject; certificate-sha256 e issuer-serial de forma predeterminada). Se consulta cada método; dos cuentas, o ninguna, no inician la sesión de nadie. Las vinculaciones se guardan en stsCertificateBinding en la persona. VACÍO, el valor predeterminado, no cubre ningún certificado: un certificado externo es la entrada que lo guarda en userCertificate, o una tarjeta PIV mediante piv.externalIssuers, como antes."
+  },
+  "certSignIn.requireRevocation|label": {
+    "en": "d14071167a900fe4",
+    "text": "Exigir un estado de revocación verificado al iniciar sesión con certificado"
+  },
+  "certSignIn.requireRevocation|description": {
+    "en": "13f77eb21eb17caf",
+    "text": "Indica si un certificado de cliente inicia la sesión de una persona solo con un estado de revocación verificado: cada certificado de su ruta consultado y ninguno en una lista. auto, el valor predeterminado, lo exige en modo producto y deja el desarrollo a pki.revocationCheck, como antes; on lo exige en todos los modos, de modo que un estado que soft-fail aceptaría (desconocido, o no consultado) rechaza el inicio de sesión (STS-TLS-0071). Solo decide los inicios de sesión: /tls/sign-in, la pantalla de inicio de sesión y el traspaso de certificado."
+  },
+  "certSignIn.handoff|label": {
+    "en": "37bcae84a89e5ef8",
+    "text": "Ofrecer un inicio de sesión con certificado en su propia escucha"
+  },
+  "certSignIn.handoff|description": {
+    "en": "2cd83e3c2c6b4cb0",
+    "text": "Activado, la pantalla de inicio de sesión ofrece «Iniciar sesión con una tarjeta inteligente o un certificado», que envía el navegador a /authn/certificate/continue en la escucha a la que está asignada la aplicación alojada certificate-sign-in (listeners.applications) — una escucha personalizada cuyo clientAuth pide un certificado — y de vuelta a la pantalla, que continúa como titular del certificado. El certificado queda vinculado a ese inicio de sesión pendiente y a la sesión de inicio de sesión único del navegador, así que la escucha debe compartir el nombre de host del puerto principal o ambos deben estar bajo authn.cookieDomain. Con tls.mainPortDisableOptionalClientCertificate activado, el puerto principal no pide entonces un certificado a ninguna conexión y las demás vías de entrada nunca ven una solicitud. Desactivado, el valor predeterminado, la pantalla solo ofrece el certificado en su propia conexión."
+  },
+  "tls.trustedProxyCertificates|label": {
+    "en": "56e567aa855102b5",
+    "text": "Certificados de cliente de los proxies que terminan TLS (SHA-256)"
+  },
+  "tls.trustedProxyCertificates|description": {
+    "en": "16cfd6503c70990f",
+    "text": "Las huellas SHA-256 de los certificados de cliente que presenta un proxy que termina TLS al conectarse aquí. En hexadecimal (se admiten dos puntos y un prefijo sha256:). spki: delante del mismo valor hexadecimal fija en su lugar el SHA-256 de la SubjectPublicKeyInfo del certificado, que una renovación con la misma clave conserva; una entrada mal formada se rechaza (STS-TLS-0077). En una solicitud sobre una conexión que presenta uno de ellos, desde una dirección de tls.trustedProxyAddresses, sus encabezados Client-Cert y Client-Cert-Chain de RFC 9440 se verifican aquí frente al almacén de confianza de clientes y la revocación, y ese certificado sustituye al del protocolo de enlace en cada puerta. Se requieren ambos ajustes; desde cualquier otro remitente los dos encabezados se eliminan y se registran (STS-TLS-0072) y nunca se leen. VACÍO, el valor predeterminado, solo lee un certificado del protocolo de enlace."
+  },
+  "tls.trustedProxyAddresses|label": {
+    "en": "4bc0cf2135bd81af",
+    "text": "Direcciones de los proxies que terminan TLS"
+  },
+  "tls.trustedProxyAddresses|description": {
+    "en": "92e72546afce7f59",
+    "text": "Las direcciones o rangos CIDR desde los que se conecta un proxy de tls.trustedProxyCertificates (10.0.0.0/8, fd00::/8). Se requieren ambos ajustes antes de leer un certificado de cliente reenviado. Un valor que no es una dirección ni un rango se ignora y se registra, nunca se amplía."
   },
   "tls.hostnames|label": {
     "en": "fbb4cf44ba96aa51",
@@ -6010,6 +6798,30 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "En un clúster activo-activo, la escucha LDAPS y el puerto principal de cada nodo (salvo que tls.mainPortSharedTickets esté desactivado) sellan los tickets de sesión con una única clave compartida, para que un ticket emitido por un nodo se reanude en otro (la escucha del depurador conserva una clave por nodo). Esta es la frecuencia, en segundos, con la que el trabajo tls.ticket-key-rotate la reemplaza; la clave reemplazada se elimina, así que los secretos de una sesión reanudada solo pueden recuperarse de un ticket capturado mientras vive su clave, y un cliente cuyo ticket sea más antiguo hace un handshake completo. La clave se guarda en el almacén, sellada con la clave de cifrado de claves. 0 desactiva el uso compartido, y fuera del modo activo-activo no se comparte nada: un único nodo que responde reanuda con las claves propias por escucha de OpenSSL, que nunca salen del proceso."
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Renovar el certificado del escuchador sin reiniciar"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Si la tarea horaria tls.server-certificate-renew renueva el certificado que presentan el puerto principal, LDAPS y el depurador, con la misma clave, en cuanto queda menos de un tercio de su validez (o entra en tls.serverCertificateRenewLeadDays), y lo pone en cada socket sin reiniciar. Cada nodo renueva el suyo. Desactivado, solo se renueva al arrancar y con Renovar en la consola. Un certificado que usted proporciona en tls.certificateFile lo renueva usted."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Renovar el certificado del escuchador con esta antelación a su caducidad (días, 0 = a un tercio de su validez)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Renovar el certificado del escuchador estos días antes de que caduque, cuando eso es antes del momento en que queda un tercio de su validez. 0, el valor predeterminado, mantiene el tercio."
+  },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Grapar una respuesta OCSP en cada escucha"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Si el puerto principal, LDAPS, el depurador y cada escucha personalizada responden a un cliente que pide el estado del certificado (status_request de RFC 6066, en TLS 1.2 y 1.3) con una respuesta OCSP grapada. La respuesta es la que da el propio respondedor OCSP de este servicio para el certificado de la escucha, generada en el proceso que tiene el socket, sin una petición de red, y renovada por el trabajo tls.ocsp-staple-refresh antes de su nextUpdate. Un certificado de una autoridad externa (tls.certificateFile o los archivos propios de una escucha personalizada) no se grapa. Cuando no se puede generar una respuesta vigente, el protocolo de enlace continúa sin ella; nunca falla. **`auto` está activado en modo producto y desactivado en desarrollo** (mode.staplesOcsp()); `on` y `off` lo imponen en cualquiera de los dos modos."
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7371,6 +8183,14 @@
     "en": "0ef945c098a1eeac",
     "text": "Cuánto tiempo sigue siendo actual la clave krbtgt de un dominio de confianza — la clave con la que se sella todo Ticket-Granting Ticket — antes de que el trabajo krb5.krbtgt-rotate la reemplace por una nueva clave aleatoria con el siguiente kvno. La clave reemplazada se conserva (krb5.retainedKeyVersions, durante krb5.retainedKeyTtlS) para que un TGT emitido un instante antes de la rotación siga funcionando hasta que caduque, y el trabajo nunca rota mientras esa ventana está abierta. 180 días es la recomendación habitual de Active Directory. 0 desactiva la rotación programada; una rotación manual (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) sigue funcionando. Solo en modo producto. Con krb5.retainedKeyVersions en 0 el trabajo también queda desactivado, porque una rotación que no conservara nada cerraría sin aviso la sesión de todos los usuarios de Kerberos del dominio."
   },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Rotar la clave del aceptador propio de este servicio cada (días)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Qué antigüedad puede alcanzar una clave de principal de servicio antes de que la tarea krb5.service-key-rotate la reemplace por una nueva clave aleatoria con el siguiente kvno, conservando la que reemplaza (krb5.retainedKeyVersions, durante krb5.retainedKeyTtlS) para que los tickets ya emitidos sigan funcionando, y nunca mientras esa ventana esté abierta. Solo se rota la clave que este servicio creó para su propio aceptador: una clave cuyo keytab se entregó a otro servicio se informa como pendiente en /admin/scheduler, y rotarla, lo que entrega el keytab nuevo, sigue siendo un acto del operador. Se cuenta desde la última rotación de la clave o su creación. 0 desactiva la programación. Solo en modo producto."
+  },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
     "text": "PKINIT (preautenticación con certificado)"
@@ -7386,6 +8206,14 @@
   "krb5.pkinitRequireFreshness|description": {
     "en": "77b517dda5eb4231",
     "text": "Si una solicitud PKINIT debe llevar un token de frescura de RFC 8070 — uno que este KDC emitió en KDC_ERR_PREAUTH_REQUIRED dentro del desfase de reloj. Es lo que impide que un AuthPack firmado de antemano con una tarjeta inteligente prestada se use más tarde. MIT Kerberos 1.17 y posteriores y Heimdal envían uno cuando se les pide. ADVERTENCIA: desactivado, una solicitud PKINIT queda sujeta solo a su propia marca de tiempo y a la comprobación de repetición."
+  },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT exige paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Indica si una solicitud PKINIT debe llevar el paChecksum2 de Microsoft (MS-PKCA sección 2.2.3): el SHA-256, SHA-384 o SHA-512 del cuerpo de la solicitud, junto al paChecksum SHA-1 que exige la RFC 4556. Un paChecksum2 enviado se comprueba en cualquier caso, y uno sobre SHA-1 se rechaza en modo producto. Desactivado de forma predeterminada, porque MIT Kerberos no lo envía; Windows 11 y Windows Server 2022 23H2 y posteriores sí. Activado, un cliente que no lo envíe —incluido PKINIT anónimo— se rechaza con KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
   },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
@@ -7518,6 +8346,22 @@
   "ldap.timeLimit|description": {
     "en": "b74ec7b68f9251f2",
     "text": "El límite de tiempo del lado del servidor para una búsqueda, en segundos, que es lo que produce LDAP_TIME_LIMIT_EXCEEDED; gana el timeLimit propio de un cliente cuando es más corto. Las entradas enviadas antes de alcanzarlo son la respuesta, marcada como incompleta."
+  },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Mensaje más grande de un cliente enlazado (bytes)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "El mensaje LDAP más grande que puede enviar un cliente que se ha enlazado, en bytes, contado a partir de la longitud que declara su encabezado BER: una conexión cuyo siguiente mensaje declara más se cierra antes de leer nada de él (STS-LDAP-0227). Los resultados de búsqueda los envía el servidor y no cuentan. 5 MiB de forma predeterminada, el límite que tiene aquí todo cuerpo HTTP."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Mensaje más grande antes de un enlace (bytes)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "El mensaje LDAP más grande que puede enviar un cliente antes de enlazarse, en bytes: un enlace, StartTLS o una búsqueda del DSE raíz. Por encima, la conexión se cierra antes de leer nada del mensaje (STS-LDAP-0227). 128 KiB de forma predeterminada, el doble del token Kerberos más grande que puede llevar un enlace SASL. Nunca más que ldap.maxMessageBytes en la práctica."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
@@ -8008,8 +8852,8 @@
     "text": "AuthZEN habilitado"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "Si está activado, la AuthZEN Authorization API responde bajo /access/v1. Desactivado, sus rutas siguen REGISTRADAS y responden 501, como las de XACML: la función está desactivada, la URL no es incorrecta. Decide con el motor XACML, así que también responde 501 mientras xacml.enabled está desactivado. Un llamante sigue necesitando el rol AUTHZEN_PEPS (roles.authzenPepGroup) y un alcance de aplicación antes de que se le diga nada."
+    "en": "ab2a36497d9bc637",
+    "text": "Si está activado, la AuthZEN Authorization API responde bajo /access/v1. Desactivado, sus rutas siguen REGISTRADAS y responden 403: la función está desactivada, la URL no es incorrecta. Decide con el motor XACML, así que también responde 403 mientras xacml.enabled está desactivado. Un llamante sigue necesitando el rol AUTHZEN_PEPS (roles.authzenPepGroup) y un alcance de aplicación antes de que se le diga nada."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8032,8 +8876,8 @@
     "text": "Evaluaciones por lotes activadas"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "Activada, POST /access/v1/evaluations responde varias evaluaciones de acceso en una sola solicitud (sección 7) y el documento de metadatos lo nombra. Desactivada, la ruta responde 501 y los metadatos lo omiten; /access/v1/evaluation no se ve afectado."
+    "en": "30f1730e7cc2e19f",
+    "text": "Activada, POST /access/v1/evaluations responde varias evaluaciones de acceso en una sola solicitud (sección 7) y el documento de metadatos lo nombra. Desactivada, la ruta responde 403 y los metadatos lo omiten; /access/v1/evaluation no se ve afectado."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8080,8 +8924,8 @@
     "text": "Search APIs activadas"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "Activado, las tres búsquedas de AuthZEN responden bajo /access/v1/search (sujeto, recurso, acción) y los metadatos las nombran. Una búsqueda decide cada candidato que este servicio puede nombrar con la política raíz del dominio y responde los permitidos: los sujetos son las personas del directorio del dominio, los recursos sus aplicaciones, API y relaciones de delegación, y las acciones los nombres con los que la política compara action-id. Desactivado, las rutas responden 501."
+    "en": "058f0be9c553b3f0",
+    "text": "Activado, las tres búsquedas de AuthZEN responden bajo /access/v1/search (sujeto, recurso, acción) y los metadatos las nombran. Una búsqueda decide cada candidato que este servicio puede nombrar con la política raíz del dominio y responde los permitidos: los sujetos son las personas del directorio del dominio, los recursos sus aplicaciones, API y relaciones de delegación, y las acciones los nombres con los que la política compara action-id. Desactivado, las rutas responden 403."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8112,8 +8956,8 @@
     "text": "Solicitudes de acceso y aprobaciones"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "El perfil AuthZEN Access Request and Approval (un borrador), con su complemento de callback. Cuando está activado, un Deny cuya respuesta XACML lleva el advice urn:sts:xacml:advice:access-request responde false con context.access_request; un PEP lo envía a POST /access/v1/access-requests, un aprobador nombrado por el advice lo decide en el portal o la consola, y una aprobación presentada en la siguiente evaluación llega a la política raíz como hechos de confianza. Los metadatos nombran el endpoint y la capacidad. Una denegación sin el advice nunca se puede solicitar. Desactivado, las rutas responden 501 y ninguna denegación se puede solicitar."
+    "en": "2851b5ede62f62db",
+    "text": "El perfil AuthZEN Access Request and Approval (un borrador), con su complemento de callback. Cuando está activado, un Deny cuya respuesta XACML lleva el advice urn:sts:xacml:advice:access-request responde false con context.access_request; un PEP lo envía a POST /access/v1/access-requests, un aprobador nombrado por el advice lo decide en el portal o la consola, y una aprobación presentada en la siguiente evaluación llega a la política raíz como hechos de confianza. Los metadatos nombran el endpoint y la capacidad. Una denegación sin el advice nunca se puede solicitar. Desactivado, las rutas responden 403 y ninguna denegación se puede solicitar."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -8162,6 +9006,126 @@
   "authzen.accessRequestMaxPending|description": {
     "en": "6b3f5e73f6fcafaf",
     "text": "El máximo de solicitudes de acceso que un dominio retiene pendientes; superado, un envío se rechaza con 503 hasta que algunas se decidan o venzan."
+  },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Denegaciones solicitables que registra un dominio"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "El número máximo de denegaciones solicitables que un dominio registra por evaluation_id (#1204). Por encima de él, una denegación nueva no se registra y sigue siendo solicitable por su binding_token; el trabajo de solicitudes de acceso elimina un registro un día después de su ventana."
+  },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Indicaciones de presentación en las solicitudes de acceso"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Las indicaciones de presentación del perfil Access Request and Approval (#1204): una denegación solicitable lleva access_request.display y un Task Handle lleva task.display, cada uno con un título y una descripción. Los de la denegación son el display-title y el display-description del advice, literalmente, o si no las propias palabras del servicio en el idioma que pide Accept-Language. Son indicaciones para una persona y nunca política. Desactivado, no se envía ninguno."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Formulario alojado para solicitudes de acceso"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "El formulario alojado del perfil Access Request and Approval (#1204): una denegación solicitable que este dominio registró lleva form_url, la página del portal /portal/access-request, donde el sujeto de la denegación inicia sesión y envía la solicitud de acceso con una justificación; el PEP denegado recupera esa tarea cuando envía la misma denegación. Un Task Handle lleva links.ticket, la misma página, donde el sujeto ve el estado de la solicitud. Desactivado, no se envía ninguno y la página no crea ninguna solicitud."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Catálogos para solicitudes de acceso"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "5809e31e9afa317e",
+    "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 403."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Partes que actúan en las solicitudes de acceso"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "El perfil AuthZEN Actor Delegation (#1204): la cadena client.actor de una solicitud de acceso se verifica con la propia credencial del llamador (un eslabón que es el propio llamador, o la cadena act de su propio token de acceso) y se rechaza en otro caso, y client.source se registra. Ambos se muestran a los aprobadores y al registro de auditoría, y ninguno es un hecho de la política. Desactivado, ambos se aceptan y nunca se leen."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Solicitudes de acceso en bloque"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "El perfil AuthZEN Bulk Access Requests (#1204): una solicitud con items, cada uno con su propia denegación, se comprueba elemento a elemento como una solicitud única, y responde un solo Task Handle cuyo estado agrega sus elementos (partial cuando terminaron de forma distinta) y cuyos elementos llevan cada uno su propio resultado. Cada elemento se aprueba y se reevalúa por separado. Desactivado, items se rechaza como antes."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Elementos de una solicitud de acceso en bloque"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "El máximo de elementos que puede llevar una solicitud de acceso en bloque (#1204). Cada uno cuenta para authzen.accessRequestMaxPending."
+  },
+  "authzen.callbackAttempts|label": {
+    "en": "386af3a6b939029e",
+    "text": "Access request callback attempts"
+  },
+  "authzen.callbackAttempts|description": {
+    "en": "cd69d3fbd5941b9e",
+    "text": "How many times a finished access request's callback is sent, the first included (#1202). A network error, a timeout or an HTTP 5xx is tried again after authzen.callbackBackoffS, by the authzen.access-requests job. An HTTP 4xx, or a URL the outbound policy refuses, is not tried again. An application's appAuthzenCallbackConfig may set another bound for one URL. 1 is one attempt."
+  },
+  "authzen.callbackBackoffS|label": {
+    "en": "fec06743e6cabd16",
+    "text": "Access request callback backoff (seconds)"
+  },
+  "authzen.callbackBackoffS|description": {
+    "en": "43f2cb7740fc7efe",
+    "text": "Cuánto esperar tras el primer fallo de una devolución de llamada de una solicitud de acceso antes del siguiente intento (#1202). Cada espera posterior es el doble de la anterior, hasta un día. El trabajo authzen.access-requests se ejecuta cada 60 segundos, así que una espera más corta no podría respetarse. El appAuthzenCallbackConfig de una aplicación puede fijar una espera más larga para una URL."
+  },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Consultar un PDP externo antes de un intercambio de tokens."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "El enlace AuthZEN para el intercambio de tokens de OAuth 2.0, dirección B: antes de que este servidor de autorización emita un token de acceso de OAuth para un intercambio RFC 8693, consulta el PDP externo nombrado por authzen.externalPdpUrl. La política de emisión local decide primero, y un rechazo que ella aplique no se envía. El PDP solo puede reducir el alcance y la vida del token de acceso. Desactivado, el valor predeterminado, no se llama a nada. Un token de Kerberos queda fuera del enlace y no se envía. Sin respuesta, o un rechazo, no hay token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Dirección del PDP AuthZEN externo."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "La dirección https absoluta del POST /access/v1/evaluations del PDP externo. Un administrador la configura, y una solicitud no puede nombrarla. No lleva userinfo, query ni fragment. Vacía mientras authzen.externalPdp está activado, rechaza el intercambio. El http en claro se rechaza incluso cuando federation.outboundAllowHttp está activado, porque la solicitud lleva reivindicaciones del token y un certificado de cliente."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Tiempo de espera del PDP externo (milisegundos)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Cuánto esperar al PDP externo, en milisegundos. Un tiempo agotado rechaza el intercambio. La decisión local no se emite en su lugar."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Certificado de cliente para el PDP externo."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "El archivo PEM que este servidor de autorización presenta al PDP externo. TLS mutuo es el único modo, y el PDP admite el certificado como un llamante AUTHZEN_PEPS. En producto, el archivo debe estar dentro de un directorio que security.fileRoots enumera. Una ruta relativa es el directorio actual de este proceso. Vacío o ilegible mientras authzen.externalPdp está activado, rechaza el intercambio."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Clave de cliente para el PDP externo."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "El archivo PEM de la clave privada del certificado de cliente. El archivo se lee cuando se llama al PDP. Los bytes de la clave no son un valor de configuración, así que GET /admin-api/config devuelve la ruta y no la clave. En producto, el archivo debe estar dentro de un directorio que security.fileRoots enumera. Una ruta relativa es el directorio actual de este proceso. Vacío o ilegible mientras authzen.externalPdp está activado, rechaza el intercambio."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "Archivo de AC para el PDP externo."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "Un archivo PEM opcional de certificados de AC usado en lugar de las raíces predeterminadas para verificar el PDP externo. Vacío, se usan esas raíces. Un archivo nombrado e ilegible, o que el modo producto no leerá bajo security.fileRoots, rechaza el intercambio. Una ruta relativa es el directorio actual de este proceso."
   },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
@@ -8338,6 +9302,14 @@
   "ssf.personStreamsSelfOnly|description": {
     "en": "581ff0b61393c1af",
     "text": "Un flujo creado con la credencial de una PERSONA — un token de acceso que un cliente obtuvo para ella, o su propio nombre y contraseña mediante Basic — trata solo sobre esa persona: los eventos sobre cualquier otra no se le entregan, digan lo que digan su lista de sujetos y default_subjects, y Add Subject se niega a nombrar a nadie más (403). SSF 1.0 sección 10.1 exige que solo las partes autorizadas accedan a las señales compartidas, y una persona lo es para las suyas. Desactivado, el flujo de una persona se trata como el de un cliente y, con default_subjects ALL, recibe todos los eventos del dominio. No se ven afectados el flujo propio de un cliente (client credentials), el de una aplicación GNAP ni los receptores propios de este servicio."
+  },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "De qué personas oye hablar el flujo de una aplicación"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "Un flujo que posee una APLICACIÓN (creado con sus credenciales de cliente, una clave GNAP o su certificado, no con el token de una persona) transporta un evento CAEP o RISC sobre una persona solo mientras esa persona tenga una sesión activa en esa aplicación: una sesión de inicio de sesión activa de la que la aplicación es una parte de confianza (un cliente OpenID Connect u OAuth, un proveedor de servicios SAML 2.0 o 1.1, una parte de confianza WS-Federation), o una concesión GNAP activa que la persona le aprobó. El evento que TERMINA dicha sesión sigue llegando a la aplicación cuya sesión terminó. Los eventos sin sujeto, y los eventos que no se refieren a ninguna persona, no se ven afectados, y un Add Subject que nombra a una persona sin sesión activa en la aplicación se rechaza (403). default_subjects sigue siendo ALL, que ahora significa cada sujeto con una sesión activa en la aplicación del receptor (SSF 1.0, secciones 7.1, 9.2 y 10.1). all es el comportamiento anterior a #2234: el flujo de una aplicación oye hablar de todos en el dominio, lo que elige deliberadamente una implantación que depende de flujos de todos los sujetos (un receptor MDM o EDR). El flujo propio de una persona (ssf.personStreamsSelfOnly), los receptores propios de este servicio y el flujo de un servidor de recursos GNAP no se ven afectados."
   },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
@@ -8940,8 +9912,8 @@
     "text": "Tomar la huella del navegador al iniciar sesión"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "DESACTIVADO POR DEFECTO (#62 P6). Activado, la pantalla de inicio de sesión ejecuta un script, FingerprintJS (MIT; no envía nada a ninguna parte), que calcula un identificador a partir de lo que expone el navegador y lo pone en el formulario; el servicio conserva solo un resumen con clave, y un navegador desde el que esta persona nunca ha iniciado sesión es la señal new-device (x2). Una huella de navegador es un dato personal: complete la evaluación de impacto en la privacidad de docs/v1.1.0/risk-scoring.md, e informe a las personas que inician sesión, antes de activarlo. Por dominio, como todo ajuste."
+    "en": "c34ba5805bddbb8b",
+    "text": "DESACTIVADO POR DEFECTO (#62 P6). Activado, la pantalla de inicio de sesión ejecuta un script, FingerprintJS (MIT; no envía nada a ninguna parte), que calcula un identificador a partir de lo que expone el navegador y lo pone en el formulario; el servicio conserva solo un resumen con clave, y un navegador desde el que esta persona nunca ha iniciado sesión es la señal new-device (x2). Una huella de navegador es un dato personal: complete la evaluación de impacto en la privacidad de docs/v1.2.0/risk-scoring.md, e informe a las personas que inician sesión, antes de activarlo. Por dominio, como todo ajuste."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -9367,6 +10339,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Si un grupo nombrado por el propio `memberOf` de la PERSONA cuenta como pertenencia cuando la entrada del grupo no la incluye a su vez. Nada en este directorio mantiene memberOf — ni siquiera es un atributo estándar —, así que un cliente que lo escribe crea exactamente esa discrepancia, y /admin/groups existe en parte para MOSTRARLA. Este ajuste es de qué lado de ella se pone un token. Activado por defecto, porque a un cliente que escribió memberOf y no obtuvo ningún claim no se le ha dicho nada sobre por qué; desactivado es como la entrada del grupo sigue siendo la única autoridad. En cualquier caso el grupo tiene que EXISTIR aquí — un memberOf que no nombra nada no inventa un grupo para ponerlo en un token."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Reclamación de grupos más grande en un token (bytes)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Lo máximo que puede ocupar la reclamación de grupos en un token de acceso o un ID Token, medido como el JSON de sus valores, antes de base64url. Por encima, la reclamación no se recorta: se convierte en una reclamación distribuida de la sección 5.6.2 de OpenID Connect Core — `_claim_names` la nombra y `_claim_sources` apunta a /oauth2/groups de este reino, que responde con la lista completa como un JWT firmado para el token de acceso presentado. Un token de acceso viaja en una cabecera, y la mayoría de los servidores rechazan un token de más de 8 KiB (16 KiB Node.js) con un 431 que no señala a nada. El valor predeterminado, 4096, equivale a unos 150 nombres de grupo o 60 DN, así que los tokens que las personas reciben hoy no cambian. UserInfo y las aserciones SAML siempre llevan la lista completa. 0 desactiva el límite."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Incluir un claim de roles"
@@ -9374,6 +10354,14 @@
   "roles.claim|description": {
     "en": "05185a4a554d5f71",
     "text": "Si está activado, todo token de acceso, ID Token, aserción SAML 2.0 y aserción SAML 1.1 nombra los roles que tiene su sujeto. ACTIVADO por defecto y aun así no cambia nada para la mayoría de los llamantes, por la misma razón por la que el claim de grupos está activado por defecto: el claim se OMITE POR COMPLETO para quien no tiene ningún rol CONFIGURADO, y los seis roles integrados nunca están en él — EVERYBODY y ALL_AUTHENTICATED_USERS son ciertos para casi todos los tokens aquí, así que incluirlos añadiría dos miembros sin sentido a cada token que analiza cada cliente existente y no diría a una parte que confía nada que no supiera por tener el token. Existen para EXIGIRSE, no para incluirse."
+  },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Ofrecer roles dinámicos al iniciar sesión"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Si una persona que inicia sesión puede elegir roles dinámicos seleccionables (#1072): en un dominio que define al menos un rol dinámico, la página de inicio de sesión ofrece la casilla «Elegir roles para este inicio de sesión», y al marcarla se muestran los roles que la elegibilidad de la persona permite. ACTIVADO de forma predeterminada; appDynamicRoleSelection en la entrada de una aplicación lo reemplaza para esa aplicación. Desactivado, no se muestra la casilla, no se ofrece ningún rol, no se pide ningún rol dinámico obligatorio y ningún token lleva un rol seleccionado dinámicamente."
   },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
@@ -9422,6 +10410,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "El grupo del directorio cuyos miembros tienen el rol integrado XACML_USER, que es lo que exigen los tres endpoints XACML propiamente dichos — GET /xacml, POST /xacml/pdp y GET /xacml/policies. Quien llama presentando un certificado de cliente que este servicio VERIFICÓ es alguien a quien puede nombrar; pertenecer a este grupo es lo que lo convierte en alguien a quien deja entrar, y ambas cosas se mantienen separadas por la misma razón que roles.remotePepGroup, más arriba: un certificado prueba una identidad y un grupo concede un permiso. ES UN SEGUNDO GRUPO Y NO EL MISMO: REMOTE_PEPS alcanza los tres endpoints /xacml/pep, que entregan los documentos con los que este servicio aplica su propio control de acceso, y un solo grupo que concediera ambos haría que admitir a quien llama en la superficie XACML propiamente dicha lo admitiera sin avisar en aquellos. Dejarlo vacío significa que NADIE tiene el rol, lo que cierra esos tres endpoints a cualquiera que llame; es la forma de retirar la superficie XACML sin desactivar xacml.enabled y perder con ello los PEP integrados de emisión y de acceso."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupo que concede el rol PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "El grupo del directorio cuyos miembros tienen el rol integrado PIV_KEY_RECOVERY (#1955), que la política de control de acceso exige, junto con Admin Write, para recuperar la clave piv-key-management en custodia de otra persona (piv.keyEscrow). Esa clave descifra el correo de la persona, por lo que nadie tiene el rol hasta que un administrador lo añade al grupo. Vacío no permite a nadie recuperar la clave de otra persona; el titular recupera la suya en el portal."
   },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
@@ -10695,6 +11691,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Cuánto puede ejecutarse cualquier sentencia detrás de /admin/database, como el propio statement_timeout de PostgreSQL en la única conexión que toma prestada esa página. Cada una de ellas es una lectura de una vista del catálogo; el límite existe para que abrir una página de la consola nunca pueda inmovilizar una conexión de un pool con el que este servicio responde al tráfico de protocolo. Se fija en el servidor y no como un temporizador aquí, porque un temporizador abandonaría la promesa y dejaría tanto la sentencia como la conexión exactamente donde estaban."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Conexiones a la base de datos por proceso"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Cuántas conexiones a la base de datos mantiene cada proceso en su pool. 0, el valor predeterminado, es el doble de los workers de solicitudes del nodo y nunca menos de cuatro. Quien llame más allá de ese número espera una conexión libre hasta persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Espera de una conexión a la base de datos (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Cuánto espera quien llama una conexión libre en el pool antes de fallar. Una escritura que falla así se responde con 503 (STS-STORE-0066) y su vaciado se vuelve a intentar."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Tiempo de espera de conexión a la base de datos (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Cuánto puede tardar en establecerse una nueva conexión a la base de datos."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Conservación de una conexión inactiva a la base de datos (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Cuánto permanece una conexión inactiva en el pool antes de cerrarse."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "el almacén se abre cuando arranca el proceso"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Tiempo límite de sentencias de la base de datos (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Lo máximo que puede ejecutarse una sentencia ordinaria de la base de datos antes de que el servidor la cancele (statement_timeout de PostgreSQL, max_statement_time de MariaDB), registrado como STS-STORE-0178. 0 para ninguno. La apertura del almacén, sus migraciones, la restauración al arrancar y las construcciones de índices en línea no están sujetas a él; los rellenos se ejecutan en lotes pequeños."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "se fija en el pool una vez que el almacén está abierto y leído"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Directorio de datos"
@@ -10791,6 +11847,14 @@
     "en": "81c3618a73d5aca7",
     "text": "se lee una vez al arrancar, antes de abrir el pool"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "Volver a leer la contraseña de la base de datos cada (segundos)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "Con qué frecuencia cada proceso vuelve a leer la contraseña de la base de datos del almacén de secretos que nombra `persistence.databasePasswordProvider` (el trabajo persistence.database-password-refresh). Una contraseña cambiada se usa en toda conexión hecha después, sin reiniciar; las conexiones abiertas siguen funcionando. También se vuelve a leer de inmediato cuando la base de datos rechaza un inicio de sesión. Rotar la contraseña en la base de datos es tarea del almacén de secretos o del operador, y la antigua debe seguir siendo válida allí al menos este tiempo. 0 la lee solo al arrancar y tras un inicio de sesión rechazado."
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "Verificar el certificado de la base de datos"
@@ -10812,6 +11876,30 @@
     "text": "Un archivo PEM de certificados de CA en los que se confía ÚNICAMENTE para las conexiones a la base de datos, en lugar del almacén de confianza predeterminado de este proceso para ellas; nada más a lo que se conecta este servicio confía en ellos. Puede nombrar en su lugar un directorio, y entonces se lee cada archivo .crt y .pem que contenga. Vacío usa el almacén de confianza predeterminado (con NODE_EXTRA_CA_CERTS). Un archivo nombrado que no se puede leer, o que no contiene ningún certificado, detiene el servicio al arrancar. La pila de compose lo define como el certificado que genera su contenedor de postgres, compartido en solo lectura y sin la clave."
   },
   "persistence.databaseTlsCaFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "el pool de conexiones se abre antes de que se vincule la escucha"
+  },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "Archivo del certificado de cliente de la base de datos"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "Un certificado PEM que este servicio presenta a la base de datos al abrir una conexión (primero el certificado final y después los certificados intermedios que la base de datos no tenga). Configúrelo junto con `persistence.databaseTlsClientKeyFile`. La base de datos puede entonces autenticar la conexión solo con el certificado (el método `cert` de PostgreSQL, `REQUIRE X509` de MariaDB), y no hace falta contraseña, o con el certificado y la contraseña juntos (`clientcert=verify-full`). Vacío, el valor predeterminado, no presenta ninguno. Ambos archivos se vuelven a leer cada `persistence.databasePasswordRefreshS`, de modo que un certificado renovado se usa en las conexiones nuevas sin reiniciar. En producto el archivo debe estar en un directorio que `security.fileRoots` incluya. Un archivo que no se puede leer, o una clave que no es la de este certificado, impide que el servicio arranque."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "el pool de conexiones se abre antes de que se vincule la escucha"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "Archivo de la clave de cliente de la base de datos"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "La clave privada PEM sin cifrar de `persistence.databaseTlsClientCertFile`, legible solo por este servicio. Se lee de la ruta y nunca se registra ni se muestra. Configure ambos o ninguno."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
     "en": "61c24dbb3c0a7674",
     "text": "el pool de conexiones se abre antes de que se vincule la escucha"
   },
@@ -11035,6 +12123,22 @@
     "en": "43d39d2a6820f37a",
     "text": "la comprobación de capacidades se ejecuta una vez, cuando el nodo se une"
   },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "Rotar los secretos compartidos cada (días)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "Con qué frecuencia el trabajo cluster.secret-rotate reemplaza cada secreto compartido que es una clave: la clave CSRF, la clave de nonce de ACME, el secreto del receptor de Shared Signals, la clave de página de OpenID Federation, la clave del resultado de cierre de sesión y la clave de DBSC. Un valor nuevo se publica primero y se hace vigente diez minutos después, cuando todos los procesos lo han leído, y el antiguo se sigue aceptando durante `cluster.secretOverlapS`. El secreto de sujeto pairwise y el secreto de nombre de arranque son identificadores y nunca rotan, y un valor fijado por una variable de entorno lo cambia el operador. 0 desactiva la rotación. Un secreto guardado por una versión anterior se fecha en la primera ejecución del trabajo y se rota por primera vez tantos días después, nunca en la actualización."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "Aceptar un secreto compartido rotado durante (segundos)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "Cuánto tiempo se sigue aceptando, junto al nuevo, un secreto compartido que una rotación reemplazó, para que un formulario, un nonce, un puntero de página o una cookie vinculada creados justo antes de la rotación sigan funcionando después. No se crea nada nuevo con él. Un día por defecto."
+  },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
     "text": "Esta celda"
@@ -11114,6 +12218,14 @@
   "cells.relayTimeoutMs|description": {
     "en": "839a4a009d203829",
     "text": "Cuánto puede tardar una solicitud retransmitida a otra celda, o una llamada en el canal entre celdas, antes de responderse como si la otra celda fuera inaccesible (y tratarse como indique `cells.homeUnreachable`)."
+  },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Respuesta entre celdas más grande (bytes)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Lo máximo que puede responder una llamada síncrona a otra celda. Si lo supera, la conexión se cierra y la llamada falla (STS-CELL-0212)."
   },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
@@ -11347,6 +12459,14 @@
     "en": "de6b9c78cb258e07",
     "text": "Cuántas personas lee cada fuente de atributos en cada ejecución de la actualización programada (attribute-sources.refresh, cada minuto), continuando la siguiente vez donde quedó la última. Un valor mayor termina antes una pasada y ocupa un nodo durante más tiempo en cada ejecución."
   },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Conexiones por fuente"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Cuántas conexiones mantiene cada proceso con una fuente de atributos. Una consulta que lo supere espera una conexión dentro del propio tiempo de espera de la fuente. Un cambio surte efecto en la siguiente consulta de cada fuente."
+  },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
     "text": "Transporte de correo"
@@ -11360,8 +12480,8 @@
     "text": "Dirección del remitente"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "La dirección desde la que se envía cada mensaje. Vacío significa `no-reply@` el dominio DNS del dominio. El proveedor debe permitir enviar con ella: una identidad verificada en SES, una dirección MailFrom de un dominio conectado en Azure, el buzón suplantado (o uno de sus alias de envío) para Gmail — y SPF, DKIM y DMARC para su dominio son el tema de docs/v1.1.0/mail.md."
+    "en": "a8b259e6c1037325",
+    "text": "La dirección desde la que se envía cada mensaje. Vacío significa `no-reply@` el dominio DNS del dominio. El proveedor debe permitir enviar con ella: una identidad verificada en SES, una dirección MailFrom de un dominio conectado en Azure, el buzón suplantado (o uno de sus alias de envío) para Gmail — y SPF, DKIM y DMARC para su dominio son el tema de docs/v1.2.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11496,8 +12616,8 @@
     "text": "Algoritmo DKIM"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256` (RFC 6376; una clave de 2048 bits o más, según RFC 8301) o `ed25519-sha256` (RFC 8463). Muchos receptores todavía solo verifican RSA, así que un dominio que pasa a Ed25519 publica ambas y firma dos veces en otros sitios. DKIM aún no tiene ningún algoritmo poscuántico registrado; docs/v1.1.0/mail.md lo indica."
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256` (RFC 6376; una clave de 2048 bits o más, según RFC 8301) o `ed25519-sha256` (RFC 8463). Muchos receptores todavía solo verifican RSA, así que un dominio que pasa a Ed25519 publica ambas y firma dos veces en otros sitios. DKIM aún no tiene ningún algoritmo poscuántico registrado; docs/v1.2.0/mail.md lo indica."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11522,6 +12642,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "El miembro de un valor JSON que se toma. Vacío significa `dkimKey`."
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "El siguiente selector DKIM"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "Para rotar la clave DKIM: el selector de la clave NUEVA, cuyo registro se publica en <selector>._domainkey.<domain> antes de que la firma pase a ella. El registro que hay que publicar se registra en el log al construir el transporte. Vacío: no hay ninguna rotación en curso."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "Campo de la siguiente clave privada DKIM"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "El miembro del secreto de la clave DKIM (el que nombran mail.dkimKeyProvider y mail.dkimKeyRef) que contiene la clave privada PEM del siguiente selector. Vacío significa `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "Firmar con el siguiente selector DKIM desde"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "Cuándo los mensajes empiezan a firmarse con mail.dkimNextSelector, como hora ISO 8601 (2026-12-01T00:00:00Z) — y solo cuando DNS responde al nombre del siguiente selector con su clave; hasta entonces firma el selector actual, con una advertencia. Mantenga publicado el registro del selector antiguo una semana después del cambio, luego haga que el siguiente selector sea mail.dkimSelector y vacíe estos tres. Vacío: nunca cambiar."
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",
@@ -11656,8 +12800,8 @@
     "text": "Envíos en curso"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Cuántos mensajes envía a la vez un proceso desde un barrido."
+    "en": "d6de0478b866cf8b",
+    "text": "Cuántos mensajes envía a la vez un proceso, desde un barrido y en el primer intento tras ponerse un mensaje en cola. Un mensaje que no encuentra hueco libre espera al siguiente barrido."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -11672,8 +12816,8 @@
     "text": "Filas de la bandeja de salida por dominio"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "El límite de la bandeja de salida, por dominio: primero se descarta la fila TERMINADA más antigua, y nunca una pendiente."
+    "en": "3b7f698ec30a6ed1",
+    "text": "El límite de la bandeja de salida, por dominio: primero se descarta la fila TERMINADA más antigua, y nunca una pendiente. Se rechaza un mensaje que haría superar ese límite a las filas PENDIENTES (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",
@@ -11707,6 +12851,22 @@
     "en": "50195b20fe00e9fa",
     "text": "Un aviso que nombra aquello de lo que trata (el mismo acto sobre la misma cuenta) se envía una vez en esta ventana, por muchas puertas que lo hayan notificado. 0 desactiva la supresión."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Mensajes que deben cifrarse"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Los mensajes, por ID de plantilla (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised y el resto de la lista de Monitoring → Mail), que solo se envían cifrados — PGP/MIME para la clave OpenPGP de la persona o S/MIME para su certificado, según lo que eligió en el portal. A una persona que no eligió ninguno no se le envía (STS-MAIL-0240), y el uso que lo solicitó lo indica como con cualquier mensaje no enviado. Vacío, el valor predeterminado, no exige ninguno; lo que haya elegido una persona se respeta en cualquier caso."
+  },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "Cifrado del contenido S/MIME"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "Cómo se cifra el correo cifrado para el certificado S/MIME de una persona. aes256-gcm, el valor predeterminado, envía un AuthEnvelopedData de RFC 5083 con AES-256-GCM (smime-type=authEnveloped-data, RFC 8551), del que un lector puede comprobar que no se ha modificado. aes256-cbc envía el EnvelopedData con AES-256-CBC que se enviaba antes de la 1.2.0 (smime-type=enveloped-data), para un destinatario cuyo cliente de correo no puede leer AuthEnvelopedData. ADVERTENCIA: CBC no tiene protección de integridad y, mientras este valor sea aes256-cbc en modo producto, no se cumple el requisito 11.3.3 de ASVS 5.0.0, lo que informa /admin/mode."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Restablecimiento de contraseña de autoservicio"
@@ -11720,16 +12880,16 @@
     "text": "El restablecimiento de autoservicio requiere una dirección verificada"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "Envía un enlace de restablecimiento de autoservicio solo a una dirección que la persona haya VERIFICADO (un enlace que siguió desde ella). Activado por defecto, porque el enlace es la cuenta: una dirección que escribió una importación o una fuente de aprovisionamiento, y que nadie demostró nunca, no es un lugar al que enviarlo. **Desactivarlo es un ajuste más débil**, para un directorio cuyas direcciones se consideran fiables tal como están escritas; docs/v1.1.0/mail.md incluye la advertencia."
+    "en": "af24c1ddaf83c884",
+    "text": "Envía un enlace de restablecimiento de autoservicio solo a una dirección que la persona haya VERIFICADO (un enlace que siguió desde ella). Activado por defecto, porque el enlace es la cuenta: una dirección que escribió una importación o una fuente de aprovisionamiento, y que nadie demostró nunca, no es un lugar al que enviarlo. **Desactivarlo es un ajuste más débil**, para un directorio cuyas direcciones se consideran fiables tal como están escritas; docs/v1.2.0/mail.md incluye la advertencia."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "El restablecimiento de autoservicio requiere un código de recuperación"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "El formulario de contraseña olvidada pide el NOMBRE DE USUARIO, la DIRECCIÓN verificada de la cuenta y uno de los CÓDIGOS DE RECUPERACIÓN de la persona, y envía un enlace de restablecimiento solo cuando los tres son correctos — en ese momento el código se consume. Cada combinación se responde con la misma frase. **Desactivarlo es un ajuste más débil**: el formulario vuelve a tener un solo campo (un nombre de usuario o la dirección), y un restablecimiento es entonces tan fuerte como el buzón al que va — lo que NIST SP 800-63B-4 permite para la recuperación y sobre lo que advierte docs/v1.1.0/mail.md. Una persona que no tiene códigos de recuperación no puede restablecer su contraseña por sí misma mientras esto esté activado; un administrador sí puede."
+    "en": "f0eccb7bb4055b20",
+    "text": "El formulario de contraseña olvidada pide el NOMBRE DE USUARIO, la DIRECCIÓN verificada de la cuenta y uno de los CÓDIGOS DE RECUPERACIÓN de la persona, y envía un enlace de restablecimiento solo cuando los tres son correctos — en ese momento el código se consume. Cada combinación se responde con la misma frase. **Desactivarlo es un ajuste más débil**: el formulario vuelve a tener un solo campo (un nombre de usuario o la dirección), y un restablecimiento es entonces tan fuerte como el buzón al que va — lo que NIST SP 800-63B-4 permite para la recuperación y sobre lo que advierte docs/v1.2.0/mail.md. Una persona que no tiene códigos de recuperación no puede restablecer su contraseña por sí misma mientras esto esté activado; un administrador sí puede."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -11747,6 +12907,14 @@
     "en": "4f3937bae763d218",
     "text": "Avisa a una persona, en la dirección de su entrada, cuando se desactiva su cuenta, un administrador termina sus sesiones, se cambia o restablece su contraseña, su credencial se marca como comprometida o se inicia una recuperación. Una persona no puede excluirse de estos avisos; un operador puede desactivarlos aquí."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Avisos de cambio de credenciales"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Avisar a una persona cuando se agrega o se elimina una clave de acceso o llave de seguridad, una aplicación de autenticación, una contraseña de aplicación, un token de código de un solo uso o YubiKey OTP, un conjunto de códigos de recuperación, un certificado, un vínculo de certificado para iniciar sesión, un certificado S/MIME o una clave OpenPGP suya, quién lo hizo y cuándo. Varios cambios hechos por un mismo acto son un solo mensaje. Desactivado, no se envía ninguno de estos; el aviso de cambio de contraseña no se ve afectado. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Avisar a los administradores de los actos del sistema"
@@ -11754,6 +12922,54 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Cuando el SERVICIO, y no una persona, marca una credencial como comprometida o desactiva una cuenta (puntuación de riesgo), envía también un correo a cada miembro de la lista Admin Write del dominio que tenga una dirección."
+  },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Alertas de inicio de sesión"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Avisar a una persona cuando un inicio de sesión en su cuenta se completa pareciendo inusual —un dispositivo o navegador, o un país, desde el que nunca ha iniciado sesión, una red de anonimización como Tor, contraseñas rechazadas justo antes o un nivel de riesgo igual o superior a mail.signInAlertLevel— con cuándo, aproximadamente dónde, con qué y cómo, y un enlace a sus inicios de sesión recientes; y cuando se rechazan contraseñas para su cuenta tantas veces como permite el límite de inicio de sesión (security.rateLimitPerIdentity en security.rateLimitWindowS), inicie sesión alguien después o no. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Nivel de las alertas de inicio de sesión"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "El nivel de riesgo más bajo que debe alcanzar un inicio de sesión correcto para avisar a la persona. En LOW se avisa de un dispositivo o país nuevo sea cual sea su puntuación; en MEDIUM, el valor predeterminado, de un inicio de sesión que el motor de riesgo considera inusual; en HIGH, solo de uno que considera muy probablemente ajeno a la persona. Un inicio de sesión que nadie tiene historial suficiente para puntuar solo se avisa por lo que muestra: una red de anonimización o contraseñas rechazadas."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Ventana de las alertas de inicio de sesión (segundos)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Durante cuánto tiempo un tipo de alerta de inicio de sesión —un dispositivo nuevo, un país nuevo, una red de anonimización, contraseñas rechazadas— se avisa como máximo una vez a una persona. La bandeja de salida es el registro, así que una ventana más larga que mail.retentionS dura solo eso."
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Recordatorios de caducidad de credenciales"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Avisar a una persona, en la dirección de su entrada, antes de que caduque un certificado que tiene: un certificado que este dominio le emitió por ACME, EST o SCEP, un certificado de tarjeta inteligente PIV, un certificado S/MIME, un certificado de cliente TLS o un certificado guardado para el inicio de sesión con certificado. Cada uno se avisa una vez en cada uno de los días de mail.expiryReminderDays, todos los certificados pendientes en un solo mensaje, con cuándo caducan y cómo renovarlos. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Días de los recordatorios de caducidad de credenciales"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Cuántos días antes de que caduque un certificado se avisa a su titular, un recordatorio en cada uno. Un certificado que aparece por primera vez dentro de uno de ellos se avisa en el más cercano, y nunca en un paso que ya pasó. Un cambio se aplica a cada certificado en su siguiente recordatorio."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Credenciales que nombra un recordatorio de caducidad"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Qué tipos de certificado nombra un recordatorio de caducidad: certificate (emitido por ACME, EST o SCEP), piv (un certificado de ranura PIV), smime (un certificado S/MIME al que se cifra el correo), tls-client (un certificado de cliente TLS emitido desde la página Claves de firma del portal o por un administrador) y signin-certificate (un certificado guardado en la entrada para el inicio de sesión con certificado). Un tipo omitido se sigue vigilando, así que volver a incluirlo avisa en su siguiente paso."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
@@ -11834,6 +13050,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Cuántos trabajos de informe puede tener en ejecución a la vez una persona."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Ejecuciones y descargas de informes por persona y ventana"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Cuántas acciones costosas puede hacer quien llama a la Reports API en una ventana de report.actWindowS: una consulta o vista previa ad hoc, un trabajo en cola, una definición guardada ejecutada, un resultado descargado. Se cuenta por el sujeto del token, no por dirección. Por encima, tal acción se rechaza con 429 y Retry-After hasta que pase la ventana; las listas y las definiciones se pueden seguir leyendo. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 240 de forma predeterminada."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Ventana de acciones de informes (segundos)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "La ventana en la que se cuenta report.actsPerSubject, en segundos. Una ventana fija, como todo límite de frecuencia aquí."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

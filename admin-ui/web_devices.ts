@@ -59,6 +59,11 @@ const REGISTRATION = '/admin/device-registration';
 const MONITOR = '/admin/devices/monitor';
 
 /**
+ * Directory → Devices → Register a device (#1132): the one create form.
+ */
+const NEW = '/admin/devices/new';
+
+/**
  * Draws the device register's three pages: Directory → Devices (the list, or
  * one device) from `GET /admin-api/devices`, Device registration from `GET
  * /admin-api/device-registration` and Monitoring → Devices from `GET
@@ -77,6 +82,57 @@ class DevicesPage {
    */
   static render(view: Json, ctx: Json): string {
     return DevicesPage.listBody(ctx, view);
+  }
+
+  /**
+   * Draws Directory → Devices → Register a device (#1132) from the answer of
+   * `GET /admin-api/devices/new`: the one create form, its required field
+   * called out as New user's are.
+   *
+   * @param view - the answer, with `state` after a refused create
+   * @param ctx - the render context (`WebKit.context()`)
+   * @returns the body as HTML
+   */
+  static newBody(view: Json, ctx: Json): string {
+    const t = kitEscaping(ctx.t);
+    const choices = function (list: string[], blank: string | null): Json[] {
+      return (blank === null ? [] : [{ value: '', label: blank }])
+        .concat((list || []).map(function (one) {
+          return { value: one, label: one };
+        }));
+    };
+    return kit.createForm(view, {
+      post: NEW, action: 'create',
+      heading: t.html('consoleDevices.listHtml.registerHeading'),
+      button: t.html('consoleDevices.listHtml.register'),
+      before: kit.note(t.html('consoleDevices.listHtml.registerNote')),
+      words: {
+        owner: { label: t.html('consoleDevices.listHtml.owner') },
+        ownerKind: { label: t.html('consoleDevices.listHtml.ownerKind'),
+                     type: 'select',
+                     choices: choices(view.ownerKinds, null) },
+        label: { label: t.html('consoleDevices.listHtml.label'),
+                 attrs: { maxlength: 128 } },
+        platform: { label: t.html('consoleDevices.listHtml.platform'),
+                    type: 'select',
+                    choices: choices(view.platforms,
+                      t.text('consoleDevices.listHtml.unstated')) },
+        model: { label: t.html('consoleDevices.listHtml.model'),
+                 attrs: { maxlength: 128 } },
+        os: { label: t.html('consoleDevices.listHtml.os'),
+              attrs: { maxlength: 128 } },
+        applications: {
+          label: t.html('consoleDevices.listHtml.applications'),
+          placeholder: t.text('consoleDevices.listHtml.appsHint') },
+        keyKind: { label: t.html('consoleDevices.listHtml.firstKey'),
+                   type: 'select',
+                   choices: choices(view.keyKinds,
+                     t.text('consoleDevices.listHtml.none')) },
+        key: { label: t.html('consoleDevices.newDevice.key'), type: 'long',
+               hint: t.html('consoleDevices.newDevice.keyHint'),
+               placeholder: t.text('consoleDevices.listHtml.keyHint') }
+      }
+    }, t);
   }
 
   // -------------------------------------------------------------------------
@@ -112,7 +168,10 @@ class DevicesPage {
     const esc = kit.esc.bind(kit);
     const f = json.filter;
     const v = json.vocabulary;
-    const filters = '<form method="get" action="' + LIST + '"><div ' +
+    // The fragment is the Devices tab. A GET with none reloads onto
+    // Metadata, and the filtered list stays on this panel.
+    const filters = '<form method="get" action="' + LIST +
+      '#devices-tab-devices"><div ' +
       'class="formrow"><label for="dev-q">' +
       t.html('consoleDevices.listHtml.search') + '</label><input ' +
       'type="text" id="dev-q" name="q" size="24" value="' + esc(f.q || '') +
@@ -146,7 +205,8 @@ class DevicesPage {
       '<button type="submit">' + t.html('consoleDevices.listHtml.filter') +
       '</button>' +
       (Object.keys(f).length
-        ? ' <a href="' + LIST + '">' + t.html('consoleDevices.listHtml.clear') +
+        ? ' <a href="' + LIST + '#devices-tab-devices">' +
+          t.html('consoleDevices.listHtml.clear') +
           '</a>'
         : '') +
       '</div></form>';
@@ -175,48 +235,11 @@ class DevicesPage {
     const create = canWrite
       ? '<h2 data-tab="register">' +
       t.html('consoleDevices.listHtml.registerHeading') + '</h2>' +
+      // THE REGISTER TAB IS THE WAY TO THE CREATE PAGE (#1132): Register a
+      // device draws the one create form, its required field called out as
+      // New user's are.
       kit.frame(kit.note(t.html('consoleDevices.listHtml.registerNote')) +
-      '<form method="post" action="' + LIST + '">' +
-      '<input type="hidden" name="action" value="create">' +
-      '<div class="formrow"><label for="dev-n-label">' +
-      t.html('consoleDevices.listHtml.label') + '</label>' +
-      '<input type="text" id="dev-n-label" name="label" size="30" ' +
-      'maxlength="128"></div>' +
-      '<div class="formrow"><label for="dev-n-ok">' +
-      t.html('consoleDevices.listHtml.ownerKind') + '</label>' +
-      '<select id="dev-n-ok" name="ownerKind">' +
-      this.options(v.ownerKinds, 'person', null) + '</select>' +
-      '<label for="dev-n-owner">' + t.html('consoleDevices.listHtml.owner') +
-      '</label><input type="text" ' +
-      'id="dev-n-owner" name="owner" size="24" required></div>' +
-      '<div class="formrow"><label for="dev-n-p">' +
-      t.html('consoleDevices.listHtml.platform') + '</label>' +
-      '<select id="dev-n-p" name="platform">' +
-      this.options(v.platforms, '',
-                   t.text('consoleDevices.listHtml.unstated')) +
-      '</select>' +
-      '<label for="dev-n-m">' + t.html('consoleDevices.listHtml.model') +
-      '</label><input type="text" id="dev-n-m" ' +
-      'name="model" size="20" maxlength="128"><label for="dev-n-os">' +
-      t.html('consoleDevices.listHtml.os') +
-      '</label><input type="text" id="dev-n-os" name="os" size="16" ' +
-      'maxlength="128"></div>' +
-      '<div class="formrow"><label for="dev-n-apps">' +
-      t.html('consoleDevices.listHtml.applications') + '</label>' +
-      '<input type="text" id="dev-n-apps" name="applications" size="40" ' +
-      'placeholder="' + esc(t.text('consoleDevices.listHtml.appsHint')) +
-      '"></div>' +
-      '<div class="formrow"><label for="dev-n-kk">' +
-      t.html('consoleDevices.listHtml.firstKey') + '</label>' +
-      '<select id="dev-n-kk" name="keyKind">' +
-      this.options(['x509', 'jwk', 'webauthn'], '',
-                   t.text('consoleDevices.listHtml.none')) + '</select>' +
-      '<textarea id="dev-n-key" name="key" rows="3" cols="60" ' +
-      'placeholder="' + esc(t.text('consoleDevices.listHtml.keyHint')) +
-      '"></textarea></div>' +
-      '<div class="formrow"><button type="submit">' +
-      t.html('consoleDevices.listHtml.register') + '</button></div>' +
-      '</form>')
+        kit.createLink(NEW, t.html('consoleDevices.newDevice.button')))
       : kit.note(t.html('consoleDevices.listHtml.readOnly'));
     // The note's three links carry hrefs, which a message may not: the
     // words between them are messages and the anchors are code.
@@ -561,7 +584,7 @@ class DevicesPage {
           t.html('consoleDevices.registrationHtml.notBuilt') + '</span>';
     };
     return kit.note(t.html('consoleDevices.registrationHtml.leadBefore') +
-        '<a href="' + LIST + '">' +
+        '<a href="' + LIST + '#devices-tab-devices">' +
         t.html('consoleDevices.registrationHtml.devices') + '</a>' +
         t.html('consoleDevices.registrationHtml.leadAfter'),
         t.text('consoleDevices.listHtml.whatThisIs')) +
@@ -650,7 +673,7 @@ class DevicesPage {
       '<tr><td>' + t.html('consoleDevices.registrationHtml.doorAdmin') +
       '</td><td>' + state(true) + '</td><td>' +
       t.html('consoleDevices.registrationHtml.adminBefore') +
-      '<a href="' + LIST + '">' +
+      '<a href="' + LIST + '#devices-tab-devices">' +
       t.html('consoleDevices.registrationHtml.devices') + '</a>' +
       t.html('consoleDevices.registrationHtml.adminAfter') + '</td></tr>' +
       '<tr><td>' + t.html('consoleDevices.registrationHtml.doorMdm') +
@@ -689,9 +712,32 @@ class DevicesPage {
           ? (json.decisions.compliantDeviceAttested ? 'attested' : 'yes')
           : 'no',
         acr: json.decisions.acr, claim: json.decisions.claim })) +
+      DevicesPage.adminDeviceHtml(json.decisions.adminDevice, t) +
       '<h2 data-tab="settings">' +
       t.html('consoleDevices.registrationHtml.settings') + '</h2>' +
       SettingsForms.forms(json.settings, REGISTRATION, undefined, t);
+  }
+
+  // THE ADMINISTRATIVE SURFACE'S REQUIREMENT (#2179): required and armed,
+  // in force and NOT YET armed — a warning, because until an administrator
+  // signs in from a compliant device every administrator is admitted — or
+  // off. An answer from a server older than #2179 carries none.
+  /**
+   * Draws the administrative surface's device requirement for this realm.
+   *
+   * @param state - `decisions.adminDevice`, or undefined
+   * @param t - the escaping translator
+   * @returns the note as HTML, or '' when the answer carries none
+   */
+  static adminDeviceHtml(state: Json, t: Json): string {
+    if (!state) {
+      return '';
+    }
+    const which = !state.inForce ? 'off' : (state.armed ? 'armed'
+                                                         : 'pending');
+    const html = t.html('consoleDevices.registrationHtml.adminDeviceNote', {
+      state: which, armedAt: String(state.armedAt || '') });
+    return which === 'pending' ? kit.warn(html) : kit.note(html);
   }
 
   // Called by `web_pages.ts` like registrationHtml(), and for the same

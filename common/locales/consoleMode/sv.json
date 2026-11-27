@@ -30,5 +30,22 @@
   "waivedBy": "UNDANTAGEN I DEN HÄR SFÄREN AV EN ADMINISTRATÖR: <code>{requirement}</code> ({section}, ett {level}), eftersom <code>{setting}</code> är på. Alla andra krav i BCP:n gäller fortfarande.",
   "requirementNotMet": "UPPFYLLS INTE HÄR: <code>{requirement}</code> ({section}), på grund av <code>{setting}</code>.",
   "waivedPerApplication": "PER APPLIKATION: en applikation använder dessa svarstyper bara när dess <code>{attribute}</code> listar den den begär, satt av en administratör eller applikationens ägare. En klient som registrerar sig själv kan bara aktivera det som <code>{setting}</code> anger: {value}.",
-  "waivedPerApplicationNone": "PER APPLIKATION: en applikation använder dessa svarstyper bara när dess <code>{attribute}</code> listar den den begär, satt av en administratör eller applikationens ägare. En klient som registrerar sig själv kan inte aktivera någon av dem, eftersom <code>{setting}</code> är tom."
+  "waivedPerApplicationNone": "PER APPLIKATION: en applikation använder dessa svarstyper bara när dess <code>{attribute}</code> listar den den begär, satt av en administratör eller applikationens ägare. En klient som registrerar sig själv kan inte aktivera någon av dem, eftersom <code>{setting}</code> är tom.",
+  "dualHeading": "Tvåpersonsgodkännande",
+  "dualLead": "Om högriskåtgärder av administratörer väntar på en andra administratör i den här sfären (<code>admin.dualControl</code>). Det är en sfärinställning i båda lägena, inte en lägesskillnad; den står här eftersom den här sidan svarar på om den är i kraft.",
+  "dualInForce": "I kraft: en kvarhållen åtgärd väntar på en andra administratör.",
+  "dualOnNotInForce": "På, men inte i kraft för varje behörighet.",
+  "dualOff": "Av.",
+  "dualThAuthority": "Behörighet",
+  "dualThHolders": "Personer som kan besluta",
+  "dualThInForce": "I kraft",
+  "dualYes": "ja",
+  "dualNo": "nej",
+  "dualLink": "Väntande godkännanden ({n, plural, =1 {en åtgärd väntar} other {# åtgärder väntar}})",
+  "dbHeading": "Databasens inloggningsuppgift",
+  "dbLead": "Hur den här tjänsten styrker sin identitet mot sin databas (<code>persistence.databaseTlsClientCertFile</code>, <code>persistence.databasePasswordProvider</code>). Det är en inställning i båda lägena, ingen skillnad mellan dem; den finns här eftersom den här sidan svarar på hur anslutningen autentiseras.",
+  "dbCertificateAndPassword": "Ett klientcertifikat och ett lösenord.",
+  "dbCertificate": "Ett klientcertifikat, utan lösenord.",
+  "dbPassword": "Ett lösenord; inget klientcertifikat visas upp.",
+  "dbNeither": "Varken klientcertifikat eller lösenord: databasen tar emot anslutningen utan något av dem."
 }

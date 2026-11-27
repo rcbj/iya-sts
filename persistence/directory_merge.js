@@ -74,6 +74,10 @@
  */
 const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
                 'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
+                // #1955 P4: a person's HOTP credential, one JSON value.
+                'stshotpcredential',
+                // #1955 P5: a person's YubiKey OTP credential, one JSON value.
+                'stsyubiotpcredential',
                 'stsactivationexpires', 'appregistrationjson',
                 'stsapppassword', 'stsidaverification',
                 'stsselfissuedsubject', 'stspublisheddid',

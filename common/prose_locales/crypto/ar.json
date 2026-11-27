@@ -448,12 +448,20 @@
     "text": "رمز بمفتاح عام يمكن لحائزه تضييقه دون اتصال، مثل macaroon، لكن يمكن لأي من يحتفظ بالمفتاح العام الجذر التحقق منه. منطق التفويض فيه Datalog يُحمل داخل الرمز، فيعمل المتحقّق دائمًا بحدود للزمن والتكرار."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData بموقّع واحد وسمات موقَّعة، يُتحقق منها على بايتات السمات كما استُقبلت وتُكتب مرتبة DER؛ وEnvelopedData مع KeyTransRecipientInfo (RSA PKCS#1 v1.5 وOAEP) ومحتوى AES-CBC؛ وSignedData منحط للشهادات فقط مع شهادات وقوائم CRL. لا KeyAgreeRecipientInfo، ولا بيانات مصادَق عليها أو مضغوطة، ولا توقيعات مضادة."
+    "en": "f750e6cf7ac566b2",
+    "text": "partial: SignedData بموقّع واحد وسمات موقَّعة، يُتحقق منها على بايتات السمات كما وردت وتُكتب مرتّبة وفق DER؛ وEnvelopedData مع KeyTransRecipientInfo (RSA PKCS#1 v1.5 وOAEP) ومحتوى AES-CBC؛ وSignedData متدهورة تحمل الشهادات وقوائم CRL فقط؛ ولبريد S/MIME (#1955) EnvelopedData تُكتب مع KeyTransRecipientInfo بـ OAEP SHA-256 أو KeyAgreeRecipientInfo بـ ECDH أو، لشهادة ML-KEM، KEMRecipientInfo. لا بيانات مصادَق عليها أو مضغوطة، ولا توقيعات مضادة."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "الغلاف الذي يقرأه SCEP ويكتبه (scep/scep_cms.ts): طلب يوقّعه الطالب ويُشفَّر إلى RA، وCertRep يوقّعه RA وشهادته مشفّرة إلى الطالب."
+    "en": "05b9f7ff9bec76df",
+    "text": "الغلاف الذي يقرؤه SCEP (scep/scep_cms.ts) ويكتبه: طلب يوقّعه مقدّم الطلب ويُشفَّر إلى RA، وCertRep توقّعه RA وتكون شهادته مشفّرة إلى مقدّم الطلب. ومنذ #1955 أيضًا EnvelopedData الخاصة بـ S/MIME التي يُشفَّر فيها البريد، مما يضيف KeyAgreeRecipientInfo لمستلم EC (dhSinglePass-stdDH-sha256kdf، تغليف مفتاح AES-256) وKeyTransRecipientInfo بـ OAEP SHA-256 لمستلم RSA، وKEMRecipientInfo لشهادة ML-KEM. وبيئة التشغيل التي لا تستطيع التغليف لا تعود إلى RSA أو ECDH."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "d27e08a2f317c75c",
+    "text": "partial: قراءة المفاتيح العامة القابلة للنقل من الإصدارين v4 وv6، والتحقق من توقيع نص صريح، وتشفير رسالة PGP/MIME، عبر openpgp.js؛ ويُقرأ مفتاح RFC 9980 المركّب هنا ويُتحقق من النصفين.  وعمليات البحث المتقدمة والمباشرة في دليل مفاتيح الويب (Web Key Directory) وملف السياسة. لا توقيع، ولا فك تشفير، ولا إرسال عبر Web Key Service، ولا خادم مفاتيح، ولا SLH-DSA."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "المفتاح العام الخاص بالشخص نفسه، مسجّل بناءً على إثبات حيازة ومنشور في دليل مفاتيح الويب (Web Key Directory) إن اختار ذلك؛ وهو المفتاح الذي يُشفَّر له بريده."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256، يُحفظ مع الأثر ويُفحص عند القراءة"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "لا شيء. التسجيل هو توقيع الشخص نفسه، والرسالة المشفّرة لا تُوقَّع (يوقّع DKIM الرسالة الخارجية، كما يوقّع كل رسالة)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "e571039950254fa8",
+    "text": "إثبات حيازة عند التسجيل: توقيع نص صريح (gpg --clearsign) على التحدي نفسه تمامًا الذي أصدرته هذه الخدمة للشخص، بمفتاح قادر على التوقيع ضمن المفتاح الذي يسجّله، أُنشئ بعد إصدار التحدي (openpgp.signatureSkewS) وكان صالحًا حينها؛ والمفتاح نفسه غير مُبطَل وغير منتهي الصلاحية، وله معرّف مستخدم صالح يحمل عنوان الإدخال. مفاتيح RFC 9580 v6 وRFC 4880 v4، تقرؤها openpgp.js. تُفحص شهادة S/MIME من حيث الصلاحية والمفتاح والاستخدام، دون التحقق من سلسلتها: فهي تحدد فقط لمن تُشفَّر الرسالة. تُقرأ مفاتيح RFC 9980 المركّبة بقارئ هذه الخدمة، الذي يتحقق من النصفين؛ ولا يحلّلها openpgp.js."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "92940be7441a9817",
+    "text": "البريد، حيث اختار الشخص ذلك أو يشترطه النطاق (mail.encryptionRequired): PGP/MIME (RFC 3156) إلى مفتاح التشفير في المفتاح، كما تختار openpgp.js (SEIPD مع AES لمفتاح v4، وAEAD لمفتاح v6)؛ وS/MIME (RFC 8551) على هيئة CMS EnvelopedData، بتشفير المحتوى AES-256-CBC، ومفتاح المحتوى تحت RSAES-OAEP مع SHA-256 أو ECDH (dhSinglePass-stdDH-sha256kdf، تغليف مفتاح AES-256). شهادة ML-KEM (RFC 9935) هي KEMRecipientInfo (RFC 9629): يبقى تشفير المحتوى AES-256-CBC، وبيئة التشغيل التي لا تستطيع التغليف لا تعود إلى RSA أو ECDH."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "لا شيء."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 للجزء المحلي بأحرف صغيرة، بترميز z-base-32، كما يسمّي دليل مفاتيح الويب (Web Key Directory) العنوان (اسم تحدده المسودة، ولا يُعتمد عليه أبدًا للسلامة). بصمة المفتاح هي بصمة RFC 9580 (SHA-256 للإصدار v6، وSHA-1 للإصدار v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "لا مفاتيح خاصة بها. المفتاح العام للشخص موجود في إدخاله (stsOpenPgpKey)، ولا يكون أبدًا مفتاحًا سريًا، إذ يرفضه التسجيل؛ ولا يُميَّز المفتاح الموجود على بطاقة YubiKey OpenPGP عن المفتاح الموجود في ملف، لذا لا يُسجَّل شيء على أنه مرتبط بالعتاد."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "المفتاح المسجّل، التوقيع"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519 وML-DSA-87+Ed448 (RFC 9980)، ثم Ed25519 وEd448 وECDSA P-256/P-384/P-521، وRSA بما لا يقل عن openpgp.minRsaBits (3072 على الأقل)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "المفتاح المسجّل، التشفير"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519 وML-KEM-1024+X448 (RFC 9980)، ثم X25519 وX448 وECDH Curve25519 وP-256/P-384/P-521، وRSA بما لا يقل عن openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "مرفوض"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "4c8437ead9bd7364",
+    "text": "DSA وElGamal ومنحنيات Brainpool وSLH-DSA"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "محتوى S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "نقل مفتاح S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256؛ وECDH stdDH KDF SHA-256، وتغليف AES-256؛ وML-KEM (RFC 9935) كـ KEMRecipientInfo، وHKDF-SHA-256 وAES-Wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "الاسم في دليل مفاتيح الويب (Web Key Directory)"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1، z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1388,24 +1468,24 @@
     "text": "لا شيء يغادر هذه الخدمة. قيمة HOTP هي HMAC مبتور — RFC 4226 القسم 5.3 — فتحسب هذه العائلة MAC بمفتاح ثم تقارنه، ولهذا تسكن البدائية في common/crypto.js إلى جوار كل توقيع آخر هنا لا في الوحدة التي تقرر السياسة."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "رمزًا يُقدَّم، بحساب HMAC لكل خطوة زمنية في نافذة الانحراف والمقارنة بزمن ثابت. تُحسب كل خطوة حتى بعد حدوث تطابق، عن عمد: العودة المبكرة تجعل الزمن المستغرق معتمدًا على أي خطوة طابقت، وذلك عراف أفضل من مقارنة الأرقام التي تتكبد هذه الخدمة جعلها بزمن ثابت."
+    "en": "302891e951b96222",
+    "text": "رمزًا مقدَّمًا، بحساب HMAC لكل خطوة زمنية في نافذة الانحراف والمقارنة في زمن ثابت. تُحسب كل خطوة حتى بعد التطابق، عن قصد: فالعودة المبكرة تجعل الوقت المستغرق معتمدًا على أيّ خطوة تطابقت، وهذا أفضل للمهاجم من مقارنة الأرقام التي يُحرص هنا على جعلها في زمن ثابت. ورمز HOTP (RFC 4226، #1955) بالطريقة نفسها عبر نافذة التطلّع من عدّاده، الذي يُقدَّم بعدها بعملية compare-and-set في المخزن. وValueMAC لملف بذور PSKC (RFC 6030 القسم 6.1.1: HMAC-SHA1 أو MAC من SHA-2 فوق النص المشفّر) قبل فك تشفير سرّه."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "السر المشترك في حالة السكون، في وضع المنتج — AES-256-GCM تحت مفتاح تشفير المفاتيح نفسه الذي يحمي مفاتيح التوقيع، عبر common/keystore.js. في وضع التطوير يُخزَّن بترميز base32، لأن مفتاح تشفير المفاتيح هناك يُولَّد لكل تشغيل، والختم كان سيعني مصادقًا يتوقف عن العمل بصمت عند إعادة التشغيل التالية."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "السر نفسه، للتحقق من رمز. **هذه هي بيانات الاعتماد الوحيدة في هذه الخدمة التي يمكن استرجاعها** — فكلمة المرور تجزئة scrypt ولا يمكن إلا المقارنة بها، والتحقق من رمز لمرة واحدة يعني حسابه. ليس ذلك ضعفًا في RFC 6238؛ إنه معنى «السر المشترك»، وهو عين السبب في أن هذه الآلية عامل ثانٍ هنا ولا يمكن جعلها عاملًا أولًا أبدًا."
+    "en": "f197370676038df3",
+    "text": "ملف بذور PSKC لمورّد (RFC 6030): AES-CBC أو AES Key Wrap تحت المفتاح المشترك مسبقًا المعطى مع الرفع، أو تحت مفتاح يشتقّه PBKDF2 من كلمة مروره، ولا يُحتفظ بأيّ منهما. والسرّ نفسه، للتحقق من رمز. **هذه هي بيانات الاعتماد الوحيدة في هذه الخدمة التي يمكن قراءتها مرة أخرى** — فكلمة المرور تجزئة scrypt ولا يمكن إلا المقارنة بها، أما التحقق من رمز لمرة واحدة فيعني حسابه. ليس ذلك ضعفًا في RFC 6238؛ بل هو معنى «السرّ المشترك»، وهو بالضبط سبب كون هذه الآلية هنا عاملًا ثانيًا لا يمكن أبدًا جعله عاملًا أول."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1 أو SHA-256 أو SHA-512، داخل HMAC وليس في أي مكان آخر."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "لا يخبر أحدًا أبدًا بالرمز الحالي، ولا يُلحق أحدًا أبدًا عند شاشة تسجيل الدخول — فالإلحاق يعني إظهار سر، لذا يحدث حيث يكون الشخص مصادَقًا بالفعل أو يحمل رابط تفعيل. لا يوجد HOTP قائم على عدّاد بوصفه آلية مصادقة، ولا بروتوكول إعادة مزامنة: نافذة الانحراف هي كل ما يُعرَض لساعة تنحرف."
+    "en": "313115cd82b83d1b",
+    "text": "لا تخبر أحدًا أبدًا بالرمز الحالي، ولا تسجّل أحدًا أبدًا في شاشة تسجيل الدخول — فالتسجيل يعني أن يُعرض على المرء سرّ، لذا يحدث حيث يكون الشخص مصادَقًا بالفعل أو يحمل رابط تفعيل. ساعة TOTP المنحرفة لا تُمنح إلا نافذة الانحراف. والرمز المعتمد على العدّاد (HOTP) تُعاد مزامنته من رمزين متتاليين، لا من رمز واحد أبدًا. ولا تحتفظ أبدًا بمفتاح ملف البذور أو كلمة مروره، ولا تفتح أبدًا ملفًا مشفّرًا لشهادة. ليس لـ HOTP (RFC 4226) ولا لبذرة PSKC (RFC 6030) رمز مصادقة ما بعد الكم: الرمز هو HMAC-SHA-1 أو SHA-256 أو SHA-512."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1422,6 +1502,50 @@
   "crypto.families.one-time-passwords-totp.algorithms.3.what": {
     "en": "e08e19def21e22b2",
     "text": "الإعدادات الحية"
+  },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "لا شيء يغادر هذه الخدمة، إلا HMAC-SHA1 الذي يتحقق منه عميل YK-VAL على /wsapi/2.0/verify. إن OTP نفسه هو AES-128-ECB لكتلة من 16 بايتًا، يُقارن بعد فك تشفيره، ولهذا تعيش البدائية في common/crypto.js."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "OTP مقدَّم: تختار الهوية العامة بيانات الاعتماد، وتُفك الكتلة تحت مفتاح AES-128 الخاص بها، وباقي CRC-16 هو 0xf0b8، وتطابق الهوية الخاصة. يجب أن يكون عدّاد الاستخدام وعدّاد استخدام الجلسة، كقيمة واحدة، أعلى بصرامة من آخر قيمة قُبلت. لا يُفحص الطابع الزمني. يُفحص HMAC-SHA1 لطلب YK-VAL، في كل وضع، عندما يكون yubiotp.ykval مفعّلًا."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "مفتاح AES والهوية الخاصة في حالة السكون، كقيمة JSON مختومة واحدة، تحت مفتاح تشفير المفاتيح، في وضع المنتج. في وضع التطوير يُولَّد مفتاح تشفير المفاتيح لكل تشغيل، فتُخزَّن القيمة بنص صريح وتقول ذلك."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "تلك القيمة المختومة، لفحص OTP. يحتفظ الخادم بمفتاح AES، لذا يكون تسجيل الدخول amr otp وليس hwk أبدًا."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "لا شيء. إن CRC هو CRC-16، كثير الحدود 0x8408. توقيع YK-VAL هو HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "f93ab78e99cd9d8d",
+    "text": "لا يستدعي YubiCloud أبدًا. لا يفحص الطابع الزمني أبدًا. لا يسجّل فتحة أبدًا ما دام yubiotp.offered معطّلًا، ولا يجيب YK-VAL أبدًا ما دام yubiotp.ykval معطّلًا. لا يسجّل أبدًا سطر البرمجة ولا مفتاح HMAC لعميل. ليس له معامل ما بعد الكم: كلمة المرور لمرة واحدة هي AES-128-ECB لكتلة واحدة من 16 بايتًا."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "الأبجدية"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "إعادة الإرسال"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
   },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
@@ -1596,12 +1720,12 @@
     "text": "كل شهادة يسلّمها، بمفتاح EST Issuing CA الخاص بنطاق الثقة هذا، عبر common/pki.js's issueEnrolled() — المُرمِّز نفسه الذي تصدر عنه كل شهادة أخرى هنا. رسائل CMS من النوع certs-only التي يعيدها منحلة: SignedData فيه شهادات ومن غير موقِّع، فلا تحمل توقيعًا خاصًا بها ويُعتمَد على الشهادات التي بداخلها."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "إثبات الحيازة وفق PKCS#10 — توقيع الطلب بمفتاحه العام، الكلاسيكي وما بعد الكم، في common/cert_enrollment.ts — وفي المصادقة بالشهادة، مسار شهادة العميل إلى وسيط Intermediate الخاص بنطاق الثقة هذا وجذر الخدمة Root مع الرجوع إلى الإبطال. لا يُتحقق من قالب /serverkeygen: يُستبدل مفتاحه."
+    "en": "6b27c8877d509c46",
+    "text": "إثبات الحيازة في PKCS#10 — توقيع الطلب بمفتاحه العام، الكلاسيكي وما بعد الكمّي، في common/cert_enrollment.ts — وفي المصادقة بالشهادة، مسار شهادة العميل إلى Intermediate نطاق الثقة هذا وRoot الخدمة مع الرجوع إلى حالة الإلغاء. لا يُتحقَّق من قالب /serverkeygen: إذ يُستبدل مفتاحه. إثبات مفتاح PIV من YubiKey في الطلب (#1955، هنا وعبر ACME وSCEP): توقيع ECDSA أو RSA لشهادة الفتحة بواسطة شهادة f9، ومسار شهادة f9 إلى مراسي إثبات PIV لنطاق الثقة، عبر بوابة التحقق."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "المفتاح الخاص لزوج مفاتيح ولّده الخادم، يُختم بـ AES-256-GCM تحت مفتاح تشفير المفاتيح على المدخلة، حيثما يعمر ذلك المفتاح أطول من العملية. وهو ليس مُشفَّرًا إلى العميل (RFC 7030 القسم 4.4.1.2): يُرفض الطلب الذي يطلب ذلك، ولا ينتقل المفتاح إلا داخل TLS."
+    "en": "a18df4311029b728",
+    "text": "المفتاح الخاص لزوج مفاتيح أنشأه الخادم، مختومًا بـ AES-256-GCM تحت مفتاح تشفير المفاتيح على الإدخال، حيثما يعيش ذلك المفتاح أطول من العملية؛ ومفتاح piv-key-management المودَع (#1955) في كل وضع، وإلا فلا يُنشأ أصلًا. وهو لا يُشفَّر للعميل (RFC 7030 القسم 4.4.1.2): يُرفض الطلب الذي يطلب ذلك، ولا ينتقل المفتاح إلا داخل TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +2030,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "base32 وفق RFC 4648، من دون حشو، كما يتوقع otpauth Key Uri Format."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "تواقيع إثبات PIV التي يُتحقَّق منها"
   }
 }

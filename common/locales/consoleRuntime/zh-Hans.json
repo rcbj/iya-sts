@@ -5,6 +5,7 @@
   "reauth.here": "在此页面上登录",
   "reauth.hereInstead": "改为在此页面上登录",
   "reauth.noPopup": "此浏览器无法从另一个窗口传回登录结果，请在此页面上登录。",
+  "reauth.popupBlocked": "登录窗口被阻止。请允许此网站弹出窗口，或在此页面登录。",
   "reauth.finish": "请在打开的窗口中完成登录。",
   "otherPerson.waiting": "登录的是另一个人，因此此页面上等待发送的内容没有发送。",
   "otherPerson.typed": "登录的是另一个人，因此之前在此页面上输入的内容没有恢复。",
@@ -17,5 +18,17 @@
   "accounts.unsaved": "此页面有尚未保存的更改。仍要切换账户吗？这些更改将会丢失。",
   "accounts.otherAccount": "该登录属于另一个账户，因此此标签页没有采用。请以 {user} 的身份重新登录，或从账户菜单中切换账户。",
   "accounts.refused.title": "控制台不会为此账户打开",
-  "accounts.refused.text": "管理 API 对此标签页所登录的账户返回了 {status}。"
+  "accounts.refused.text": "管理 API 对此标签页所登录的账户返回了 {status}。",
+  "policyName.required": "名称为必填项。",
+  "noWebCrypto.title": "此浏览器无法打开此页面",
+  "noWebCrypto.text": "此浏览器无法安全地运行此页面：WebCrypto 不可用，通常是因为页面未通过 HTTPS 打开，或浏览器版本过旧。",
+  "step.pending": "正在获取进行此更改的权限…",
+  "step.blocked": "此更改需要您的许可。请打开窗口进行授权。",
+  "step.signIn": "请登录以进行此更改。",
+  "step.fresh": "此更改需要您重新登录。",
+  "step.open": "继续",
+  "step.cancel": "取消",
+  "step.refused": "未获得进行此更改的权限：",
+  "step.other": "该登录属于另一个账户，因此未发送任何内容。",
+  "step.failed": "无法获得进行此更改的权限。"
 }

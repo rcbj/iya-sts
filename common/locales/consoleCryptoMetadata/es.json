@@ -251,5 +251,13 @@
   "thAlgName": "Algoritmo",
   "thAlgSigns": "Firma",
   "thAlgAccepts": "Acepta",
-  "thAlgWhyNot": "Por qué no"
+  "thAlgWhyNot": "Por qué no",
+  "tlsKxHeading": "Intercambio de claves TLS, tal como se negoció",
+  "tlsKxNote": "Lo que negoció cada negociación TLS completada en los listeners de este nodo desde que se inició su proceso frontal, leído de la sesión que guarda el servidor. Poscuántico significa un grupo ML-KEM, solo o en un híbrido. Los recuentos son de este nodo y no se conservan tras un reinicio.",
+  "tlsKxSummary": "{pq} de {total} conexiones desde {since} fueron poscuánticas.",
+  "tlsKxListener": "Listener",
+  "tlsKxGroup": "Grupo",
+  "tlsKxConnections": "Conexiones",
+  "tlsKxLast": "Visto por última vez",
+  "tlsKxNone": "Todavía no se ha contado ninguna conexión TLS en este nodo."
 }

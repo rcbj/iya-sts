@@ -82,7 +82,12 @@
 // risk events or an attacker pressing "forgot password" cannot turn this
 // service into a mail cannon. A message that names what it is about (a
 // `dedupKey`) is queued once per `mail.dedupWindowS`, however many doors
-// reported the same act. A person may decline the `notification` category;
+// reported the same act. A use that must say something at most once in a
+// window of its own (#2162's sign-in alerts) names that window
+// (`dedupWindowS`), and a message about several things at once names each
+// beside its key (`dedupAlso`), so a later message about any one of them
+// finds it (`queuedWithin()`). A person may decline the `notification`
+// category;
 // `security` and `account` cannot be declined (`common/mail_templates.ts`).
 //
 // **8. THE AUDIT ROW AND THE LOG LINE NAME THE RECIPIENT, NEVER THE BODY.** A
@@ -90,6 +95,35 @@
 // became of it. A dead letter keeps its body for the retry, a captured one
 // because the body is all it is for, and neither leaves this module except
 // to the monitor page's detail view of a captured message in development.
+//
+// **9. A MESSAGE MAY BE ENCRYPTED TO ITS RECIPIENT (#1955 P6)** — PGP/MIME
+// (RFC 3156) to the person's OpenPGP key or S/MIME (RFC 8551) to their
+// `userSMIMECertificate`, as they chose on the portal
+// (`common/openpgp_keys.ts`). WHAT is decided at the queue, here: the
+// person's choice, and the realm's `mail.encryptionRequired`, the templates
+// that go only encrypted. **A message is never sent in the clear against
+// either**: a required message to somebody who chose nothing is refused
+// (STS-MAIL-0240), and so is any message whose chosen encryption cannot be
+// honoured now (an expired key, a certificate that can no longer receive;
+// STS-MAIL-0241). A refusal is what every use already handles — the
+// forgot-password form answers the same sentence, an administrator's mailed
+// link says it was not sent and the console offers the link instead, a
+// security notice is audited as not sent — so no use grows a second path.
+// THE ENCRYPTION ITSELF happens at the attempt, in the transport's
+// composer (`mail_transports.ts`), because `send()` is synchronous and
+// openpgp.js is not; a key that no longer reads then is a dead letter
+// (STS-MAIL-0243). **A key or certificate is used only for an address it
+// names** (`openpgp_keys.ts` `encryptionFor()`): to the entry's `mail`, one
+// that does not name it is a choice that cannot be honoured (STS-MAIL-0241);
+// to another address — the notice to a former address, the link to a
+// pending one — it is not used, and that message goes unencrypted even
+// where `mail.encryptionRequired` names its template, because a message
+// encrypted to a key that address does not hold cannot be read there, and
+// refusing it would leave an address change impossible to finish. The
+// outer Subject is replaced by a neutral one per category (an encrypted
+// message's Subject is not encrypted) and the real one travels inside, as a
+// protected header. Nothing new is signed: DKIM already signs the outer
+// message.
 // ===========================================================================
 
 import os = require('os');
@@ -144,13 +178,23 @@ const TRANSPORT_KEYS = [
   'mail.smtpPasswordRef', 'mail.smtpPasswordField',
   'mail.smtpClientCertFile', 'mail.smtpClientKeyFile', 'mail.dkimDomain',
   'mail.dkimSelector', 'mail.dkimAlgorithm', 'mail.dkimKeyProvider',
-  'mail.dkimKeyRef', 'mail.dkimKeyField', 'mail.sesRegion',
+  'mail.dkimKeyRef', 'mail.dkimKeyField', 'mail.dkimNextSelector',
+  'mail.dkimNextKeyField', 'mail.dkimSwitchAt', 'mail.sesRegion',
   'mail.sesConfigurationSet', 'mail.acsEndpoint', 'mail.acsAuth',
   'mail.acsConnectionStringProvider', 'mail.acsConnectionStringRef',
   'mail.acsConnectionStringField', 'mail.gmailSender',
   'mail.gmailKeyProvider', 'mail.gmailKeyRef', 'mail.gmailKeyField',
   'mail.timeoutMs'
 ];
+
+// A BUILT TRANSPORT IS REBUILT AFTER THIS LONG (#2220), so the secrets it
+// was built from — the relay password, the DKIM keys, a connection string, a
+// service account key — are read again from the operator's secret store: a
+// credential rotated there reaches the transport within the hour, without a
+// setting changing or a restart. A check at the send, not a timer. A
+// constant: an hour is far inside any rotation's overlap, and one read of
+// each secret an hour per process is nothing to a secret store.
+const REBUILD_AFTER_MS = 60 * 60 * 1000;
 
 // The known relays `mail.smtpPreset` names.
 const PRESETS = {
@@ -172,6 +216,8 @@ interface Message {
   template: string;
   lang: string;
   dedup: string;
+  // #2162: the other things this message is about, digested as `dedup` is.
+  dedupAlso?: string[];
   subject: string;
   text: string;
   html: string;
@@ -195,6 +241,9 @@ interface Message {
   lastAttemptAt: number;
   finishedAt: number;
   updatedAt: number;
+  // #1955 P6 (header point 9): how the message is encrypted to its
+  // recipient, decided at the queue; absent or `kind: 'none'` is not.
+  encryption?: Json;
 }
 
 interface SendRequest {
@@ -212,6 +261,10 @@ interface SendRequest {
   links?: Json;
   // What the message is about, for suppression (header point 7).
   dedupKey?: string;
+  // #2162: the window the key is held for, in seconds, in place of
+  // `mail.dedupWindowS`; and further keys the message is about too.
+  dedupWindowS?: number;
+  dedupAlso?: string[];
   via?: string;
   actor?: string;
 }
@@ -244,6 +297,10 @@ interface MailDeps {
   // the console's (admin-ui/admin_rbac.ts) and this module is below it.
   administrators: () => string[];
   scheduler: () => Json;
+  // #1955 P6: the person's mail encryption choice, lazily — a library that
+  // requires nothing here, reached at the queue. Optional, so a test's fake
+  // built before it encrypts nothing.
+  openpgpKeys?: () => Json;
 }
 
 // WHICH OF TWO COPIES OF A ROW IS NEWER — back-channel logout's total order:
@@ -431,6 +488,9 @@ class Mail {
       },
       scheduler: function (): Json {
         return require('../cluster/scheduler');
+      },
+      openpgpKeys: function (): Json {
+        return require('./openpgp_keys');
       }
     };
   }
@@ -517,13 +577,25 @@ class Mail {
    * @param cfg - the resolved configuration
    * @returns the fingerprint
    */
+  dkimSwitchDue(cfg: Json): boolean {
+    const { log, now } = this.deps;
+    log.debug("Entering Mail.dkimSwitchDue().");
+    const at = Date.parse(String(cfg.dkimSwitchAt || ''));
+    const clock = typeof now === 'function' ? now() : Date.now();
+    log.debug("Leaving Mail.dkimSwitchDue().");
+    return !!cfg.dkimNextSelector && isFinite(at) && clock >= at;
+  }
+
   fingerprint(cfg: Json): string {
     const { log } = this.deps;
     log.debug("Entering Mail.fingerprint().");
     const digest = stsCrypto.digest('sha256',
       JSON.stringify(TRANSPORT_KEYS.map(function (key) {
         return cfg[key.replace(/^mail\./, '')];
-      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort])),
+      }).concat([cfg.transport, cfg.smtpHost, cfg.smtpPort,
+                 // #2220: the moment a DKIM selector switch is due is a
+                 // change of what the transport signs with.
+                 this.dkimSwitchDue(cfg)])),
       'base64url');
     log.debug("Leaving Mail.fingerprint().");
     return digest;
@@ -554,7 +626,10 @@ class Mail {
     }
     const print = this.fingerprint(cfg);
     const held = this.built.get(realmId);
-    if (held && held.print === print) {
+    const builtAgo = (typeof this.deps.now === 'function' ? this.deps.now()
+                                                          : Date.now()) -
+                     Number((held && held.builtAt) || 0);
+    if (held && held.print === print && builtAgo < REBUILD_AFTER_MS) {
       log.debug("Leaving Mail.transport(). Cached.");
       return held.transport;
     }
@@ -564,7 +639,9 @@ class Mail {
           'function') {
         held.transport.close();
       }
-      this.built.set(realmId, { print: print, transport: made });
+      this.built.set(realmId, { print: print, transport: made,
+                                builtAt: typeof this.deps.now === 'function'
+                                  ? this.deps.now() : Date.now() });
       this.buildProblems.delete(realmId);
       log.debug("Leaving Mail.transport(). Built " + made.name + ".");
       return made;
@@ -1078,10 +1155,13 @@ class Mail {
     return out;
   }
 
-  private duplicateOf(realmId: string, dedup: string): Json {
+  private duplicateOf(realmId: string, dedup: string,
+                      windowS?: number): Json {
     const { log, now } = this.deps;
     log.debug("Entering Mail.duplicateOf().");
-    const windowMs = Number(this.setting('mail.dedupWindowS')) * 1000;
+    const windowMs = (windowS !== undefined && windowS !== null &&
+                      Number(windowS) >= 0
+      ? Number(windowS) : Number(this.setting('mail.dedupWindowS'))) * 1000;
     if (!dedup || windowMs <= 0) {
       log.debug("Leaving Mail.duplicateOf(). Off.");
       return null;
@@ -1089,7 +1169,9 @@ class Mail {
     const since = now() - windowMs;
     let found: Json = null;
     outbox.realmMap(realmId).forEach(function (row: Json) {
-      if (!found && row && row.dedup === dedup &&
+      if (!found && row && (row.dedup === dedup ||
+                            (Array.isArray(row.dedupAlso) &&
+                             row.dedupAlso.indexOf(dedup) >= 0)) &&
           Number(row.queuedAt) >= since) {
         found = row;
       }
@@ -1404,12 +1486,78 @@ class Mail {
   //       other; only that namespace, so a caller cannot reach a page's words
   //   { date: <ms or ISO> }                         an instant, in UTC with
   //       the zone named (`Translator.date()`)
+  //   { list: [ <value>, ... ] }                    each element resolved as
+  //       above (a message, an instant, or data) and the whole joined as a
+  //       list in that language (`Intl.ListFormat`), for a notice of several
+  //       lines (#2163)
   //
   // Anything else is DATA (a name, an address, a username, a refusal's own
   // English reason) and is left exactly as it was. A message's params are
   // data too, put in as strings. A value that cannot be resolved renders
   // empty rather than as `[object Object]`.
   // -------------------------------------------------------------------------
+  /**
+   * The digest a message's key is held under: the recipient, the template
+   * and the key the caller named.
+   *
+   * @param username - the recipient key
+   * @param template - the template's id
+   * @param key - the caller's key
+   * @returns the digest
+   */
+  static dedupDigest(username: string, template: string,
+                     key: string): string {
+    helpers.log.debug("Entering Mail.dedupDigest().");
+    helpers.log.debug("Leaving Mail.dedupDigest().");
+    return stsCrypto.digest('sha256', username + '\n' + template + '\n' +
+                            key, 'base64url').slice(0, 22);
+  }
+
+  /**
+   * Whether a message to this person from this template, about this key —
+   * its own key or one it named beside it — was queued in the ambient
+   * realm in the last `windowS` seconds (#2162). The outbox is the record,
+   * so the answer is the cluster's.
+   *
+   * @param username - the person
+   * @param template - the template's id
+   * @param key - the key
+   * @param windowS - the window, in seconds
+   * @returns true when one was
+   */
+  queuedWithin(username: string, template: string, key: string,
+               windowS: number): boolean {
+    const { log, realms } = this.deps;
+    log.debug("Entering Mail.queuedWithin(). " + template);
+    const found = this.duplicateOf(realms.currentId(),
+      Mail.dedupDigest(String(username || ''), template, key), windowS);
+    log.debug("Leaving Mail.queuedWithin(). " + !!found);
+    return !!found;
+  }
+
+  /**
+   * Joins the lines of a list in a language (`Intl.ListFormat`, a
+   * conjunction), or with semicolons where that language has no list form.
+   *
+   * @param parts - the lines, already in words
+   * @param lang - the language
+   * @returns the list as one value
+   */
+  static listOf(parts: string[], lang: string): string {
+    helpers.log.debug("Entering Mail.listOf(). " + parts.length);
+    let out = parts.join('; ');
+    try {
+      out = new Intl.ListFormat(lang, { style: 'long', type: 'conjunction' })
+        .format(parts);
+    } catch (e) {
+      helpers.log.debug("Caught in Mail.listOf(): " +
+                        ((e && e.message) || e));
+      // A tag Intl does not know: the plain join above stands.
+    }
+    helpers.log.debug("Leaving Mail.listOf().");
+    return out;
+  }
+
   /**
    * Resolves every value given as a message or an instant into words in one
    * language; every other value is left as it was.
@@ -1426,6 +1574,7 @@ class Mail {
         return String(one || '');
       }).filter(Boolean);
     log.debug("Entering Mail.resolveValues(). " + langs.join(' '));
+    const self = this;
     const out: Json = {};
     let t: Json = null;
     const translator = function (): Json {
@@ -1461,6 +1610,18 @@ class Mail {
                    (typeof v.date === 'number' ||
                     typeof v.date === 'string')) {
           out[name] = translator().date(v.date);
+        } else if (Array.isArray(v.list)) {
+          // Each element through this same function, one at a time, so a
+          // list holds nothing a single value could not.
+          const parts: string[] = [];
+          v.list.forEach((one: unknown, i: number): void => {
+            const said = self.resolveValues({ ['v' + i]: one }, langs);
+            const text = String(said['v' + i] == null ? '' : said['v' + i]);
+            if (text) {
+              parts.push(text);
+            }
+          });
+          out[name] = Mail.listOf(parts, langs[0] || 'en');
         } else {
           out[name] = '';
         }
@@ -1490,6 +1651,82 @@ class Mail {
     return String(value == null ? '' : value)
       .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  }
+
+  // -------------------------------------------------------------------------
+  // HOW ONE MESSAGE IS ENCRYPTED (header point 9): the person's choice, held
+  // to the realm's requirement for its template, and to what the transport
+  // in force can carry.
+  // -------------------------------------------------------------------------
+  /**
+   * Decides how one message is encrypted to its recipient.
+   *
+   * @param spec - the template
+   * @param username - the person; '' for a group or nobody
+   * @param address - the address the message goes to; '' for `mail`
+   * @param elsewhere - true when that address is not the entry's `mail`
+   *   (a former address, a pending recovery address or sign-in name)
+   * @returns `{ kind: 'none' | 'openpgp' | 'smime', ... }`, or `{ refused:
+   *   true, code, why }`
+   */
+  encryptionPlan(spec: Json, username: string, address?: string,
+                 elsewhere?: boolean): Json {
+    const { log } = this.deps;
+    log.debug("Entering Mail.encryptionPlan(). " + spec.id);
+    const required = [].concat(this.setting('mail.encryptionRequired') || [])
+      .map(function (one: unknown): string {
+        return String(one || '').trim();
+      }).indexOf(String(spec.id)) >= 0;
+    let plan: Json = { kind: 'none' };
+    if (username && this.deps.openpgpKeys) {
+      plan = this.deps.openpgpKeys().encryptionFor(username,
+                                                   String(address || '')) ||
+        { kind: 'none' };
+    }
+    // A KEY IS USED ONLY FOR AN ADDRESS IT NAMES (header point 9). To an
+    // address that is not the entry's `mail` — the notice to the former
+    // address, a verification link to a pending one — a key that does not
+    // name it is not used, and the message goes UNENCRYPTED, even where
+    // mail.encryptionRequired names the template: encrypting it to that
+    // key would hand the address a message it cannot read, and refusing it
+    // would make an address change impossible to complete or to be told
+    // of. Those templates carry a notice or a one-time link meant for that
+    // address alone. To the entry's own `mail`, a key that does not name
+    // it is a choice that cannot be honoured, refused like any other
+    // (STS-MAIL-0241), never sent in the clear against the choice.
+    if (plan.kind === 'unbound') {
+      if (elsewhere) {
+        log.info('mail: ' + spec.id + ' to ' + username + '\'s ' +
+                 'non-primary address is not encrypted: ' +
+                 String(plan.why || 'the key does not name it') + '.');
+        log.debug("Leaving Mail.encryptionPlan(). Another address.");
+        return { kind: 'none', unbound: true };
+      }
+      plan = { kind: 'unavailable', chosen: plan.chosen, why: plan.why };
+    }
+    if (plan.kind === 'unavailable') {
+      log.debug("Leaving Mail.encryptionPlan(). The choice cannot be kept.");
+      return { refused: true, code: 'STS-MAIL-0241',
+               why: username + ' chose ' + (plan.chosen === 'smime'
+                 ? 'S/MIME' : 'OpenPGP') + ' for their mail and ' +
+                 String(plan.why || 'it cannot be used now') + ', so the ' +
+                 'message is not sent in the clear' };
+    }
+    if (plan.kind === 'none' && required) {
+      log.debug("Leaving Mail.encryptionPlan(). Required, and no key.");
+      return { refused: true, code: 'STS-MAIL-0240',
+               why: 'mail.encryptionRequired names ' + spec.id + ', and ' +
+                 (username ? username + ' has chosen no mail encryption'
+                           : 'a group has no key') };
+    }
+    if (plan.kind !== 'none' && this.effectiveTransport() === 'acs') {
+      log.debug("Leaving Mail.encryptionPlan(). The transport cannot.");
+      return { refused: true, code: 'STS-MAIL-0242',
+               why: 'the acs transport sends structured content and cannot ' +
+                 'carry an encrypted MIME message' };
+    }
+    log.debug("Leaving Mail.encryptionPlan(). " + plan.kind);
+    return plan;
   }
 
   // One recipient: every check, then the row. `former` overrides the
@@ -1533,14 +1770,45 @@ class Mail {
       return { refused: this.refuse(req, username, 'STS-MAIL-0013',
         username + ' declined ' + cat.label.toLowerCase()) };
     }
+    // ENCRYPTION (header point 9), decided here, before the dedup window and
+    // the ceilings count the message.
+    const elsewhere = !!(found && former && String(former).trim()
+      .toLowerCase() !== String(found.address || '').trim().toLowerCase());
+    const encryption = this.encryptionPlan(spec, group ? '' : username,
+                                           String(who.address || ''),
+                                           elsewhere);
+    if (encryption.refused) {
+      log.debug("Leaving Mail.queueOne(). Encryption.");
+      return { refused: this.refuse(req, username, encryption.code,
+                                    encryption.why) };
+    }
     const dedup = req.dedupKey
-      ? stsCrypto.digest('sha256', username + '\n' + spec.id +
-          '\n' + String(req.dedupKey), 'base64url').slice(0, 22)
-      : '';
-    const duplicate = this.duplicateOf(realmId, dedup);
+      ? Mail.dedupDigest(username, spec.id, String(req.dedupKey)) : '';
+    const dedupAlso = (Array.isArray(req.dedupAlso) ? req.dedupAlso : [])
+      .map(function (key: unknown): string {
+        return Mail.dedupDigest(username, spec.id, String(key));
+      });
+    const duplicate = this.duplicateOf(realmId, dedup, req.dedupWindowS);
     if (duplicate) {
       log.debug("Leaving Mail.queueOne(). A duplicate.");
       return { duplicate: this.view(duplicate) };
+    }
+    // THE OUTBOX'S CAP HOLDS FOR PENDING MESSAGES TOO (#2220). The sweep
+    // keeps a realm's outbox to `mail.maxRows` by removing the oldest
+    // FINISHED rows, and never a pending one, so a relay that accepted
+    // nothing let pending rows grow past the cap without bound. A message
+    // that would take the realm's PENDING rows to the cap is now refused
+    // here (STS-MAIL-0244), before anything is written, so the caller is
+    // told — the same way as a recipient over their ceiling — and nothing
+    // already queued is dropped. Counted only when the outbox holds the cap
+    // in rows at all, so the ordinary send costs one size comparison.
+    const full = this.pendingAtCap(realmId);
+    if (full) {
+      log.debug("Leaving Mail.queueOne(). The outbox is full.");
+      return { refused: this.refuse(req, username, 'STS-MAIL-0244',
+        'the outbox already holds ' + full + ' unsent message(s) in this ' +
+        'realm, its cap (mail.maxRows); a message is refused until some ' +
+        'are sent or dead-lettered') };
     }
     const counts = this.recentCounts(realmId, username, spec.category);
     const perAll = Number(this.setting('mail.ratePerRecipient'));
@@ -1612,7 +1880,9 @@ class Mail {
     const row: Message = {
       id: id, realm: realmId, username: username, to: who.address,
       category: spec.category, template: spec.id, lang: chosen.lang,
-      dedup: dedup, subject: rendered.subject, text: rendered.text,
+      dedup: dedup,
+      ...(dedupAlso.length ? { dedupAlso: dedupAlso } : {}),
+      subject: rendered.subject, text: rendered.text,
       html: MailTemplates.htmlDocument(rendered.html, chosen.lang),
       from: this.fromAddress(),
       fromName: String(this.setting('mail.fromName') || ''),
@@ -1623,13 +1893,21 @@ class Mail {
       errorCode: '', why: '', providerId: '', queuedAt: at,
       nextAttemptAt: at, lastAttemptAt: 0, finishedAt: 0, updatedAt: at
     };
+    if (encryption.kind !== 'none') {
+      row.encryption = Object.assign({}, encryption, {
+        // THE NEUTRAL SUBJECT (header point 9), in the language the message
+        // went out in.
+        outerSubject: MailTemplates.encryptedSubjectFor(spec.category,
+          chosen.lang, values) });
+    }
     this.writeRow(row);
     audit.audit({ action: 'mail.queued', actor: row.actor,
       target: username, protocol: 'Mail', channel: 'internal',
       summary: 'a ' + spec.id + ' message (' + spec.category + ') was ' +
                'queued for ' + username,
       detail: { message: id, template: spec.id, category: spec.category,
-                to: who.address, via: row.via, transport: row.transport } });
+                to: who.address, via: row.via, transport: row.transport,
+                encryption: encryption.kind } });
     log.debug("Leaving Mail.queueOne(). Queued " + id + ".");
     return { queued: this.view(row) };
   }
@@ -1721,6 +1999,29 @@ class Mail {
     });
     log.debug("Leaving Mail.finish().");
     return written;
+  }
+
+  // How many messages are pending in a realm when that is at least
+  // `mail.maxRows`, and 0 otherwise. The rows are counted only when the
+  // realm's outbox holds that many rows in all, so this is one comparison
+  // until the outbox is full.
+  private pendingAtCap(realmId: string): number {
+    const { log } = this.deps;
+    log.debug("Entering Mail.pendingAtCap().");
+    const cap = Math.max(1, Number(this.setting('mail.maxRows')));
+    const store = outbox.realmMap(realmId);
+    if (store.size < cap) {
+      log.debug("Leaving Mail.pendingAtCap(). Room.");
+      return 0;
+    }
+    let pending = 0;
+    store.forEach(function (row: Json) {
+      if (row && row.state === 'pending') {
+        pending++;
+      }
+    });
+    log.debug("Leaving Mail.pendingAtCap(). " + pending + " pending.");
+    return pending >= cap ? pending : 0;
   }
 
   /**
@@ -1817,7 +2118,19 @@ class Mail {
             from: row.from, fromName: row.fromName, to: row.to,
             subject: row.subject, text: row.text, html: row.html,
             messageId: row.messageId, date: new Date(row.queuedAt),
-            lang: row.lang });
+            lang: row.lang,
+            // #1955 P6 (header point 9): encrypted by the composer. The
+            // S/MIME content encryption (#2124) is the realm's setting AT
+            // THE ATTEMPT, not at the queue, so an operator who returns to
+            // CBC for a recipient who cannot read GCM changes the retries
+            // of a message already queued too.
+            encryption: row.encryption && row.encryption.kind !== 'none'
+              ? (row.encryption.kind === 'smime'
+                ? Object.assign({}, row.encryption, {
+                  contentEncryption: String(
+                    self.setting('mail.smimeContentEncryption') || '') })
+                : row.encryption)
+              : undefined });
         });
     } catch (e) {
       log.debug("Caught in Mail.attempt(): " + ((e && e.message) || e));
@@ -1873,6 +2186,15 @@ class Mail {
    * @param rows - the queued rows
    * @returns a promise for a test to wait on
    */
+  // THE FIRST ATTEMPT IS BOUNDED BY `mail.concurrency` TOO (#2220). Until
+  // #2220 every message queued was attempted at once, so a send to a group
+  // of a thousand opened a thousand SMTP connections while the sweep held
+  // itself to four. The attempts made here now share the sweep's count of
+  // attempts in flight in this process (`inFlightHere`): as many start as
+  // there are free places, one after another as each finishes, and a
+  // message that finds none stays pending, due, for the next `mail.deliver`
+  // run (every `mail.deliverS`). Nothing is dropped and nothing waits in
+  // memory beyond the rows already written.
   dispatch(rows: Json[] | null | undefined): Promise<void> {
     const { log, realms } = this.deps;
     const self = this;
@@ -1881,13 +2203,32 @@ class Mail {
       return row && row.state === 'pending';
     });
     const realmId = realms.currentId();
-    log.debug("Leaving Mail.dispatch(). " + pending.length + " to send.");
-    return Promise.all(pending.map(function (row) {
+    const limit = Math.max(1, Number(this.setting('mail.concurrency')));
+    const next = function (): Promise<void> {
+      log.debug("Entering next().");
+      if (!pending.length || inFlightHere >= limit) {
+        log.debug("Leaving next(). " + pending.length + " left for the " +
+                  "mail.deliver job.");
+        return Promise.resolve();
+      }
+      const row = pending.shift();
+      inFlightHere++;
+      log.debug("Leaving next().");
       return self.attempt(row.realm || realmId, row.id).catch(function (e) {
         log.debug("Caught in Mail.dispatch(): " + ((e && e.message) || e));
         return 'error';
+      }).then(function () {
+        inFlightHere--;
+        return next();
       });
-    })).then(function () {
+    };
+    const count = pending.length;
+    const lanes: Promise<void>[] = [];
+    for (let i = 0; i < Math.min(limit, count); i++) {
+      lanes.push(next());
+    }
+    log.debug("Leaving Mail.dispatch(). " + count + " to send.");
+    return Promise.all(lanes).then(function () {
       return undefined;
     });
   }
@@ -2417,6 +2758,7 @@ export = {
   saveTemplate: slot.forward('saveTemplate'),
   resetTemplate: slot.forward('resetTemplate'),
   send: slot.forward('send'),
+  queuedWithin: slot.forward('queuedWithin'),
   sendToFormerAddress: slot.forward('sendToFormerAddress'),
   sendToPendingAddress: slot.forward('sendToPendingAddress'),
   sendToPseudonymAddress: slot.forward('sendToPseudonymAddress'),

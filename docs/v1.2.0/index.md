@@ -1,0 +1,387 @@
+---
+title: iya-sts
+nav_order: 1
+---
+
+# iya-sts
+
+An identity service that speaks every protocol family the sidebar lists in a
+single container, in one of two modes (`global.mode`).
+
+What it speaks about is two protocol-independent objects. A
+[user](people.md) is one person. An [application](applications.md) is one
+application. The protocols name that pair.
+[Directory](directory.md).
+
+**Development mode, the default, exists to exercise *clients*:** it checks no
+end user's password, creates whoever and whatever a request names, and accepts
+tokens it cannot verify at the doors where a client under test needs to. A
+client that has only ever met a permissive server has never run its own refusal
+paths — and a client that has only met a strict one cannot reproduce the
+behaviour it is trying to detect.
+
+**Product mode is meant to be deployed:** it verifies every password, creates
+nothing because something named it, invents no claim value, and implies RFC
+9700 mode.
+[What is not checked](what-is-not-checked.md) says exactly where the line is in
+each.
+
+## Where to read
+
+The sidebar on every page is the full list, grouped as below. The protocol
+pages share one shape — features, what development and product mode change,
+every setting with its environment variable and default, and the design
+decisions behind the behaviour — so the same question has the same place on
+each.
+
+**Start here** —
+[Getting started](getting-started.md) ·
+[Release notes](release-notes.md) ·
+[Certifications](certifications.md) ·
+[Architecture](architecture.md) ·
+[Where a request waits](request-path.md) ·
+[Configuration](configuration.md) ·
+[Configuration dump](configuration-dump.md) ·
+[Endpoints](endpoints.md) ·
+[Specifications](specifications.md) ·
+[Trust realms](trust-realms.md) ·
+[Listeners and hosted applications](listeners.md) ·
+[Words a password may not contain](password-words.md) ·
+[Malware scanning](malware-scanning.md) ·
+[What is not checked](what-is-not-checked.md) ·
+[Security in product mode](product-security.md) ·
+[Input validation](validation.md) ·
+[Data classification](data-classification.md) ·
+[Logging inventory](logging-inventory.md) ·
+[Key management](key-management.md) ·
+[Keys in a hardware security module](hsm.md) ·
+[Field-level access](field-access.md) ·
+[Communication inventory](communications.md) ·
+[File uploads](file-uploads.md) ·
+[Risky third-party components](risky-components.md) ·
+[Dangerous functionality](dangerous-functionality.md) ·
+[Authentication pathways](authentication-pathways.md) ·
+[Availability and resource limits](availability.md) ·
+[Conformance suites](conformance.md) ·
+[Departures from the specifications](spec-departures.md) ·
+[Accepted tokens](accepted-tokens.md) ·
+[Token samples](token-samples.md) ·
+[Error codes](error-codes.md)
+
+**Protocol debugger** —
+[The protocol debugger](debugger/index.md): the identity protocol debugger
+this service embeds on port 8444, for console administrators, with its user
+guides ·
+[Accessing the debugger](debugger/access.md): signing in, turning it on, and
+building an image without it
+
+**Administration** —
+[Admin console](admin-console.md): `/admin`, who may use it and what its pages
+do ·
+[Security Administrator](security-administrator.md): the role that alone
+changes policies, and how to give it to somebody who is not an
+administrator ·
+[Audit export destinations](audit-export.md): where this process sends its
+audit events, with an example for syslog, a file, a webhook, Splunk HEC and
+LogRhythm ·
+[OpenAPI reference](openapi/): every operation of each API this service
+publishes, its parameters and its answers ·
+[Management API](management-api.md): `/admin-api`, every console control
+reachable by a machine with an OAuth 2.0 access token ·
+[Delegation and impersonation](delegation.md): who may obtain a token about
+somebody else, the same controls for RFC 8693, WS-Trust, Kerberos and GNAP,
+the token types and claims, and a worked example of each.
+
+**Directory** — a user and an application, which belong to no protocol,
+then the policy they are held to, then how each is configured.
+[Directory](directory.md) ·
+[People](people.md) ·
+[Applications](applications.md): one application, whichever protocol it
+spoke ·
+[Policies](policies.md): the seven kinds, and how a named policy is chosen ·
+[Service accounts](service-accounts.md) ·
+[LDAP](ldap.md) ·
+[LDAP schema](ldap-schema.md) ·
+[Abstract data model](data-model.md) ·
+[Directory models](data-model-directory.md) ·
+[Persistence models](data-model-persistence.md) ·
+[Configuring LDAP](configure-ldap.md) ·
+[SCIM 2.0](scim.md) ·
+[Bulk directory import](bulk-import.md).
+
+**Configuration recipes** — what to register, which settings to change and
+what the client sends, each given as admin console steps and as Management
+API calls, with values from this repository's test jobs. Each sits in its
+protocol's section of the sidebar:
+[OAuth 2.0 grants](configure-oauth2-grants.md) ·
+[OpenID Connect flows](configure-oidc-flows.md) ·
+[SAML 2.0 and SAML 1.1](configure-saml.md) ·
+[WS-Trust](configure-ws-trust.md) ·
+[WS-Federation](configure-ws-federation.md) ·
+[Federation](configure-federation.md) ·
+[OpenID Federation](configure-oidfed.md) ·
+[Kerberos and SPNEGO](configure-kerberos.md) ·
+[TLS and mutual TLS](configure-tls.md) ·
+[OpenID4VCI](configure-oid4vci.md) ·
+[OpenID4VP and wallet sign-in](configure-oid4vp.md) ·
+[LDAP](configure-ldap.md) ·
+[SCIM 2.0](configure-scim.md) ·
+[XACML and ALFA](configure-xacml.md) ·
+[GNAP](configure-gnap.md) ·
+[Shared Signals](configure-shared-signals.md) ·
+[Certificate enrollment: ACME, EST, SCEP](configure-enrollment.md) ·
+[SPIFFE](configure-spiffe.md) ·
+[Passkeys and WebAuthn](passkeys.md) ·
+[Phishing-resistant sign-in](phishing-resistance.md): what defends a
+sign-in against phishing, and the specification behind each ·
+[Post-login activities](post-login-activities.md).
+
+**Sessions and signals** —
+[Sessions](sessions.md) ·
+[Identity-provider-initiated sign-in](idp-initiated-sso.md) ·
+[Several accounts in one browser](multiple-accounts.md) ·
+[Sign-in appearance](sign-in-appearance.md) ·
+[Signing out](signing-out.md) ·
+[Risk scoring](risk-scoring.md) ·
+[Devices](devices.md) ·
+[Hardware tokens](hardware-tokens.md) ·
+[Smart cards](smart-cards.md) ·
+[One-time code tokens](one-time-code-tokens.md) ·
+[YubiKey OTP](yubiotp.md) ·
+[OpenPGP keys and encrypted mail](openpgp.md) ·
+[Mail](mail.md) ·
+[Reports](reporting.md) ·
+[Attribute sources](attribute-sources.md) ·
+[Secret push destinations](secret-destinations.md) ·
+[CAEP events](caep-events.md) ·
+[Signals received](signals-received.md)
+
+**Authorization** —
+[Authorization overview](authorization.md) ·
+[XACML 3.0 and ALFA](xacml.md) ·
+[Fine-grained authorization](fga.md) ·
+[Dynamic selectable roles](dynamic-roles.md) ·
+[AuthZEN](authzen.md) ·
+[User-Managed Access](uma.md) ·
+[Remote PEP](remote-pep.md) ·
+[Delegation and impersonation](delegation.md)
+
+**Client libraries** —
+[Authentication libraries](authentication-libraries.md): client libraries
+for integrating an application with iya-sts. The four server-side
+libraries exist in Node.js, Python, Java, Rust, Go, C#, and C and C++, with
+links to the packages on npm, PyPI, crates.io and NuGet; there are also two
+in-browser clients and a Swift client.
+[OpenID Connect and CAEP clients](client-libraries.md) is the detailed
+guide to the browser OpenID Connect client and the Swift client for native
+macOS apps.
+
+**Operating it** —
+[The compose stack](docker-compose.md) ·
+[Persistence](persistence.md) ·
+[PostgreSQL schema](postgres-schema.md) ·
+[Encryption at rest](encryption-at-rest.md) ·
+[Caches](caches.md) ·
+[How the cluster works](cluster-concepts.md) ·
+[A cluster in AWS](aws-cluster.md) ·
+[A CDN in front of a cloud deployment](cdn.md) ·
+[Several regions (cells)](cells.md) ·
+[How cells work](cells-concepts.md)
+
+**For contributors** —
+[Repository layout](layout.md) ·
+[Parent project migration](parent-project-migration.md)
+
+### Protocols, by the admin console's Protocols menu
+
+Every page under **Protocols** in the admin console, and the page here that
+documents it.
+
+| Console group | Console pages | Documentation | Configuration recipes |
+|---|---|---|---|
+| OAuth2 / OIDC | `/admin/oauth2`, `/admin/authorization-servers`, `/admin/token-lifetimes`, `/admin/claims`, `/admin/userinfo-claims` | [OAuth 2.0 and OpenID Connect](oauth-oidc.md), [Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS](oauth-security.md), [JWT assertions](jwt-assertions.md) | [OAuth 2.0 grants](configure-oauth2-grants.md), [OpenID Connect flows](configure-oidc-flows.md) |
+| SAML | `/admin/saml2`, `/admin/saml11`, `/admin/saml-assertions`, `/admin/saml-attributes` | [SAML 2.0 Web Browser SSO](saml2-sso.md), [SAML 1.1](saml11.md), [SAML assertions as grants (RFC 7522)](saml-assertions.md) | [SAML 2.0 and SAML 1.1](configure-saml.md) |
+| Verifiable Credentials | `/admin/vc` — Metadata, OpenID4VCI settings, Credential claims, OpenID4VP settings and Verifier request tabs; what was issued and each credential's status at `/admin/vc/monitor`, under Monitoring | [Verifiable credentials and wallets (OID4VC)](verifiable-credentials.md), [OpenID4VCI and status lists](oid4vci.md), [OpenID4VP and wallet sign-in](oid4vp.md) | [OpenID4VCI](configure-oid4vci.md), [OpenID4VP](configure-oid4vp.md) |
+| XACML | `/admin/xacml`, `/admin/xacml/policies`, `/admin/xacml/editor`, `/admin/xacml/peps`, `/admin/xacml/decide` | [XACML 3.0 and ALFA](xacml.md), [Remote PEP](remote-pep.md) | [XACML and ALFA](configure-xacml.md) |
+| SCIM | `/admin/scim` | [SCIM 2.0](scim.md) | [SCIM 2.0](configure-scim.md) |
+| Shared Signals, CAEP, RISC | `/admin/ssf`, `/admin/caep`, `/admin/risc` | [Shared Signals](shared-signals.md), [CAEP events](caep-events.md), [Signals received](signals-received.md) | [Shared Signals](configure-shared-signals.md) |
+| Federation | `/admin/federation` | [Federation](federation.md), [Consumer and social providers](federation-consumer-providers.md) | [Federation](configure-federation.md) |
+| OpenID Federation | `/admin/oidfed` | [OpenID Federation](oidfed.md) | [OpenID Federation](configure-oidfed.md) |
+| GNAP | `/admin/gnap` | [GNAP](gnap.md) | [GNAP](configure-gnap.md) |
+| TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md), [Passkeys and WebAuthn](passkeys.md) | [Passkeys and WebAuthn](passkeys.md#recipes) |
+| Device registration | `/admin/device-registration` | [Devices](devices.md) | |
+| Hardware tokens, PIV, YubiKey OTP, OATH tokens | `/admin/hardware-tokens-settings`, `/admin/piv`, `/admin/yubiotp`, `/admin/oath-tokens` | [Hardware tokens](hardware-tokens.md), [YubiKey OTP](yubiotp.md), [One-time code tokens](one-time-code-tokens.md) | |
+| Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) | [Kerberos and SPNEGO](configure-kerberos.md) |
+| LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) | [LDAP](configure-ldap.md) |
+| WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) | [WS-Trust](configure-ws-trust.md) |
+| WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) | [WS-Federation](configure-ws-federation.md) |
+| PKI | `/admin/pki` | [PKI](pki.md), [OpenSSH user certificates](pki.md#openssh-user-certificates) | |
+| SSH user certificates, OpenPGP | `/admin/ssh-user-ca`, `/admin/openpgp-settings` | [OpenSSH user certificates](pki.md#openssh-user-certificates), [OpenPGP keys and encrypted mail](openpgp.md) | |
+| PKI trust | `/admin/pki/trust` | [Truststores](truststores.md), [signer truststore](signer-truststore.md), [use cases](pki-use-cases.md), [paranoid PKI mode](pki.md#paranoid-pki-mode) | |
+| Cryptography | `/admin/crypto-metadata` | [Signature algorithms](crypto.md) | |
+| Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) | [ACME, EST, SCEP](configure-enrollment.md), [SPIFFE](configure-spiffe.md) |
+| TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) | [TLS and mutual TLS](configure-tls.md) |
+
+## Start here
+
+```bash
+git clone --recursive https://github.com/rcbj/iya-sts.git
+cd iya-sts
+docker build -t iya-sts .
+docker run --rm -p 8081:8081 iya-sts
+```
+
+It runs from an image: part of the service is TypeScript, compiled while the
+image is built, and a checkout does not run on its own.
+
+**https, and your browser will warn you once.** Every appconfig file here sets
+`global.https`, so the main port is TLS on the same certificate the LDAPS 636
+listener uses, issued under this service's own Root CA — which, in development
+mode, is rebuilt on every start, so nothing can have trusted it in advance.
+Accept it, or fetch the certificate, its chain and the Root with
+`curl -k https://localhost:8081/tls/server-certificate` and trust the Root
+([TLS](tls.md#the-server-certificate)); `STS_HTTPS=false` runs the plain port
+this used to be.
+
+Then open <https://localhost:8081/> — a front page with the six things worth
+having on one: this repository, its issues, this site, and the three surfaces
+on that instance that a person rather than a client goes to — the admin
+console, reports at `/report`, and the user portal at `/portal`, which is that
+instance's account page for whoever signs in to it. Its Overview draws **every standard inetOrgPerson
+attribute** the signed-in person's directory entry could hold — all fifty,
+grouped by the three object classes a person here is filed under, with the LDAP
+attribute name and the RFC printed under each value, because the reason to read
+it on a test service is usually to find out what something is called before writing it
+over LDAP.
+
+The page worth going to next is <https://localhost:8081/admin/sts-metadata> —
+every protocol this service speaks, and every endpoint it registers, read off
+the live Express router, with a sentence about each and a link to the
+specification it implements. It is a page of the admin console, so it asks you
+to sign in first: in development mode any username will do, because no password
+is checked; in product mode sign in as the bootstrap administrator `admin`,
+whose password is written to the log once at the first start unless
+`admin.bootstrapPassword` supplied one.
+
+[Getting started](getting-started.md) has the rest: the ports, the container, and
+what to do when 389 or 88 will not bind.
+
+## Architecture
+
+One front process owns every listener, and a request dispatcher hands work
+from it to two pools of worker threads. The protocol families and hosted
+applications share one session model and one set of services, over an
+embedded directory and key material sealed in their stores. [Architecture](architecture.md) has
+the diagram and a walk through each layer.
+
+## What it speaks
+
+Every specification by name, grouped, is on [Specifications](specifications.md).
+This table is the same ground by protocol family.
+
+| Family | Where | Read |
+|---|---|---|
+| OAuth 2.0 and OpenID Connect — a full authorization server | `/oauth2/*`, `/.well-known/openid-configuration` | [oauth-oidc](oauth-oidc.md) |
+| DPoP (RFC 9449) and certificate-bound tokens (RFC 8705) | the token endpoint and the four protected endpoints | [oauth-security](oauth-security.md) |
+| RFC 9700, the Security BCP, as an optional MODE | `GET /oauth2/rfc9700` | [oauth-security](oauth-security.md) |
+| OAuth 2.1 (draft-16) as an optional MODE, which turns the one above on | `GET /oauth2/oauth21` | [oauth-security](oauth-security.md) |
+| Post-quantum and hybrid JWE key establishment — ML-KEM, and HPKE over ML-KEM or X-Wing (drafts) | every encrypted token and response; a realm's own keys by opt-in | [post-quantum-encryption](post-quantum-encryption.md) |
+| WS-Trust 1.0 – 1.4 | `/sts`, `/sts/metadata`, `/sts/mex` | [ws-trust](ws-trust.md) |
+| WS-Federation 1.2, passive requestor | `/wsfed` | [ws-federation](ws-federation.md) |
+| SAML 2.0 Web Browser SSO — a full identity provider, all four bindings | `/saml2`, `/saml2/metadata/{sp}` | [saml2-sso](saml2-sso.md) |
+| SAML 1.1 browser profiles — Browser/POST and Browser/Artifact, and an attribute authority | `/saml11`, `/saml11/metadata/{rp}` | [saml11](saml11.md) |
+| SAML 2.0 and SAML 1.1 assertions | inside all four above | [saml2-sso](saml2-sso.md) |
+| **Federation** — this service as either end of a relationship with a foreign identity service, in five of those protocols | `/federation`, `/admin/federation` | [federation](federation.md) |
+| **Consumer and social providers** — Google, Apple, Microsoft, GitHub, Discord and eleven more as federation relationships of their own category, off by default per realm; a person connects one to an existing account on the portal | `/federation`, `/admin/federation`, `/portal/connected-accounts` | [federation-consumer-providers](federation-consumer-providers.md) |
+| **OpenID Federation 1.1** — every realm a federation entity (Trust Anchor, Intermediate or Leaf) with its own Federation Entity Keys; Subordinate Statements with metadata policy and constraints, Trust Chain resolution, Trust Marks, and the section 8 endpoints | `/.well-known/openid-federation`, `/oidfed/*`, `/admin/oidfed` | [oidfed](oidfed.md) |
+| **JWT assertions (RFC 7521, RFC 7523)** — both halves: an assertion instead of a client secret, and an assertion instead of an authorization code | the token endpoint | [jwt-assertions](jwt-assertions.md) |
+| **SAML 2.0 assertions (RFC 7521, RFC 7522)** — the same framework's other profile: a signed `<saml:Assertion>` instead of a client secret, and instead of an authorization code. A **separate key pair per application** from the JWT one, and neither can sign for the other | the token endpoint | [saml-assertions](saml-assertions.md) |
+| **A certificate authority** — ONE Root for the service, an Intermediate per trust realm and per the process, an Issuing CA per use case, and **every key pair this service generates as a leaf of it** | `/admin/pki`, `/admin-api/pki` | [pki](pki.md) |
+| **OpenSSH user certificates (PROTOCOL.certkeys) and the OpenSSH KRL (PROTOCOL.krl)** — a user CA per realm, short-lived certificates for a person's own names, and a key revocation list. An ML-DSA authority beside the classical one, which stock OpenSSH cannot verify yet | `GET /pki/ssh-user-ca/{scope}`, `GET /pki/ssh-user-krl/{scope}` | [pki](pki.md#openssh-user-certificates) |
+| **OpenPGP (RFC 9580; RFC 4880 for v4 keys), PGP/MIME (RFC 3156), S/MIME 4.0 (RFC 8551) and the Web Key Directory (draft-koch-openpgp-webkey-service)** — a person's key, published for people who opted in, and mail encrypted to it. Post-quantum: composite ML-DSA and ML-KEM OpenPGP keys (RFC 9980), and S/MIME to an ML-KEM certificate (RFC 9935) through a KEMRecipientInfo (RFC 9629) | `/.well-known/openpgpkey`, `/portal/tokens-and-keys#tk-openpgp`, `/admin/openpgp` | [openpgp](openpgp.md) |
+| **PKCS #11 3.x** (tokens named by RFC 7512 URIs) — the key-encryption key, and a realm's classical signing keys, kept inside a hardware security module. Post-quantum keys stay in software | `keys.kekProvider`, `keys.signingKeyStore` | [hsm](hsm.md) |
+| WebAuthn Level 3 over FIDO CTAP2, the relying party's half — **passkeys** as a second factor or the only credential on an account, with or without a username, classical and post-quantum (ML-DSA) side by side | the login screen, `/portal/keys`, `/admin/webauthn` | [passkeys](passkeys.md), [authentication](authentication.md#webauthn) |
+| **CTAP 2.1 credential protection and legacy FIDO U2F** — credProtect and minPinLength asked as the passkey policy says, and an imported U2F key used through the appid extension (WebAuthn Level 3 section 10.1.1) | the login screen, `/admin/webauthn` | [passkeys](passkeys.md#credential-protection-on-a-security-key-credprotect), [passkeys](passkeys.md#moving-security-keys-from-a-u2f-service-the-appid-extension) |
+| **TOTP (RFC 6238)** — an authenticator app as a second factor, enrolled as a QR code and **genuinely verified** | `/portal/mfa`, `/authn/totp`, `/admin/totp` | [authentication](authentication.md) |
+| **Recovery codes** — the way back in when the second factor is not to hand, generated by the person, shown **once** and stored as a hash — NIST SP 800-63B-4's look-up secrets | `/portal/mfa`, `/authn/backup-code`, `/admin/backup-codes` | [authentication](authentication.md) |
+| **App passwords** — what a person with a second factor gives a client at the five doors that take only a password (LDAP, WS-Trust, SCIM, SSF and EST Basic), which in product refuse their own password; generated, shown **once**, hashed, scoped to the doors named and never accepted at a browser sign-in | `/portal/app-passwords`, `/admin/users`, `/admin-api/users/app-passwords` | [authentication](authentication.md#the-password-only-doors-and-app-passwords) |
+| **HOTP (RFC 4226) and PSKC (RFC 6030)** — a counter-based one-time code from a YubiKey slot programmed for HOTP, or from a vendor's seed file, as a second factor | `/portal/mfa`, `/admin/hardware-tokens` | [one-time-code-tokens](one-time-code-tokens.md) |
+| **Yubico OTP and YK-VAL 2.0** — a YubiKey OTP checked on this service, and an optional validation server for clients that already speak YK-VAL. Nothing is sent to YubiCloud | `/portal/mfa`, `/wsapi/2.0/verify` | [yubiotp](yubiotp.md) |
+| **Hardware tokens, PIV (NIST SP 800-73-4, FIPS 201-3) and YubiKey PIV attestation** — one record per physical key, taken from attestation: passkeys, PIV certificates from attested keys, one-time codes, an OpenSSH certificate and an OpenPGP key. Reporting it lost retires every credential on it | `/admin/hardware-tokens`, `/portal/tokens-and-keys` | [hardware-tokens](hardware-tokens.md), [smart cards](smart-cards.md) |
+| **W3C Device Bound Session Credentials** (draft) — the relying party's half: after a sign-in the browser is asked to bind the sign-on session to a key it holds (TPM-backed where it can), and a bound session then needs a short-lived second cookie that only a proof of that key renews, so a copied session cookie stops working. Per realm, off by default (`authn.deviceBoundSessions`); a browser without DBSC keeps an ordinary session | `/authn/dbsc/register`, `/authn/dbsc/refresh` | [sessions](sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials) |
+| Kerberos v5 — a KDC, a protected service, and MS-KKDCP; a person's **keytab**, derived from a password in hand | TCP/UDP 88, `/KdcProxy`, `/portal/kerberos` | [kerberos](kerberos.md) |
+| SPNEGO (RFC 4559/4178) | `/authn/spnego` | [kerberos](kerberos.md) |
+| LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 | [ldap](ldap.md) |
+| SCIM 2.0 provisioning | `/scim/v2` | [scim](scim.md) |
+| TLS and mutual TLS — a client certificate asked for and never required, and a sign-in for a verified one | the main port, `/tls/sign-in`, `/admin/tls-connection` | [tls](tls.md) |
+| SPIFFE — bundle endpoint, Workload API, SPIRE Server API | `/spiffe`, four gRPC sockets | [spiffe](spiffe.md) |
+| OpenID4VCI 1.0 — a Credential Issuer | `/oid4vci/*` | [oid4vci](oid4vci.md), [verifiable-credentials](verifiable-credentials.md) |
+| OpenID4VP 1.0 — a Verifier, and a sign-in with a wallet in any credential format, through the W3C Digital Credentials API | `/oid4vp/*`, `/authn/wallet`, `/admin-api/verifications` | [oid4vp](oid4vp.md), [verifiable-credentials](verifiable-credentials.md) |
+| SIOPv2 — the relying party of a Self-Issued OpenID Provider: a sign-in with an ID Token a wallet signs with an enrolled key, a preferred DID released as the `did` claim; off until a realm turns it on | `/authn/wallet`, `/portal/self-issued` | [verifiable-credentials](verifiable-credentials.md), [oid4vp](oid4vp.md#self-issued-id-tokens-siopv2) |
+| Token Status List and W3C Bitstring Status List — what this issuer publishes about what it issued | `/oid4vci/status-lists*`, `/admin/vc/monitor` | [oid4vci](oid4vci.md) |
+| W3C DID Core with DIF domain linkage | `/.well-known/did.json` | [oid4vp](oid4vp.md) |
+| A did:web this realm publishes for a person, with every version of its keys kept; off until a realm turns it on | `/users/{rid}/did.json`, `/portal/self-issued` | [person-dids](person-dids.md) |
+| The W3C VC API (VCALM) — an issuer, holder, verifier and status service over Data Integrity (RDFC, JCS, ecdsa-sd-2023) and VC-JOSE-COSE, and DID resolution; off until a realm turns it on | `/vc-api/*` | [vc-api](vc-api.md) |
+| Shared Signals (SSF 1.0) with CAEP and RISC — a transmitter, and a receiver of its own | `/ssf/*`, `/admin/ssf` | [shared-signals](shared-signals.md) |
+| XACML 3.0 and ALFA — a PDP, a policy repository, and the PEPs that decide this service's own issuance | `/xacml/*`, `/admin/xacml` | [xacml](xacml.md) |
+| AuthZEN Authorization API 1.0 — access evaluations over the same XACML engine, mapped through a per-realm attribute catalogue | `/access/v1/*` | [authzen](authzen.md) |
+| AuthZEN Access Request and Approval Profile 1.0 (draft) — a denial the policy marks as requestable, a task an approver decides, and an approval the same policy reads on the next evaluation | `/access/v1/access-requests` | [authzen](authzen.md#access-requests-and-approvals) |
+| AuthZEN Callback Notifications Profile 1.0 (draft) — a notification to a URL registered on the calling application when a task finishes. A network error or an HTTP 5xx is tried again; the task status is unchanged | the application's registered callback | [authzen](authzen.md#callbacks) |
+| Application-scoped fine-grained authorization — a policy each application owns for the details of its own `authorization_details` types, created with it and retired with it, enforced at issuance and at AuthZEN access evaluations once the application switches it on | `/admin/applications` (Fine-grained authorization tab), `/admin/xacml` | [fga](fga.md) |
+| GNAP (RFC 9635) with RFC 9767 resource server connections | `/gnap/*`, `/admin/gnap` | [gnap](gnap.md) |
+| User-Managed Access 2.0 — a resource owner's own XACML policy per person, the protection API, the `uma-ticket` grant; off until a realm turns it on | `/uma/*`, `/.well-known/uma2-configuration`, `/portal/shared` | [uma](uma.md) |
+| ACME, EST and SCEP certificate enrollment | `/enroll/acme`, `/.well-known/est`, `/enroll/scep` | [acme](acme.md), [est](est.md), [scep](scep.md) |
+
+## The four things to know before you rely on it
+
+**In development mode nothing you would miss persists.** The signing keys and
+the certificate authority are regenerated on every start — deliberately, so that
+a client cannot cache a key it should be re-fetching — and every document that
+carries a key is served `Cache-Control: no-store`. Product mode keeps them,
+sealed under a key-encryption key; [persistence](persistence.md) says what
+survives in each.
+
+**Every surface tells you what it does not do.** That is not modesty; it is the
+point. `GET /oauth2/rfc9700` publishes every BCP requirement with `yes`,
+`detected`, `always`, `deployment` or `no` and the reason. `GET /spiffe` names
+the six of forty-two SPIRE methods that are unimplemented and why each one is.
+`GET /admin/ldap/service` says the directory is schemaless. A service that quietly pretended
+would teach you something false about every real server you will ever meet.
+
+**The admin console at `/admin` asks for a sign-in and a role** — unconditionally,
+with no setting that opens it — and the roles are two ordinary groups in the
+embedded directory. In development mode it is a turnstile and not a lock: no
+password is checked, so anybody who can reach this port can sign in as anybody.
+In development mode, until the bootstrap administrator `admin` first signs in,
+anybody who signs in holds both roles; product mode never opens it that way, and
+`admin` claims it only by signing in with its password. The console can revoke tokens, add claims to every
+future token and assertion, and create people in the directory. Do not put a
+development-mode instance on a public address.
+[Admin console](admin-console.md) has the rest.
+
+**`/admin-api` requires an OAuth 2.0 access token** —
+audienced to this API, carrying `admin:read` to read and `admin:write` to
+change anything. Ask the token endpoint for one with the client-credentials
+grant as the seeded client `sts-api-client`, whose secret is
+`adminApi.clientSecret`, and send `resource=<base>/admin-api` so the audience is
+right. On the compose stack that secret is kept in OpenBao and is for the
+first token only; after that, use an application of your own that holds the
+admin roles ([Getting a token](management-api.md#getting-a-token)).
+`adminApi.authRequired=false` opens the API in development mode; product
+mode ignores it, and always requires the token.
+
+**Federation is the one feature that refuses by default, and that is deliberate.**
+Everywhere else this service accepts what it is given. It cannot do that where it
+CONSUMES somebody else's assertions: `/federation/acs/{id}` receives an
+unauthenticated HTTP request claiming to be a person, and the session it would
+produce is the same one every other protocol here reads — so "accept anything"
+would be an authentication bypass for the whole process rather than a permissive
+test setting. A relationship must be configured, is created disabled, and refuses an
+assertion that does not verify against the certificate configured on it. **And
+the gate is on the subject too**: a partner signs in only the person its subject
+is linked to, and an unlinked one naming an existing person must first sign in
+here as that person (#109). One naming nobody is created as
+`<relationship>~<subject>` when that relationship's `fedAutocreateUsers` is on
+(on for a new relationship in development, off in product), and refused
+otherwise. See [federation](federation.md) and
+[what is not checked](what-is-not-checked.md).

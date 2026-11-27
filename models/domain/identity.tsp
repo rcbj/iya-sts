@@ -171,6 +171,12 @@ model Credential {
   @fromAttr(#{attr: "stsTotpCredential", secret: true})
   authenticatorApp?: string;
 
+  @fromAttr(#{attr: "stsHotpCredential", secret: true})
+  hotpToken?: string;
+
+  @fromAttr(#{attr: "stsYubiOtpCredential", secret: true})
+  yubiOtp?: string;
+
   @fromAttr(#{attr: "stsWebauthnCredential"})
   passkeys?: string[];
 
@@ -192,8 +198,46 @@ model Credential {
   @fromAttr(#{attr: "userCertificate"})
   `userCertificate`?: string[];
 
+  // #2050: the person's S/MIME certificates (RFC 2798), under either RFC
+  // 4522 spelling, and the live SSH user certificates the realm's SSH user
+  // CA issued them, one JSON value each.
+  @fromAttr(#{attr: "userSMIMECertificate"})
+  `smimeCertificate`?: string[];
+
+  @fromAttr(#{attr: "stsSshUserCertificate"})
+  `sshUserCertificate`?: string[];
+
+  // #2051: the person's hardware, OATH and YubiKey OTP tokens, the master
+  // data, one JSON value each.
+  @fromAttr(#{attr: "stsHardwareToken"})
+  `hardwareTokens`?: string[];
+
+  @fromAttr(#{attr: "stsOathToken"})
+  `oathTokens`?: string[];
+
+  @fromAttr(#{attr: "stsYubiOtpToken"})
+  `yubiOtpTokens`?: string[];
+
   @fromAttr(#{attr: "stsKrb5KeyInfo"})
   `krb5KeyInfo`?: string;
+
+  // #1955 P6: the person's OpenPGP public key, its fingerprint and what is
+  // drawn about it.
+  @fromAttr(#{attr: "stsOpenPgpKey"})
+  `openPgpKey`?: string;
+
+  @fromAttr(#{attr: "stsOpenPgpFingerprint"})
+  `openPgpFingerprint`?: string;
+
+  @fromAttr(#{attr: "stsOpenPgpKeyInfo"})
+  `openPgpKeyInfo`?: string;
+
+  // #2009 P2: the classical key kept beside a post-quantum one (D3).
+  @fromAttr(#{attr: "stsOpenPgpClassicalKey"})
+  `openPgpClassicalKey`?: string;
+
+  @fromAttr(#{attr: "stsOpenPgpClassicalKeyInfo"})
+  `openPgpClassicalKeyInfo`?: string;
 
   @fromAttr(#{attr: "hobaPublicKey"})
   `hobaPublicKey`?: string[];
@@ -230,6 +274,14 @@ model Credential {
 
   @fromAttr(#{attr: "stsAndroidAttestedCredential"})
   `androidAttestedCredential`?: string[];
+
+  // #1955 P2, D8: an outside PIV or CAC card's FIPS 201 card UUIDs.
+  @fromAttr(#{attr: "stsPivCardUuid"})
+  `pivCardUuid`?: string[];
+
+  // #2012: the certificate sign-in bindings an administrator recorded.
+  @fromAttr(#{attr: "stsCertificateBinding"})
+  `certificateBinding`?: string[];
 
   @fromAttr(#{attr: "stsWebauthnUserHandle"})
   `webauthnUserHandle`?: string;
@@ -603,8 +655,16 @@ model PersonRecord {
   @fromAttr(#{attr: "stsAuthzenCallbackUri"})
   `authzenCallbackUri`?: string[];
 
+  // #2025: the application an embedded remote PEP is bound to.
+  @fromAttr(#{attr: "stsPepApplication"})
+  `pepApplication`?: string;
+
   @fromAttr(#{attr: "stsMailVerified"})
   `mailVerified`?: string;
+
+  // #1955 P6: how mail to the person is encrypted.
+  @fromAttr(#{attr: "stsMailEncryption"})
+  `mailEncryption`?: string;
 
   @fromAttr(#{attr: "stsAudSub"})
   `audSub`?: string[];

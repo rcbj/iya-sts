@@ -90,6 +90,12 @@ HELP_TEXT_BY_ROUTE = {
     "/admin-api/caches": (
         ".caches[].bound",
     ),
+    # The one setting `config/set` answers with: config.js's row, the same
+    # fixed help text as `.settings[].description` (fuzz run #569, where
+    # webauthn.insecureAlgorithms's names STS-AUTHN-0294).
+    "/admin-api/config/set": (
+        ".setting.description",
+    ),
     "/admin-api/crypto": (
         ".families[].algorithms[].how",
     ),
@@ -164,7 +170,7 @@ HELP_TEXT_BY_ROUTE = {
 }
 
 # The account API's OpenAPI document as the console's page holds it: its
-# descriptions, which docs/v1.1.0/openapi/ publishes as well.
+# descriptions, which docs/v1.2.0/openapi/ publishes as well.
 _DOCUMENT_ROUTE = "/admin-api/account-api"
 _DOCUMENT_PREFIX = ".document.paths."
 

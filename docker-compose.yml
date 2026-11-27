@@ -182,7 +182,7 @@ services:
         GIT_COMMIT: "${GIT_COMMIT:-}"
         STS_RELEASE: "${STS_RELEASE:-false}"
         BUILD_NUMBER: "${BUILD_NUMBER:-}"
-        DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3}"
+        DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-ghcr.io/rcbj/id-proto-debugger-embedded:0.9.5}"
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
       - "${STS_PKI_HOST_PORT:-8082}:8082"
@@ -209,6 +209,10 @@ services:
       - STS_LOG_LEVEL
       - STS_MALWARE_SCAN_ENABLED
       - STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE
+      - STS_ACCOUNT_WRITES_PER_SUBJECT
+      - REPORT_ACTS_PER_SUBJECT
+      - ADMIN_API_WRITES_PER_SUBJECT
+      - ADMIN_API_PROGRAM_WRITES_PER_SUBJECT
       - STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD
       - STS_MALWARE_SCAN_URL
       - STS_MALWARE_SCAN_CA_FILE
@@ -250,7 +254,7 @@ services:
       - STS_KEYS_SOURCE
       - STS_PERSISTENCE_DATA_DIR=/usr/src/sts/data
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      test: ["CMD-SHELL", "if [ -f /usr/src/sts/common/healthcheck_probe.js ]; then exec node /usr/src/sts/common/healthcheck_probe.js; fi; node -e \"var tls=process.env.STS_HTTPS==='true'||(process.env.STS_HTTPS===undefined&&(process.env.STS_OAUTH2_RFC9700==='true'||process.env.STS_OAUTH2_OAUTH21==='true'));var m=tls?require('https'):require('http');m.get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
       interval: 10s
       timeout: 5s
       retries: 5

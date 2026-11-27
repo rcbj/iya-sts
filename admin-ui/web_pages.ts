@@ -68,14 +68,18 @@ import LogoutPage = require('../logout/web_logout');
 import LdapPage = require('../ldap/web_ldap');
 import ListenersPage = require('./web_listeners');
 import MalwareScanPage = require('./web_malware_scan');
+import CspReportsPage = require('./web_csp_reports');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
+import ApprovalsPage = require('./web_approvals');
 import MetricsPage = require('./web_metrics');
 import ModePage = require('./web_mode');
 import BroadcastPage = require('./web_broadcast');
 import NodeHealthPage = require('./web_node_health');
 import PasskeyReportPage = require('./web_passkey_report');
 import PostLoginActivitiesPage = require('./web_post_login_activities');
+import HardwareTokensPage = require('./web_hardware_tokens');
+import OpenPgpPage = require('./web_openpgp');
 import PkiPage = require('./web_pki');
 import ProtocolSettingsPage = require('./web_protocol_settings');
 import PoliciesPage = require('./web_policies');
@@ -145,6 +149,11 @@ interface WebPage {
   // Members listed here are always composed, even when `composeWhen` names
   // query parameters that are absent. Those parameters are still forwarded.
   composeAlways?: string[];
+  // Members listed here are drawn from their answer even when the status is
+  // not 200, so a refusal is the page's to show. The certificate dialog is
+  // the one: `GET /admin-api/certificates` answers 400, 404 or 500 with the
+  // view the dialog draws as why it could not open.
+  composeKeep?: string[];
   // THE DRILL-DOWN AT THE SAME PATH (#446): `/admin/groups?group=<dn>` is
   // one group, answered by the same operation asked with the same query, so
   // a drill-down is not a page of its own but a second renderer chosen when
@@ -325,22 +334,41 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/backup-codes': ['settings'],
   '/admin/webauthn': ['settings'],
   '/admin/device-registration': ['settings'],
+  // #2049: the hardware-token mechanisms and OpenPGP, Metadata then
+  // Settings like the second factors beside them.
+  '/admin/hardware-tokens-settings': ['settings'],
+  '/admin/piv': ['settings'],
+  '/admin/yubiotp': ['settings'],
+  '/admin/oath-tokens': ['settings'],
+  '/admin/ssh-user-ca': ['settings'],
+  '/admin/openpgp-settings': ['settings'],
   '/admin/ldap': ['settings'],
   '/admin/wstrust': ['settings'],
   '/admin/wsfed': ['settings'],
   '/admin/pki': ['hierarchy', 'pinned', 'edit', 'build', 'applications',
                  'people', 'revocation', 'workbench', 'settings'],
-  '/admin/pki/trust': ['paranoid', 'signers', 'pins', 'client'],
+  // #2118: the named truststores, the use cases, node's own store.
+  '/admin/pki/trust': ['paranoid', 'signers', 'pins', 'client', 'truststores',
+                       'usecases', 'system'],
   '/admin/tls': [],
   '/admin/tls/trust': ['anchors', 'add'],
   // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
-  // page with one (Users, Every entry, The directory service) is left as
-  // it is; Policies draws tabs of its own, Metadata first.
+  // page with one (Every entry, The directory service) is left as
+  // it is; Policies draws tabs of its own, Metadata first. Users is tabbed
+  // since #2070: the tiles, the people, the `Profile photos` settings.
+  '/admin/users': ['people', 'settings'],
   '/admin/groups': ['groups', 'create', 'settings'],
   '/admin/roles': ['roles', 'create', 'member', 'authorizes', 'requiring',
                    'preview', 'settings'],
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
+  // #1955 P1: the register's list; P4: imported OATH tokens;
+  // P2: PIV enrolment and escrowed keys; the #1955 review: a person's SSH
+  // user certificates; #2071: imported YubiKey OTPs.
+  '/admin/hardware-tokens': ['tokens', 'oath', 'yubiotp', 'enrol', 'escrow',
+                             'ssh'],
+  // #1955 P6: the person, the registration, the directory.
+  '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
   '/admin/secret-destinations': ['destinations', 'add'],
   // #1111, #1123: the started activities and their controls; the report
@@ -408,12 +436,14 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/error-codes': ['subsystems', 'codes'],
   '/admin/realms': ['realms', 'define', 'settings'],
   '/admin/config': ['index', 'settings'],
-  '/admin/mode': ['requirements', 'development', 'notyet'],
+  '/admin/mode': ['requirements', 'development', 'notyet', 'dualcontrol'],
   '/admin/persistence': ['settings'],
+  '/admin/cluster': ['settings'],
   '/admin/cells': ['cells', 'residents', 'rehome', 'settings'],
   '/admin/mail': ['test', 'verify', 'messages', 'settings'],
   '/admin/sign-in-appearance': ['colours', 'layout', 'preview', 'settings'],
   '/admin/rbac': ['holders', 'grant', 'settings'],
+  '/admin/approvals': ['held', 'table'],
   '/admin/debugger': ['settings'],
   '/admin/sts-metadata': ['protocols', 'servers', 'endpoints',
                           'specifications'],
@@ -480,6 +510,13 @@ const PAGES: WebPage[] = [
   { path: '/admin/attribute-sources', title: 'Attribute sources',
     operation: '/admin-api/attribute-sources',
     render: AttributeSourcesPage.render },
+  // DIRECTORY → ATTRIBUTE SOURCES → ADD A SOURCE (#1132), reached from the
+  // list's Add tab.
+  { path: '/admin/attribute-sources/new', title: 'Add an attribute source',
+    operation: '/admin-api/attribute-sources/new',
+    render: function (view: Json, ctx?: Json): string {
+      return AttributeSourcesPage.newBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/authorization-servers', title: 'Authorization servers',
     operation: '/admin-api/authorization-servers',
     drill: {
@@ -562,8 +599,19 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ConsentPage.body(ctx || WebKit.context(), view);
     } },
+  // THE CERTIFICATE DIALOG, the same composition as `/admin/pki` below:
+  // View details adds `?certificate=` and the page asks
+  // `GET /admin-api/certificates` for `certificateDetails`. A refusal is
+  // still that view (`composeKeep`).
   { path: '/admin/crypto-metadata', title: 'Cryptography',
-    operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
+    operation: '/admin-api/crypto',
+    // The key exchange clients negotiated (#2220), drawn on the
+    // Post-quantum tab; refused to a realm's token, and then not drawn.
+    compose: { certificateDetails: '/admin-api/certificates',
+               tlsKeyExchange: '/admin-api/tls/key-exchange' },
+    composeWhen: { certificateDetails: ['certificate'] },
+    composeKeep: ['certificateDetails'],
+    render: CryptoMetadataPage.render },
   { path: '/admin', title: 'Admin console',
     operation: '/admin-api/console/dashboard',
     render: function (view: Json, ctx?: Json): string {
@@ -677,6 +725,13 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/devices', title: 'Devices',
     operation: '/admin-api/devices', render: DevicesPage.render },
+  // DIRECTORY → DEVICES → REGISTER A DEVICE (#1132), reached from the
+  // list's Register tab.
+  { path: '/admin/devices/new', title: 'Register a device',
+    operation: '/admin-api/devices/new',
+    render: function (view: Json, ctx?: Json): string {
+      return DevicesPage.newBody(view, ctx || WebKit.context());
+    } },
   { path: '/admin/devices/monitor', title: 'Devices (monitoring)',
     operation: '/admin-api/devices/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -746,6 +801,21 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return GroupsPage.body(ctx || WebKit.context(), view);
     } },
+  // DIRECTORY → GROUPS → NEW GROUP (#1132): the one create form, reached
+  // from the list's Create tab, as New user is from Users.
+  { path: '/admin/groups/new', title: 'New group',
+    operation: '/admin-api/groups/new',
+    render: function (view: Json, ctx?: Json): string {
+      return GroupsPage.newGroupBody(ctx || WebKit.context(), view);
+    } },
+  // DIRECTORY → POLICIES → NEW POLICY (#1132): one kind's create form,
+  // reached from that kind's New policy tab, drawn from the policies view.
+  { path: '/admin/policies/new', title: 'New policy',
+    operation: '/admin-api/policies/new',
+    compose: { policies: '/admin-api/policies' },
+    render: function (view: Json, ctx?: Json): string {
+      return PoliciesPage.newPolicyBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/keys', title: 'Key pairs', operation: '/admin-api/keys',
     render: function (view: Json, ctx?: Json): string {
       return CryptoMetadataPage.keysBody(ctx || WebKit.context(), view);
@@ -802,6 +872,8 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/malware-scanning', title: 'Malware scanning',
     operation: '/admin-api/malware-scanning', render: MalwareScanPage.render },
+  { path: '/admin/csp-reports', title: 'CSP reports',
+    operation: '/admin-api/csp-reports', render: CspReportsPage.render },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
   { path: '/admin/logout', title: 'Sign-out',
@@ -822,6 +894,9 @@ const PAGES: WebPage[] = [
     render: MailPage.render },
   { path: '/admin/mail/outbox', title: 'Mail outbox',
     operation: '/admin-api/mail/outbox', render: MailOutboxPage.render },
+  // TWO-PERSON APPROVAL (#2166): the acts held for a second administrator.
+  { path: '/admin/approvals', title: 'Pending approvals',
+    operation: '/admin-api/approvals', render: ApprovalsPage.render },
   { path: '/admin/metrics', title: 'Metrics',
     operation: '/admin-api/metrics',
     render: function (view: Json, ctx?: Json): string {
@@ -852,10 +927,47 @@ const PAGES: WebPage[] = [
   { path: '/admin/post-login-activities', title: 'Post-login activities',
     operation: '/admin-api/post-login-activities',
     render: PostLoginActivitiesPage.render },
+  // #1955 P1: Directory → Hardware tokens, the physical keys and cards the
+  // realm recorded from attestation, and the lost-key act.
+  { path: '/admin/hardware-tokens', title: 'Hardware tokens',
+    operation: '/admin-api/hardware-tokens',
+    // #1955 P4: the OATH tab, always asked, under names of its own so its
+    // filter and pager move its list and not the register's.
+    // #2071: the YubiKey OTP tab, the same way under `yq`, `ystatus` and
+    // `ypage`.
+    compose: { oath: '/admin-api/hardware-tokens/oath',
+               yubiotp: '/admin-api/hardware-tokens/yubiotp' },
+    composeWhen: { oath: ['oq', 'ostatus', 'opage', 'per'],
+                   yubiotp: ['yq', 'ystatus', 'ypage', 'per'] },
+    composeParams: { oath: { oq: 'q', ostatus: 'status', opage: 'page',
+                             per: 'per' },
+                     yubiotp: { yq: 'q', ystatus: 'status', ypage: 'page',
+                                per: 'per' } },
+    composeAlways: ['oath', 'yubiotp'],
+    render: HardwareTokensPage.render },
+  // #1955 P6: Directory → OpenPGP keys, one person's OpenPGP key, its Web
+  // Key Directory publication and their mail encryption.
+  { path: '/admin/openpgp', title: 'OpenPGP keys',
+    operation: '/admin-api/openpgp', render: OpenPgpPage.render },
+  // #2118: the Truststores, Use cases and System truststore tabs are
+  // `GET /admin-api/truststores`, always asked; `systemq` filters the System
+  // truststore tab and is the page's own, never asked of either operation.
   { path: '/admin/pki/trust', title: 'PKI trust',
-    operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
+    operation: '/admin-api/pki/trust',
+    compose: { truststores: '/admin-api/truststores' },
+    ownParams: ['systemq'],
+    render: PkiTrustPage.render },
+  // THE CERTIFICATE DIALOG (#446). `GET /admin-api/pki` does not carry one
+  // certificate. View details adds `?certificate=` and the page composes
+  // `GET /admin-api/certificates` into `certificateDetails`; `composeKeep`
+  // draws a refusal too, so the dialog opens and says why. The link's
+  // fragment is the section, so the Hierarchy tab stays the one shown.
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
-    fixed: { rows: 'shown' }, render: PkiPage.render },
+    fixed: { rows: 'shown' },
+    compose: { certificateDetails: '/admin-api/certificates' },
+    composeWhen: { certificateDetails: ['certificate'] },
+    composeKeep: ['certificateDetails'],
+    render: PkiPage.render },
   { path: '/admin/policies', title: 'Policies',
     operation: '/admin-api/policies',
     // THE EXPORT AND IMPORT TAB'S READ (#1713): this realm's export signer
@@ -906,10 +1018,26 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return RiskPage.metricsHtml(view, ctx);
     } },
+  // DIRECTORY → ROLES → NEW ROLE (#1132), reached from the list's Create
+  // tab.
+  { path: '/admin/roles/new', title: 'New role',
+    operation: '/admin-api/roles/new',
+    render: function (view: Json, ctx?: Json): string {
+      return RolesPage.newRoleBody(ctx || WebKit.context(), view);
+    } },
   { path: '/admin/roles', title: 'Roles',
     operation: '/admin-api/roles',
-    compose: { preview: '/admin-api/roles/preview' },
-    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'] },
+    compose: { preview: '/admin-api/roles/preview',
+               // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072), on its page:
+               // asked only by the test form, under names of its own so the
+               // drill-down's `role` never sets it off.
+               eligibility: '/admin-api/roles/eligibility' },
+    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'],
+                   eligibility: ['eligibilityRole', 'eligibilityUser',
+                                 'eligibilityApplication'] },
+    composeParams: { eligibility: { eligibilityRole: 'role',
+                                    eligibilityUser: 'user',
+                                    eligibilityApplication: 'application' } },
     // ONE ROLE'S PAGE (#604): the same operation, asked with `role`.
     drill: {
       param: 'role',
@@ -963,6 +1091,13 @@ const PAGES: WebPage[] = [
   { path: '/admin/secret-destinations', title: 'Secret destinations',
     operation: '/admin-api/secret-destinations',
     render: SecretDestinationsPage.render },
+  // DIRECTORY → SECRET DESTINATIONS → ADD A DESTINATION (#1132), reached
+  // from the list's Add tab.
+  { path: '/admin/secret-destinations/new', title: 'Add a secret destination',
+    operation: '/admin-api/secret-destinations/new',
+    render: function (view: Json, ctx?: Json): string {
+      return SecretDestinationsPage.newBody(view, ctx || WebKit.context());
+    } },
   { path: '/admin/oidfed', title: 'OpenID Federation',
     operation: '/admin-api/oidfed', render: OidfedPage.render },
   { path: '/admin/scim', title: 'SCIM',
@@ -1082,6 +1217,32 @@ const PAGES: WebPage[] = [
       return ClaimsPage.userinfoClaimsBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/users', title: 'Users', operation: '/admin-api/users',
+    // A PERSON'S TOKENS AND KEYS (#2052): the central Directory pages'
+    // operations, asked with the person, for the drill's Credentials
+    // sub-tabs. Only when the query names a person, and each kept when it
+    // refuses, so a refusal is a note on its sub-tab and not a page that
+    // could not be drawn.
+    compose: {
+      personTokens: '/admin-api/hardware-tokens',
+      personOath: '/admin-api/hardware-tokens/oath',
+      // #2071: the YubiKey OTPs on the person's entry.
+      personYubi: '/admin-api/hardware-tokens/yubiotp',
+      personOpenpgp: '/admin-api/openpgp'
+    },
+    composeWhen: {
+      personTokens: ['user'],
+      personOath: ['user'],
+      personYubi: ['user'],
+      personOpenpgp: ['user']
+    },
+    composeParams: {
+      personTokens: { user: 'q' },
+      personOath: { user: 'q' },
+      personYubi: { user: 'q' },
+      personOpenpgp: { user: 'user' }
+    },
+    composeKeep: ['personTokens', 'personOath', 'personYubi',
+                  'personOpenpgp'],
     drill: {
       param: 'user',
       sample: function (list: Json): string | null {
@@ -1338,11 +1499,37 @@ const PAGES: WebPage[] = [
   { path: '/admin/persistence', title: 'Persistence',
     operation: '/admin-api/persistence',
     render: ProtocolSettingsPage.render },
+  // THE CLUSTER PAGE WAS NEVER CONVERTED (#446), so Platform → Cluster
+  // answered "not a console page" and its settings were drawn nowhere;
+  // `tests/setting_homes_drawn.js` found it (#2049). Its settings and
+  // prose are drawn here, and since #2070 its status block (members,
+  // leases, other cells) too, by `web_cluster_status.ts`.
+  { path: '/admin/cluster', title: 'Cluster',
+    operation: '/admin-api/cluster',
+    render: ProtocolSettingsPage.render },
   { path: '/admin/totp', title: 'TOTP MFA',
     operation: '/admin-api/totp',
     render: ProtocolSettingsPage.render },
   { path: '/admin/webauthn', title: 'WebAuthn',
     operation: '/admin-api/webauthn',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/hardware-tokens-settings', title: 'Hardware tokens',
+    operation: '/admin-api/hardware-tokens-settings',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/piv', title: 'PIV',
+    operation: '/admin-api/piv',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/yubiotp', title: 'YubiKey OTP',
+    operation: '/admin-api/yubiotp',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/oath-tokens', title: 'OATH tokens',
+    operation: '/admin-api/oath-tokens',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/ssh-user-ca', title: 'SSH user certificates',
+    operation: '/admin-api/ssh-user-ca',
+    render: ProtocolSettingsPage.render },
+  { path: '/admin/openpgp-settings', title: 'OpenPGP',
+    operation: '/admin-api/openpgp-settings',
     render: ProtocolSettingsPage.render },
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
     operation: '/admin-api/oauth2',
@@ -1475,6 +1662,42 @@ class WebPages {
    *   who may not write when left out.
    * @returns the body as HTML, or null when the page is not converted
    */
+  // THE ASSERTION GROUPS' ROWS THE ASSERTION FORM DOES NOT CARRY (#2049).
+  // The form draws `SAML_ASSERTION_SETTINGS` (`admin-core/admin_actions.ts`),
+  // a fixed list that is also the narrow door's; `saml2.publishAlgorithmSupport`
+  // and `saml11.doNotCacheCondition` joined the two groups after it and were
+  // drawn nowhere until `tests/setting_homes_drawn.js` found them. Each is
+  // drawn here from the page's own settings block, as every other group is,
+  // and saved through `set-many`.
+  /**
+   * Draws, under the assertion form, the rows of the two SAML assertion
+   * groups that form does not carry.
+   *
+   * @param view - the SAML page's answer (`settings`, `assertions`)
+   * @param context - the render context
+   * @returns the HTML, empty when the form carries every row
+   */
+  static samlAssertionLeftovers(view: Json, context: Json): string {
+    const drawn = ((view.assertions && view.assertions.settings) || [])
+      .map(function (setting: Json): string { return setting.key; });
+    const block = view.settings || { groups: [] };
+    return (block.groups || []).filter(function (group: Json): boolean {
+      return group.group === 'SAML 2.0 assertions' ||
+             group.group === 'SAML 1.1 assertions';
+    }).map(function (group: Json): Json {
+      return Object.assign({}, group, {
+        settings: (group.settings || []).filter(function (setting: Json) {
+          return drawn.indexOf(setting.key) < 0;
+        })
+      });
+    }).filter(function (group: Json): boolean {
+      return group.settings.length > 0;
+    }).map(function (group: Json): string {
+      return WebKit.frame(SettingsForms.section(group, '/admin/saml2',
+                                                block.context, context.t));
+    }).join('');
+  }
+
   /**
    * Translates a page's query into its operation's, by the row's `params`.
    *
@@ -1539,6 +1762,41 @@ class WebPages {
       return { member: member, operation: page.compose[member],
                params: params };
     });
+  }
+
+  /**
+   * Whether a composed member's answer is drawn. A 200 whose body is an
+   * object is. A member named in `composeKeep` is too when that body is an
+   * object and not an array, because the page draws the refusal. Anything
+   * else, including no body, is a failure of the page. `answer` is the
+   * runtime's `{ status, json }` or a draw helper's `{ status, body }`.
+   *
+   * @param page - the page's row
+   * @param member - the composed member
+   * @param answer - `{ status, json }` or `{ status, body }`, or null
+   * @returns whether the page draws this answer
+   */
+  static composeKept(page: WebPage, member: string, answer: Json): boolean {
+    let body = null;
+    if (answer && answer.json !== undefined && answer.json !== null) {
+      body = answer.json;
+    } else if (answer && answer.body !== undefined &&
+               answer.body !== null) {
+      body = answer.body;
+    }
+    // A 200 of any object, an array included, is what the draw helpers
+    // already accepted. A refusal kept for the dialog is an object.
+    if (!answer || body === null || typeof body !== 'object') {
+      return false;
+    }
+    if (answer.status === 200) {
+      return true;
+    }
+    if (Array.isArray(body)) {
+      return false;
+    }
+    const keep = (page && page.composeKeep) || [];
+    return keep.indexOf(member) >= 0;
   }
 
   /**
@@ -2159,7 +2417,8 @@ class WebPages {
           html: SamlPage.idpInitiatedBody(context, view.idpInitiated) },
         { id: 'saml-tab-assertions',
           label: context.t.text('consolePages.title.saml-assertions'),
-          html: SamlAssertionsPage.body(context, assertionView) },
+          html: SamlAssertionsPage.body(context, assertionView) +
+            WebPages.samlAssertionLeftovers(view, context) },
         { id: 'saml-tab-attributes',
           label: context.t.text('consolePages.title.saml-attributes'),
           html: ClaimsPage.samlAttributesBody(context, view.attributes) }
@@ -2182,7 +2441,10 @@ class WebPages {
         view, context.t);
       const vciSettings = SettingsForms.forms(
         view.oid4vciSettings.settings,
-        '/admin/vc#vc-tab-oid4vci', ['OID4VCI', 'W3C VC API'], context.t);
+        // `Person DIDs` (#1291) is homed on this page and carried in the
+        // view, and was left out of this list until #2049's check found it.
+        '/admin/vc#vc-tab-oid4vci', ['OID4VCI', 'W3C VC API', 'Person DIDs'],
+        context.t);
       const vpSettings = SettingsForms.forms(
         view.oid4vpSettings.settings,
         '/admin/vc#vc-tab-oid4vp', ['OID4VP'], context.t);

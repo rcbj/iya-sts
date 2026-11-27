@@ -251,5 +251,13 @@
   "thAlgName": "Algoritm",
   "thAlgSigns": "Signerar",
   "thAlgAccepts": "Accepterar",
-  "thAlgWhyNot": "Varför inte"
+  "thAlgWhyNot": "Varför inte",
+  "tlsKxHeading": "TLS-nyckelutbyte, som det förhandlades",
+  "tlsKxNote": "Vad varje slutförd TLS-handskakning på den här nodens lyssnare förhandlade sedan dess frontprocess startade, läst ur sessionen som servern håller. Postkvant betyder en ML-KEM-grupp, ensam eller i en hybrid. Räkningarna är den här nodens och sparas inte över en omstart.",
+  "tlsKxSummary": "{pq} av {total} anslutningar sedan {since} var postkvant.",
+  "tlsKxListener": "Lyssnare",
+  "tlsKxGroup": "Grupp",
+  "tlsKxConnections": "Anslutningar",
+  "tlsKxLast": "Senast sedd",
+  "tlsKxNone": "Ingen TLS-anslutning har räknats på den här noden ännu."
 }

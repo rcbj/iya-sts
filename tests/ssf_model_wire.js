@@ -673,8 +673,13 @@ function capture() {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
+      // THE ANSWERS WERE RECORDED BEFORE #2234, when an application's stream
+      // heard about everybody; the wire receiver here names subjects nobody
+      // signed in to it, so the child keeps that behaviour
+      // (`ssf.applicationStreamScope`, `tests/ssf_application_sessions.js`).
       env: Object.assign(clean,
-                         { LOG_LEVEL: 'fatal', SW_ROOT: ROOT, SW_OUT: out }),
+                         { LOG_LEVEL: 'fatal', SW_ROOT: ROOT, SW_OUT: out,
+                           STS_SSF_APPLICATION_STREAM_SCOPE: 'all' }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });
   let record = null;
@@ -710,8 +715,10 @@ function firstDifference(a, b, where) {
     }
   }
   log.debug("Leaving firstDifference().");
-  return where + ': ' + JSON.stringify(b).slice(0, 300) + ' where ' +
-    JSON.stringify(a).slice(0, 300) + ' was recorded';
+  // String(): JSON.stringify(undefined) is undefined, and a member present on
+  // one side only is exactly the difference this is asked to name.
+  return where + ': ' + String(JSON.stringify(b)).slice(0, 300) + ' where ' +
+    String(JSON.stringify(a)).slice(0, 300) + ' was recorded';
 }
 
 // Every recorded entry of one list against the same entry now.

@@ -79,7 +79,7 @@ class XacmlPage {
   // sentence (`Infinity`): each says what the field does, its values and
   // default, when it takes effect and, where it applies, the precedence.
   // The prose has two other doors, which is the condition admin-ui/CLAUDE.md
-  // sets for a tooltip-only sentence: docs/v1.1.0/remote-pep.md and the
+  // sets for a tooltip-only sentence: docs/v1.2.0/remote-pep.md and the
   // management API's own descriptions.
   // ---------------------------------------------------------------------------
   static tipOf(t: Json, key: string, vars?: Json): string {
@@ -503,7 +503,11 @@ class XacmlPage {
           }).join(', ')
           : '<em>' + t.html('consoleXacml.authzen.noScope') + '</em>') +
         '</td><td>' + ((one.callbacks || []).map(function (url) {
-          return '<code>' + esc(url) + '</code>';
+          const configs = one.callbackConfigs || [];
+          const line = configs.filter(function (item) {
+            return String(item).indexOf(url + ' ') === 0;
+          })[0];
+          return '<code>' + esc(line || url) + '</code>';
         }).join('<br>') || '—') +
         '</td></tr>';
     }).join('') || '<tr><td colspan="4">' +
@@ -517,8 +521,8 @@ class XacmlPage {
         '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
         '</td><td>' + self.textField('caller', '', 40) +
         '</td></tr><tr><td>' + t.html('consoleXacml.authzen.callbacks') +
-        '</td><td>' + self.textField('callbacks', '', 60) +
-        '</td></tr></table><p class="sub">' +
+        '</td><td><textarea name="callbacks" rows="4" cols="60">' +
+        '</textarea></td></tr></table><p class="sub">' +
         t.html('consoleXacml.authzen.callbacksNote') + '</p>' +
         '<button type="submit">' +
         t.html('consoleXacml.authzen.setCallbacks') + '</button></form>')
@@ -559,6 +563,24 @@ class XacmlPage {
         '<div class="sub">' + code(row.requester) + '</div></td><td>' +
         t.html('consoleXacml.authzen.requestStatus',
                { status: String(row.status) }) +
+        (row.callbackDelivery ? '<div class="sub">' +
+          t.html('consoleXacml.authzen.callbackDelivery', {
+            state: String(row.callbackDelivery.state || ''),
+            done: String((row.callbackDelivery.attempts || []).length),
+            bound: String(row.callbackDelivery.bound == null
+                          ? '' : row.callbackDelivery.bound)
+          }) + '</div>' +
+          // EACH ATTEMPT (#1202): its time, its outcome and its code.
+          (row.callbackDelivery.attempts || []).map(function (one) {
+            return '<div class="sub">' + t.html(one.ok
+              ? 'consoleXacml.authzen.callbackAttemptOk'
+              : 'consoleXacml.authzen.callbackAttemptFailed', {
+              when: t.date(Number(one.at) * 1000),
+              status: String(one.status || 0),
+              why: String(one.why || ''),
+              code: String(one.code || '')
+            }) + '</div>';
+          }).join('') : '') +
         (row.emergency ? ' <strong>' +
           t.html('consoleXacml.authzen.emergency') + '</strong>' : '') +
         (row.approval ? '<div class="sub">' +
@@ -634,7 +656,9 @@ class XacmlPage {
     // beside the root's offering the same three buttons would invite the
     // two the server refuses.
     const rows = json.policies.filter(function (row) {
-      return !row.application;
+      // An owned policy is drawn with its owner: an application's on its
+      // Fine-grained authorization tab, a role's on its role page (#1072).
+      return !row.application && !row.role;
     }).map(function (row) {
       const problems = row.problems.length
         ? '<div class="sub xacml-alert">' +
@@ -1033,6 +1057,11 @@ class XacmlPage {
         t.html('consoleXacml.credential.load') + '</button>' +
         '<input type="file" id="' + file + '" hidden ' +
         'accept=".csr,.pem,.req,text/plain" data-load-into="' + box + '">') +
+      // AND THE BINDING, IN THE SAME CALL (#2025): an embedded PEP's
+      // application, written once the key is certified.
+      self.formRow(self.labelled(t, 'consoleXacml.credential.application',
+        'consoleXacml.tip.credential.application', '<input type="text" ' +
+        'name="application" size="32">')) +
       self.formRow('<label' +
         self.tipOf(t, 'consoleXacml.tip.credential.revokePrevious') + '>' +
         '<input type="checkbox" name="revokePrevious" value="true"> ' +
@@ -1235,7 +1264,13 @@ class XacmlPage {
     const self = this;
 
     const rows = json.peps.map(function (row) {
-      const proxy = row.proxy
+      // AN EMBEDDED PEP (#2026) has no listener and no reverse proxy: it
+      // runs inside its application, so both cells say so rather than
+      // "not configured", which would read as something to configure.
+      const embedded = row.kind === 'embedded';
+      const notHere = '<span class="sub">' +
+        t.html('consoleXacml.pep.notEmbedded') + '</span>';
+      const proxy = embedded ? notHere : row.proxy
         ? t.html('consoleXacml.pepPage.proxySummary',
                  { n: row.proxy.routes.length }) +
           (row.proxy.enabled ? ''
@@ -1261,13 +1296,17 @@ class XacmlPage {
         (row.version
           ? '<div class="sub">' + esc(row.version) + '</div>'
           : '') +
+        (embedded
+          ? '<div class="sub">' + self.pepEmbeddedSummary(t, row) + '</div>'
+          : '') +
         '</td><td>' + self.pepClustered(t, row) + '</td><td>' +
         self.pepWho(t, row) + '</td><td>' +
         self.pepState(t, row) + '</td><td>' +
         esc(row.bias || t.text('consoleXacml.pep.notReported')) +
         '</td><td>' + self.pepCounts(t, row) +
         '</td><td>' + self.pepNotify(t, row) + '</td><td>' +
-        self.pepListener(ctx, row) + '</td><td>' + proxy +
+        (embedded ? notHere : self.pepListener(ctx, row)) + '</td><td>' +
+        proxy +
         '</td><td>' + self.pepActions(ctx, row) + '</td></tr>';
     }).join('') ||
       '<tr><td colspan="10">' + self.noPepsHere(json.elsewhere, t) +
@@ -4098,6 +4137,102 @@ class XacmlPage {
   }
 
   /**
+   * Draws the application an embedded PEP is bound to (#2025), or that it is
+   * bound to none.
+   *
+   * @param t - the translator
+   * @param row - one row of `GET /admin-api/xacml/peps`
+   * @returns the cell as HTML
+   */
+  static pepApplication(t: Json, row: Json): string {
+    return row.application
+      ? '<a href="/admin/applications?application=' +
+        esc(encodeURIComponent(String(row.application))) + '"><code>' +
+        esc(String(row.application)) + '</code></a>'
+      : '<span class="sub">' +
+        t.html('consoleXacml.pepPage.application.none') + '</span>';
+  }
+
+  /**
+   * An embedded PEP's line under its name in the list (#2026): the
+   * application it is embedded in and its mode.
+   *
+   * @param t - the translator
+   * @param row - one row of `GET /admin-api/xacml/peps`
+   * @returns the line as HTML
+   */
+  static pepEmbeddedSummary(t: Json, row: Json): string {
+    return t.html('consoleXacml.pep.embeddedSummary', {
+      application: String(row.application || row.registeredApplication || ''),
+      mode: String(row.mode || '') });
+  }
+
+  /**
+   * Whether an embedded PEP's application stream can carry
+   * `pep-policies-changed`, as it last reported (#2026); `excluded` and
+   * `down` are marked, because a local PEP then learns of a change only on
+   * its fallback poll.
+   *
+   * @param t - the translator
+   * @param row - one row of `GET /admin-api/xacml/peps`
+   * @returns the cell as HTML
+   */
+  static pepPolicyEvents(t: Json, row: Json): string {
+    const said = String(row.policyEvents || '');
+    if (!said) {
+      return '<span class="sub">' + t.html('consoleXacml.pep.notReported') +
+        '</span>';
+    }
+    // Each key named whole, so a reader of the catalog finds its use.
+    const keys: Json = {
+      none: 'consoleXacml.pepPage.policyEvents.none',
+      requested: 'consoleXacml.pepPage.policyEvents.requested',
+      excluded: 'consoleXacml.pepPage.policyEvents.excluded',
+      down: 'consoleXacml.pepPage.policyEvents.down'
+    };
+    if (!keys[said]) {
+      return '<code>' + esc(said) + '</code>';
+    }
+    const text = t.html(keys[said]);
+    return said === 'excluded' || said === 'down'
+      ? '<span class="xacml-alert">' + text + '</span>' : text;
+  }
+
+  /**
+   * The binding's two forms (#2025): bind the PEP's entry to an application,
+   * and, where it is bound, remove the binding.
+   *
+   * @param t - the translator
+   * @param username - the PEP's entry
+   * @param application - the application it is bound to now, or ''
+   * @returns the forms as HTML
+   */
+  static bindingForm(t: Json, username: string, application: string): string {
+    const self = this;
+    const bind = '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-application') +
+      self.hidden('name', username) +
+      self.defaultSubmit(t.text('consoleXacml.binding.submit')) +
+      '<p class="sub">' + t.html('consoleXacml.binding.lead') + '</p>' +
+      self.formRow(self.labelled(t, 'consoleXacml.binding.application',
+        'consoleXacml.tip.binding.application', '<input type="text" ' +
+        'name="application" size="32" required value="' +
+        esc(application) + '">')) +
+      self.formRow('<button type="submit"' +
+        self.tipOf(t, 'consoleXacml.tip.binding.submit') + '>' +
+        t.html('consoleXacml.binding.submit') + '</button>') + '</form>';
+    const clear = application
+      ? '<form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'clear-pep-application') +
+        self.hidden('name', username) +
+        self.formRow('<button type="submit" class="secondary"' +
+          self.tipOf(t, 'consoleXacml.tip.binding.clear') + '>' +
+          t.html('consoleXacml.binding.clear') + '</button>') + '</form>'
+      : '';
+    return bind + clear;
+  }
+
+  /**
    * Draws the PEP's identity entry as a service account (#1760): whether it
    * is one, its owners, and a link to the person's Service account tab.
    *
@@ -4617,17 +4752,60 @@ class XacmlPage {
            'consoleXacml.tip.peps.bias') +
       line(t.html('consoleXacml.th.state'), self.pepState(t, row),
            'consoleXacml.tip.peps.state') +
+      // THE APPLICATION IT IS EMBEDDED IN (#2025), or none.
+      line(t.html('consoleXacml.pepPage.th.application'),
+           self.pepApplication(t, row),
+           'consoleXacml.tip.overview.application') +
+      // WHAT KIND OF PEP REGISTERED, AND AN EMBEDDED ONE'S MODE, PROTOCOL
+      // VERSION AND STREAM (#2026).
+      line(t.html('consoleXacml.pepPage.th.kind'),
+           t.html(row.kind === 'embedded'
+             ? 'consoleXacml.pepPage.kind.embedded'
+             : 'consoleXacml.pepPage.kind.container'),
+           'consoleXacml.tip.overview.kind') +
+      (row.kind === 'embedded'
+        ? line(t.html('consoleXacml.pepPage.th.mode'),
+               row.mode === 'central'
+                 ? t.html('consoleXacml.pepPage.mode.central')
+                 : row.mode === 'local'
+                 ? t.html('consoleXacml.pepPage.mode.local') : code(''),
+               'consoleXacml.tip.overview.mode') +
+          line(t.html('consoleXacml.pepPage.th.policyEvents'),
+               self.pepPolicyEvents(t, row),
+               'consoleXacml.tip.overview.policyEvents')
+        : '') +
+      line(t.html('consoleXacml.pepPage.th.protocolVersion'),
+           code(row.protocolVersion),
+           'consoleXacml.tip.overview.protocolVersion') +
+      // WHAT IT PULLS (#2027): the repository, or its application's scope.
+      line(t.html('consoleXacml.pepPage.th.pullScope'),
+           row.pullScope === 'bound-application'
+             ? t.html('consoleXacml.pepPage.pullScope.boundApplication')
+             : row.pullScope === 'repository'
+             ? t.html('consoleXacml.pepPage.pullScope.repository')
+             : code(''),
+           'consoleXacml.tip.overview.pullScope') +
       line(t.html('consoleXacml.pepPage.th.syncToken'),
            code(row.syncToken), 'consoleXacml.tip.overview.syncToken') +
       line(t.html('consoleXacml.th.notify'), self.pepNotify(t, row),
            'consoleXacml.tip.peps.notify') +
       line(t.html('consoleXacml.th.actions'), self.pepActions(ctx, row),
            'consoleXacml.tip.peps.actions') +
-      '</table>')) + kit.frame(self.pepClusterPart(ctx, row)) +
+      '</table>')) +
+      // AN EMBEDDED PEP IS IN NO CLUSTER (#2026): a cluster shares a proxy,
+      // settings and listeners, and an embedded PEP has none of them.
+      (row.kind === 'embedded'
+        ? kit.note('<p>' + t.html('consoleXacml.pepPage.embeddedNote') +
+                   '</p>')
+        : kit.frame(self.pepClusterPart(ctx, row))) +
       (ctx.write
         ? kit.frame(self.fieldGroup(t, 'consoleXacml.credential.legend',
             self.credentialForm(t, String((row.identityAccount &&
-              row.identityAccount.username) || row.name || ''), 'pep')))
+              row.identityAccount.username) || row.name || ''), 'pep'))) +
+          kit.frame(self.fieldGroup(t, 'consoleXacml.binding.legend',
+            self.bindingForm(t, String((row.identityAccount &&
+              row.identityAccount.username) || row.name || ''),
+              String(row.application || ''))))
         : '');
     const decisions = kit.frame(self.wide(t,
       'consoleXacml.pepPage.tab.decisions',
@@ -4659,9 +4837,17 @@ class XacmlPage {
         Object.assign({}, shown, { json: json }), row),
       'xacml-pep-tab-signals': kit.frame(self.signalsPanel(t, row.signals))
     };
+    // AN EMBEDDED PEP'S PAGE IS ITS OVERVIEW AND ITS DECISIONS (#2026): it
+    // pulls no settings, binds no listener, runs no reverse proxy, no
+    // AuthZEN edge (the Settings tab's) and no CAEP/RISC receivers of its
+    // own, so those tabs would be forms for things that do not exist.
+    const embedded = row.kind === 'embedded';
     return (member ? self.memberBanner(ctx, json, row) : '') +
       self.withinXacmlTabs(t, kit.tabbedPanels('xacml-pep-pages',
-      self.pepTabs(t).map(function (one: Json) {
+      self.pepTabs(t).filter(function (one: Json) {
+        return !embedded || one.id === 'xacml-pep-tab-overview' ||
+          one.id === 'xacml-pep-tab-decisions';
+      }).map(function (one: Json) {
         return Object.assign({}, one, { html: html[one.id] });
       }))) + back;
   }

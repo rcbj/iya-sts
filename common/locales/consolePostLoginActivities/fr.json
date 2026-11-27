@@ -39,5 +39,11 @@
   "groupsFull": "{max} groupes sont choisis, le plus qu’une activité puisse nommer.",
   "startNote": "Une fois lancée, elle sollicite les personnes qu’elle atteint dès leur prochaine connexion ; les envois commencent à la prochaine exécution de la tâche. Une personne qui a fait l’activité, que le domaine ne peut pas solliciter, ou qu’exclut un profil nommé désactivé, n’est ni sollicitée ni contactée.",
   "startButton": "Lancer",
-  "readOnly": "Lancer, mettre en pause et terminer une activité après connexion demande Admin Write."
+  "readOnly": "Lancer, mettre en pause et terminer une activité après connexion demande Admin Write.",
+  "activityName.passkey": "Clé d’accès post-quantique",
+  "activityName.mail": "Chiffrement des e-mails post-quantique",
+  "activityName.piv": "Réémission du certificat PIV",
+  "activityWhat.passkey": "une personne qui détient une clé d’accès classique, ou aucune, est invitée à enregistrer une clé d’accès ML-DSA, selon les lignes « clé d’accès » du profil après connexion.",
+  "activityWhat.mail": "une personne dont les e-mails sont chiffrés vers une clé OpenPGP ou un certificat S/MIME classique est invitée à en enregistrer un ML-KEM, selon le bloc « chiffrement des e-mails » du profil.",
+  "activityWhat.piv": "une personne qui détient un certificat d’emplacement PIV émis par ce domaine est invitée à en inscrire un nouveau lorsqu’un émetteur classique l’a signé ou qu’il expire bientôt, selon le bloc PIV du profil."
 }

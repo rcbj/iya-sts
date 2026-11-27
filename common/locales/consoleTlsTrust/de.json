@@ -36,5 +36,6 @@
   "linkJson": "diese Seite als JSON",
   "linkApi": "dasselbe über die Verwaltungs-API",
   "linkSettings": "die Einstellungen der TLS-Listener",
-  "linkPki": "die eigene Zertifizierungsstelle dieses Dienstes"
+  "linkPki": "die eigene Zertifizierungsstelle dieses Dienstes",
+  "shadowedBy": "Teilt das Subjekt mit einem anderen Anker ({fingerprint}). Ein von einem der beiden ausgestelltes Zertifikat wird möglicherweise nicht geprüft, solange beide installiert sind. Dieses Zertifikat selbst wird geprüft."
 }

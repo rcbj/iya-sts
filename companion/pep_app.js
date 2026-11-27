@@ -185,8 +185,8 @@ function bodyOf(req) {
  */
 class PepApp {
   /**
-   * @param {object} [opts] - `caFile`, `insecure`: how the identity half
-   *   dials the service for its metadata and JWKS
+   * @param {object} [opts] - `caFile`, `origins`: how, and only where, the
+   *   identity half dials the service for its metadata and JWKS
    */
   constructor(opts) {
     log.debug("Entering PepApp.constructor().");
@@ -342,11 +342,17 @@ class PepApp {
         return;
       }
       try {
-        util.sendJson(res, 200, await this.identity.setup(asked));
+        const taken = await this.identity.setup(asked);
+        util.sendJson(res, taken.refused ? 400 : 200, taken);
       } catch (e) {
         log.debug("Caught in PepApp.handle(): " + ((e && e.message) || e));
+        // A fixed sentence, the error and its stack in the log: an answer
+        // carries nothing an exception said (CodeQL js/stack-trace-exposure).
+        log.warn("pep-app: _setup could not read the realm: " +
+                 ((e && e.stack) || e));
         util.sendJson(res, 502, { ok: false,
-                                  why: String((e && e.message) || e) });
+                                  why: "the realm's metadata could not be " +
+                                       "read; the companion's log says why" });
       }
       log.debug("Leaving PepApp.handle(). Setup.");
       return;

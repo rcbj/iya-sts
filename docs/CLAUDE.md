@@ -6,7 +6,7 @@ The user-facing documentation, published as a GitHub Pages site by
 ## The versioned site (2026-11-17)
 
 **The site is versioned, one folder per release, and the pages being
-written are in `v1.1.0/`.** Every page name below (`error-codes.md`,
+written are in `v1.2.0/`.** Every page name below (`error-codes.md`,
 `openapi/`, `debugger/`, ...) is a path inside that folder. What stays at
 this root is the Jekyll machinery the versions share and nothing else:
 `_config.yml`, `_layouts/`, `_includes/`, `_data/`, `assets/main.scss`,
@@ -20,25 +20,30 @@ and `index.md`, the landing page that lists the versions.
   1.0.0's documentation is not something this repository makes after the
   release. `_data/navigation/v1-0-0.yml` is main's `navigation.yml` from
   the same commit, with only its header comment changed.
+* **`v1.1.0/` IS A FROZEN SNAPSHOT** of this folder at the `v1.1.0` tag
+  (13122f15e, which is main when 1.1.0 shipped). It is not edited,
+  regenerated or checked, for the same reason as `v1.0.0/`.
+  `_data/navigation/v1-1-0.yml` is that tag's sidebar.
 * **EVERY GENERATOR AND EVERY TEST TOUCHES THE LATEST FOLDER ONLY**
   (rcbj, 2026-11-17: deliberately simple, to be made cleverer later).
   `common/error_codes.js --docs`, `tests/tools/regenerate-openapi-pages.sh`,
   `tests/tools/regenerate-model-docs.sh` and `common/certificate_trust.ts`
-  write into `v1.1.0/`, and the tests that read a page read it there. Each
+  write into `v1.2.0/`, and the tests that read a page read it there. Each
   names the folder once, as a literal; there is no version-aware machinery.
 * **The service links to its OWN version's folder**:
   `common/web_doc_links.ts`'s `ORIGIN`, the footer (`common/web_footer.ts`)
   and the front door (`home/home.ts`) name
-  `https://rcbj.github.io/iya-sts/v1.1.0/`.
+  `https://rcbj.github.io/iya-sts/v1.2.0/`.
 * **The sidebar is version-aware.** `_includes/version.html` reads the
   version from the page's first path segment, against
   `_data/versions.yml` (newest first; the first row is the latest).
   `_includes/sidebar.html` draws that version's
   `_data/navigation/<nav>.yml` with every `url` prefixed by the folder, so
   a url in a navigation file is the page's address INSIDE its version
-  (`/configuration.html`), the API reference's `/api/` included. The data file is named `v1-1-0.yml`,
-  not `v1.1.0.yml`, because Jekyll drops the dots from a data file's name
-  when it makes the key. The header carries the switcher: the version
+  (`/configuration.html`), the API reference's `/api/` included. The latest's data file is named `v1-2-0.yml`,
+  not `v1.2.0.yml`, because Jekyll drops the dots from a data file's name
+  when it makes the key. The frozen versions keep `v1-1-0.yml` and
+  `v1-0-0.yml`. The header carries the switcher: the version
   read, and each other one linked to the same page when it has it and to
   its overview when it does not. A page of an older version opens with a
   line naming the latest (`_layouts/default.html`).
@@ -46,7 +51,7 @@ and `index.md`, the landing page that lists the versions.
 * **THE API REFERENCE IS PER VERSION TOO** (rcbj, 2026-11-17). TypeDoc
   is not committed: `pages.yml`'s `jsdoc` job generates one reference per
   row of `_data/versions.yml`, the latest from the commit being deployed
-  and every other from its row's `ref` (a release tag, `v1.0.0`), each
+  and every other from its row's `ref` (a release tag, `v1.1.0`, `v1.0.0`), each
   with THAT tree's own `run-jsdoc.sh`, and the build copies each to
   `/<folder>/api/`. `api/index.html` here is a redirect to the latest
   version's reference, so the address 1.0.0 published still answers.
@@ -60,16 +65,76 @@ and `index.md`, the landing page that lists the versions.
   hand edit; a real top-level page (`index.md`, `api/index.html`) is
   never overwritten.
 
-**Making the next release's snapshot** (when 1.1.0 ships and develop moves
-on): copy `v1.1.0/` to the new release's folder — or, if `v1.1.0/` is
-itself to become the frozen copy, `git mv` the current pages to the new
-folder and leave `v1.1.0/` as it is on main — add its row at the TOP of
-`_data/versions.yml` and its `_data/navigation/<nav>.yml`, and repoint
-every reference to the latest folder: `git grep -n 'docs/v1\.1\.0'` and
-`git grep -n 'iya-sts/v1\.1\.0'` find them all (generators, tests,
-`REUSE.toml`, the prose catalogs, the `CLAUDE.md` files, the README). A
-translated catalog changes only the path; its entry's `en` hash is
-updated to the new English, since the wording did not change.
+**Making the next release's snapshot** (when 1.2.0 ships and develop moves
+on): `git mv` the pages in `v1.2.0/` to the new release's folder and
+restore `v1.2.0/` from the `v1.2.0` tag, which is what this folder did for
+1.1.0. Add the new row at the TOP of `_data/versions.yml` and its
+`_data/navigation/<nav>.yml`, and repoint every reference to the latest
+folder: `git grep -n 'docs/v1\.2\.0'` and `git grep -n 'iya-sts/v1\.2\.0'`
+find them, and so does a path joined as `'docs', 'v1.2.0'` (generators,
+tests, `REUSE.toml`, the prose catalogs, the `CLAUDE.md` files, the
+README). A translated catalog changes only the path; its entry's `en`
+hash is updated to the new English, since the wording did not change.
+`REUSE.toml` keeps the MIT annotation of each frozen debugger chapter as
+well as the latest one.
+**The release notes are folded in at the same time** (*Release notes*,
+below): before the `git mv`, replace the loop in the shipping release's
+`release-notes.md` with the text it renders — every note under its heading,
+in the page's order (the kinds, then the issue number), each body as
+written — and delete that release's `_release_notes/<folder>/`, so a frozen
+page is static text like every other. Then give the new latest folder's page
+a `## <next>` section holding the loop with its folder name changed, add
+`_release_notes/<next folder>/`, and move `tests/release_notes.js`'s two
+paths to it. A built site of the shipping release, before and after the
+fold, must render the same entries.
+
+## Release notes: one file per change (#2218, rcbj 2026-11-25)
+
+**A change to the release being written adds a FILE of its own and never
+edits `v1.2.0/release-notes.md`.** Almost every pull request that dropped
+out of the develop merge queue on 2026-11-24/25 dropped on a conflict in
+that page, because every change appended at the same spot. The file is
+`_release_notes/v1.2.0/<issue>-<slug>.md` (the slug a few lowercase words
+of the title, hyphenated):
+
+```markdown
+---
+title: "LDAP messages have a maximum size before bind"
+kind: security
+issue: 2220
+---
+The paragraph or paragraphs you would have written under 1.2.0, in
+markdown. A link is relative to `docs/v1.2.0/` (`[LDAP](ldap.md#limits)`).
+```
+
+* **`kind`** is one of `added`, `changed`, `behaviour-change`, `fixed`,
+  `security`, and gives the heading its label: `New:`, `Changed:`,
+  `Behaviour change:`, `Fixed:`, `Security:`, then the title. The title
+  therefore carries no label of its own. An optional **`heading`** replaces
+  the whole drawn heading; the migrated entries use it where the old one
+  had another label or none (`New documentation: …`, `HSTS can be
+  preloaded`), so their anchors did not move. A new note should not need
+  it.
+* **The body has no `#`, `##` or `###` heading** (it would break the page's
+  outline); `####` is fine. Two notes for one issue take two slugs.
+* **The page gathers them at build**: `_config.yml` declares the
+  `release_notes` collection with `output: false`, and the `## 1.2.0`
+  section of the page is a Liquid loop over the notes under
+  `_release_notes/v1.2.0/`, drawn by kind (behaviour changes first, then
+  security, new, changed, fixed) and by issue number within a kind. Two
+  notes of one issue come in no fixed order. The body arrives already
+  converted to HTML, which is why `jekyll-relative-links` (a generator that
+  runs on the page's own source) never sees its links, and the loop turns
+  `.md"` and `.md#` into `.html` itself.
+* **A released version's section stays static text**, on this page and on
+  the frozen pages; the fold at release time is in *Making the next
+  release's snapshot*, above.
+* `tests/release_notes.js` holds the names, the front matter, the kinds,
+  the links and the loop. It cannot build the site; a change to the loop
+  is checked by building it, which works locally with GitHub's own image
+  (`ghcr.io/actions/jekyll-build-pages`, `bundle exec jekyll build` with
+  `BUNDLE_GEMFILE=/Gemfile`, since its entrypoint needs a GitHub token for
+  the metadata plugin), removed afterwards.
 
 **The split with `CLAUDE.md` is by AUDIENCE, and it is the thing to get right
 when adding a page.** A `CLAUDE.md` answers "why is this code the way it is" for
@@ -91,6 +156,8 @@ reader should look for.
 **Every page is plain markdown with a YAML front matter block** carrying `title`
 and `nav_order`. Jekyll's `minima` theme renders it; nothing here is generated by
 a script in this repository, and adding one would be a build step to maintain.
+The release-notes page is the one page that is ASSEMBLED, by Jekyll itself
+and not by a script here (*Release notes*, above).
 
 **ONE PAGE IS GENERATED, AND IT IS THE EXCEPTION THAT PARAGRAPH NOW NAMES.**
 `error-codes.md` is written by `node common/error_codes.js --docs` from the
@@ -167,8 +234,8 @@ here: `debugger/index.md`, the chapter and its table of guides, and
 `debugger/access.md`, which covers reaching the debugger, who may use it, turning it on, and
 `DEBUGGER_IMAGE=debugger-none`. **Everything else under `debugger/` is a
 COPY of the id-proto-debugger user guides at the release the image embeds
-(0.9.3)** — its `docs/oauth2-oidc/` with the screenshots, `saml.md`,
-`saml-assertion.md`, `saml-decoders.md`, `wstrust.md`, `jwt-tools.md`,
+(0.9.5)** — its `docs/v0.9.5/oauth2-oidc/`, `saml/` and `wstrust/` with the
+screenshots, `saml-assertion.md`, `saml-decoders.md`, `jwt-tools.md`,
 `digital-signature.md` and `what-is-a-protocol-debugger.md` — under that
 project's MIT licence (`REUSE.toml`).
 
@@ -177,8 +244,8 @@ The copies were changed in exactly these ways, and a refresh repeats them:
 `https://localhost:3000` → `https://localhost:8444` and `:4000` → `:8444/api`
 (the embedded build's own addresses); "the mock STS" → iya-sts; links to this
 site made relative; links to debugger pages that were NOT copied pointed at
-`github.com/rcbj/id-proto-debugger/blob/<release>/docs/`; and the "start it
-from a checkout" and "regenerating the screenshots" passages replaced by
+`github.com/rcbj/id-proto-debugger/blob/<release>/docs/v<release>/`; and
+the "start it from a checkout" and "regenerating the screenshots" passages replaced by
 pointers to `access.md` and to that project. Its developer notes (`kerberos.md`,
 `scim.md`, `ssf.md` and the rest, which begin by listing the source files they
 cover) were not copied: this directory is for somebody using the service.

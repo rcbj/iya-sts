@@ -93,5 +93,11 @@
   "mail.link": "Mail",
   "mail.noneAfter": "), kaya ipinapakita sa iyo ang {what} para maipasa mo.",
   "mail.box": "i-mail ang {what} sa address na nasa kanilang entry, at huwag itong ipakita sa akin",
-  "grid.required": " &middot; kailangan"
+  "grid.required": " &middot; kailangan",
+  "create.requiredFields": "Kailangan: {list}. Bawat isa ay may pulang balangkas at may markang *; opsyonal ang lahat ng iba pang field.",
+  "create.nothingRequired": "Walang kailangan sa form na ito.",
+  "create.requiredWhen": " &middot; kailangan kapag ang {field} ay {values}",
+  "create.requiredWhenFilled": " &middot; kailangan kapag may laman ang {field}",
+  "create.yes": "oo",
+  "create.no": "hindi"
 }

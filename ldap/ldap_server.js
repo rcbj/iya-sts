@@ -200,6 +200,8 @@ const readPolicy = require('./directory_read_policy');
 // 2026-10-14): `(uid=ALICE)` finds `uid=alice`, as RFC 4519's caseIgnoreMatch
 // says. A static utility class that requires nothing, asked once per entry.
 const ldapMatching = require('./ldap_matching');
+// The largest message a client may send, read from its header (#2220).
+const LdapMessageGuard = require('./ldap_message_guard');
 // WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26): the rule
 // table and the edit, a LIBRARY that cannot require this file (it is loaded
 // by the console long before this one) and so is handed the two functions it
@@ -209,6 +211,7 @@ const personEditor = require('./person_editor');
 // management API loads at 19, handed what it needs through setDirectory(),
 // filled below. It requires only the engine's model and the helpers.
 const authzenAdmin = require('../authzen/authzen_admin');
+const pepBinding = require('../xacml/xacml_pep_binding');
 // The revocation register, for the CRL container below. A LEAF (rule 3): it
 // registers no route, so requiring it here moves nothing.
 const pkiRevocation = require('../common/pki_revocation');
@@ -378,6 +381,7 @@ const passkeyReport = require('../common/passkey_report');
 // The signer truststore (#1360), whose directory slot this module fills. A
 // library over `pki`, `realms` and `config`: a require moves no route.
 const signerTruststore = require('../common/signer_truststore');
+const truststores = require('../common/truststores');
 // The device register (#164), for `/admin/ldap/devices`: its schema and what
 // its entries mean. A library built before this module and loaded by it
 // already through `credentials`' neighbours — a cache hit, which moves no
@@ -987,6 +991,15 @@ function signerTrustAnchorsDn() {
   log.debug("Entering signerTrustAnchorsDn().");
   log.debug("Leaving signerTrustAnchorsDn().");
   return 'ou=signerTrustAnchors,' + baseDn();
+}
+
+// THE NAMED TRUSTSTORES (#2118): one entry per truststore under
+// `ou=truststores,<realm base>`, its certificates beneath it, and one entry
+// holding the realm's assignments. `common/truststores.ts` owns what each is.
+function truststoresDn() {
+  log.debug("Entering truststoresDn().");
+  log.debug("Leaving truststoresDn().");
+  return 'ou=truststores,' + baseDn();
 }
 
 // ou=passwordPolicies is the PASSWORD POLICY register (2026-09-12). A container
@@ -4686,6 +4699,141 @@ function operatorCodeRefusal(dn) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// `stsPivCardUuid` ON EVERY WRITE (#1955 P2, D8). The value maps an outside
+// PIV or CAC card to its holder (`pivCardHolders()` below), so a value that is
+// not a card UUID, or one another entry already holds, would make that
+// mapping wrong or ambiguous. Every door that writes the attribute asks this
+// before it commits: `putEntry()` (every create and replace, SCIM's and the
+// LDIF import's included), `writePersonAttribute()` (the console and
+// /admin-api's attribute editor) and the LDAP modify, which commits onto the
+// entry itself. Each value is NORMALISED in place — trimmed, a `urn:uuid:`
+// prefix taken off, lower-cased, repeats dropped — then held to RFC 9562's
+// string form (the nil UUID names no card) and refused (STS-PIV-0034), and
+// one another entry of the realm holds is refused (STS-PIV-0035): the
+// mapping refuses two holders too, but a write that makes them is the
+// mistake, and refusing it says so where it is made.
+// ---------------------------------------------------------------------------
+const CARD_UUID_FORM =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Normalises the stsPivCardUuid values of an attribute set in place and
+ * refuses a malformed one or one another entry holds.
+ *
+ * @param dn - the entry being written
+ * @param attributes - its attributes, lower-cased names
+ * @returns null, or `{ code, why }`
+ */
+function pivCardUuidRefusal(dn, attributes) {
+  log.debug('Entering pivCardUuidRefusal().');
+  const raw = attributes && attributes.stspivcarduuid;
+  if (!raw || !valuesOf(raw).length) {
+    log.debug('Leaving pivCardUuidRefusal(). None written.');
+    return null;
+  }
+  const out = [];
+  const values = valuesOf(raw);
+  for (let i = 0; i < values.length; i++) {
+    const one = String(values[i]).trim().replace(/^urn:uuid:/i, '')
+      .toLowerCase();
+    if (!CARD_UUID_FORM.test(one) || /^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(one)) {
+      log.debug('Leaving pivCardUuidRefusal(). Malformed.');
+      return { code: 'STS-PIV-0034',
+               why: 'stsPivCardUuid holds a card UUID in RFC 9562 form ' +
+                    '(8-4-4-4-12 hexadecimal digits, optionally after ' +
+                    'urn:uuid:), and "' + String(values[i]).slice(0, 64) +
+                    '" is not one.' };
+    }
+    if (out.indexOf(one) < 0) {
+      out.push(one);
+    }
+  }
+  const self = normalizeDn(dn);
+  for (let i = 0; i < out.length; i++) {
+    const other = pivCardHolders(out[i]).filter(function (h) {
+      return normalizeDn(h.dn) !== self;
+    })[0];
+    if (other) {
+      log.debug('Leaving pivCardUuidRefusal(). Held elsewhere.');
+      return { code: 'STS-PIV-0035',
+               why: 'The card UUID ' + out[i] + ' is already in ' +
+                    'stsPivCardUuid on another entry of this realm; a card ' +
+                    'names one person.' };
+    }
+  }
+  attributes.stspivcarduuid = out;
+  log.debug('Leaving pivCardUuidRefusal(). ' + out.length + ' value(s).');
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// `stsCertificateBinding` ON EVERY WRITE (#2012), for `stsPivCardUuid`'s
+// reason and at the same three doors (`putEntry()`, `writePersonAttribute()`
+// and the LDAP modify): a value is what binds a covered certificate to its
+// holder, so one that is not in the grammar would bind nothing and say
+// nothing, and one another entry holds would make the certificate name two
+// people. Each value is CANONICALISED in place
+// (`certificate_binding.bindingValueOf()`: the method lower-cased, hex
+// lower-cased without colons, a serial without leading zeros, a DN
+// trimmed and lower-cased), repeats dropped; a malformed one is refused
+// (STS-TLS-0069) and one another entry of the realm holds is refused
+// (STS-TLS-0070).
+// ---------------------------------------------------------------------------
+/**
+ * Canonicalises the stsCertificateBinding values of an attribute set in
+ * place and refuses a malformed one or one another entry holds.
+ *
+ * @param dn - the entry being written
+ * @param attributes - its attributes, lower-cased names
+ * @returns null, or `{ code, why }`
+ */
+function certificateBindingRefusal(dn, attributes) {
+  log.debug('Entering certificateBindingRefusal().');
+  const raw = attributes && attributes.stscertificatebinding;
+  if (!raw || !valuesOf(raw).length) {
+    log.debug('Leaving certificateBindingRefusal(). None written.');
+    return null;
+  }
+  const binding = require('../common/certificate_binding');
+  const out = [];
+  const values = valuesOf(raw);
+  for (let i = 0; i < values.length; i++) {
+    const one = binding.bindingValueOf(values[i]);
+    if (!one) {
+      log.debug('Leaving certificateBindingRefusal(). Malformed.');
+      return { code: 'STS-TLS-0069',
+               why: 'stsCertificateBinding holds one certificate sign-in ' +
+                    'binding per value — certificate-sha256:, ' +
+                    'issuer-serial:, issuer-ski:, spki-sha256:, ' +
+                    'issuer-subject: or subject:, each with its issuer\'s ' +
+                    'SubjectPublicKeyInfo SHA-256 where it names one — and "' +
+                    String(values[i]).slice(0, 96) + '" is not one.' };
+    }
+    if (out.indexOf(one) < 0) {
+      out.push(one);
+    }
+  }
+  const self = normalizeDn(dn);
+  for (let i = 0; i < out.length; i++) {
+    const other = certificateBindingHolders('binding', out[i])
+      .filter(function (h) {
+        return normalizeDn(h.dn) !== self;
+      })[0];
+    if (other) {
+      log.debug('Leaving certificateBindingRefusal(). Held elsewhere.');
+      return { code: 'STS-TLS-0070',
+               why: 'The certificate sign-in binding ' + out[i] + ' is ' +
+                    'already in stsCertificateBinding on another entry of ' +
+                    'this realm; a binding names one person.' };
+    }
+  }
+  attributes.stscertificatebinding = out;
+  log.debug('Leaving certificateBindingRefusal(). ' + out.length +
+            ' value(s).');
+  return null;
+}
+
 // putEntry() answers `{ ok: false }` when it writes nothing, and that
 // object is truthy. A writer that then stamps timestamps and audits a
 // create has recorded a write that did not happen (#1416, the same trap
@@ -4747,6 +4895,28 @@ function putEntry(dn, attributes, options) {
   Object.keys(attributes || {}).forEach(function (name) {
     stored.attributes[String(name).toLowerCase()] = valuesOf(attributes[name]);
   });
+  // A PIV CARD UUID, normalised and held unique (#1955 P2): before anything
+  // is written.
+  const cardRefusal = pivCardUuidRefusal(dn, stored.attributes);
+  if (cardRefusal) {
+    log.warn(errorCodes.tag(cardRefusal.code) + 'ldap: refused to store ' +
+             dn + ': ' + cardRefusal.why);
+    log.debug('Leaving putEntry(). Refused a card UUID.');
+    return coded(cardRefusal.code, { ok: false, reason: 'piv-card-uuid',
+                                     dn: String(dn), attributes: {},
+                                     errors: [cardRefusal.why] });
+  }
+  // A CERTIFICATE SIGN-IN BINDING (#2012), canonicalised and held unique.
+  const bindingRefusal = certificateBindingRefusal(dn, stored.attributes);
+  if (bindingRefusal) {
+    log.warn(errorCodes.tag(bindingRefusal.code) + 'ldap: refused to store ' +
+             dn + ': ' + bindingRefusal.why);
+    log.debug('Leaving putEntry(). Refused a certificate binding.');
+    return coded(bindingRefusal.code, { ok: false,
+                                        reason: 'certificate-binding',
+                                        dn: String(dn), attributes: {},
+                                        errors: [bindingRefusal.why] });
+  }
   stored.attributes.createtimestamp = [now];
   stored.attributes.modifytimestamp = [now];
   if (opts.origin) stored.origin = String(opts.origin);
@@ -5899,6 +6069,9 @@ const directoryHooks = {
     if (isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
     }
+    if (isNamedTruststoreKey(realmId, key)) {
+      reapplyTlsTruststoresQuietly();
+    }
     // NOT THE IDENTITY REGISTER (#618 phase 2, 2026-10-14). Until then a
     // person another process made through a door was noted here as
     // `created` — in EVERY process, so each add cost every other process a
@@ -5944,6 +6117,9 @@ const directoryHooks = {
     }
     if (gone && isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
+    }
+    if (gone && isNamedTruststoreKey(realmId, key)) {
+      reapplyTlsTruststoresQuietly();
     }
     log.debug('Leaving removeEntry(). ' + (gone ? 'Removed.' : 'It was not ' +
         'here.'));
@@ -10971,11 +11147,12 @@ personEditor.setDirectory({
 
 // AN AUTHZEN CALLER'S APPLICATION SCOPE (#563), the same shape as the editor
 // above: `authzen/authzen_admin.ts` lists the members of the group granting
-// AUTHZEN_PEPS and replaces a person's `stsAuthzenApplication` — and, since
-// #1180, `stsAuthzenCallbackUri`, the access request callback URLs
-// registered for the caller — the two attributes it writes, which no other
-// door here offers (an `sts*` name is refused by the person editor, SCIM,
-// federation and attribute sources) — and, since #1210, adds a member to a
+// AUTHZEN_PEPS and replaces a person's `stsAuthzenApplication`. Since
+// #1202 a callback is registered only on an application
+// (`appAuthzenCallbackUri`, `appAuthzenCallbackConfig`); the person
+// attribute `stsAuthzenCallbackUri` stays readable and a submission does
+// not honour it. An `sts*` name is still refused by the person editor,
+// SCIM, federation and attribute sources. Since #1210, adds a member to a
 // group.
 authzenAdmin.setDirectory({
   locate: function locate(key) {
@@ -11018,6 +11195,53 @@ authzenAdmin.setDirectory({
     log.debug('Entering the AuthZEN addMember(). group=' + group);
     log.debug('Leaving the AuthZEN addMember().');
     return addGroupMember(group, member, options);
+  }
+});
+
+// AN EMBEDDED REMOTE PEP'S BINDING (#2025), authzen's shape above:
+// `xacml/xacml_pep_binding.ts` locates a PEP's entry with the binding read
+// here, as the store reads it, writes `stsPepApplication` and nothing else,
+// and lists its holders. An `sts*` name is refused by every other door.
+pepBinding.setDirectory({
+  locate: function locate(name) {
+    log.debug('Entering the PEP binding locate(). name=' + name);
+    const stored = locateEntry(String(name || '')).stored;
+    if (!stored) {
+      log.debug('Leaving the PEP binding locate(). Nobody.');
+      return null;
+    }
+    const a = stored.attributes;
+    log.debug('Leaving the PEP binding locate(). ' + stored.dn);
+    return { dn: stored.dn, name: personNameOf(stored),
+             person: isPersonEntry(stored),
+             serviceAccount: (a.stsserviceaccount || []).length > 0,
+             application: String((a.stspepapplication || [])[0] || '') };
+  },
+  write: function write(dn, application) {
+    log.debug('Entering the PEP binding write(). dn=' + dn);
+    const value = String(application || '');
+    log.debug('Leaving the PEP binding write().');
+    return writePersonAttribute(dn, pepBinding.ATTRIBUTE,
+                                value ? [value] : []) === true;
+  },
+  // Asked of the SERVICE ACCOUNTS, not of `stspepapplication`: a binding is
+  // only ever written on a service account (`eligible()`), nothing un-makes
+  // one (#1760), and `stsserviceaccount` is already an asked name, so this
+  // needs no new index expression and no schema version
+  // (`persistence/directory_queries.js`'s ASKED_ATTRIBUTES).
+  holders: function holders() {
+    log.debug('Entering the PEP binding holders().');
+    const out = [];
+    eachHolderOfAny(['stsserviceaccount'], function (stored) {
+      const value = String((stored.attributes.stspepapplication || [])[0] ||
+                           '');
+      if (value && isPersonEntry(stored)) {
+        out.push({ dn: stored.dn, name: personNameOf(stored),
+                   application: value });
+      }
+    });
+    log.debug('Leaving the PEP binding holders(). ' + out.length);
+    return out;
   }
 });
 
@@ -11490,6 +11714,25 @@ if (typeof tlsServer.setTrustAnchorStore === 'function') {
 // inside an applier that must not fail because a LISTENER could not take a new
 // context: the entry is stored either way, and `applyAnchors()` logs its own
 // failure.
+// The listeners' truststores re-applied after a change under
+// `ou=truststores` (#2118), with `reloadTrustAnchorsQuietly()`'s reason for
+// swallowing a failure.
+function reapplyTlsTruststoresQuietly() {
+  log.debug("Entering reapplyTlsTruststoresQuietly().");
+  if (typeof tlsServer.applyTruststores !== 'function') {
+    log.debug("Leaving reapplyTlsTruststoresQuietly().");
+    return;
+  }
+  try {
+    tlsServer.applyTruststores();
+  } catch (e) {
+    log.error(errorCodes.tag('STS-LDAP-0051') +
+              'ldap: the listeners\' truststores could not be re-applied ' +
+              'after a change to ou=truststores: ' + e.message);
+  }
+  log.debug("Leaving reapplyTlsTruststoresQuietly().");
+}
+
 function reloadTrustAnchorsQuietly() {
   log.debug("Entering reloadTrustAnchorsQuietly().");
   if (typeof tlsServer.reloadStoredAnchors !== 'function') {
@@ -12702,6 +12945,12 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   stswebauthnpqcuserhandle: 'the first post-quantum passkey registered at ' +
     '/portal/keys or the sign-in screen, which mints it',
   ststotpcredential: '/portal/mfa, or /admin/users (clear)',
+  // #1955 P4: an HOTP token's secret and counter, written only by its
+  // enrolment, an imported token's assignment and the verifier.
+  stshotpcredential: '/portal/mfa, the OATH tab of ' +
+    '/portal/tokens-and-keys, or /admin/hardware-tokens (assign)',
+  // #1955 P5: a YubiKey OTP's public identity and sealed AES key.
+  stsyubiotpcredential: '/portal/mfa, or /admin/hardware-tokens (assign)',
   stsbackupcodes: '/portal/mfa, or /admin/users (clear)',
   stsapppassword: '/portal/app-passwords, or /admin/users',
   hobapublickey: 'the SCIM HOBA registration (/scim/v2 with Hobareg)',
@@ -13427,6 +13676,167 @@ function certificateHolders(sha256) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE AN OUTSIDE PIV OR CAC CARD'S UUID NAMES (#1955 P2, D8).
+//
+// `common/piv_attestation.ts`'s `cardIdentityOf()` maps a card certificate
+// from one of the realm's `piv.externalIssuers` to the person whose
+// `stsPivCardUuid` holds the card UUID its subjectAltName names, and never by
+// a name on the certificate. It asks this, through certificate enrollment's
+// slot (`pivCardHolders`), for `certificateHolders()`'s reason: that slot is
+// already the one that answers "which entry is this certificate", and a
+// second would be a second answer to it.
+//
+// FOUND AS A DID IS (`entryByDidSubject()`): a windowed process asks the
+// store's index (`stspivcarduuid` is in the codec's VALUE_INDEXED, a key the
+// service writes, so no schema moves), and the resident entries (every
+// entry, outside a window) are walked. The question is asked only for a
+// certificate from a configured outside PIV issuer that is stored on nobody,
+// so it is not on every handshake. At most three are answered: the caller
+// asks whether there is exactly one person.
+// ---------------------------------------------------------------------------
+/**
+ * The entries of the ambient realm whose stsPivCardUuid holds a card UUID,
+ * each `{ kind, id, dn }`.
+ *
+ * @param uuid - the card UUID, lower case, no `urn:uuid:` prefix
+ * @returns at most three holders, each once
+ */
+function pivCardHolders(uuid) {
+  log.debug('Entering pivCardHolders().');
+  const wanted = String(uuid || '').toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    .test(wanted)) {
+    log.debug('Leaving pivCardHolders(). Not a card UUID.');
+    return [];
+  }
+  const holds = function (stored) {
+    return !!stored && (stored.attributes.stspivcarduuid || [])
+      .some(function (one) {
+        return String(one).trim().toLowerCase() === wanted;
+      });
+  };
+  const found = new Map();
+  const add = function (stored) {
+    const key = normalizeDn(stored.dn);
+    if (!found.has(key) && found.size < 3) {
+      found.set(key, certificateHolderOf(stored));
+    }
+  };
+  const asked = windowedFind('byAttribute', ['stspivcarduuid', wanted, 3],
+                             holds);
+  (asked || []).forEach(add);
+  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
+    if (holds(entry)) {
+      add(entry);
+    }
+  });
+  const out = Array.from(found.values());
+  log.debug('Leaving pivCardHolders(). ' + out.length + '.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE PEOPLE A CERTIFICATE SIGN-IN BINDING NAMES (#2012).
+//
+// `common/certificate_binding.ts` resolves a client certificate a realm's
+// `certSignIn.profiles` covers through the methods its profile enables, and
+// asks this, through certificate enrollment's slot for `certificateHolders()`'s
+// reason, who holds each value:
+//
+//   * `binding` — a canonical `stsCertificateBinding` value (issuer and
+//     serial, issuer and SKI, a key's or a certificate's SHA-256, a subject);
+//   * `upn` — a `userPrincipalName`, compared ignoring case;
+//   * `mail` — an address, `peopleByMail()`'s lookup.
+//
+// A windowed process asks the store's `certificatebinding` index alone (a
+// key the codec derives, so no schema moves; a person is always windowed,
+// #349). A process with no window holds its directory as a Map in memory and
+// reads only the HOLDERS of the attribute asked about (`eachHolderOfAny()`,
+// the barrier `tests/no_full_directory_walk_in_jobs.js` names), never every
+// entry: this is asked on every write that carries a binding (the
+// uniqueness check of `certificateBindingRefusal()`), so a scheduler job
+// writing a CRL or a federation entry must not reach a walk (run
+// 45236493306). People only — a binding signs a person in. At most three are
+// answered: the caller asks whether there is exactly one.
+// ---------------------------------------------------------------------------
+/**
+ * The people of the ambient realm a certificate sign-in binding names, each
+ * `{ kind, id, dn }`.
+ *
+ * @param kind - `binding`, `upn` or `mail`
+ * @param value - the canonical value
+ * @returns at most three holders, each once
+ */
+function certificateBindingHolders(kind, value) {
+  log.debug('Entering certificateBindingHolders(). ' + kind);
+  const wanted = String(value || '').trim().toLowerCase();
+  if (!wanted || ['binding', 'upn', 'mail'].indexOf(String(kind)) < 0) {
+    log.debug('Leaving certificateBindingHolders(). Nothing to ask.');
+    return [];
+  }
+  const found = new Map();
+  const add = function (stored) {
+    const key = normalizeDn(stored.dn);
+    if (!found.has(key) && found.size < 3 && isPersonEntry(stored)) {
+      found.set(key, certificateHolderOf(stored));
+    }
+  };
+  if (kind === 'mail') {
+    peopleByMail(wanted).forEach(function (one) {
+      const located = locateEntry(String(one.username || ''));
+      if (located.stored) {
+        add(located.stored);
+      }
+    });
+    const mailed = Array.from(found.values());
+    log.debug('Leaving certificateBindingHolders(). ' + mailed.length +
+              ', by mail.');
+    return mailed;
+  }
+  const key = kind === 'upn' ? 'upn:' + wanted : wanted;
+  const holds = function (stored) {
+    if (!stored) {
+      return false;
+    }
+    const attributes = stored.attributes || {};
+    return kind === 'upn'
+      ? (attributes.userprincipalname || []).some(function (one) {
+        return String(one).trim().toLowerCase() === wanted;
+      })
+      : (attributes.stscertificatebinding || []).some(function (one) {
+        return String(one).trim().toLowerCase() === wanted;
+      });
+  };
+  const asked = windowedFind('byAttribute', ['certificatebinding', key, 3],
+                             holds);
+  if (asked) {
+    // A PERSON IS ALWAYS WINDOWED (#349, `peopleByMail()`'s rule), so the
+    // store's index is the whole answer and nothing is walked on a sign-in
+    // (the #2012 review: no full scans).
+    asked.forEach(add);
+    const indexed = Array.from(found.values());
+    log.debug('Leaving certificateBindingHolders(). ' + indexed.length +
+              ', asked.');
+    return indexed;
+  }
+  // NO WINDOW: the directory is a Map in this process, and the walk reads
+  // memory, never the store — `peopleByMail()`'s arrangement, and a BARRIER
+  // of `tests/no_full_directory_walk_in_jobs.js` for that reason. It was
+  // `eachHolderOfAny()` for a day (run 45236493306), which is the same walk
+  // without a window, but whose names must each be in the store's asked
+  // index (`tests/directory_asked_names.js`); the windowed question here is
+  // the `certificatebinding` index above, so neither name belongs there.
+  eachEntryInRealm(function (entry) {
+    if (holds(entry)) {
+      add(entry);
+    }
+  });
+  const out = Array.from(found.values());
+  log.debug('Leaving certificateBindingHolders(). ' + out.length + '.');
+  return out;
+}
+
 // What the stored-certificate index has done in the ambient realm, for the
 // tests: `userHandleIndexState()`'s shape.
 function certificateIndexState() {
@@ -13475,8 +13885,20 @@ function storedCertificatesOf(kind, id) {
       }
     });
   });
+  // AND A PERSON'S OTHER TWO KINDS OF CERTIFICATE (#2050), which identify
+  // nobody at a sign-in and are listed beside these: the S/MIME
+  // certificates mail to them is encrypted to (either RFC 4522 spelling),
+  // and the live SSH user certificates the realm's SSH user CA issued them,
+  // as stored. Read here, by name, because this is the store.
+  const answer = { dn: String(stored.dn), certificates: out };
+  if (kind === 'person') {
+    answer.smime = [].concat(stored.attributes['usersmimecertificate;binary'] ||
+                             [], stored.attributes.usersmimecertificate || [])
+      .map(String);
+    answer.ssh = (stored.attributes.stssshusercertificate || []).map(String);
+  }
   log.debug("Leaving storedCertificatesOf(). " + out.length + ".");
-  return { dn: String(stored.dn), certificates: out };
+  return answer;
 }
 
 /**
@@ -13502,6 +13924,7 @@ function changeStoredCertificate(kind, id, change) {
     return der ? require('../common/crypto').digest('sha256', der, 'hex') : '';
   };
   let changed = false;
+  const before = kind === 'person' ? attributeSnapshot(stored) : null;
   if (change && change.add) {
     const base64 = Buffer.from(change.add).toString('base64');
     const wanted = digestOf(base64);
@@ -13534,6 +13957,9 @@ function changeStoredCertificate(kind, id, change) {
   }
   if (changed) {
     touchDirectory(stored.dn);
+    if (before) {
+      tellCredentialWatchers(stored, before, 'a stored certificate');
+    }
   }
   log.debug("Leaving changeStoredCertificate(). changed=" + changed);
   return { ok: true, dn: String(stored.dn), changed: changed };
@@ -13599,6 +14025,75 @@ function writeTotp(key, value) {
   touchDirectory();
   log.debug('Leaving writeTotp(). ' +
             (value ? 'Written to ' : 'Removed from ') + stored.dn + '.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S HOTP CREDENTIAL (#1955 P4): single-valued and ASSIGNED, for
+// `writeTotp()`'s reason above (a code names nothing, so a second secret of
+// the kind would be a guess tried twice). Sealed by `credentials.ts` in
+// product mode, never here; `null` deletes. Not created for a name with no
+// entry, for the same reason.
+// ---------------------------------------------------------------------------
+function readHotp(key) {
+  log.debug('Entering readHotp(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  const value = stored ? (stored.attributes.stshotpcredential || [])[0] : '';
+  log.debug('Leaving readHotp(). ' + (value ? 'Enrolled.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeHotp(key, value) {
+  log.debug('Entering writeHotp(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no HOTP ' +
+             'credential was recorded.');
+    log.debug('Leaving writeHotp(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stshotpcredential;
+  } else {
+    stored.attributes.stshotpcredential = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeHotp(). ' + stored.dn + '.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S YUBIKEY OTP CREDENTIAL (#1955 P5): single-valued, for
+// writeHotp()'s reason. The public identity is in the clear inside the JSON;
+// the AES key is sealed by credentials.ts. null deletes.
+// ---------------------------------------------------------------------------
+function readYubi(key) {
+  log.debug('Entering readYubi(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  const value = stored
+    ? (stored.attributes.stsyubiotpcredential || [])[0] : '';
+  log.debug('Leaving readYubi(). ' + (value ? 'Enrolled.' : 'None.'));
+  return value ? String(value) : '';
+}
+
+function writeYubi(key, value) {
+  log.debug('Entering writeYubi(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no ' +
+             'YubiKey OTP credential was recorded.');
+    log.debug('Leaving writeYubi(). No entry.');
+    return false;
+  }
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes.stsyubiotpcredential;
+  } else {
+    stored.attributes.stsyubiotpcredential = [String(value)];
+  }
+  touchDirectory();
+  log.debug('Leaving writeYubi(). ' + stored.dn + '.');
   return true;
 }
 
@@ -14993,6 +15488,19 @@ signerTruststore.setDirectory({
   remove: inRealmNamed(deleteSignerAnchor)
 });
 
+// THE NAMED TRUSTSTORES' SLOT (#2118, rule 3e): the signer truststore's
+// reason, one container along. Validated whole there.
+truststores.setDirectory({
+  listStores: inTruststoreRealm(truststoreRows, []),
+  putStore: inTruststoreRealm(writeTruststore, false),
+  removeStore: inTruststoreRealm(deleteTruststore, false),
+  listCerts: inTruststoreRealm(truststoreCertificateRows, []),
+  putCert: inTruststoreRealm(writeTruststoreCertificate, false),
+  removeCert: inTruststoreRealm(deleteTruststoreCertificate, false),
+  readAssignments: inTruststoreRealm(readTruststoreAssignments, {}),
+  writeAssignments: inTruststoreRealm(writeTruststoreAssignments, false)
+});
+
 if (typeof credentials.setDirectory === 'function') {
   credentials.setDirectory({
     readPassword: readStoredPassword,
@@ -15022,6 +15530,12 @@ if (typeof credentials.setDirectory === 'function') {
     // knows nothing about them still gets a working password sign-in.
     readTotp: readTotp,
     writeTotp: writeTotp,
+    // #1955 P4: the HOTP credential, beside the authenticator app's.
+    readHotp: readHotp,
+    writeHotp: writeHotp,
+    // #1955 P5: the YubiKey OTP credential, beside the HOTP one.
+    readYubi: readYubi,
+    writeYubi: writeYubi,
     // The recovery codes (2026-09-10). Checked WHERE THEY ARE USED for the
     // reason the pair above is: an older `common/credentials.ts` that knows
     // nothing about them still gets a working password sign-in, and
@@ -15359,6 +15873,37 @@ if (typeof portal.setDirectory === 'function') {
            'an error; the page says which it is showing.');
 }
 
+// A PERSON OF THE AMBIENT REALM BY THEIR ADDRESS: their username, or ''. The
+// mail channel's forgot-password lookup (#63) and the Web Key Directory's
+// `l` parameter (#1955 P6) both ask it, so it is one named function.
+function personNameByMail(address) {
+  log.debug('Entering personNameByMail().');
+  const wanted = String(address || '').trim().toLowerCase();
+  let found = '';
+  if (wanted && directoryWindow) {
+    // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
+    // is the portal's unauthenticated forgot-password form, and
+    // `allPersons()` paged and copied every person in the realm to
+    // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
+    // order; the first is the answer, as the first in `allPersons()`'
+    // order was.
+    const hits = peopleByMail(wanted);
+    found = hits.length ? hits[0].username || '' : '';
+  } else if (wanted) {
+    allPersons().some(function (entry) {
+      const values = (entry.attributes && entry.attributes.mail) || [];
+      if (values.some(function (v) {
+        return String(v).trim().toLowerCase() === wanted;
+      })) {
+        found = usernameOfEntry(entry) || '';
+      }
+      return !!found;
+    });
+  }
+  log.debug('Leaving personNameByMail(). ' + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // THE MAIL CHANNEL'S SLOT (#63, 2026-09-22), for the portal's reason and in
 // the portal's shape: `common/mail.ts` is a library loaded long before this
@@ -15406,33 +15951,7 @@ if (typeof mailChannel.setDirectory === 'function') {
       return { dn: stored.dn,
                attributes: Object.assign({}, stored.attributes) };
     },
-    personByMail: function (address) {
-      log.debug('Entering personByMail().');
-      const wanted = String(address || '').trim().toLowerCase();
-      let found = '';
-      if (wanted && directoryWindow) {
-        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
-        // is the portal's unauthenticated forgot-password form, and
-        // `allPersons()` paged and copied every person in the realm to
-        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
-        // order; the first is the answer, as the first in `allPersons()`'
-        // order was.
-        const hits = peopleByMail(wanted);
-        found = hits.length ? hits[0].username || '' : '';
-      } else if (wanted) {
-        allPersons().some(function (entry) {
-          const values = (entry.attributes && entry.attributes.mail) || [];
-          if (values.some(function (v) {
-            return String(v).trim().toLowerCase() === wanted;
-          })) {
-            found = usernameOfEntry(entry) || '';
-          }
-          return !!found;
-        });
-      }
-      log.debug('Leaving personByMail(). ' + (found ? 'Found.' : 'None.'));
-      return found;
-    },
+    personByMail: personNameByMail,
     // THE ADDRESS ITSELF (#64): written by an administrator's set-mail, or
     // by a person completing the verification of a NEW address (D5 — the
     // address is not `mail` until its link is clicked). `source` is
@@ -15536,6 +16055,153 @@ if (typeof mailChannel.setDirectory === 'function') {
            'channel has no recipients: every message is refused as having ' +
            'nobody to go to.');
 }
+
+// A PERSON'S OpenPGP KEY, MAIL ENCRYPTION AND S/MIME CERTIFICATE (#1955 P6),
+// the AuthZEN slot's shape: `common/openpgp_keys.ts` reads one person, writes
+// the five attributes it owns — `stsOpenPgpKey`, `stsOpenPgpFingerprint`,
+// `stsOpenPgpKeyInfo`, `stsMailEncryption` and `userSMIMECertificate` (under
+// either spelling) — and asks who holds an address for the Web Key
+// Directory's `l` parameter. It is required by `common/mail.ts` at 8a, long
+// before this module, so it cannot require this one (rule 3e). The S/MIME
+// values are read HERE, by name, under both RFC 4522 spellings, because this
+// is the store and a certificate written by an LDAP client arrives as
+// `userSMIMECertificate;binary`.
+// And since #2009 P2 the CLASSICAL key kept beside a post-quantum one
+// (rcbj's D3): `stsOpenPgpClassicalKey` and `stsOpenPgpClassicalKeyInfo`.
+const OPENPGP_WRITABLE = ['stsopenpgpkey', 'stsopenpgpfingerprint',
+                          'stsopenpgpkeyinfo', 'stsmailencryption',
+                          'stsopenpgpclassicalkey',
+                          'stsopenpgpclassicalkeyinfo',
+                          'usersmimecertificate;binary',
+                          'usersmimecertificate'];
+const openpgpKeys = require('../common/openpgp_keys');
+openpgpKeys.setDirectory({
+  locate: function locate(username) {
+    log.debug('Entering the OpenPGP locate().');
+    const located = locateEntry(String(username || ''));
+    const stored = located.stored;
+    if (!stored || !isPersonEntry(stored) || !usernameOfEntry(stored)) {
+      log.debug('Leaving the OpenPGP locate(). Nobody.');
+      return null;
+    }
+    const smime = [].concat(stored.attributes['usersmimecertificate;binary'] ||
+                            [], stored.attributes.usersmimecertificate || [])
+      .map(String);
+    log.debug('Leaving the OpenPGP locate(). ' + stored.dn);
+    return { dn: stored.dn, username: usernameOfEntry(stored),
+             attributes: attributeSnapshot(stored), smime: smime };
+  },
+  write: function write(dn, name, values) {
+    log.debug('Entering the OpenPGP write(). ' + name);
+    const allowed = OPENPGP_WRITABLE.indexOf(String(name).toLowerCase()) >= 0;
+    log.debug('Leaving the OpenPGP write(). ' + allowed);
+    return allowed && writePersonAttribute(dn, name, values) === true;
+  },
+  personByMail: personNameByMail
+});
+
+// A PERSON'S LIVE SSH USER CERTIFICATES (#2050), the OpenPGP slot's shape:
+// `common/ssh_issued.ts`, the register of what the realm's SSH user CA
+// issued, finds one person by subject off the event loop and replaces the
+// one attribute it owns, `stsSshUserCertificate`, in place. It is built at
+// the composition root's credential libraries and reached by `pki.js`, long
+// before this module, so it cannot require this one (rule 3e; its header
+// argues both ways round). The register is authoritative and the attribute
+// its projection, so this hands over nothing else of the entry.
+const sshIssued = require('../common/ssh_issued');
+sshIssued.setDirectory({
+  locate: async function locate(subject) {
+    log.debug('Entering the SSH certificate locate().');
+    await warmSubjectsAsync([String(subject || '')]);
+    const stored = entryByUuid(String(subject || ''));
+    if (!stored || !isPersonEntry(stored)) {
+      log.debug('Leaving the SSH certificate locate(). Nobody.');
+      return null;
+    }
+    const values = (stored.attributes.stssshusercertificate || [])
+      .map(String);
+    log.debug('Leaving the SSH certificate locate(). ' + stored.dn);
+    return { dn: stored.dn, values: values };
+  },
+  write: function write(dn, values) {
+    log.debug('Entering the SSH certificate write().');
+    const written = writePersonAttribute(dn, 'stsSshUserCertificate',
+                                         values) === true;
+    log.debug('Leaving the SSH certificate write(). ' + written);
+    return written;
+  }
+});
+
+// A PERSON'S HARDWARE, OATH AND YUBIKEY OTP TOKENS (#2051), the SSH
+// certificate slot's shape: `common/token_entries.ts` finds one person by
+// subject or username — synchronously for a request's write, whose person
+// is held by then, or off the event loop for a background job — replaces
+// one of the three attributes it owns in place, and asks who holds one,
+// which only the manual index rebuild does. The entry is the master and the
+// three stores its indexes; the module is built beside the credential
+// libraries, long before this one, so it cannot require this one (rule 3e).
+const TOKEN_ATTRIBUTES = ['stshardwaretoken', 'stsoathtoken',
+                          'stsyubiotptoken'];
+function tokenEntryOf(stored) {
+  log.debug('Entering tokenEntryOf().');
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving tokenEntryOf(). Nobody.');
+    return null;
+  }
+  const values = {};
+  TOKEN_ATTRIBUTES.forEach(function (name) {
+    values[name] = (stored.attributes[name] || []).map(String);
+  });
+  log.debug('Leaving tokenEntryOf(). ' + stored.dn);
+  return { dn: stored.dn, username: usernameOfEntry(stored), values: values };
+}
+const tokenEntries = require('../common/token_entries');
+tokenEntries.setDirectory({
+  locate: function locate(who) {
+    log.debug('Entering the token entries locate().');
+    const key = String(who || '');
+    const stored = /^urn:uuid:/i.test(key) ? entryByUuid(key)
+      : locateEntry(key).stored;
+    log.debug('Leaving the token entries locate().');
+    return tokenEntryOf(stored);
+  },
+  locateAsync: async function locateAsync(who) {
+    log.debug('Entering the token entries locateAsync().');
+    const key = String(who || '');
+    if (/^urn:uuid:/i.test(key)) {
+      await warmSubjectsAsync([key]);
+    } else {
+      await warmNamesAsync([key]);
+    }
+    const stored = /^urn:uuid:/i.test(key) ? entryByUuid(key)
+      : locateEntry(key).stored;
+    log.debug('Leaving the token entries locateAsync().');
+    return tokenEntryOf(stored);
+  },
+  write: function write(dn, attribute, values) {
+    log.debug('Entering the token entries write(). ' + attribute);
+    const allowed = TOKEN_ATTRIBUTES.indexOf(String(attribute)
+      .toLowerCase()) >= 0;
+    const written = allowed &&
+      writePersonAttribute(dn, attribute, values) === true;
+    log.debug('Leaving the token entries write(). ' + written);
+    return written;
+  },
+  holdersAsync: async function tokenHoldersAsync(attribute) {
+    log.debug('Entering the token entries holdersAsync().');
+    const name = String(attribute || '').toLowerCase();
+    if (TOKEN_ATTRIBUTES.indexOf(name) < 0) {
+      log.debug('Leaving the token entries holdersAsync(). Not ours.');
+      return [];
+    }
+    const rows = await holdersAsync('person', name, [name]);
+    log.debug('Leaving the token entries holdersAsync(). ' + rows.length);
+    return rows.map(function (row) {
+      return { username: row.id, dn: row.dn,
+               values: (row.attributes[name] || []).map(String) };
+    });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
@@ -16321,6 +16987,13 @@ function censusOfEntry(stored) {
     webauthn: (a.stswebauthncredential || []).slice(0),
     totp: (a.ststotpcredential || [])[0]
       ? String(a.ststotpcredential[0]) : '',
+    // #1955 P4: read off an entry already in hand; no holder question asks
+    // it (that would be an index expression, so a schema version).
+    hotp: (a.stshotpcredential || [])[0]
+      ? String(a.stshotpcredential[0]) : '',
+    // #1955 P5: read off the entry already in hand. Not an index expression.
+    yubi: (a.stsyubiotpcredential || [])[0]
+      ? String(a.stsyubiotpcredential[0]) : '',
     // The mail channel's `personEntry()` reads only an entry with a name
     // (`usernameOfEntry()`), so the census hands the four over on the same
     // condition — otherwise an entry that channel refuses would be counted
@@ -16846,12 +17519,16 @@ if (typeof certEnrollment.setDirectory === 'function') {
       const list = (values || []).map(function (one) {
         return String(one);
       });
+      const before = kind === 'person' ? attributeSnapshot(stored) : null;
       if (!list.length) {
         delete stored.attributes[attribute];
       } else {
         stored.attributes[attribute] = list;
       }
       touchDirectory(stored.dn);
+      if (before) {
+        tellCredentialWatchers(stored, before, 'certificate enrollment');
+      }
       log.debug('Leaving write(). ' + list.length + ' value(s) on ' +
                 stored.dn + '.');
       return true;
@@ -16892,6 +17569,12 @@ if (typeof certEnrollment.setDirectory === 'function') {
     // same reason this one did (a require from there to here drags every
     // `/admin/ldap/*` route forward) and add nothing but an indirection.
     certificateHolders: certificateHolders,
+    // THE PEOPLE A PIV CARD UUID NAMES (#1955 P2, D8), on this slot for
+    // `certificateHolders`' reason (see `pivCardHolders()`).
+    pivCardHolders: pivCardHolders,
+    // THE PEOPLE A CERTIFICATE SIGN-IN BINDING NAMES (#2012), on this slot
+    // for the same reason (see `certificateBindingHolders()`).
+    certificateBindingHolders: certificateBindingHolders,
     // `holders()` WITH THE VALUES, in the same walk and the same order
     // (#352, 2026-09-29): `[{ id, values }]`. The enrollment listings asked
     // `holders()` for the ids and then `read()` for each — a second lookup
@@ -17532,6 +18215,38 @@ function writePersonAttribute(dn, name, values) {
     log.debug('Leaving writePersonAttribute(). Refused an operator code.');
     return refused;
   }
+  // A PIV CARD UUID (#1955 P2), for putEntry()'s reason: this writer does
+  // not go through it.
+  if (key === 'stspivcarduuid' && kept.length) {
+    const held = { stspivcarduuid: kept };
+    const cardRefusal = pivCardUuidRefusal(dn, held);
+    if (cardRefusal) {
+      log.warn(errorCodes.tag(cardRefusal.code) + 'ldap: refused to write ' +
+               'stsPivCardUuid on ' + dn + ': ' + cardRefusal.why);
+      log.debug('Leaving writePersonAttribute(). Refused a card UUID.');
+      return coded(cardRefusal.code, { ok: false, reason: 'piv-card-uuid',
+                                       dn: String(dn), attributes: {},
+                                       errors: [cardRefusal.why] });
+    }
+    kept.splice(0, kept.length, ...held.stspivcarduuid);
+  }
+  // A CERTIFICATE SIGN-IN BINDING (#2012), for the card UUID's reason.
+  if (key === 'stscertificatebinding' && kept.length) {
+    const held = { stscertificatebinding: kept };
+    const bindingRefusal = certificateBindingRefusal(dn, held);
+    if (bindingRefusal) {
+      log.warn(errorCodes.tag(bindingRefusal.code) + 'ldap: refused to ' +
+               'write stsCertificateBinding on ' + dn + ': ' +
+               bindingRefusal.why);
+      log.debug('Leaving writePersonAttribute(). Refused a certificate ' +
+                'binding.');
+      return coded(bindingRefusal.code, { ok: false,
+                                          reason: 'certificate-binding',
+                                          dn: String(dn), attributes: {},
+                                          errors: [bindingRefusal.why] });
+    }
+    kept.splice(0, kept.length, ...held.stscertificatebinding);
+  }
   if (kept.length) {
     stored.attributes[key] = kept;
   } else {
@@ -17839,12 +18554,15 @@ function rekeyLdaps(why) {
   try {
     const current = tlsServer.serverCertificate();
     Object.assign(serverCertificate, current);
+    // EVERY listener certificate, as the main port presents them (#2220):
+    // `clientTruststoreOptions()` answers parallel `key` and `cert` arrays,
+    // one bundle per `tls.certificateAlgorithms` entry, and OpenSSL picks
+    // the one the client's signature algorithms allow.
+    const context = tlsServer.clientTruststoreOptions(ldapsPolicy());
     secureServer.server.setSecureContext(Object.assign({
-      // The leaf, its chain and the Root (#1064), as every listener presents
-      // them — tls_server.js's presentedBundlePem().
-      cert: tlsServer.presentedBundlePem(current),
-      key: current.privateKeyPem,
-      ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
+      cert: context.cert,
+      key: context.key,
+      ca: context.ca
     }, tlsProtocolOptions()));
   } catch (e) {
     // The listener still has the context it had, so this is a certificate
@@ -17901,10 +18619,24 @@ if (serverCertificate && serverCertificate.certPem &&
     ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
   }, tlsProtocolOptions(),
   tlsServer.clientAuthOptions(ldapsPolicy().clientAuth)));
+  // ---------------------------------------------------------------------
+  // EVERY CERTIFICATE ON 636, NOT THE FIRST (#2220). The constructor above
+  // takes ONE certificate, because the ldapjs fork refuses anything but a
+  // string or a Buffer for `certificate` (lib/server.js) and this repository
+  // changes the fork only in the fork. So the context is replaced at once
+  // with the main port's: `clientTruststoreOptions()` answers PARALLEL
+  // `key` and `cert` arrays, one per `tls.certificateAlgorithms` entry, and
+  // OpenSSL serves the one that matches the signature algorithms the client
+  // offered — RSA to an ordinary client, ML-DSA to a post-quantum one, on
+  // the same port. Until #2220 the callback below answered the first
+  // certificate alone, so `applyAnchors()` put RSA back on every truststore
+  // change. It answers both arrays now; with one certificate configured
+  // that is the same single bundle it always was.
+  // ---------------------------------------------------------------------
   tlsServer.trustClientCertificatesOn(secureServer.server,
     'LDAPS (' + LDAPS_PORT + ')', function () {
-      return { key: serverCertificate.privateKeyPem,
-               cert: tlsServer.presentedBundlePem(serverCertificate) };
+      const context = tlsServer.clientTruststoreOptions(ldapsPolicy());
+      return { key: context.key, cert: context.cert };
     }, { kind: 'ldaps' });
   // Under paranoid PKI mode LDAPS holds a client certificate as the main port
   // does, with revocation, and the stream waits for the verdict (#1360).
@@ -17913,6 +18645,15 @@ if (serverCertificate && serverCertificate.certPem &&
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.
   sessionTickets.track(secureServer.server, 'LDAPS (' + LDAPS_PORT + ')');
+  // The key exchange each handshake negotiated, counted per group (#2220,
+  // tls/key_exchange.ts), as on the main port.
+  require('../tls/key_exchange').install(secureServer.server, 'ldaps',
+                                         'LDAPS (' + LDAPS_PORT + ')');
+  // Its certificate's OCSP status stapled, as on the main port (#2254,
+  // tls/ocsp_stapling.ts): 636 presents the main port's certificates, so
+  // the two share one staple.
+  require('../tls/ocsp_stapling').install(secureServer.server, 'ldaps',
+                                          'LDAPS (' + LDAPS_PORT + ')');
 } else {
   tlsListenError = 'there was no server certificate at startup';
   log.warn(errorCodes.tag('STS-LDAP-0029') +
@@ -18587,9 +19328,81 @@ servers.forEach(function (one) {
   ['connection', 'secureConnection'].forEach(function (event) {
     one.server.on(event, function (socket) {
       holdSocket(socket);
+      // THE MESSAGE SIZE GUARD (#2220), on the socket ldapjs reads: the
+      // plain one, or the TLS one once its handshake is done (the raw socket
+      // under a TLS server carries no parser, and is skipped). ldapjs's
+      // connection handler ran first — it was registered when the server
+      // was built — so its `data` listener is the one put behind the guard.
+      if (socket.parser) {
+        guardMessages(socket);
+      }
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// THE LARGEST MESSAGE A CLIENT MAY SEND (#2220): `ldap_message_guard.ts`
+// argues it. The limits are read at each message's header, from the
+// default realm — the listeners are the process's, and a socket has no realm
+// until a bind names one — so a change applies to the next message.
+// ---------------------------------------------------------------------------
+// When a refusal was last logged, and how many have gone unlogged since, so
+// a flood of oversized messages is one line a minute rather than one each.
+let messageRefusalLoggedAt = 0;
+let messageRefusalsUnlogged = 0;
+
+/**
+ * Puts the message size guard between a connection and ldapjs's parser.
+ *
+ * @param socket - the connection, after ldapjs's connection handler ran
+ */
+function guardMessages(socket) {
+  log.debug("Entering guardMessages().");
+  // No Entering/Leaving pair in `limits` or `isBound`: the guard asks them
+  // at every message's header, and a pair per message would drown the log
+  // (the hot-path exception). `refused` runs once per closed connection.
+  LdapMessageGuard.install(socket, {
+    log: log,
+    limits: function () {
+      return {
+        bound: Number(config.value('ldap.maxMessageBytes')),
+        unbound: Number(config.value('ldap.maxMessageBytesBeforeBind'))
+      };
+    },
+    isBound: function (one) {
+      const dn = one.ldap && one.ldap.bindDN ? String(one.ldap.bindDN) : '';
+      return !!dn && dn.toLowerCase() !== 'cn=anonymous';
+    },
+    refused: function (one, refusal) {
+      log.debug("Entering refused().");
+      const now = Date.now();
+      if (now - messageRefusalLoggedAt < 60000) {
+        messageRefusalsUnlogged += 1;
+        log.debug("Leaving refused(). Counted, not logged.");
+        return;
+      }
+      const peer = (one.ldap && one.ldap.id) ||
+        ((one.remoteAddress || '?') + ':' + (one.remotePort || '?'));
+      log.warn(errorCodes.tag('STS-LDAP-0227') + 'ldap: closed the ' +
+               'connection from ' + peer + ': ' +
+               (refusal.reason === 'indefinite'
+                 ? 'a message used BER\'s indefinite length, which LDAP ' +
+                   'does not allow'
+                 : 'a message declared ' + refusal.declared + ' bytes, ' +
+                   'over the ' + refusal.limit + ' allowed ' +
+                   (refusal.bound ? '(ldap.maxMessageBytes)'
+                     : 'before a bind (ldap.maxMessageBytesBeforeBind)')) +
+               '. None of it was read.' +
+               (messageRefusalsUnlogged
+                 ? ' ' + messageRefusalsUnlogged + ' more connection(s) ' +
+                   'were closed for this in the last minute.' : ''));
+      messageRefusalLoggedAt = now;
+      messageRefusalsUnlogged = 0;
+      log.debug("Leaving refused().");
+    }
+  });
+  log.debug("Leaving guardMessages().");
+}
 
 // A socket this process now holds, until it closes. A function of its own so
 // that `tests/cluster_signout_signals.js` can hand it a socket without a
@@ -18985,6 +19798,51 @@ function notePasswordChangeRequired(req, dn, username) {
     // The write stands whether or not a receiver is told.
   }
   log.debug('Leaving notePasswordChangeRequired().');
+}
+
+// A PASSWORD SOMEBODY ELSE WROTE OVER THE SOCKET IS TEMPORARY (#2160, ASVS
+// 5.0.0 6.4.6; rcbj, 2026-11-24): `admin-core/admin_actions.ts`'s
+// `typedPasswordIsTemporary()` asked at this door. An administrator's
+// `ldapmodify` or `ldapadd` of a person's `userPassword` knows the password
+// it wrote, so `pwdReset` goes on in the SAME write and the person chooses
+// their own at the next sign-in. Not:
+//
+//   * where passwords are not verified (`mode.verifiesCredentials()`): in
+//     development no door checks one;
+//   * a person writing their OWN entry: the bound DN is the entry, and a
+//     person's own change is never temporary;
+//   * a service account (common/CLAUDE.md 3cd): a program's password, which
+//     a program has no sign-in screen to change;
+//   * a pre-hashed value: the writer sent a hash, not a password it knows,
+//     and product refuses one anyway (STS-LDAP-0011). Only a value this
+//     door hashed (`written.password`) is asked about.
+/**
+ * Says whether a password written over LDAP must be changed at the person's
+ * next sign-in: product mode, somebody else's entry, not a service account.
+ *
+ * @param req - the LDAP request
+ * @param dn - the entry written
+ * @param attributes - the entry's attributes as they will be stored
+ * @returns true when `pwdReset` must be set with the password
+ */
+function adminWrittenPasswordIsTemporary(req, dn, attributes) {
+  log.debug('Entering adminWrittenPasswordIsTemporary(). ' + dn);
+  if (!mode.verifiesCredentials()) {
+    log.debug('Leaving adminWrittenPasswordIsTemporary(). Development.');
+    return false;
+  }
+  const bound = boundDnOf(req);
+  if (bound && normalizeDn(bound) === normalizeDn(dn)) {
+    log.debug('Leaving adminWrittenPasswordIsTemporary(). Their own.');
+    return false;
+  }
+  if (serviceAccounts.isServiceAccount(attributes)) {
+    log.debug('Leaving adminWrittenPasswordIsTemporary(). A service ' +
+              'account.');
+    return false;
+  }
+  log.debug('Leaving adminWrittenPasswordIsTemporary(). Temporary.');
+  return true;
 }
 
 function boundDnOf(req) {
@@ -20330,6 +21188,16 @@ function externalBind(req, res, next) {
       new ldap.InvalidCredentialsError('the bind name is not the entry this ' +
         'client certificate was issued to; send an empty name'));
   }
+  // A REQUIRED DYNAMIC ROLE (#1072), as at a simple bind.
+  const roleRefusal = require('../authn/role_selection').noBrowserRefusal({
+    username: usernameOfEntry(entry), application: '',
+    protocol: 'LDAP' });
+  if (roleRefusal) {
+    log.debug("Leaving externalBind(). A required dynamic role.");
+    return refuse('STS-XACML-0332', 'a required dynamic role cannot be ' +
+      'chosen over LDAP', new ldap.UnwillingToPerformError(roleRefusal.why),
+      entryDn);
+  }
   const authz = authzIdOf(req);
   if (authz.kind !== 'none') {
     const sameEntry = authz.kind === 'dn'
@@ -20627,6 +21495,12 @@ server.bind('', function (req, res, next) {
   // right password was refused while the session was held here, and a home
   // that could not be asked read as a wrong password rather than
   // STS-CELL-0147.
+  // #1955 P5: a credential that ends in this person's YubiKey public
+  // identity is a password plus that OTP. The password is checked first.
+  // A matched public identity is never tried again as the whole password.
+  const yubiParts = dn
+    ? credentials.yubiPasswordSplit(dn, credentials_value) : null;
+  const passwordForBind = yubiParts ? yubiParts.password : credentials_value;
   const localEntry = dn ? getEntry(dn) : null;
   const projected = !!localEntry && String(localEntry.origin || '')
     .indexOf('projection') === 0;
@@ -20641,7 +21515,7 @@ server.bind('', function (req, res, next) {
       return answerOnce(err);
     };
     log.debug("Leaving finishBind(). Asking the person's home cell.");
-    return verifyInHomeCell(dn, credentials_value).then(settleBind,
+    return verifyInHomeCell(dn, passwordForBind).then(afterPassword,
       function (e) {
         log.error(errorCodes.tag('STS-CELL-0147') + 'ldap: a bind as ' + dn +
                   ' could not be verified in its home cell: ' +
@@ -20664,16 +21538,45 @@ server.bind('', function (req, res, next) {
     // `door: 'ldap'` (#101): a password-only door, so in product a person
     // with a second factor is refused their password here and an app password
     // scoped to `ldap` is accepted instead (`common/credentials.ts`).
+    // A matched YubiKey suffix is the exception: the password half is told
+    // the second factor is asked next, and the OTP is required after it.
+    const verifyOpts = { via: 'an LDAP simple bind', door: 'ldap' };
+    if (yubiParts) {
+      verifyOpts.secondFactor = 'asked-next';
+    }
     log.debug("Leaving finishBind(). Settling a local verdict.");
-    return settleBind(credentials.verify(dn, credentials_value,
-                                         { via: 'an LDAP simple bind',
-                                           door: 'ldap' }));
+    return afterPassword(credentials.verify(dn, passwordForBind, verifyOpts));
   }
   log.debug("Leaving finishBind(). Accepted.");
   return bindAccepted();
 
   // THE VERDICT, WHEREVER IT WAS REACHED — here, or in the person's home
   // cell. Everything below is what followed the verification before #98.
+  // A matched YubiKey OTP is checked after the password, and the handler
+  // is marked asynchronous before this returns that promise.
+  function afterPassword(checked) {
+    log.debug("Entering afterPassword().");
+    if (!yubiParts || !checked || !checked.ok) {
+      log.debug("Leaving afterPassword(). The password's answer.");
+      return settleBind(checked);
+    }
+    req.stsAsyncOperation = true;
+    log.debug("Leaving afterPassword(). Checking the YubiKey OTP.");
+    return credentials.verifyYubiOtpAsync(dn, yubiParts.otp).then(
+      function (otp) {
+        return settleBind(otp && otp.ok ? checked : otp);
+      },
+      function (e) {
+        log.error(errorCodes.tag('STS-YUBIOTP-0027') +
+                  'ldap: a bind as ' + dn + ' could not check its YubiKey ' +
+                  'OTP: ' + ((e && e.message) || e));
+        return settleBind(errorCodes.mark({
+          ok: false, reason: 'store',
+          detail: 'the one-time password could not be checked'
+        }, 'STS-YUBIOTP-0027'));
+      });
+  }
+
   function settleBind(checked) {
     log.debug("Entering settleBind().");
     // FAIL-CLOSED (#98 D6): a home cell that cannot be asked is not a wrong
@@ -20746,6 +21649,22 @@ server.bind('', function (req, res, next) {
   // THE ACCEPTED BIND, split out so the shared limiter's answer can come first.
   function bindAccepted() {
   log.debug("Entering bindAccepted().");
+  // A REQUIRED DYNAMIC ROLE (#1072, rcbj's decision 5): a bind has no
+  // sign-in screen to choose one on and names no application, so a person
+  // a realm-wide required role would ask is refused, unwillingToPerform.
+  const boundEntry = dn ? getEntry(dn) : null;
+  const roleRefusal = boundEntry && isPersonEntry(boundEntry)
+    ? require('../authn/role_selection').noBrowserRefusal({
+      username: usernameOfEntry(boundEntry), application: '',
+      protocol: 'LDAP' })
+    : null;
+  if (roleRefusal) {
+    log.debug("Leaving bindAccepted(). A required dynamic role.");
+    return next(ldapRefusal(req, 'STS-XACML-0332', 'a bind as ' + dn +
+      ' was refused: a required dynamic role cannot be chosen over LDAP',
+      coded('STS-XACML-0332', new ldap.UnwillingToPerformError(
+        roleRefusal.why)), dn, 'refused'));
+  }
   // A successful bind writes TWO audit rows and they are not duplicates: this
   // one says an LDAP bind happened on this socket, and the `authentication` row
   // recordAuthentication() writes below says a credential was accepted — the
@@ -21230,6 +22149,15 @@ function ldapAddNow(req, res, next) {
                                       via: 'an LDAP add' });
   }
   if (addedPassword.password) {
+    // A person added with a password by somebody else must choose their own
+    // at the first sign-in (#2160): see adminWrittenPasswordIsTemporary().
+    if (addedEntry.ok !== false && isPersonEntry(addedEntry) &&
+        adminWrittenPasswordIsTemporary(req, addedEntry.dn,
+                                        addedEntry.attributes)) {
+      addedEntry.attributes.pwdreset = ['TRUE'];
+      touchDirectory(addedEntry.dn);
+      notePasswordChangeRequired(req, addedEntry.dn, addedPassword.name);
+    }
     credentials.passwordWritten(addedPassword.name, addedPassword.password);
     notePasswordWritten(req, addedEntry.dn, addedPassword.name, 'create');
   } else if (isPersonEntry(addedEntry) &&
@@ -21244,7 +22172,8 @@ function ldapAddNow(req, res, next) {
     const addSource = ldapMailSource(req, addedEntry.dn);
     verifyWrittenMail(addedEntry, {}, addSource);
     noteAccountChange('created', addedEntry.dn, {},
-                      attributeSnapshot(addedEntry));
+                      attributeSnapshot(addedEntry),
+                      { actor: 'ldap:' + boundDnOf(req), door: 'ldap add' });
   }
   // Hot (#627): once per add, and the count is a list built to be logged.
   if (log.debug()) {
@@ -21702,7 +22631,8 @@ server.del('', function (req, res, next) {
     // The one path every door's person delete takes (#351): by its DN, and
     // what they held read and ended as a batch — of one, here, since an LDAP
     // DelRequest names one entry (RFC 4511 section 4.8).
-    removePersonEntry(stored, 'an LDAP delete');
+    removePersonEntry(stored, 'an LDAP delete',
+                      { actor: 'ldap:' + boundDnOf(req) });
   } else {
     entries.delete(normalizeDn(dn));
     // By its DN (#351): a leaf, so nothing else moved, and a DN-less touch
@@ -21896,6 +22826,30 @@ function ldapModifyNow(req, res, next) {
         dn));
     }
   }
+  // A PIV CARD UUID THIS MODIFY WRITES (#1955 P2), normalised in the working
+  // copy and held unique, before anything is committed: putEntry()'s check
+  // does not see a modify.
+  const cardRefusal = pivCardUuidRefusal(stored.dn, working);
+  if (cardRefusal) {
+    log.debug('Leaving the LDAP modify handler. A card UUID was refused.');
+    // error-code: none — the refusal's own code, STS-PIV-0034 or -0035
+    return next(ldapRefusal(req, cardRefusal.code, 'a modify of ' + dn +
+      ' was refused: ' + cardRefusal.why,
+      coded(cardRefusal.code, new ldap.ConstraintViolationError(
+        cardRefusal.why)), dn));
+  }
+  // A CERTIFICATE SIGN-IN BINDING THIS MODIFY WRITES (#2012), the card
+  // UUID's way.
+  const bindingRefusal = certificateBindingRefusal(stored.dn, working);
+  if (bindingRefusal) {
+    log.debug('Leaving the LDAP modify handler. A certificate binding was ' +
+              'refused.');
+    // error-code: none — the refusal's own code, STS-TLS-0069 or -0070
+    return next(ldapRefusal(req, bindingRefusal.code, 'a modify of ' + dn +
+      ' was refused: ' + bindingRefusal.why,
+      coded(bindingRefusal.code, new ldap.ConstraintViolationError(
+        bindingRefusal.why)), dn));
+  }
   // AND A PASSWORD THIS MODIFY SETS meets the password policy against the
   // entry as it was BEFORE the modify — its current password and its history —
   // and is hashed into the working copy. Here, after every change is applied
@@ -21978,6 +22932,18 @@ function ldapModifyNow(req, res, next) {
           'exist; nothing is stored at ' + nothing.join(', ')), dn));
     }
   }
+  // Somebody else's password is a temporary one (#2160): see
+  // adminWrittenPasswordIsTemporary(). In the same write, so the RISC
+  // notice below sees `pwdReset` go on.
+  if (modifiedPassword.password &&
+      adminWrittenPasswordIsTemporary(req, stored.dn, working)) {
+    Object.keys(working).forEach(function (key) {
+      if (key !== 'pwdreset' && key.toLowerCase() === 'pwdreset') {
+        delete working[key];
+      }
+    });
+    working.pwdreset = ['TRUE'];
+  }
   working.modifytimestamp = [generalizedTime()];
   stored.attributes = working;
   // THE DN IS NAMED (#754). A modify changes the one entry it names, and a
@@ -22039,8 +23005,10 @@ function ldapModifyNow(req, res, next) {
         modifySource === 'ldap-self') {
       startSelfVerification(stored, beforeModify);
     }
+    // The bound DN is the writer the credential observer audits (#2050).
     noteAccountChange('updated', stored.dn, beforeModify,
-                      attributeSnapshot(stored));
+                      attributeSnapshot(stored),
+                      { actor: 'ldap:' + boundDnOf(req), door: 'ldap modify' });
   } else if (groupRuleFor(stored)) {
     noteMembershipChange(stored.dn, beforeModify, stored.attributes);
   } else if (isRoleEntry(stored)) {
@@ -22429,6 +23397,25 @@ server.search('', function (req, res, next) {
   if (readRefusal) {
     log.debug('Leaving the LDAP search handler. Not bound.');
     return next(readRefusal);
+  }
+  // A SUBSTRING ASSERTION WIDER THAN THE CAP IS REFUSED BEFORE ANY ENTRY IS
+  // READ (#2137, ASVS 5.0.0 1.3.12). `ldap_matching.ts` matches a substring
+  // in one linear pass, so a wide one is no longer a backtracking bomb, but
+  // its cost is still components x value length for every value in scope,
+  // and nothing legitimate needs more than a handful; the constant is argued
+  // there. adminLimitExceeded (11) is RFC 4511's "a server-defined
+  // administrative limit", which this is, and the client is told the limit.
+  const widest = ldapMatching.widestSubstring(req.filter);
+  if (widest > ldapMatching.MAX_SUBSTRING_COMPONENTS) {
+    log.debug('Leaving the LDAP search handler. A substring assertion is ' +
+              'too wide.');
+    return next(ldapRefusal(req, 'STS-LDAP-0226', 'a search of ' + base +
+      ' was refused: a substring assertion held ' + widest +
+      ' components, over the limit of ' +
+      ldapMatching.MAX_SUBSTRING_COMPONENTS,
+      new ldap.AdminLimitExceededError('a substring assertion may hold at ' +
+        'most ' + ldapMatching.MAX_SUBSTRING_COMPONENTS + ' components'),
+      base));
   }
   if (!inNamingContext(base)) {
     log.debug('Leaving the LDAP search handler. Outside the naming context.');
@@ -25701,6 +26688,269 @@ function deleteSignerAnchor(fingerprint) {
   return gone;
 }
 
+// ----- The named truststores (#2118) ---------------------------------------
+
+// The container, seeded on the first write: a realm built before #2118 has
+// none, and an empty one is nothing worth seeding into every realm.
+function putTruststoresContainer() {
+  log.debug("Entering putTruststoresContainer().");
+  putEntry(truststoresDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'truststores',
+    description: 'NAMED TRUSTSTORES (#2118): one stsTruststore entry per ' +
+      'truststore an administrator created, its certificates beneath it as ' +
+      'stsSignerTrustAnchor entries, and cn=assignments, which says which ' +
+      'truststores each use case of this realm trusts. The default ' +
+      'realm\'s are service-wide. Writing here decides whose certificates ' +
+      'this service believes, so it is an administrative act. ' +
+      'common/truststores.ts owns what an entry is.'
+  }, { origin: 'seed' });
+  log.debug("Leaving putTruststoresContainer().");
+}
+
+function truststoreDn(name) {
+  log.debug("Entering truststoreDn().");
+  log.debug("Leaving truststoreDn().");
+  return 'cn=' + escapeDnValue(String(name)) + ',' + truststoresDn();
+}
+
+function hasClass(stored, wanted) {
+  log.debug("Entering hasClass().");
+  const found = (stored.attributes.objectclass || []).some(function (one) {
+    return String(one).toLowerCase() === wanted.toLowerCase();
+  });
+  log.debug("Leaving hasClass(). " + found);
+  return found;
+}
+
+function truststoreRows() {
+  log.debug("Entering truststoreRows().");
+  const container = normalizeDn(truststoresDn());
+  const rows = entriesUnder(truststoresDn()).filter(function (stored) {
+    return hasClass(stored, 'stsTruststore') &&
+      normalizeDn(stored.dn).endsWith(',' + container) &&
+      normalizeDn(stored.dn).split(',').length ===
+        container.split(',').length + 1;
+  }).map(function (stored) {
+    const a = stored.attributes;
+    return {
+      name: (a.cn || [])[0] || '',
+      description: (a.description || [])[0] || '',
+      kind: (a.ststruststorekind || [])[0] || 'x509',
+      // A key-set truststore's (#2149): its party and its keys.
+      party: (a.ststruststoreparty || [])[0] || '',
+      jwks: (a.ststruststorejwks || [])[0] || '',
+      jwksUri: (a.ststruststorejwksuri || [])[0] || '',
+      // An SSH CA truststore's (#2151): its keys, one per line.
+      sshKeys: (a.ststruststoresshkeys || [])[0] || '',
+      // A document truststore's (#2152): the document as text.
+      document: (a.ststruststoredocument || [])[0] || '',
+      addedBy: (a.ststrustanchoraddedby || [])[0] || '',
+      addedAt: stored.createdAt || ''
+    };
+  }).filter(function (row) {
+    return !!row.name;
+  });
+  log.debug("Leaving truststoreRows(). " + rows.length + ".");
+  return rows;
+}
+
+function writeTruststore(row) {
+  log.debug("Entering writeTruststore().");
+  const dn = truststoreDn(row.name);
+  if (!entries.get(normalizeDn(dn)) && cappedEntries() >= maxEntries()) {
+    log.debug("Leaving writeTruststore(). The directory is full.");
+    return false;
+  }
+  if (!entries.get(normalizeDn(truststoresDn()))) {
+    putTruststoresContainer();
+  }
+  const attributes = {
+    objectClass: ['top', 'stsTruststore'],
+    cn: String(row.name),
+    stsTruststoreKind: String(row.kind || 'x509'),
+    stsTrustAnchorAddedBy: String(row.addedBy || '')
+  };
+  if (row.description) {
+    attributes.description = String(row.description);
+  }
+  // A key-set truststore (#2149): written whole each time, so a changed key
+  // set or jwks_uri replaces the old one rather than accumulating beside it.
+  ['party', 'jwks', 'jwksUri', 'sshKeys', 'document'].forEach(
+    function (name) {
+      if (row[name]) {
+        attributes['stsTruststore' + name.charAt(0).toUpperCase() +
+                   name.slice(1)] = String(row[name]);
+      }
+    });
+  putEntry(dn, attributes, { origin: 'truststore' });
+  log.debug("Leaving writeTruststore().");
+  return true;
+}
+
+function deleteTruststore(name) {
+  log.debug("Entering deleteTruststore().");
+  const dn = truststoreDn(name);
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+  }
+  log.debug("Leaving deleteTruststore(). " + gone);
+  return gone;
+}
+
+function truststoreCertificateRows(name) {
+  log.debug("Entering truststoreCertificateRows().");
+  const parent = truststoreDn(name);
+  if (!entries.get(normalizeDn(parent))) {
+    log.debug("Leaving truststoreCertificateRows(). No such truststore.");
+    return [];
+  }
+  const rows = entriesUnder(parent).filter(function (stored) {
+    return hasClass(stored, 'stsSignerTrustAnchor');
+  }).map(function (stored) {
+    const a = stored.attributes;
+    return {
+      fingerprint: (a.ststrustanchorfingerprint || [])[0] || '',
+      pem: (a.ststrustanchorcertificate || [])[0] || '',
+      kind: (a.stssignertrustanchorkind || [])[0] || 'anchor',
+      addedBy: (a.ststrustanchoraddedby || [])[0] || '',
+      addedAt: stored.createdAt || ''
+    };
+  }).filter(function (row) {
+    return !!row.pem;
+  });
+  log.debug("Leaving truststoreCertificateRows(). " + rows.length + ".");
+  return rows;
+}
+
+function writeTruststoreCertificate(name, row) {
+  log.debug("Entering writeTruststoreCertificate().");
+  const parent = truststoreDn(name);
+  if (!entries.get(normalizeDn(parent))) {
+    log.debug("Leaving writeTruststoreCertificate(). No such truststore.");
+    return false;
+  }
+  const dn = 'cn=' + escapeDnValue(String(row.fingerprint)) + ',' + parent;
+  if (!entries.get(normalizeDn(dn)) && cappedEntries() >= maxEntries()) {
+    log.debug("Leaving writeTruststoreCertificate(). The directory is full.");
+    return false;
+  }
+  putEntry(dn, {
+    objectClass: ['top', 'stsSignerTrustAnchor'],
+    cn: String(row.fingerprint),
+    stsTrustAnchorFingerprint: String(row.fingerprint),
+    stsTrustAnchorCertificate: String(row.pem),
+    stsTrustAnchorAddedBy: String(row.addedBy || ''),
+    stsSignerTrustAnchorKind: String(row.kind)
+  }, { origin: 'truststore' });
+  if (realms.currentId() === realms.DEFAULT_ID) {
+    reapplyTlsTruststoresQuietly();
+  }
+  log.debug("Leaving writeTruststoreCertificate().");
+  return true;
+}
+
+function deleteTruststoreCertificate(name, fingerprint) {
+  log.debug("Entering deleteTruststoreCertificate().");
+  const dn = 'cn=' + escapeDnValue(String(fingerprint)) + ',' +
+             truststoreDn(name);
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+  }
+  if (gone && realms.currentId() === realms.DEFAULT_ID) {
+    reapplyTlsTruststoresQuietly();
+  }
+  log.debug("Leaving deleteTruststoreCertificate(). " + gone);
+  return gone;
+}
+
+function truststoreAssignmentsDn() {
+  log.debug("Entering truststoreAssignmentsDn().");
+  log.debug("Leaving truststoreAssignmentsDn().");
+  return 'cn=assignments,' + truststoresDn();
+}
+
+// `{ <use case>: [names] }` from values `<use case> <name>,<name>`: a use
+// case id has no space and a truststore name no comma, so one attribute
+// holds the whole map with no grammar beyond that.
+function readTruststoreAssignments() {
+  log.debug("Entering readTruststoreAssignments().");
+  const stored = entries.get(normalizeDn(truststoreAssignmentsDn()));
+  const out = {};
+  ((stored && stored.attributes.ststruststoreassignment) || [])
+    .forEach(function (value) {
+      const text = String(value);
+      const space = text.indexOf(' ');
+      if (space <= 0) {
+        return;
+      }
+      const names = text.slice(space + 1).split(',').map(function (one) {
+        return one.trim();
+      }).filter(Boolean);
+      if (names.length) {
+        out[text.slice(0, space)] = names;
+      }
+    });
+  log.debug("Leaving readTruststoreAssignments(). " +
+            Object.keys(out).length + ".");
+  return out;
+}
+
+function writeTruststoreAssignments(map) {
+  log.debug("Entering writeTruststoreAssignments().");
+  const dn = truststoreAssignmentsDn();
+  const values = Object.keys(map || {}).sort().filter(function (useCase) {
+    return (map[useCase] || []).length > 0;
+  }).map(function (useCase) {
+    return useCase + ' ' + map[useCase].join(',');
+  });
+  if (!values.length) {
+    const gone = entries.delete(normalizeDn(dn));
+    if (gone) {
+      touchDirectory(dn);
+    }
+    if (realms.currentId() === realms.DEFAULT_ID) {
+      reapplyTlsTruststoresQuietly();
+    }
+    log.debug("Leaving writeTruststoreAssignments(). Cleared.");
+    return true;
+  }
+  if (!entries.get(normalizeDn(dn)) && cappedEntries() >= maxEntries()) {
+    log.debug("Leaving writeTruststoreAssignments(). The directory is full.");
+    return false;
+  }
+  if (!entries.get(normalizeDn(truststoresDn()))) {
+    putTruststoresContainer();
+  }
+  putEntry(dn, {
+    objectClass: ['top', 'stsTruststoreAssignments'],
+    cn: 'assignments',
+    stsTruststoreAssignment: values
+  }, { origin: 'truststore' });
+  if (realms.currentId() === realms.DEFAULT_ID) {
+    reapplyTlsTruststoresQuietly();
+  }
+  log.debug("Leaving writeTruststoreAssignments(). " + values.length + ".");
+  return true;
+}
+
+// One of the functions above, in the realm named: the registry's slot takes
+// a realm id because a service-wide use case resolves in the default realm
+// whatever realm the request is in. An unknown realm answers `none`.
+function inTruststoreRealm(fn, none) {
+  log.debug("Entering inTruststoreRealm().");
+  log.debug("Leaving inTruststoreRealm().");
+  return function (realmId) {
+    const realm = realms.get(realmId);
+    const args = Array.prototype.slice.call(arguments, 1);
+    return realm ? realms.run(realm, function () {
+      return fn.apply(null, args);
+    }) : none;
+  };
+}
+
 // One of the three above, in the realm named: the store's slot takes a realm
 // id because the door's caller may be in a different one.
 function inRealmNamed(fn) {
@@ -25729,6 +26979,24 @@ function isTrustAnchorKey(realmId, key) {
   });
   const k = String(key || '');
   log.debug("Leaving isTrustAnchorKey().");
+  return k !== container &&
+         k.slice(-(container.length + 1)) === ',' + container;
+}
+
+// The same test for `ou=truststores` (#2118): a named truststore, its
+// certificates or the assignments, in the DEFAULT realm, whose truststores
+// are the service-wide ones a listener's `tls-client` may be assigned.
+function isNamedTruststoreKey(realmId, key) {
+  log.debug("Entering isNamedTruststoreKey().");
+  if (String(realmId || realms.DEFAULT_ID) !== realms.DEFAULT_ID) {
+    log.debug("Leaving isNamedTruststoreKey().");
+    return false;
+  }
+  const container = realms.run(realms.DEFAULT_REALM, function () {
+    return normalizeDn(truststoresDn());
+  });
+  const k = String(key || '');
+  log.debug("Leaving isNamedTruststoreKey().");
   return k !== container &&
          k.slice(-(container.length + 1)) === ',' + container;
 }
@@ -27670,6 +28938,41 @@ function tellAccountObservers(event) {
 // handler is about to rewrite in place, so every "before" would equal its
 // "after" and nothing would ever look changed — which is a feature that is
 // silently off rather than one that fails.
+// ---------------------------------------------------------------------------
+// THE TWO WRITERS THAT CHANGE A PERSON'S CERTIFICATES IN PLACE (#2247): the
+// enrollment slot's `write()` (`stsEnrolledCertificate`, every certificate
+// ACME, EST and SCEP issue, a PIV slot's among them) and
+// `changeStoredCertificate()` (`userCertificate`, a certificate sign-in's).
+// Neither goes through noteAccountChange() — they are not account changes,
+// and its account observers and credential notices have callers of their
+// own — so the entry observer's WATCHERS (`common/entry_observer.ts`) are
+// told here instead, with the entry before and after: the credential expiry
+// index (`common/credential_expiry.ts`) is the one that reads these two.
+// The owners of the other credential attributes are asked too and find
+// nothing of theirs changed. In the entry's realm; a cache hit.
+// ---------------------------------------------------------------------------
+function tellCredentialWatchers(stored, before, door) {
+  log.debug('Entering tellCredentialWatchers(). ' + door);
+  try {
+    const dn = String(stored.dn);
+    const credentialRealm = realmFor(dn);
+    const uuid = String((stored.attributes.entryuuid || [])[0] || '');
+    const after = attributeSnapshot(stored);
+    realms.run(credentialRealm, function () {
+      require('../common/entry_observer').entryChanged({
+        kind: 'updated', dn: dn, username: canonicalUsernameOfDn(dn),
+        realm: credentialRealm.id,
+        subject: uuid ? 'urn:uuid:' + uuid.replace(/^urn:uuid:/i, '') : '',
+        actor: '', door: door, before: before, after: after });
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-LDAP-0225') + 'ldap: the certificates ' +
+              'of ' + String(stored && stored.dn) + ' could not be handed ' +
+              'to their watchers: ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving tellCredentialWatchers().');
+}
+
 function attributeSnapshot(stored) {
   log.debug('Entering attributeSnapshot().');
   const out = {};
@@ -27783,6 +29086,114 @@ function startSelfVerification(stored, before) {
   log.debug('Leaving startSelfVerification().');
 }
 
+// ---------------------------------------------------------------------------
+// A CREDENTIAL HELD AS AN ATTRIBUTE, ADDED OR REMOVED (#2163, ASVS 5.0.0
+// 6.3.7). The person is mailed (`common/mail_uses.ts`'s
+// `credentialChanged()`) when an UPDATE of their entry adds or removes a
+// value of one of these. A created entry is told nothing — the account is
+// new — and a deleted one has nobody to tell. Who wrote it decides the
+// line's "by": the person themselves, or anybody else, who is an
+// administrator or a program acting for one; a write by the service's own
+// jobs (an actor of `system`) is not told. Several values in one write are
+// one notice (`batch()`). No CAEP event: a binding is not a certificate a
+// receiver could name, and a mail-encryption key signs nobody in. Lazily
+// required, for account_state's reason; never throws into the write.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_ATTRIBUTES = [
+  { kind: 'certificate-binding',
+    names: ['stscertificatebinding', 'stspivcarduuid'] },
+  { kind: 'smime',
+    names: ['usersmimecertificate', 'usersmimecertificate;binary'] },
+  { kind: 'openpgp', names: ['stsopenpgpfingerprint'], replaces: true }
+];
+
+/**
+ * Tells the person of every credential attribute value an update added or
+ * removed.
+ *
+ * @param dn - the entry
+ * @param before - its attributes before, lower-cased names
+ * @param after - and after
+ * @param options - the write's `{ actor }`, if it names one
+ * @returns how many lines were told
+ */
+function noteCredentialAttributes(dn, before, after, options) {
+  log.debug('Entering noteCredentialAttributes().');
+  const valuesAt = function (attributes, names) {
+    log.debug('Entering valuesAt().');
+    const out = [];
+    names.forEach(function (name) {
+      valuesOf((attributes || {})[name]).forEach(function (one) {
+        const value = String(one);
+        if (value && out.indexOf(value) < 0) {
+          out.push(value);
+        }
+      });
+    });
+    log.debug('Leaving valuesAt().');
+    return out;
+  };
+  const lines = [];
+  CREDENTIAL_ATTRIBUTES.forEach(function (held) {
+    const was = valuesAt(before, held.names);
+    const now = valuesAt(after, held.names);
+    const added = now.filter(function (v) {
+      return was.indexOf(v) < 0;
+    });
+    const removed = was.filter(function (v) {
+      return now.indexOf(v) < 0;
+    });
+    if (held.replaces && added.length && removed.length) {
+      lines.push({ kind: held.kind, change: 'changed' });
+      return;
+    }
+    added.forEach(function () {
+      lines.push({ kind: held.kind, change: 'added' });
+    });
+    removed.forEach(function () {
+      lines.push({ kind: held.kind, change: 'removed' });
+    });
+  });
+  if (!lines.length) {
+    log.debug('Leaving noteCredentialAttributes(). Nothing moved.');
+    return 0;
+  }
+  const username = canonicalUsernameOfDn(dn);
+  let actor = String((options && options.actor) || '');
+  try {
+    if (!actor) {
+      actor = String(require('../common/audit').currentActor() || '');
+    }
+    if (/^system\b/i.test(actor)) {
+      log.debug('Leaving noteCredentialAttributes(). The service\'s own.');
+      return 0;
+    }
+    // The person by name, by DN (an LDAP bind) or by subject (a token's
+    // `urn:uuid:` of their entryUUID).
+    const uuid = String(valuesOf((after || {}).entryuuid)[0] || '')
+      .toLowerCase();
+    const self = actor.toLowerCase() === String(username).toLowerCase() ||
+      (actor.indexOf('=') > 0 && normalizeDn(actor) === normalizeDn(dn)) ||
+      (!!uuid && actor.toLowerCase().replace(/^urn:uuid:/, '') === uuid);
+    const uses = require('../common/mail_uses');
+    realms.run(realmFor(dn), function () {
+      uses.batch(function () {
+        lines.forEach(function (line) {
+          uses.credentialChanged({ username: username, kind: line.kind,
+                                   change: line.change, label: '',
+                                   by: self ? 'user' : 'admin' });
+        });
+      });
+    });
+  } catch (e) {
+    log.warn(errorCodes.tag('STS-MAIL-0031') + 'ldap: a credential of ' + dn +
+             ' changed and the person could not be told: ' +
+             ((e && e.message) || e));
+  }
+  log.debug('Leaving noteCredentialAttributes(). ' + lines.length);
+  return lines.length;
+}
+
 function noteAccountChange(kind, dn, before, after, options) {
   log.debug('Entering noteAccountChange(). ' + kind + ' ' + dn);
   // A DELETED PERSON'S PHOTO GOES WITH THEM (#719). Its address has answered
@@ -27891,6 +29302,59 @@ function noteAccountChange(kind, dn, before, after, options) {
                ' changed and its former address could not be told: ' +
                ((e && e.message) || e));
     }
+    // AND WHAT WAS BOUND TO THE FORMER ADDRESS IS RETIRED (#1955 P6): an
+    // OpenPGP key no valid user id of which names the new address, and an
+    // S/MIME choice whose certificate does not name it
+    // (`common/openpgp_keys.ts`, `addressChanged()`). After the notice
+    // above, which is still encrypted to the key that names the former
+    // address; and in a promise job, so its own writes come after this
+    // one rather than inside it. Required here rather than named: the
+    // module is already loaded (it takes its directory slot from this
+    // one), so the require is a cache hit.
+    const changedName = canonicalUsernameOfDn(dn);
+    const changedRealm = realmFor(dn);
+    realms.run(changedRealm, function () {
+      Promise.resolve().then(function () {
+        return require('../common/openpgp_keys').addressChanged(
+          changedName, mailBefore, mailAfter);
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-OPENPGP-0030') + 'ldap: the address ' +
+                  'of ' + dn + ' changed and what was bound to the former ' +
+                  'one could not be retired: ' + ((e && e.message) || e));
+      });
+    });
+  }
+  // THE PERSON'S CREDENTIAL ATTRIBUTES (#2050, #2051): the entry is the
+  // master of their S/MIME and SSH user certificates and their tokens, and
+  // `common/entry_observer.ts` hands each changed one to the module whose
+  // index it is, for this one entry — the only thing that keeps those
+  // indexes right day to day. Asked before the observer check, because it
+  // is no account observer's business; in the entry's realm. A cache hit:
+  // every owner requires it long before this module loads.
+  try {
+    const credentialRealm = realmFor(dn);
+    const uuid = String((((after && after.entryuuid) || []).length
+      ? after.entryuuid : ((before && before.entryuuid) || []))[0] || '');
+    realms.run(credentialRealm, function () {
+      require('../common/entry_observer').entryChanged({
+        kind: String(kind), dn: String(dn),
+        username: canonicalUsernameOfDn(dn), realm: credentialRealm.id,
+        subject: uuid ? 'urn:uuid:' + uuid.replace(/^urn:uuid:/i, '') : '',
+        actor: String((options && options.actor) || ''),
+        door: String((options && options.door) || 'a directory write'),
+        before: before || {}, after: after || {} });
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-LDAP-0225') + 'ldap: the credential ' +
+              'attributes of ' + dn + ' could not be handed to their ' +
+              'owners: ' + ((e && e.message) || e));
+  }
+  // THE CREDENTIALS HELD ONLY AS ATTRIBUTES, TOLD TO THE PERSON (#2163):
+  // certificate sign-in bindings, an S/MIME certificate, an OpenPGP key.
+  // Every door writes them here — the console, `/admin-api`, the portal,
+  // SCIM, an LDAP modify — so this is where they are told.
+  if (String(kind) === 'updated') {
+    noteCredentialAttributes(dn, before, after, options);
   }
   if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');
@@ -28273,6 +29737,9 @@ function noteApplicationRemoved(stored, via) {
   // registered again under it was listed them (forgetHolderCertificates()).
   forgetHolderCertificates('application', identifier, '', a,
                            String(stored.dn), via);
+  // AND ITS EMBEDDED PEPS ARE UNBOUND (#2025): an application registered
+  // later under the same identifier must not inherit them.
+  pepBinding.shared().applicationRemoved(identifier, via);
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,
@@ -29261,7 +30728,8 @@ function removePersonEntry(stored, door, options) {
   // actually happened; and with the name carried, because
   // canonicalUsernameOfDn() can no longer read an entry that is not there.
   noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
-                    { door: door });
+                    Object.assign({ door: door }, options && options.actor
+                      ? { actor: String(options.actor) } : {}));
   // AND OUT OF EVERY GROUP AND ROLE THAT NAMED THEM (2026-11-10, #1612):
   // somebody made again under the username would otherwise be in the same
   // groups and hold the same roles (forgetGroupMemberships(),
@@ -32291,6 +33759,8 @@ module.exports = {
   // stores, the one writer the console and /admin-api go through, and the
   // index's state for the tests.
   certificateHolders: certificateHolders,
+  pivCardHolders: pivCardHolders,
+  certificateBindingHolders: certificateBindingHolders,
   storedCertificatesOf: storedCertificatesOf,
   changeStoredCertificate: changeStoredCertificate,
   certificateIndexState: certificateIndexState,

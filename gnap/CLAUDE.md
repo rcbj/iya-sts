@@ -1,7 +1,7 @@
 # CLAUDE.md — `gnap/`
 
 **The Grant Negotiation and Authorization Protocol** (RFC 9635) and its
-**resource server connections** (RFC 9767), added 2026-09-12. `docs/v1.1.0/gnap.md` is
+**resource server connections** (RFC 9767), added 2026-09-12. `docs/v1.2.0/gnap.md` is
 the user-facing half; this is why it is built the way it is.
 
 ## What was asked for, and the four decisions that shaped it
@@ -81,7 +81,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_subject.ts` | sub_ids and the `id_token` / `saml2` assertions |
 | `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
-| `gnap_signals.ts` | CAEP emission and the SSF subject scope — a web application's and, since #432, a resource server's |
+| `gnap_signals.ts` | CAEP emission and the SSF subject scope — a web application's and, since #432, a resource server's. Since #2234 a GNAP CLIENT's stream is also held to `ssf/application_sessions.ts`'s active-session scope: a person counts while they hold a LIVE grant they approved to it (`gnap_store.ts`'s `grantsApprovedTo()`, an index on the grants), and a resource server's stream is left to `rsCovers()` |
 | `gnap_revocation.ts` | what ends a grant from OUTSIDE the protocol (#432) — a sign-out, a disable, a deleted client or its key removed, a compromised device, a partner's signal — and the check at use; see *What ends a grant from outside the protocol* |
 | `gnap_delegation.ts` | who may act for whom (#432 phase 1): impersonation by assertion and RFC 9767 derivation asked of #186's delegation policy, recorded in the delegation register; the subset rule and its one extension point; the actor chain and its cap — see *Delegation* below |
 | `gnap_rights.ts` | each access right against the access-type catalogue and the issuance policy (#432 phases 3 and 4): well-formedness, the `issue-gnap-right` facts and verdicts, narrowing, "derivable from", the introspection view — see *Each right a policy question* below |
@@ -170,7 +170,7 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
 * **`/:as/gnap` matches `/admin/gnap`.** Reserved first segments fall through
   (`RESERVED_AS_NAMES`); the console route is registered later and still wins.
 * **A JWT's type is its HEADER `typ`, `gnap-at+jwt` (#157, 2026-10-05).** Until
-  then the header said `JWT`, `docs/v1.1.0/gnap.md` said it said `GNAP`, and
+  then the header said `JWT`, `docs/v1.2.0/gnap.md` said it said `GNAP`, and
   `GnapTokens.verify()` read the PAYLOAD's `typ: GNAP` — the token register's
   private marker, the same kind as OAuth's `Bearer`. Every JWT a realm signs
   uses one key, so explicit typing (RFC 8725 section 3.11) is what tells a
@@ -189,7 +189,7 @@ in the original token's audience — and could then ADD any right registered for
 a downstream resource server. They are Kerberos's S4U2Self and S4U2Proxy in
 another protocol, so `gnap_delegation.ts` puts **#186's two questions** to the
 issuance policy through `common/delegation_policy.ts`, exactly as the token
-exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/v1.1.0/delegation.md`).
+exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/v1.2.0/delegation.md`).
 
 * **No GNAP setting decides who may act.** rcbj's #186 rule is one set of
   controls on the entries for every protocol, and GNAP is a fourth protocol
@@ -460,7 +460,12 @@ token revocation send CAEP `session-revoked` (session `gnap-grant:<id>` /
 `gnap-token:<jti>`), modification sends `token-claims-change`, and the scope
 installed with `ssf_streams.setSubjectScope('gnap', …)` refuses a stream owned by
 a GNAP web application (a `gnap-client` with a finish URI) any subject who never
-approved a grant to it. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
+approved a grant to it. **A subject naming the stream's own application and no person is
+covered (#2028)** (`namesOnlyItself()`, through `ssf_subjects.applicationIdOf()`):
+`pep-policies-changed` is about the application its embedded PEP is bound to,
+is sent only to that application's streams, and both rules are about people,
+so it was refused on every GNAP-owned stream and a local PEP embedded in a
+GNAP client never heard of a change. `tests/pep_policies_changed.js` G. `ssf/ssf.ts`'s `emitProtocolEvent()` is the delivery,
 and `ssf/ssf_auth.ts`'s `gnap` scheme is how an application owns a stream as
 itself.
 
@@ -538,7 +543,7 @@ introspection. Each format now gets the mechanism it HAS, and none is invented:
 |---|---|---|
 | `jwt-signed`, `jwt-encrypted` | a Token Status List `status.status_list` claim, in the realm's ONE access-token list it shares with OAuth's RFC 9068 tokens (rcbj's decision 4) | `oauth-oidc/access_token_status.ts`, which argues the list; `gnap_tokens.ts` allocates in `mint()` |
 | `biscuit` | the revoked tokens' revocation identifiers at `GET /gnap/biscuit/revocations` — **this service's own**, since no document says where a biscuit revocation list is published | `token_biscuit.ts` (read at mint), `gnap_store.ts` (`saveToken()`), `gnap.ts` |
-| `macaroon`, `zcap` | **none** — introspection, or a short `gnap.accessTokenLifetimeS` and rotation; documented in `docs/v1.1.0/gnap.md`, no format invented | — |
+| `macaroon`, `zcap` | **none** — introspection, or a short `gnap.accessTokenLifetimeS` and rotation; documented in `docs/v1.2.0/gnap.md`, no format invented | — |
 
 Why each piece is where it is:
 
@@ -967,7 +972,12 @@ needs here:
   `/gnap/interaction.js` (`web_gnap_interact.ts` over
   `web_gnap_interact_pages.ts` and `web_gnap_interact_views.ts`, the
   `bundle_surface` "GNAP's interaction pages") from `/gnap-api`, in the
-  browser's language from the `gnap` catalogs #539 wrote. Errors English.
+  browser's language from the `gnap` catalogs #539 wrote. **A refusal too
+  since #2006**: `/gnap-api` answers `errors` in English with `messages`
+  beside them (`refusals.gnap.*`, declared in `models/gnap/gnap.tsp`), and a
+  `problem` view carries `headingMessage` and `detailMessage`; a library's
+  plain text (a validation detail, the rate limiter's, `LimitsForm`'s why)
+  is drawn as sent.
   **Script is required**: the shell's `<noscript>` says so.
 * **WHAT A CLIENT INSTANCE SEES DID NOT CHANGE** (#569's rule): the start
   modes' 303 and their 400 refusals (the shell now, with the code and the
@@ -1067,6 +1077,7 @@ back. Reserved names are the JWT list plus `access`, `flags`, `label` and
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
 | `tests/protocol/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
 | `tests/outbound_tls.js`, `tests/protocol/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
+| `tests/gnap_push_address.js` | the push finish under the outbound address rules (#1614): loopback refused in product with nothing dialled, `security.outboundAllowedHosts` and `federation.outbound` honoured, a public-standing host dialled and PINNED |
 | `tests/protocol/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the test peer's resource server (the demonstration RS until #586/#593); introspection, registration, derivation and (section 4b, #432) the actor chain on a derived token in each format, read by the job's own decoders under the signature or MAC it verifies, mutual TLS (in a realm set to `gnap.mtlsTrust=pinned`, since its certificate is self-signed) |
 | `tests/protocol/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream; section 7 a resource server's stream (#432) |
 | `tests/gnap_catalogue.js` | #432 phases 3 and 4 in process: the catalogue's grammar, the console's `set-access-type` / `remove-access-type`, RFC 9396 reading it (values, required, limits, lifetime, bearer, the introspection view), GNAP's conformance, each built-in rule through the policy in both modes, an issue-stage refusal dropping a right, narrowing through a realm's own policy, `derivableBeyond()`, GNAP introspection per resource server |
@@ -1080,6 +1091,7 @@ back. Reserved names are the JWT list plus `access`, `flags`, `label` and
 | `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |
 | `tests/gnap_cells.js` | #98 in process, the cell map, channel and routing index stubbed: stamped handles, each door's placement, a grant moved and forwarded, a pinned browser pulling a grant, single-cell mode unchanged |
 | `tests/gnap_revocation.js` | #432 in process with the whole stack: the sign-out families, a grant ending with its session, `/admin/sessions`, `revokeGrantsOf()` narrowed and whole (and never a global sign-out for a person holding nothing), a global sign-out, the check at use and the disable, the entry's key replaced and deleted, a compromised device. The partner's signal is `tests/ssf_transmitters.js` K |
+| `tests/gnap_key_rotation.js` | #2212 in a child serving the whole stack: macaroons (for a resource server and for none) and a `dir` jwt-encrypted token through the `signing.rotate` job's own `rotateDue()`, still verifying after one rotation and after two; new tokens under the new secret and the resource server's entry rewritten; the grace counting `gnap.accessTokenLifetimeS`; the oldest secret's tokens refused once `signing.retire` drops it |
 | `tests/gnap_mtls_trust.js` | #107 in process over real handshakes: both trust models, revocation in both, 0277/0278, every binding refusal (0287–0292), rotation, the override and the product default |
 | `tests/gnap_delegation.js` | #432 phase 1 in process, in a child serving the whole stack, both modes: an ID Token issued to another client refused (0073, #497), impersonation refused (0772), recorded "would have been refused", allowed; 0770 with no reach, R the client itself for unregistered rights; `stsNotDelegated` and `appDelegationSubjectGroup` (0771) with may_act standing in; may_act naming somebody else in every mode (0774); the client as itself releasing no subject; `appAllowedProtocol` at the gate; derivation refused (0776) and allowed, `act` on the token, the subset rule in both modes (0513), the depth cap (0782), the chain nesting and at introspection; `act` verified back from each of the five formats; the register, its summary and map |
 | `tests/protocol/sts_gnap_delegation.js` | the same over HTTP in whichever mode the service is in: product's refusals by their audited codes, development's rows, `act` on a derived token and at introspection, the cap, and `GET /admin-api/delegation` |
@@ -1227,12 +1239,47 @@ federation and XACML — its header argues the placement):
   that cannot be read refuses the push (`STS-CORE-0104`) and is recorded on the
   grant's history like any failed push.
 
+## The push finish is dialled under the outbound address rules (#1614, 2026-11-24)
+
+**The finish URI arrives on the grant request, so it is the caller's kind of
+URL**, and the bounds above — registration in product, the transport policy,
+`gnap.pushAllowedHosts` — said nothing about WHERE it points. ASVS 5.0.0
+1.3.6 (the ninth Level 2 re-score) found it dialled with no address check at
+all, as an RFC 9101 `request_uri` was until #1609. It now takes
+`federation/federation_http.ts`'s rules, through `gnap_http.ts`'s
+`addressVerdict()`: nothing with `federation.outbound` off, a host
+`security.outboundAllowedHosts` leaves out refused in either mode, and in
+product a name resolving to a loopback, private, link-local or reserved
+address refused — one code for all three, `STS-GNAP-0606`.
+
+* **Asked twice.** At the grant request (and a modification's), BEFORE
+  `startInteraction()`, which stays synchronous — `invalid_interaction`, so a
+  client learns at once that its URI will never be dialled. And at the push,
+  where the connection is PINNED (`pinnedLookup()`) to the address the check
+  answered: a name may resolve elsewhere between the two, and resolving twice
+  is how a name answers a public address to the check and a private one to
+  the connection. A push refused then is a failed push like any other —
+  recorded on the grant, the audit log and the monitor — and the grant
+  finishes as section 4.2.2 says it does when no push arrives.
+* **Registration does not replace it.** In development nothing need be
+  registered, and in product a client may register itself.
+* **`gnap.pushAllowHttp` is now inert in product**: it allowed plain http to
+  a loopback address only, and a loopback address is internal. Development
+  is unchanged.
+* `federation_http` is required LAZILY (`oauth-oidc/request_object.ts`'s
+  arrangement), or injected as `federationHttp` in the constructor's deps.
+  `tests/outbound_tls.js` stands in for `vetHost()` on the module, so its
+  loopback listeners still answer; `tests/gnap_push_address.js` holds the
+  rules; `tests/protocol/sts_gnap_core.js` section 6, in product with a
+  private `GNAP_PUSH_HOST` (every compose stack), asserts the refusal and that
+  nothing was pushed, and the push only on a job host with a public address.
+
 ## ZCAP PROOF SUITES (2026-09-22, #43)
 
 `gnap.zcapCryptosuite`, per realm: **`eddsa-jcs-2022` by default**,
 `mldsa44-jcs-2024` and `slhdsa128-jcs-2024` (post-quantum, W3C FPWD), and
 `Ed25519Signature2020` **for compatibility only, with a warning in
-`docs/v1.1.0/gnap.md`**. `token_zcap.ts`'s header argues the choice from the texts:
+`docs/v1.2.0/gnap.md`**. `token_zcap.ts`'s header argues the choice from the texts:
 RFC 9767 names ZCAP-LD v0.3, which requires a Data Integrity proof and pins no
 suite, and ZCAP-LD v0.4.0-rc.6 uses `eddsa-jcs-2022` in every example. Four
 things a reader will otherwise rediscover:
@@ -1270,6 +1317,38 @@ answers the current key's refusal when none verifies. `/gnap/keys` adds
 `biscuit.root_public_keys` (non-standard; `root_public_key` is still the
 current one) and the ZCAP controller document lists every generation as a
 verification method.
+
+## THE MACAROON ROOT KEYS AND THE `dir` JWE KEY SURVIVE A ROTATION (#2212, 2026-11-25)
+
+Both are HKDF'd from the realm's refresh-token secret, which `signing.rotate`
+replaces. Until #2212 `gnap_tokens.ts` read only the current secret, so every
+macaroon (STS-GNAP-0314) and every `dir` jwt-encrypted token (STS-GNAP-0341)
+issued before a rotation was refused at it, and `gnap_rs.ts` wrote a resource
+server's `gnapMacaroonKey` once and never again. Found by reading the code for
+#2205, reproduced by `tests/gnap_key_rotation.js` before the fix.
+
+**The choice: the retired secrets the rotation already keeps, not a GNAP
+secret of its own.** `realmDerivedAll()` derives from the current secret and
+then each set in `generations.retiredRefresh` within its grace
+(`helpers.retiredRefreshTokenKeysFor()`); a macaroon moves to the next key only
+on a broken HMAC chain, a `dir` token only on a failed tag. Minting uses the
+current secret alone, and the derivation is unchanged, so tokens issued before
+the upgrade keep verifying. What GNAP owed the retention is its length:
+`SigningRotation.refreshGraceMs()` counts `gnap.accessTokenLifetimeS` (and a
+client's own `gnapAccessTokenLifetimeS`) beside `oauth2.refreshTokenTtlS`. A
+dedicated secret would have been a new keystore secret, cell tier and job doing
+what the retired list does, and would still have to read the refresh-token
+secret for the tokens already out. No new store, setting, error code or upgrade
+script. An emergency rotation keeps no retired set, so it strands every
+macaroon and `dir` token, as it should.
+
+**The resource server's entry is rewritten at the first macaroon minted for it
+after a rotation** (`mint()` calls `gnap_rs.ts`'s `ensureMacaroonKeyOf()`,
+lazily; it compares and writes only on a difference). RFC 9767 defines no
+distribution for a macaroon root key, so the entry stays the out-of-band
+channel; it is current before any macaroon under the new key exists, and an RS
+keeps the key it held for the macaroons issued before. A write that fails is
+STS-GNAP-0655 and never refuses the token.
 
 ## Cells: which cell serves a GNAP request (#98, 2026-09-28)
 

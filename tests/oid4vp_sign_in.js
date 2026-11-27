@@ -71,6 +71,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.WSI_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.WSI_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');
@@ -548,15 +551,19 @@ function childMain() {
          '2e. the binding cookie is HttpOnly and SameSite=Lax', bindingLine);
     // THE WAIT PAGE IS A ROUTE OF THE SIGN-IN SURFACE SINCE #574: its
     // shell is the surface's (one script, the surface's bundle), and its
-    // view is what the page draws.
+    // view is what the page draws. Since #2220 every shell loads the
+    // browser check first (`common/shell_document.ts`), so the shell is
+    // that check and the surface's one bundle, in that order, and nothing
+    // else.
     const waitShell = await request(port, 'GET', s.waitPath,
                                     { browser: browser1 });
     const scripts = waitShell.text.match(/<script[^>]*>/g) || [];
-    note(waitShell.status === 200 && scripts.length === 1 &&
-         /<script src="\/authn\/signin\.js"/.test(waitShell.text) &&
+    note(waitShell.status === 200 && scripts.length === 2 &&
+         /<script src="\/web\/browser-check\.js"/.test(scripts[0]) &&
+         /<script src="\/authn\/signin\.js"/.test(scripts[1]) &&
          !/<meta http-equiv="refresh"/.test(waitShell.text),
-         '2f. the wait page is the sign-in surface\'s shell: ONE script, ' +
-         '/authn/signin.js, and no <meta> refresh',
+         '2f. the wait page is the sign-in surface\'s shell: the browser ' +
+         'check, then ONE script, /authn/signin.js, and no <meta> refresh',
          JSON.stringify(scripts));
     note(s.waiting.status === 200 && s.view.wallet === 'wait' &&
          s.view.dcRequest &&
@@ -1204,7 +1211,7 @@ function childMain() {
          /Token Status List index \d+ is INVALID — why: a global sign-out/
            .test(globalSaid) &&
          ISO.test(globalSaid) &&
-         globalSaid.indexOf(base + '/portal/wallet') > 0,
+         urls.namesAddress(globalSaid, base + '/portal/wallet'),
          '8e-ii. the wallet is told why (a global sign-out), when, and where ' +
          'a new credential is issued (#653)', globalSaid);
     const globalPage = afterGlobal.page.json || {};
@@ -1251,7 +1258,7 @@ function childMain() {
       .error_description || '');
     note(/revoked in this service's issued register \(the admin console\) at /
            .test(revokedSaid) &&
-         revokedSaid.indexOf(base + '/portal/wallet') > 0 &&
+         urls.namesAddress(revokedSaid, base + '/portal/wallet') &&
          ((afterRevoke.page.json || {}).view || {}).reissue ===
            '/portal/wallet',
          '8g-ii. the wallet and the page say an administrator revoked it, ' +

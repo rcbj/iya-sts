@@ -231,6 +231,54 @@
     "en": "228f7d738861aa3c",
     "text": "एक खराब CSRF टोकन के कारण प्रमाणक-ऐप परिवर्तन अस्वीकार किया गया"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "किसी को नए वन-टाइम कोड टोकन का सीक्रेट दिखाया गया"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "किसी ने अपने खाते पर वन-टाइम कोड टोकन सेट किया"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "वन-टाइम कोड टोकन के सेटअप की पुष्टि नहीं हुई"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "किसी ने अपने खाते से वन-टाइम कोड टोकन हटाया"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "किसी ने अपना वन-टाइम कोड टोकन फिर से सिंक किया"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "एक वन-टाइम कोड टोकन फिर से सिंक नहीं हुआ"
+  },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "किसी को YubiKey OTP की प्रोग्रामिंग पंक्ति दिखाई गई"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "किसी ने अपने खाते पर YubiKey OTP सेट किया"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "YubiKey OTP के सेटअप की पुष्टि नहीं हुई"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "किसी ने अपने खाते से YubiKey OTP हटाया"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "किसी ने आयातित YubiKey OTP का दावा किया"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "एक YubiKey OTP का दावा नहीं हुआ"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "एक सक्रियण लिंक खर्च किए जाते समय एक प्रमाणक-ऐप सीक्रेट दिखाया गया"
@@ -354,6 +402,34 @@
   "audit.actions.keys.retire.label": {
     "en": "04a39be278dba264",
     "text": "अपनी अनुग्रह अवधि के बाद सेवानिवृत्त हस्ताक्षर कुंजियाँ हटा दी गईं"
+  },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "एक प्रमाणपत्र प्राधिकरण का प्रमाणपत्र उसकी अपनी कुंजी पर नवीनीकृत किया गया"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "लिसनर प्रमाणपत्र नवीनीकृत किया गया"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "समर्पित क्रेडेंशियल हस्ताक्षरकर्ता की कुंजियाँ बदली गईं"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "अनुरोध ऑब्जेक्ट, KEM और क्रेडेंशियल अनुरोध एन्क्रिप्शन कुंजियाँ बदली गईं"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "एक साझा क्लस्टर रहस्य बदला गया"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "किसी एप्लिकेशन का क्लाइंट सीक्रेट स्वचालित रूप से बदला गया"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "डेटाबेस पासवर्ड फिर से पढ़ा गया और बदल गया"
   },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
@@ -486,6 +562,138 @@
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "एक सुरक्षा कुंजी का अनुप्रमाणन अब विश्वसनीय नहीं है: Google की Android अनुप्रमाणन स्थिति सूची उसकी श्रृंखला को निरस्त करती है"
+  },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "सत्यापन से एक हार्डवेयर टोकन दर्ज किया गया"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "एक हार्डवेयर टोकन में क्रेडेंशियल जोड़ा गया"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "एक हार्डवेयर टोकन उसके धारक के अलावा किसी और ने पंजीकृत किया"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "एक हार्डवेयर टोकन खोया हुआ बताया गया और उसके क्रेडेंशियल हटाए गए"
+  },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "किसी व्यक्ति की प्रविष्टि से एक हार्डवेयर टोकन हटाया गया, और उस पर उनके क्रेडेंशियल रजिस्टर से हट गए"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "किसी व्यक्ति की प्रविष्टि पर लिखा गया टोकन अस्वीकार किया गया और दर्ज रूप में लौटा दिया गया"
+  },
+  "audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "किसी विक्रेता की PSKC सीड फ़ाइल आयात की गई, या अस्वीकार की गई"
+  },
+  "audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "आयात किया गया OATH टोकन किसी व्यक्ति को असाइन किया गया, या उसने क्लेम किया"
+  },
+  "audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "आयात किए गए OATH टोकन पर किसी व्यक्ति का क्लेम अस्वीकार किया गया"
+  },
+  "audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "असाइन न किया गया OATH टोकन सूची से हटाया गया"
+  },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "एक सौंपा गया OATH टोकन सेवानिवृत्त किया गया क्योंकि उसे उसके धारक की प्रविष्टि से हटाया गया"
+  },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "YubiKey OTP की CSV आयात की गई, या अस्वीकार की गई"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "आयातित YubiKey OTP किसी व्यक्ति को असाइन किया गया"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "किसी व्यक्ति ने आयातित YubiKey OTP का दावा किया, या दावा अस्वीकार हुआ"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "असाइन न किया गया YubiKey OTP सूची से हटाया गया"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "एक सौंपा गया YubiKey OTP सेवानिवृत्त किया गया क्योंकि उसे उसके धारक की प्रविष्टि से हटाया गया"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "एक YK-VAL क्लाइंट बनाया गया"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "एक YK-VAL क्लाइंट हटाया गया"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "एक YK-VAL क्लाइंट ने पूछा कि कोई YubiKey OTP मान्य है या नहीं"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "एक एस्क्रो की गई PIV कुंजी-प्रबंधन कुंजी पुनर्प्राप्त की गई"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "OpenPGP कुंजी पंजीकरण की एक चुनौती जारी की गई"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "कब्ज़े के प्रमाण पर एक OpenPGP कुंजी पंजीकृत की गई"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "एक OpenPGP कुंजी पंजीकृत नहीं की गई"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "एक OpenPGP कुंजी हटाई गई"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "एक OpenPGP कुंजी Web Key Directory में प्रकाशित की गई, या उससे वापस ली गई"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "किसी व्यक्ति को भेजी जाने वाली मेल के एन्क्रिप्शन का तरीका बदला गया"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "किसी व्यक्ति का S/MIME प्रमाणपत्र सेट किया गया या हटाया गया"
+  },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "एक ML-KEM S/MIME स्वामित्व-प्रमाण चुनौती जारी की गई"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "एक ML-KEM S/MIME प्रमाणपत्र जारी नहीं किया गया"
+  },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "एक क्लासिकल OpenPGP कुंजी को उसकी जगह लेने वाली पोस्ट-क्वांटम कुंजी के साथ रखा गया"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "रखी गई एक क्लासिकल OpenPGP कुंजी हटाई गई"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "साइन इन के बाद एक PIV प्रमाणपत्र फिर से जारी किया गया"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "एक PIV प्रमाणपत्र रद्द किया गया जब उसके प्रतिस्थापन से साइन इन हुआ"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -667,6 +875,14 @@
     "en": "478c7ee15248637f",
     "text": "एक ऑपरेटर ने किसी का प्रमाणक ऐप साफ़ किया"
   },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "किसी ऑपरेटर ने किसी का वन-टाइम कोड टोकन साफ़ किया"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "एक ऑपरेटर ने किसी का YubiKey OTP हटाया"
+  },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",
     "text": "एक ऑपरेटर ने किसी की सुरक्षा कुंजी हटाई"
@@ -674,6 +890,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "एक ऑपरेटर ने किसी की पासकी का नाम बदला"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "एक ऑपरेटर ने किसी के लिए U2F सुरक्षा कुंजी आयात की"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -802,6 +1022,10 @@
   "audit.actions.admin.pki.trust.change.label": {
     "en": "ab34b1a9778d5c8e",
     "text": "हस्ताक्षरकर्ता ट्रस्टस्टोर या एक पैरानॉयड PKI सेटिंग बदली गई"
+  },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "एक नामित ट्रस्टस्टोर या किसी उपयोग मामले का ट्रस्टस्टोर असाइनमेंट बदला गया"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -991,6 +1215,46 @@
     "en": "432e877d55af1913",
     "text": "एक AuthZEN पहुँच अनुरोध का कॉलबैक भेजा गया या विफल हुआ"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "एक AuthZEN पहुँच अनुरोध विफल हुआ"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN के अनुरोध-योग्य अस्वीकरणों का भंडार भर गया था"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "एक व्यवस्थापक कार्य को दूसरे व्यवस्थापक के लिए रोका गया"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "एक रोका गया व्यवस्थापक कार्य अनुमोदित हुआ और चलाया गया"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "एक रोका गया व्यवस्थापक कार्य अस्वीकार किया गया"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "एक रोका गया व्यवस्थापक कार्य उसके अनुरोधकर्ता ने वापस लिया"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "एक रोका गया व्यवस्थापक कार्य बिना निर्णय के समाप्त हुआ"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "एक रोका गया व्यवस्थापक कार्य अनुमोदित हुआ पर चलाया नहीं गया"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "किसी को रोके गए व्यवस्थापक कार्य का निर्णय लेने से मना किया गया"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "एक उच्च-जोखिम व्यवस्थापक कार्य दूसरे व्यवस्थापक के बिना चला"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "जारीकरण PEP ने इस सेवा को कुछ निर्मित करने नहीं दिया"
@@ -1014,6 +1278,14 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "एक दूरस्थ PEP की अभिकथन कुंजी उसके अनुरोध से प्रमाणित की गई"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "एक एम्बेडेड रिमोट PEP को उसके एप्लिकेशन से बाँधा गया, या अलग किया गया"
+  },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "एक रिमोट PEP ने दूसरा नीति दायरा खींचना शुरू किया"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -1230,6 +1502,10 @@
   "audit.actions.persistence.minted-drop.label": {
     "en": "065f403ac7419f76",
     "text": "एक निर्मित पंक्ति जिसे कभी कमिट नहीं किया जा सकता था हटा दी गई"
+  },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "डेटाबेस क्लाइंट प्रमाणपत्र फिर से पढ़ा गया और बदल गया"
   },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
@@ -1643,6 +1919,18 @@
     "en": "55c1155d5daa1c68",
     "text": "एक व्यक्ति ने अपने किसी हस्ताक्षर कुंजी युग्म को निरस्त किया"
   },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "किसी व्यक्ति को SSH उपयोगकर्ता प्रमाणपत्र जारी किया गया"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "किसी व्यक्ति ने अपने SSH उपयोगकर्ता प्रमाणपत्रों में से एक को निरस्त किया"
+  },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "किसी व्यक्ति की प्रविष्टि पर लिखा गया SSH उपयोगकर्ता प्रमाणपत्र अस्वीकार किया गया: CA ने इसे उन्हें जारी नहीं किया, या यह रद्द या समाप्त है"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "एक व्यक्ति ने अपना did:web प्रकाशित किया"
@@ -1778,6 +2066,34 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "एक भूमिका का विवरण, प्रदर्शन नाम या सदस्य प्रकार सेट किए गए"
+  },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "किसी भूमिका को स्थिर या गतिशील रूप से चयन-योग्य बनाया गया"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "साइन-इन पर किसी गतिशील भूमिका के चुने जाने का तरीका सेट किया गया"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "किसी गतिशील भूमिका के लिए किसी व्यक्ति की पात्रता तय की गई"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "किसी साइन-इन पर गतिशील भूमिकाएँ पेश की गईं"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "किसी साइन-इन पर गतिशील भूमिकाएँ चुनी गईं"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "किसी साइन-इन की गतिशील भूमिकाओं का चयन अस्वीकार किया गया"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "चुनी गई एक गतिशील भूमिका किसी टोकन से हटा दी गई"
   },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
@@ -2118,6 +2434,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "एक पंजीकृत डिवाइस का जोखिम स्तर सेट किया गया"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "विश्वास क्षेत्र के व्यवस्थापकों को अब एक अनुपालक पंजीकृत डिवाइस चाहिए"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

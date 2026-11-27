@@ -1,6 +1,7 @@
 {
   "yes": "ja",
   "no": "nej",
+  "follows": "som {row}",
   "configuration": "Konfiguration",
   "schema": "Schema",
   "saveProfile": "Spara profilen",
@@ -230,5 +231,7 @@
   "transfer.view.trustedHeading": "Andra sfärer som den här sfären litar på",
   "transfer.view.noneTrusted": "Den här sfären litar inte på någon annan sfärs policyexporter.",
   "transfer.view.kind": "Typ",
-  "transfer.view.addedBy": "Tillagd av"
+  "transfer.view.addedBy": "Tillagd av",
+  "newPolicy.button": "Ny policy",
+  "newPolicy.choose": "Välj vilken sorts policy som ska skapas."
 }

@@ -176,10 +176,15 @@ function childMain() {
     const express = require('express');
     // The document needs no token here: development mode's own switch.
     config.setOverride('adminApi.authRequired', 'false');
+    // The listener certificate, presented as the main port presents it
+    // (the leaf, its chain and the Root), and verified by the client
+    // against the anchor a loopback caller of this process pins
+    // (`trustAnchorPems()`, tests/tls_trust_anchor.js): nothing here is
+    // about the certificate, and nothing here dials unverified either.
     const own = tlsServer.serverCertificate();
-    const tls = { rejectUnauthorized: false };
-    const server = http2.createSecureServer({
-      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem }, app);
+    const tls = { ca: tlsServer.trustAnchorPems() };
+    const server = http2.createSecureServer({ allowHTTP1: true,
+      cert: tlsServer.presentedBundlePem(own), key: own.privateKeyPem }, app);
     server.prependListener('request',
       require(ROOT_DIR + '/common/http2_framing').markFramedBody);
     tlsServer.registerHttpListener(server, 'main');

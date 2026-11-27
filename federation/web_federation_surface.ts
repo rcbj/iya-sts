@@ -101,8 +101,10 @@ class FederationSurface extends WebSurface {
                                     own: this.own });
     if (!state) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-                       'The service sent no state for it.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+                       this.refusal('refusals.web.noState', {},
+                                    'The service sent no state for it.'));
       return;
     }
     this.lastAnswer = state;
@@ -165,8 +167,8 @@ class FederationSurface extends WebSurface {
       form.submit();
       return;
     }
-    this.flash = { error: 'This page sends nothing, so the form was not ' +
-                          'sent.' };
+    this.flash = { error: this.refusal('refusals.federation.sendsNothing',
+      {}, 'This page sends nothing, so the form was not sent.') };
     this.redraw();
   }
 }
@@ -174,7 +176,10 @@ class FederationSurface extends WebSurface {
 declare const window: any;
 declare const document: any;
 
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+// NOT WHERE THE BROWSER CHECK SAID THIS BROWSER FALLS SHORT (#2220): its
+// notice is the page.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' &&
+    !FederationSurface.browserFellShort(document)) {
   new FederationSurface({
     fetch: window.fetch.bind(window), location: window.location,
     history: window.history, document: document,

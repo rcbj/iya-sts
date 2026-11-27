@@ -580,6 +580,21 @@ const SPECS: Spec[] = [
               'the trust\'s boundary before it is re-signed — device info ' +
               'dropped, a claims set dropped unless the trust allows it — ' +
               'and a referral\'s PAC is signed with the inter-realm key.' },
+  // #2272: the GSS-API mechanism the acceptor and SPNEGO speak.
+  { id: 'rfc4121', name: 'The Kerberos Version 5 GSS-API Mechanism: ' +
+                         'Version 2 (RFC 4121)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4121',
+    coverage: 'partial: context establishment. The InitialContextToken ' +
+              'framing (the Kerberos mechanism OID and the two-byte token ' +
+              'ids) is read and written, the AP-REQ\'s 0x8003 ' +
+              'authenticator checksum is read by the acceptor (its flags, ' +
+              'mutual authentication and delegation) and written by the ' +
+              'client side, and an AP-REP is returned when mutual ' +
+              'authentication is asked for. MIC tokens (section 4.2.6.1) ' +
+              'sign and verify SPNEGO\'s mechListMIC, under the acceptor ' +
+              'subkey when there is one. Missing: channel bindings are ' +
+              'reported, not compared with the TLS channel, and no surface ' +
+              'exchanges Wrap tokens once the context is established.' },
   { id: 'rfc4178', name: 'SPNEGO (RFC 4178)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4178',
@@ -664,20 +679,28 @@ const SPECS: Spec[] = [
     coverage: 'partial: the requestable denial (context.access_request, ' +
               'evaluation_id, evaluated_at, reason) where the realm\'s ' +
               'policy marks a Deny with the access-request advice, bound by ' +
-              'value with a binding_token this realm signs (the inline ' +
-              'claims); the submission with Idempotency-Key, 201 or 202 and ' +
-              'a Task Handle; the task status endpoint with Retry-After; ' +
+              'value with a binding_token this realm signs (inline claims ' +
+              'and binding_hash) and by reference from the denial record; ' +
+              'the submission with Idempotency-Key, 201 or 202 and a Task ' +
+              'Handle; the task status endpoint with Retry-After; ' +
               'cancellation by POST or DELETE; the six statuses; the ' +
               'reevaluate completion mode, approval.id resolved in trusted ' +
-              'state and the approval reaching the policy as trusted facts; ' +
-              'next_action and the five reasons; every problem type; the ' +
-              'metadata member, jwks_uri and capability. Missing: ' +
-              'evaluation_id as a binding by reference, approval.state, the ' +
-              'hashed binding form, machine-readable forms (form_url, ' +
-              'request_schema_url), display, and the BULK, ACTOR and ' +
-              'CATALOG companions.' },
+              'state, approval.state issued and verified with the lookup ' +
+              'still required, and the approval reaching the policy as ' +
+              'trusted facts; next_action and the five reasons; every ' +
+              'problem type; the metadata member, jwks_uri and capability; ' +
+              'request_schema_url on a requestable denial, the same ' +
+              'origin\'s JSON Schema of the submission\'s optional ' +
+              'augmentations; display on a requestable denial and on a ' +
+              'Task Handle, the advice\'s own words or the service\'s in ' +
+              'the language asked for, while ' +
+              'authzen.accessRequestDisplay is on; form_url, the portal\'s ' +
+              'hosted form where the denial\'s subject submits it, and ' +
+              'links.ticket, while authzen.accessRequestForm is on. ' +
+              'Missing: nothing of the base profile; each companion\'s ' +
+              'own note says what it lacks.' },
   { id: 'authzen-arap-callback',
-    name: 'AuthZEN Access Request Callback Profile 1.0 (draft)',
+    name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
     url: 'https://openid.github.io/authzen/' +
          'authzen-access-request-callback-profile-1_0.html',
@@ -686,8 +709,55 @@ const SPECS: Spec[] = [
               'registered for the requesting PEP, a notification-only ' +
               'callback for each requested terminal event, authenticated ' +
               'by a short JWT this realm signs, under the outbound policy. ' +
-              'Missing: the partial event (BULK) and deployment-level event ' +
-              'subscriptions; a failed delivery is not retried.' },
+              'A network error, a timeout or an HTTP 5xx is retried up to ' +
+              'the attempt bound; an HTTP 4xx or a URL the outbound policy ' +
+              'refuses is not. Missing: the partial event (BULK) and ' +
+              'deployment-level event subscriptions.' },
+  { id: 'authzen-arap-catalog',
+    name: 'AuthZEN Access Request Catalog Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-catalog-profile-1_0.html',
+    coverage: 'partial: request_catalogs_url on a recorded requestable ' +
+              'denial whose policy advice lists entitlements, while ' +
+              'authzen.accessRequestCatalogs is on; the Catalogs Document ' +
+              'with its one field, requested_access.entitlement; the ' +
+              'Catalog Endpoint with q, cursor and limit, answered only to ' +
+              'the caller the denial was answered to; the value validated ' +
+              'at submission and reaching the policy as a trusted fact of ' +
+              'the approval. Missing: scope_params (one catalog has nothing ' +
+              'to scope by), granted, risk_level and owner, and the agent ' +
+              'protocol catalogs.' },
+  { id: 'authzen-arap-actor',
+    name: 'AuthZEN Actor Delegation Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-actor-profile-1_0.html',
+    coverage: 'partial: client.actor, its id, issuer and type and the ' +
+              'nested act chain, verified against the caller\'s own ' +
+              'credential (one link that is the caller itself, or the act ' +
+              'chain of its own access token, link for link) and refused ' +
+              'otherwise, while authzen.accessRequestActor is on; ' +
+              'client.source recorded as audit metadata; both shown to ' +
+              'the approvers and never a policy fact. Missing: approval ' +
+              'routing by an actor in the chain, and signed assertions or ' +
+              'deployment policies as proof of a chain.' },
+  { id: 'authzen-arap-bulk',
+    name: 'AuthZEN Bulk Access Requests Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-bulk-profile-1_0.html',
+    coverage: 'partial: items, each with its own denial checked as a ' +
+              'single submission is, from one caller about one ' +
+              'application, while authzen.accessRequestBulk is on; the ' +
+              'Task Handle\'s items with each item\'s own status and ' +
+              'result, the aggregate status with partial, no top-level ' +
+              'result; cancellation of the pending items and 409 once ' +
+              'every item finished; each item approved and re-evaluated ' +
+              'on its own; Idempotency-Key over the whole body. Missing: ' +
+              'a bundle denial and the bulk binding_hash (this service ' +
+              'issues per-item denials only), per-item callbacks and the ' +
+              'partial event.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -699,6 +769,24 @@ const SPECS: Spec[] = [
               'thrown it away), arrays as bags, obligations, advice and the ' +
               'PolicyIdentifierList. The profile defines no policy syntax, ' +
               'so policies stay XML.' },
+  // #2272: the policy language the console and /admin-api read and write.
+  { id: 'alfa', name: 'ALFA for XACML Version 1.0 (draft)',
+    where: 'OASIS (Committee Specification Draft)',
+    url: 'https://docs.oasis-open.org/xacml/alfa-for-xacml/v1.0/' +
+         'alfa-for-xacml-v1.0.html',
+    coverage: 'partial: policy sets, policies and rules with their ' +
+              'targets, conditions, obligations and advice, read and ' +
+              'written over the same model as the XACML XML, so a policy ' +
+              'decides the same whichever form it came in. Literals of the ' +
+              'other datatypes are written as casts, an attribute is ' +
+              'declared before it is used, mustbepresent and issuer are ' +
+              'given per use, and a higher-order function takes a function ' +
+              'by its short name. Imported at /admin/xacml and by ' +
+              'import-alfa on /admin-api/xacml, and every policy can be ' +
+              'shown as ALFA. What the emitter writes the parser reads and ' +
+              'decides identically. Missing: macros, advice at namespace ' +
+              'scope and imports across files are refused by name. ALFA ' +
+              'has no conformance suite.' },
   { id: 'ssf', name: 'OpenID Shared Signals Framework 1.0',
     where: 'OpenID Foundation',
     url:
@@ -2181,8 +2269,21 @@ const SPECS: Spec[] = [
               'client refreshes with a new certificate. An UNVERIFIED ' +
               'certificate still binds, as section 3 permits. Only where the ' +
               'main port is TLS (global.https), and advertised as ' +
-              'tls_client_certificate_bound_access_tokens only there. No ' +
-              'certificate is read from a proxy header.' },
+              'tls_client_certificate_bound_access_tokens only there. A ' +
+              'certificate is read from a header only as RFC 9440\'s, from ' +
+              'a TLS-terminating proxy named by its certificate and its ' +
+              'address (#2012).' },
+  { id: 'rfc9440', name: 'RFC 9440 — Client-Cert HTTP Header Field',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9440',
+    coverage: 'partial: the origin server\'s half, off by default (#2012). ' +
+              'Client-Cert and Client-Cert-Chain are read only from a ' +
+              'TLS-terminating proxy an administrator names by BOTH the ' +
+              'client certificate it connects with and its address ' +
+              '(tls.trustedProxyCertificates, tls.trustedProxyAddresses); ' +
+              'the forwarded chain is verified here to the client ' +
+              'truststore, and then stands for the handshake\'s certificate ' +
+              'at every door. From any other sender the two headers are ' +
+              'removed and recorded. This service is never the proxy.' },
   { id: 'rfc8707', name: 'RFC 8707 — Resource Indicators for OAuth 2.0',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8707',
     coverage: 'full for the authorization code flow: `resource` is read at ' +
@@ -2550,7 +2651,7 @@ const SPECS: Spec[] = [
               '(5.2): BCP 195\'s suites are every listener\'s default, TLS ' +
               '1.3 preferred. DPoP nonces stay optional, and consent follows ' +
               'the ordinary rules. The Attacker Model has no normative ' +
-              'requirements; docs/v1.1.0/oauth-security.md maps each ' +
+              'requirements; docs/v1.2.0/oauth-security.md maps each ' +
               'attacker class to what stops it. The console, portal and ' +
               'debugger conform. NOT covered: the conformance suite (#176).' },
   { id: 'fapi2-message-signing', name: 'FAPI 2.0 Message Signing (final)',
@@ -2563,7 +2664,7 @@ const SPECS: Spec[] = [
               'issuer and exp and nbf within 60 minutes (5.3); JARM ' +
               'required, iss inside the JWT (5.4); RFC 9701 introspection ' +
               'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
-              'guidance, answered in docs/v1.1.0/oauth-security.md. The ' +
+              'guidance, answered in docs/v1.2.0/oauth-security.md. The ' +
               'console, portal and debugger conform. RFC 9421 HTTP ' +
               'signatures are NOT ' +
               'part of the final specification: they are FAPI 2.0 Http ' +
@@ -2739,11 +2840,62 @@ const SPECS: Spec[] = [
               '(webauthn.pqcAlongsideClassical): each lane has its own user ' +
               'handle (section 5.4.3), algorithm list and ' +
               'excludeCredentials, and the Signal API (section 5.1.10) is ' +
-              'sent once per lane. Missing: enterprise attestation ' +
-              '(section 5.4.7) has no RP ID allow-list, and the ' +
-              'authentication extensions are not processed. Written ' +
+              'sent once per lane. Enterprise attestation (section 5.4.7) ' +
+              'is asked only for the RP IDs ' +
+              'webauthn.attestationEnterpriseRpIds lists. The hints member ' +
+              '(section 5.4.8) is sent as the passkey policy says. ' +
+              'Extensions (section 10): credProps (10.1.3) is asked and its ' +
+              'rk recorded; CTAP 2.1\'s credProtect and minPinLength are ' +
+              'asked as the passkey policy says and their outputs read from ' +
+              'the authenticator data (see CTAP 2.1); appid (10.1.1) and ' +
+              'appidExclude (10.1.2) serve legacy FIDO U2F credentials an ' +
+              'administrator imported onto a person\'s entry, off until ' +
+              'webauthn.u2fAppIds names their AppID: an assertion\'s ' +
+              'rpIdHash is held to SHA-256 of the AppID only when the client ' +
+              'returned appid true, such a key answers a second-factor step ' +
+              'only, and a registration asks appidExclude so the same key ' +
+              'is not registered twice. Missing: the other registered ' +
+              'extensions (largeBlob, prf and the rest) are neither asked ' +
+              'for nor processed, and an AppID is used only at an RP ID ' +
+              'whose host it shares or is a suffix of — the FIDO AppID and ' +
+              'Facet Specification\'s TrustedFacets list is not fetched or ' +
+              'served here. Written ' +
               'independently of the debugger\'s own decoder so the two can ' +
               'be checked against each other (tests/webauthn_cross_impl.js).' },
+  // #1955 P7: the two CTAP 2.1 extensions a registration asks for.
+  { id: 'ctap21', name: 'Client to Authenticator Protocol (CTAP) 2.1',
+    where: 'FIDO Alliance',
+    url: 'https://fidoalliance.org/specs/fido-v2.1-ps-20210615/' +
+         'fido-client-to-authenticator-protocol-v2.1-ps-20210615.html',
+    coverage: 'minimal, the relying party\'s half of two extensions, since ' +
+              'this service is neither a client nor an authenticator: ' +
+              'credProtect (section 12.1) — the passkey policy\'s ' +
+              'credProtect asks for a level as credentialProtectionPolicy, ' +
+              'enforceCredProtect sends ' +
+              'enforceCredentialProtectionPolicy and ' +
+              'refuses a registration whose authenticator data reports a ' +
+              'lower level (none reported is level 1), and the level is ' +
+              'recorded on the passkey; and minPinLength (section 12.4), ' +
+              'asked while the passkey policy enforces a PIN length and held ' +
+              'to its minimum at registration and at sign-in. Nothing else ' +
+              'of CTAP: the authenticator API, the PIN protocols, large ' +
+              'blobs and credential management are the platform\'s.' },
+  // #2272: a legacy U2F key, used through WebAuthn.
+  { id: 'fido-u2f', name: 'FIDO Universal 2nd Factor (U2F) 1.2',
+    where: 'FIDO Alliance',
+    url: 'https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/' +
+         'fido-u2f-overview-v1.2-ps-20170411.html',
+    coverage: 'partial, through WebAuthn rather than as a protocol of its ' +
+              'own: the fido-u2f attestation format is verified at ' +
+              'registration (WebAuthn section 8.6), and a legacy U2F ' +
+              'credential (its key handle, P-256 public key and counter) ' +
+              'imported by an administrator onto a person\'s entry is used ' +
+              'under its AppID through the appid extension, at a ' +
+              'second-factor step only, once webauthn.u2fAppIds names that ' +
+              'AppID. Missing: the U2F JavaScript API and raw U2F ' +
+              'registration and authentication messages (a browser speaks ' +
+              'them to the key, not this service), and the AppID and Facet ' +
+              'trusted-facets list.' },
   // #725: the sign-on session bound to a key the browser holds.
   { id: 'dbsc', name: 'Device Bound Session Credentials',
     where: 'W3C WebAppSec (Editor\'s Draft)',
@@ -2763,17 +2915,62 @@ const SPECS: Spec[] = [
   { id: 'rfc4226', name: 'RFC 4226 — HOTP: An HMAC-Based One-Time Password ' +
                          'Algorithm',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4226',
-    coverage: 'full for what RFC 6238 needs of it: section 5.3\'s dynamic ' +
-              'truncation over HMAC-SHA-1, SHA-256 or SHA-512, six to eight ' +
-              'digits, with the counter as an eight-byte big-endian value. ' +
-              'Asserted against the specification\'s own Appendix D test ' +
-              'vectors (tests/totp.js), which is the point of implementing ' +
-              'it rather than taking a library: the four steps of that ' +
-              'truncation have each been got wrong by somebody, and a ' +
-              'published vector is the only check that catches it. NOT ' +
-              'covered: counter-based HOTP as an authentication mechanism — ' +
-              'nothing here holds a counter that advances on use, because ' +
-              'the only caller is the time-based construction below.' },
+    coverage: 'full, verifier side, as a SECOND FACTOR ONLY (#1955 P4): ' +
+              'section 5.3\'s dynamic truncation over HMAC-SHA-1, SHA-256 ' +
+              'or SHA-512, six to eight digits, the counter an eight-byte ' +
+              'big-endian value, asserted against Appendix D\'s own test ' +
+              'vectors (tests/totp.js, tests/hotp.js); a counter per ' +
+              'credential with section 7.4\'s look-ahead (hotp.window, 10 ' +
+              'by default, 0 legal) and resynchronisation from two ' +
+              'consecutive codes (hotp.resyncWindow); section 7.2\'s replay ' +
+              'refusal, the counter advanced by compare-and-set in the store ' +
+              'so two nodes or workers never accept one code; section 7.3\'s ' +
+              'throttling through the sign-in\'s code budget. A YubiKey OTP ' +
+              'slot is programmed from the portal\'s otpauth://hotp code or ' +
+              'ykman command; a vendor\'s token is imported (RFC 6030). It ' +
+              'earns amr otp, and hwk only for an imported token. NOT ' +
+              'covered: section 7.3\'s delay scheme as such (the budget ' +
+              'refuses instead), and OCRA (RFC 6287).' },
+  { id: 'yubico-otp', name: 'Yubico OTP',
+    where: 'Yubico',
+    url: 'https://developers.yubico.com/OTP/OTPs_Explained.html',
+    coverage: 'partial, verifier side (#1955 P5): the published OTP, a ' +
+              'modhex public identity followed by one AES-128-ECB block ' +
+              'with no padding, CRC-16 residual 0xf0b8, and the use and ' +
+              'session counters advanced by compare-and-set so one OTP is ' +
+              'accepted once. The timestamp is not checked. Enrolment is ' +
+              'off by default (yubiotp.offered). amr otp, never hwk, ' +
+              'because this service holds the AES key. NOT covered: ' +
+              'YubiCloud, and any check of the timestamp.' },
+  { id: 'yk-val', name: 'YubiKey Validation Protocol 2.0',
+    where: 'Yubico',
+    url: 'https://developers.yubico.com/yubikey-val/Validation_Protocol_V2.0.html',
+    coverage: 'partial, as a validation server (#1955 P5): GET and POST ' +
+              '/wsapi/2.0/verify with id, otp, nonce and h, HMAC-SHA1 over ' +
+              'the sorted parameters, and the statuses OK, BAD_OTP, ' +
+              'BAD_SIGNATURE, MISSING_PARAMETER, NO_SUCH_CLIENT, ' +
+              'OPERATION_NOT_ALLOWED, BACKEND_ERROR, REPLAYED_OTP and ' +
+              'REPLAYED_REQUEST. Off by default (yubiotp.ykval). On, the ' +
+              'client id and the HMAC are checked in every mode. The ' +
+              'answer\'s sl is 100. NOT covered: the YubiCloud client, and ' +
+              'a sync percentage other than 100.' },
+  { id: 'rfc6030', name: 'RFC 6030 — Portable Symmetric Key Container ' +
+                         '(PSKC)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6030',
+    coverage: 'partial, as a RECEIVER (#1955 P4): a KeyContainer of version ' +
+              '1.0 with HOTP and TOTP keys, DeviceInfo\'s Manufacturer, ' +
+              'SerialNo and Model, the ResponseFormat (6 to 8 decimal ' +
+              'digits), a plain Counter, Time (0 only) and TimeInterval; ' +
+              'plaintext (refused in product mode unless ' +
+              'pskc.allowPlaintextImport), a pre-shared key (section 6.1: ' +
+              'AES-128/192/256-CBC and KW-AES) and a passphrase (section ' +
+              '6.2: PBKDF2), with section 6.1.1\'s ValueMAC checked first ' +
+              '(HMAC-SHA1 and the SHA-2 MACs). Asserted against the RFC\'s ' +
+              'own Figures 2 to 7 (tests/pskc.js). NOT covered: encryption ' +
+              'to a certificate (6.3), a MAC key by reference, Triple DES ' +
+              'and Camellia, an encrypted counter or time, PIN keys and ' +
+              'policies (skipped), signatures on the container (section 7), ' +
+              'and producing one.' },
   // #539 (2026-10-09): the language a page is drawn in. Two RFCs that make
   // up BCP 47, one row, because nothing here uses either without the other.
   { id: 'bcp47', name: 'BCP 47 — RFC 5646 Tags for Identifying Languages ' +
@@ -3464,19 +3661,54 @@ const SPECS: Spec[] = [
               'the WebAuthn attestation statement are not implemented.' },
   // ===== EST specs (est/) =====
   { id: 'lamps-csr-attestation', name: 'Use of Remote Attestation with ' +
-      'Certification Signing Requests (draft-ietf-lamps-csr-attestation-29)',
+      'Certification Signing Requests (draft-ietf-lamps-csr-attestation-33)',
     where: 'IETF (draft)',
     url: 'https://datatracker.ietf.org/doc/draft-ietf-lamps-csr-attestation/',
     coverage: 'partial: the id-aa-attestation attribute of a PKCS#10 ' +
               'request (at most one, exactly one AttestationBundle, the ' +
-              'certificate and other choices only) for the device profile ' +
-              'over EST and SCEP; the one statement type verified is the ' +
-              'TCG\'s tcg-attest-tpm-certify in revision 20\'s appendix ' +
-              'A.2.3 syntax, which no later revision or TCG document ' +
-              'replaces (#257). The CRMF extension is not read (no CMP ' +
-              'here), and other statement types are recorded, not ' +
-              'verified. Freshness (section 6.2) through ' +
-              'draft-ietf-lamps-attestation-freshness over EST.' },
+              'certificate and other choices only), over EST, SCEP and ' +
+              'ACME. Two statement types are verified: the TCG\'s ' +
+              'tcg-attest-tpm-certify in revision 20\'s appendix A.2.3 ' +
+              'syntax, for the device profile (#257), and a YubiKey PIV ' +
+              'attestation for every profile (#1955), under ' +
+              '1.3.6.1.4.1.41482.3.2 with the slot certificate as stmt ' +
+              'and the f9 certificate in certs, a type this service ' +
+              'chose because the draft defines none. The CRMF extension ' +
+              'is not read (no CMP here), and other statement types are ' +
+              'recorded, not verified. Freshness (section 6.2) through ' +
+              'draft-ietf-lamps-attestation-freshness over EST, for TPM ' +
+              'statements only: a PIV attestation carries no nonce.' },
+  // ===== YubiKey PIV and FIPS 201 (#1955 P2, common/piv_attestation.ts) =====
+  { id: 'yubico-piv-attestation', name: 'YubiKey PIV Attestation (Yubico)',
+    where: 'Yubico',
+    url: 'https://developers.yubico.com/PIV/Introduction/' +
+         'PIV_attestation.html',
+    coverage: 'partial: the slot attestation certificate is verified ' +
+              'through the f9 attestation certificate to Yubico\'s PIV ' +
+              'roots (Serial 263751, and Attestation Root 1 with its PIV ' +
+              'intermediates for firmware 5.7.4 and later, shipped and ' +
+              'pinned) or a realm\'s own; its key held to the request\'s; ' +
+              'the firmware, serial, PIN and touch policy and form factor ' +
+              'extensions read, the policies held to the realm\'s. The ' +
+              'card itself is never managed: no PIN, PUK or slot write.' },
+  { id: 'fips201', name: 'Personal Identity Verification (PIV) of Federal ' +
+      'Employees and Contractors (FIPS 201-3) and SP 800-73-4',
+    where: 'NIST',
+    url: 'https://csrc.nist.gov/pubs/fips/201-3/final',
+    coverage: 'partial: the four key slots as certificate profiles (PIV ' +
+              'Authentication 9a, Digital Signature 9c, Key Management ' +
+              '9d, Card Authentication 9e, which signs nobody in by ' +
+              'default); an outside PIV or CAC card mapped by the card ' +
+              'UUID in its urn:uuid subjectAltName when it asserts a PIV ' +
+              'Authentication policy (off by default); section 6.2.3.1\'s ' +
+              'PKI-AUTH as certificate sign-in profiles (#2012): the ' +
+              'issuers, keyUsage, extendedKeyUsage and the policies RFC ' +
+              '5280 policy processing carries through the path, mappings ' +
+              'included, and a binding to one account by issuer and ' +
+              'serial, issuer and SKI, the key, the certificate or the card ' +
+              'UUID, with a verified revocation status where the realm ' +
+              'requires one, on a listener of its own if wanted. No FASC-N, ' +
+              'CHUID, card management or biometrics.' },
   { id: 'lamps-attestation-freshness', name: 'Requesting a Freshness Nonce ' +
       'for Attestation Evidence in Certificate Signing Requests ' +
       '(draft-ietf-lamps-attestation-freshness-08)',
@@ -3571,6 +3803,159 @@ const SPECS: Spec[] = [
               'Missing: simple canonicalization, l= and verification of ' +
               'mail anybody else sent — this service receives none. DKIM ' +
               'has no post-quantum algorithm registered.' },
+  // #1955 P6: OpenPGP, PGP/MIME, S/MIME and the Web Key Directory.
+  { id: 'rfc9580', name: 'OpenPGP (RFC 9580)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9580',
+    coverage: 'partial: reading a transferable public key, v6 and (RFC ' +
+              '4880) v4, verifying a cleartext signature by a signing ' +
+              'key of it, and encrypting a message to its encryption key. ' +
+              'Classical algorithms go through openpgp.js. RFC 9980 ' +
+              'composites are read here (see rfc9980). Ed25519, Ed448, ' +
+              'ECDSA and ECDH on the NIST curves, X25519, X448 and RSA of ' +
+              'openpgp.minRsaBits are accepted; DSA, ElGamal and Brainpool ' +
+              'are refused. Missing: signing, decryption, a keyring, a ' +
+              'keyserver.' },
+  // #2272: the v4 keys the OpenPGP engine reads beside RFC 9580's v6.
+  { id: 'rfc4880', name: 'OpenPGP Message Format (RFC 4880)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc4880',
+    coverage: 'partial, for v4 keys (RFC 9580 obsoletes it, and a v6 key ' +
+              'follows rfc9580): a transferable public key read with its ' +
+              'self-signatures, a cleartext signature by its signing key ' +
+              'verified, and a message encrypted to its encryption key, ' +
+              'through openpgp.js. Signing keys may be EdDSA on Ed25519, ' +
+              'ECDSA on P-256, P-384 and P-521, or RSA of ' +
+              'openpgp.minRsaBits; encryption keys ECDH on Curve25519 and ' +
+              'the NIST curves, or RSA. DSA, ElGamal and Brainpool are ' +
+              'refused. Missing: signing, decryption, a keyring, a ' +
+              'keyserver.' },
+  { id: 'rfc9980', name: 'Post-Quantum Cryptography in OpenPGP (RFC 9980)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9980',
+    coverage: 'partial: ML-DSA-65+Ed25519 and ML-DSA-87+Ed448 ' +
+              'signatures, and ML-KEM-768+X25519 and ML-KEM-1024+X448 ' +
+              'encryption, at registration and when a stored key is used. ' +
+              'A composite counts as post-quantum. openpgp.pqcOnly narrows ' +
+              'registration only. Both halves of a signature are verified ' +
+              'by common/crypto_impl/openpgp_pqc.js. Missing: SLH-DSA ' +
+              '(algorithm ids 32-34), and this service does not generate ' +
+              'an RFC 9980 key. openpgp.js does not parse these keys.' },
+  { id: 'rfc3156', name: 'MIME Security with OpenPGP (RFC 3156)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc3156',
+    coverage: 'partial: multipart/encrypted with an application/' +
+              'pgp-encrypted version part and the armored message, the ' +
+              'real headers protected inside. Missing: multipart/signed — ' +
+              'this service signs mail with DKIM, not OpenPGP.' },
+  { id: 'rfc8551', name: 'S/MIME 4.0 Message Specification (RFC 8551)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8551',
+    coverage: 'partial: application/pkcs7-mime enveloped-data, a CMS ' +
+              'EnvelopedData with AES-256-CBC content encryption. A ' +
+              'classical certificate uses RSAES-OAEP (SHA-256) or ECDH. ' +
+              'An ML-KEM certificate (RFC 9935) uses KEMRecipientInfo ' +
+              '(RFC 9629): HKDF-SHA-256 and AES-Wrap. A runtime that ' +
+              'cannot encapsulate does not send the message under a ' +
+              'classical algorithm. Missing: signed-data, ' +
+              'AuthEnvelopedData (AES-GCM), decryption.' },
+  // #2272: what an S/MIME message to an ML-KEM certificate is made of.
+  { id: 'rfc9629', name: 'Using Key Encapsulation Mechanism (KEM) ' +
+                         'Algorithms in the Cryptographic Message Syntax ' +
+                         '(CMS) (RFC 9629)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9629',
+    coverage: 'partial, sending only: an S/MIME message to an ML-KEM ' +
+              'certificate (rfc9935) carries its content-encryption key in ' +
+              'a KEMRecipientInfo (the id-ori-kem other recipient info): ' +
+              'ML-KEM-512, ML-KEM-768 or ML-KEM-1024, HKDF with SHA-256 ' +
+              'over CMSORIforKEMOtherInfo and no salt, and AES-128 or ' +
+              'AES-256 key wrap, in AuthEnvelopedData (the default) or ' +
+              'EnvelopedData. Missing: decrypting a KEMRecipientInfo (this ' +
+              'service never receives encrypted mail), the ukm, and any ' +
+              'other KEM or key-derivation function.' },
+  // #2272: the ML-KEM keys an S/MIME certificate is issued for.
+  { id: 'rfc9935', name: 'Algorithm Identifiers for the Module-Lattice-' +
+                         'Based Key-Encapsulation Mechanism (ML-KEM) in ' +
+                         'X.509 (RFC 9935)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9935',
+    coverage: 'partial: an ML-KEM-512, ML-KEM-768 or ML-KEM-1024 public key ' +
+              'is read from a SubjectPublicKeyInfo or a certificate by its ' +
+              'id-alg-ml-kem identifier and held to absent parameters and ' +
+              'the key length FIPS 203 gives. A person\'s key is certified ' +
+              'by the realm\'s EST Issuing CA with keyEncipherment as its ' +
+              'only key usage, after a proof of possession by ' +
+              'encapsulation that only the private key can answer, and the ' +
+              'certificate is an S/MIME recipient (rfc9629). Missing: the ' +
+              'private key formats (this service never holds an ML-KEM ' +
+              'private key) and ML-KEM certificates for this service\'s ' +
+              'own keys.' },
+  { id: 'wkd', name: 'OpenPGP Web Key Directory ' +
+                     '(draft-koch-openpgp-webkey-service)',
+    where: 'IETF (Internet-Draft)',
+    url: 'https://datatracker.ietf.org/doc/draft-koch-openpgp-webkey-service/',
+    coverage: 'partial: the advanced and the direct lookup methods (the ' +
+              'z-base-32 SHA-1 of the lower-cased local part, the l ' +
+              'parameter) and the policy file, answered for people who ' +
+              'opted in, per realm and off by default. Missing: the Web Key ' +
+              'Service (submission-address, the submission protocol); CORS ' +
+              'is this service\'s allowlist rather than the draft\'s *.' },
+  // #2272: keys in a hardware security module.
+  { id: 'pkcs11', name: 'PKCS #11 Specification Version 3.2',
+    where: 'OASIS',
+    url: 'https://docs.oasis-open.org/pkcs11/pkcs11-spec/v3.2/' +
+         'pkcs11-spec-v3.2.html',
+    coverage: 'partial, as an application calling a module (any PKCS #11 ' +
+              'v2.40 or later; YubiHSM 2 and SoftHSM2 are the ones tried): ' +
+              'a non-extractable AES-256 key-encryption key that wraps and ' +
+              'unwraps each data key inside the token (CKM_AES_GCM, ' +
+              'CKM_AES_KEY_WRAP_PAD or CKM_YUBICO_AES_CCM_WRAP), and a ' +
+              'realm\'s signing keys generated and used there: RSA PKCS #1 ' +
+              'v1.5 and PSS, ECDSA on P-256, P-384, P-521 and secp256k1, ' +
+              'and EdDSA, with RSA-OAEP decryption and ECDH derivation by ' +
+              'the same keys. 3.2\'s CKM_ML_DSA and CKM_SLH_DSA are used ' +
+              'only when the token lists them; otherwise those signatures ' +
+              'stay in software. Sessions are per thread, and a module is ' +
+              'initialized again once after an outage. Missing: this ' +
+              'service is not a module itself, imports no key into a token ' +
+              'and exports none from it.' },
+  { id: 'rfc7512', name: 'The PKCS #11 URI Scheme (RFC 7512)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc7512',
+    coverage: 'partial: a URI names the token and the key-encryption key, ' +
+              'or the token of the signing keys. The token, object, id ' +
+              '(percent-encoded bytes), serial and slot-id path attributes ' +
+              'are honoured, the other section 2.3 attributes are accepted ' +
+              'and ignored, and the module-path query attribute chooses the ' +
+              'module for that key alone. pin-value and pin-source are ' +
+              'refused: a PIN is delivered by keys.pkcs11PinProvider, never ' +
+              'in a URI. Missing: type, manufacturer, model and the library ' +
+              'attributes do not narrow the match, and module-name is not ' +
+              'read.' },
+  // #2272: the realm's OpenSSH user certificate authority.
+  { id: 'openssh-certkeys', name: 'OpenSSH certificate keys ' +
+                                  '(PROTOCOL.certkeys)',
+    where: 'OpenSSH (now the Internet-Draft draft-miller-ssh-cert)',
+    url: 'https://datatracker.ietf.org/doc/draft-miller-ssh-cert/',
+    coverage: 'partial: each realm\'s user CA issues ' +
+              '-cert-v01@openssh.com user certificates for ssh-ed25519, ' +
+              'ECDSA, RSA and the two sk- security-key types, signed with ' +
+              'ssh-ed25519, ecdsa-sha2-nistp256/384/521 or ' +
+              'rsa-sha2-256/512 in the order pki.sshUserCaAlgorithms ' +
+              'gives, with principals from the person\'s own entry, the ' +
+              'realm\'s extensions and no critical options, and a longer ' +
+              'lifetime only for verified hardware evidence. The CA key is ' +
+              'published at /pki/ssh-user-ca/{scope}. A host certificate ' +
+              'is read and checked, not issued. ssh-mldsa-65 is a key type ' +
+              'this service defines, because OpenSSH has none, and stock ' +
+              'OpenSSH cannot verify it. Missing: host certificates, and ' +
+              'certificates for DSA keys.' },
+  { id: 'openssh-krl', name: 'OpenSSH key revocation lists (PROTOCOL.krl)',
+    where: 'OpenSSH',
+    url: 'https://github.com/openssh/openssh-portable/blob/master/' +
+         'PROTOCOL.krl',
+    coverage: 'partial: each realm\'s KRL at /pki/ssh-user-krl/{scope}, ' +
+              'rebuilt by a scheduler job when a certificate is revoked or ' +
+              'a hardware token is reported lost, holds a certificates ' +
+              'section per CA key with a serial list, and the SHA-256 ' +
+              'fingerprints of revoked keys. It is read back as well as ' +
+              'written. Missing: a signature section (the KRL is unsigned, ' +
+              'which is why it is served on the main port only), and key-id ' +
+              'lists, serial ranges and bitmaps, explicit keys and SHA-1 ' +
+              'fingerprints.' },
   { id: 'rfc8463', name: 'A New Cryptographic Signature Method for DKIM ' +
                          '(RFC 8463)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8463',
@@ -3955,7 +4340,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'authzen.searchMaxCandidates, and said incomplete past it.' },
   { path: '/access/v1/access-requests', group: 'AuthZEN',
     name: 'Submit an access request',
-    specs: ['authzen-arap', 'authzen-arap-callback'],
+    specs: ['authzen-arap', 'authzen-arap-callback', 'authzen-arap-actor',
+            'authzen-arap-bulk'],
     what: 'POST a denied evaluation\'s subject, resource, action and ' +
           'context with the denial it received (its binding_token and ' +
           'expires_at, echoed unchanged); get 202 and a Task Handle, or 201 ' +
@@ -3965,8 +4351,42 @@ const ENDPOINTS: EndpointEntry[] = [
           'The same caller door and AUTHZEN_PEPS as an evaluation; ' +
           'Idempotency-Key honoured per caller; a callback only to a URL ' +
           'registered for the caller. Every refusal is problem+json.' },
+  { path: '/access/v1/access-requests/schema', group: 'AuthZEN',
+    name: 'An access request\'s submission schema',
+    specs: ['authzen-arap'],
+    what: 'GET the JSON Schema (draft 2020-12) of the augmentations a ' +
+          'submission may add: context.business_justification, and ' +
+          'requested_access.requested_until and emergency, the last ' +
+          'requiring the justification. Public, the same origin as ' +
+          'access_request_endpoint; a requestable denial\'s ' +
+          'request_schema_url names it. While authzen.accessRequestForm ' +
+          'is on, a denial also names form_url, a portal page. Answers ' +
+          '501 while the API or the profile ' +
+          'is off. Registered before the task-status path, which would ' +
+          'otherwise read "schema" as an id.' },
+  { path: '/access/v1/access-requests/catalogs/:evaluation',
+    group: 'AuthZEN',
+    name: 'An access request\'s Catalogs Document',
+    specs: ['authzen-arap-catalog'],
+    what: 'GET the Catalogs Document a requestable denial names as ' +
+          'request_catalogs_url: the one catalog-backed field, ' +
+          'requested_access.entitlement, and its Catalog Endpoint. Only ' +
+          'for a recorded denial whose policy advice lists entitlements, ' +
+          'and only to the caller it was answered to, still scoped to the ' +
+          'application. The same door and AUTHZEN_PEPS as a submission. ' +
+          'Answers 501 while authzen.accessRequestCatalogs is off.' },
+  { path: '/access/v1/access-requests/catalogs/:evaluation/entitlements',
+    group: 'AuthZEN',
+    name: 'An access request\'s entitlements catalog',
+    specs: ['authzen-arap-catalog'],
+    what: 'GET the entitlements the denial\'s policy advice lists, as ' +
+          'Catalog Items (value and label): q matches either, cursor ' +
+          'continues the same search and limit is clamped to 50. The same ' +
+          'caller as the Catalogs Document. A submission\'s ' +
+          'requested_access.entitlement must be one of them.' },
   { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
-    name: 'An access request\'s task status', specs: ['authzen-arap'],
+    name: 'An access request\'s task status',
+    specs: ['authzen-arap', 'authzen-arap-bulk'],
     what: 'GET the task: its status (pending, approved, denied, expired, ' +
           'cancelled, failed), Retry-After while pending, and once approved ' +
           'the reevaluate result with the approval the PEP carries on its ' +
@@ -3974,7 +4394,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'caller that submitted it alone; to anybody else it is ' +
           'unknown_task.' },
   { path: '/access/v1/access-requests/:id/cancel', group: 'AuthZEN',
-    name: 'Cancel an access request', specs: ['authzen-arap'],
+    name: 'Cancel an access request',
+    specs: ['authzen-arap', 'authzen-arap-bulk'],
     what: 'POST, or DELETE, to cancel a pending task of the caller\'s; a ' +
           'finished one answers 409 invalid_task_state.' },
   { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
@@ -4465,6 +4886,24 @@ const ENDPOINTS: EndpointEntry[] = [
           'true of every certificate authority and is the reason a client ' +
           'author would point their stack here. Ungated, because everything ' +
           'in it is already inside every certificate this service hands out.' },
+  { path: '/pki/ssh-user-ca/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user CA public key', specs: ['openssh-certkeys'],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH user CA key, ' +
+          'published as an authorized-key line for SSH servers to trust. ' +
+          'With `?algorithm=ssh-mldsa-65` it answers the realm\'s ML-DSA ' +
+          'authority instead, which stock OpenSSH cannot verify yet. ' +
+          'Ungated and `no-store`, on the main port only: the plain-HTTP ' +
+          'revocation listener refuses it, because the key is a trust ' +
+          'anchor. The corresponding CA private key never leaves this ' +
+          'service.' },
+  { path: '/pki/ssh-user-krl/:scope', group: 'PKI',
+    name: 'The realm OpenSSH user key revocation list', specs: ['openssh-krl'],
+    what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH KRL, updated when ' +
+          'a caller revokes a certificate or reports a hardware token lost. ' +
+          'Ungated and `no-store`, on the main port only: the KRL is ' +
+          'unsigned, so the plain-HTTP revocation listener refuses it. SSH ' +
+          'servers must be configured to consult it because this service ' +
+          'cannot make a relying party do so.' },
   { path: '/admin-api/xacml', group: 'XACML',
     name: 'The XACML console page over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml draws, as data. Ungated, like the rest of ' +
@@ -4511,7 +4950,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'was refused rather than forgotten.' },
   { path: '/admin-api/xacml/:action', group: 'XACML',
     name: 'Change a policy, the repository or a remote PEP',
-    specs: ['xacml30'],
+    specs: ['xacml30', 'alfa'],
     what: 'The console\'s three POST endpoints as ONE action resource — a ' +
           'caller should not have to work out which page owns "enable". ' +
           'The repository\'s, the editor\'s, and the three that end -pep, ' +
@@ -4811,6 +5250,32 @@ const ENDPOINTS: EndpointEntry[] = [
           'already exists. A credential naming somebody with no entry — a ' +
           'client_credentials token, a client certificate — gets 404 ' +
           'instead.' },
+  // #1955 P6: THE WEB KEY DIRECTORY, the OpenPGP card's group.
+  { path: '/.well-known/openpgpkey/:domain/hu/:hash', group: 'OpenPGP',
+    name: 'Web Key Directory key (advanced method)', specs: ['wkd'],
+    what: 'draft-koch-openpgp-webkey-service section 3.1, the advanced ' +
+          'method, asked of openpgpkey.<domain>: the binary OpenPGP public ' +
+          'key of the person whose address hashes to :hash (z-base-32 of ' +
+          'the SHA-1 of the lower-cased local part, l= the local part), ' +
+          'application/octet-stream and Cache-Control: no-store. Only a ' +
+          'person who opted in on /portal/openpgp is answered, only where ' +
+          'the realm turned openpgp.wkd on and serves :domain; anything ' +
+          'else is 404. A path with no realm segment is answered by the ' +
+          'realm that serves the domain.' },
+  { path: '/.well-known/openpgpkey/:domain/policy', group: 'OpenPGP',
+    name: 'Web Key Directory policy (advanced method)', specs: ['wkd'],
+    what: 'The advanced method\'s policy file: empty, text/plain, 200 ' +
+          'where a realm serves :domain and 404 otherwise. Its presence is ' +
+          'what tells a client the directory exists; no Web Key Service ' +
+          'is offered, so there is no submission-address.' },
+  { path: '/.well-known/openpgpkey/hu/:hash', group: 'OpenPGP',
+    name: 'Web Key Directory key (direct method)', specs: ['wkd'],
+    what: 'The direct method: as the advanced one, the domain being the ' +
+          'host the request was made to.' },
+  { path: '/.well-known/openpgpkey/policy', group: 'OpenPGP',
+    name: 'Web Key Directory policy (direct method)', specs: ['wkd'],
+    what: 'The direct method\'s policy file, for the host the request was ' +
+          'made to.' },
   { path: '/.well-known/hoba/register', group: 'SCIM',
     name: 'Register a HOBA public key',
     specs: ['rfc7486'],
@@ -4845,7 +5310,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // reason to know it is here is the certificate — one anchor covers both.
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
-    specs: ['rfc8446', 'rfc5280'],
+    specs: ['rfc8446', 'rfc5280', 'fips201', 'rfc9440'],
     what: 'A VERIFIED CLIENT CERTIFICATE BECOMES A SESSION (2026-09-05), on ' +
           'this port since 2026-09-16 — it was a side effect of reaching ' +
           'either deleted TLS listener, which meant loading a diagnostic ' +
@@ -4858,7 +5323,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'stored in userCertificate on exactly one entry of the realm ' +
           '(never matched by its common name), and an application\'s ' +
           'certificate (an RFC 8705 credential, not a person) are each ' +
-          'answered 200 with no session and the reason.' },
+          'answered 200 with no session and the reason. Behind a ' +
+          'TLS-terminating proxy the administrator named ' +
+          '(tls.trustedProxyCertificates and tls.trustedProxyAddresses, ' +
+          'off by default), the certificate is RFC 9440\'s Client-Cert ' +
+          'and Client-Cert-Chain, verified here as a handshake\'s would ' +
+          'be; from anybody else those headers are removed.' },
+  { path: '/authn/certificate/continue', group: 'TLS',
+    name: 'Certificate sign-in on its own listener',
+    specs: ['rfc8446', 'rfc5280', 'fips201'],
+    what: 'THE CERTIFICATE SIGN-IN HANDOFF (#2012, off by default: ' +
+          'certSignIn.handoff). The sign-in screen links here, on the ' +
+          'listener the certificate-sign-in application is mapped to — one ' +
+          'whose clientAuth asks for a certificate — so the smart card and ' +
+          'its PIN are asked for on this request alone. The certificate is ' +
+          'held to what the screen\'s own certificate door asks, bound to ' +
+          'the pending sign-in and to the browser\'s sign-on session (both ' +
+          'requests carry it), and the browser is sent back to the screen, ' +
+          'which continues as its holder. An unknown, used or expired ' +
+          'handoff is answered 400, and one arriving without the starting ' +
+          'browser\'s session 403.' },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -4959,6 +5443,16 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The icon a browser asks for by itself on every page: ' +
           'the square mark of the logo (common/favicon.ico). Answered on ' +
           'every listener; kept for a day.' },
+  { path: '/web/csp-report', group: 'Service',
+    name: 'Content Security Policy violation reports', specs: [],
+    what: 'NON-SPEC (#2164). The receiver of what CSP Level 3 and the ' +
+          'Reporting API define a browser to send: every page\'s policy ' +
+          'names it in report-uri and report-to, beside a ' +
+          'Reporting-Endpoints header. POST only, no credential, at most ' +
+          '16 KiB and 60 reports a minute from one address; it records the ' +
+          'directive, the page\'s path without its query and the blocked ' +
+          'origin, logs STS-HTTP-0027 and answers 204 with no body. ' +
+          'Answered by the front process (common/csp_reports.ts).' },
   { path: '/web/card.css', group: 'Service',
     name: 'The public surfaces\' card stylesheet', specs: [],
     what: 'NON-SPEC (#570). The sign-in screen\'s card and the language ' +
@@ -4973,6 +5467,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'links, the social icons, the copyright and the version ' +
           '(common/web_footer.ts). Answered on every listener; an address ' +
           'carrying this build\'s ?v= is cached for good.' },
+  { path: '/web/browser-check.js', group: 'Service',
+    name: 'The browser check every shell runs first', specs: [],
+    what: 'NON-SPEC (#2220). A script in ECMAScript 5, run before a static ' +
+          'surface\'s bundle, that asks whether the browser has fetch, ' +
+          'TextEncoder, URL and ECMAScript 2022 and, where it does not, ' +
+          'shows the notice the shell drew hidden in the reader\'s language ' +
+          '(common/web_browser_check.ts). Answered on every listener, ' +
+          'no-cache.' },
   { path: '/web/theme.css', group: 'Service',
     name: 'A realm\'s sign-in appearance stylesheet', specs: [],
     what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +
@@ -5589,6 +6091,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'certificate form from a profile, a fresh key pair or a stored ' +
           'one, and write nothing. The issue they lead to is POST ' +
           '/admin-api/pki/issue-certificate.' },
+  { path: '/admin-api/console/certificates/:action',
+    group: 'Admin console API',
+    name: 'Certificate sign-in\'s certificate reader',
+    specs: ['rfc5280'],
+    what: 'NON-SPEC. The console\'s own (#2080): inspect reads the PEM ' +
+          'certificates handed in — subject, SHA-256, SubjectPublicKeyInfo ' +
+          'SHA-256 — for the certificate sign-in profile editor, the PIV ' +
+          'PEM lists and a person\'s binding editor, and with bindings ' +
+          'answers the stsCertificateBinding values the first one is found ' +
+          'by. It writes and keeps nothing; what it leads to is POST ' +
+          '/admin-api/config/set or /admin-api/users/add-attribute.' },
   { path: '/admin-api/console/applications/:action',
     group: 'Admin console API',
     name: 'The new application form\'s helper',
@@ -5687,6 +6200,30 @@ const ENDPOINTS: EndpointEntry[] = [
           '`setting` and its `value`, through the ordinary settings write. ' +
           'Needs admin:write. Written to ou=signerTrustAnchors, so a change ' +
           'survives a restart.' },
+  { path: '/admin-api/truststores', group: 'Management API',
+    name: 'Named truststores and the use cases that trust them',
+    specs: ['rfc5280', 'openapi'],
+    what: 'The Truststores, Use cases and System truststore tabs of ' +
+          '/admin/pki/trust over JSON (#2118): every truststore this realm ' +
+          'can name (built-in, view, setting, SPIFFE bundle or named) with ' +
+          'what it holds counted and the use cases that trust it, every use ' +
+          'case with what it trusts now and its default, the limits, and ' +
+          'node\'s default store described certificate by certificate ' +
+          'without PEM.' },
+  { path: '/admin-api/truststores/:action', group: 'Management API',
+    name: 'Change a named truststore or what a use case trusts',
+    specs: ['rfc5280', 'openapi'],
+    what: 'show | create | delete | add | remove | assign | unassign — the ' +
+          'controls of the Truststores and Use cases tabs of ' +
+          '/admin/pki/trust (#2118). show takes a `name` (and `withPem`) and ' +
+          'writes nothing; create takes a `name` and a `description`; delete ' +
+          'is refused while a use case trusts the truststore; add takes ' +
+          '`certificates`, each through the admission rule and each refusal ' +
+          'named; remove takes a `fingerprint`; assign takes a `useCase` and ' +
+          'its ordered `truststores`, and unassign returns the use case to ' +
+          'its default. A service-wide use case is assigned from the default ' +
+          'realm only. Needs admin:write. Written to ou=truststores, so a ' +
+          'change survives a restart.' },
   { path: '/admin-api/pki/:action', group: 'Management API',
     name: 'Build a hierarchy, issue a key pair, author a certificate',
     specs: ['rfc5280'],
@@ -5860,6 +6397,29 @@ const ENDPOINTS: EndpointEntry[] = [
           'a single-use address verification link to it; save-template and ' +
           'reset-template, with { template, lang, … }: this realm\'s wording ' +
           'of a message, checked when saved. The console\'s three forms.' },
+  // #1955 P6: Directory → OpenPGP keys.
+  { path: '/admin-api/openpgp', group: 'Management API',
+    name: 'OpenPGP keys',
+    specs: ['openapi', 'rfc9580', 'rfc9980', 'wkd', 'rfc4880'],
+    what: 'NON-SPEC (#1955). What Directory → OpenPGP keys draws: with ' +
+          '?user=, that person\'s OpenPGP key, their outstanding ' +
+          'registration challenge, their Web Key Directory publication, ' +
+          'their S/MIME certificate and how their mail is encrypted; and ' +
+          'the realm\'s Web Key Directory switch and domains. Mirrors GET ' +
+          '/admin/openpgp.' },
+  { path: '/admin-api/openpgp/:action', group: 'Management API',
+    name: 'OpenPGP key actions',
+    specs: ['openapi', 'rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd',
+            'rfc4880', 'rfc9629', 'rfc9935'],
+    effect: 'issues a challenge, registers or removes an OpenPGP key, ' +
+            'publishes it, or sets a person\'s mail encryption or S/MIME ' +
+            'certificate',
+    what: 'NON-SPEC (#1955). challenge, register (publicKey, signed: the ' +
+          'person\'s challenge signed with gpg --clearsign), remove, ' +
+          'publish, withdraw, mail-encryption (choice) and smime ' +
+          '(certificate), each with { user }: what /portal/openpgp offers ' +
+          'the person, for them. A key is registered only on the ' +
+          'person\'s own proof.' },
   { path: '/admin-api/mail/outbox', group: 'Management API',
     name: 'Mail outbox', specs: ['openapi'],
     what: 'NON-SPEC (#63). What GET /admin/mail/outbox draws: every message ' +
@@ -5908,7 +6468,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'A full collection stops the thread it runs in. The page\'s ' +
           'Collect buttons. Mirrors POST /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
-    name: 'Encryption at rest', specs: [],
+    name: 'Encryption at rest', specs: ['pkcs11', 'rfc7512'],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +
           'the key-encryption key (present, DURABLE or EPHEMERAL, and which ' +
           'of the five providers it is read from), the algorithm read out of ' +
@@ -5958,7 +6518,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'not about the route. Mirrors GET /admin/users.' },
   { path: '/admin-api/users/:action', group: 'Management API',
     name: 'User actions',
-    specs: ['rfc4511', 'rfc4519'],
+    specs: ['rfc4511', 'rfc4519', 'fido-u2f'],
     effect: 'creates an entry under ou=users in the embedded LDAP directory, ' +
             'and sets or issues the credential it is given',
     what: 'NON-SPEC path over the embedded directory. THREE URLs behind the ' +
@@ -6068,6 +6628,59 @@ const ENDPOINTS: EndpointEntry[] = [
           'reported beside them. There is ' +
           'no POST beside this one: the forms post set-many to ' +
           '/admin/config. Mirrors GET /admin/webauthn.' },
+  // #2049: the hardware-token mechanisms and OpenPGP, a Protocols page
+  // each, and an operation per page.
+  { path: '/admin-api/hardware-tokens-settings', group: 'Management API',
+    name: 'Hardware token settings',
+    specs: ['webauthn', 'ctap21', 'yubico-piv-attestation', 'rfc6030'],
+    what: 'NON-SPEC (#2049). The Hardware tokens group: ' +
+          'hardwareTokens.hardwareClaims, which decides whether a PKINIT ' +
+          'inference and a passkey without trusted attestation still earn ' +
+          'hwk, beside what a token register is and what a lost token ' +
+          'retires. There is no POST beside this one: the forms post ' +
+          'set-many to /admin/config. Mirrors GET ' +
+          '/admin/hardware-tokens-settings.' },
+  { path: '/admin-api/piv', group: 'Management API',
+    name: 'PIV settings',
+    specs: ['fips201', 'yubico-piv-attestation'],
+    what: 'NON-SPEC (#2049). Every piv.* setting: the attestation roots, ' +
+          'whether a PIV profile requires an attestation, the PIN and ' +
+          'touch policies, card-authentication sign-in, key escrow and ' +
+          'the outside issuers mapped by card UUID. There is no POST ' +
+          'beside this one: the forms post set-many to /admin/config. ' +
+          'Mirrors GET /admin/piv.' },
+  { path: '/admin-api/yubiotp', group: 'Management API',
+    name: 'YubiKey OTP settings',
+    specs: ['yubico-otp', 'yk-val'],
+    what: 'NON-SPEC (#2049). Every yubiotp.* setting: enrolment, the ' +
+          'YK-VAL 2.0 verify endpoint and plaintext imports. There is no ' +
+          'POST beside this one: the forms post set-many to /admin/config. ' +
+          'Mirrors GET /admin/yubiotp.' },
+  { path: '/admin-api/oath-tokens', group: 'Management API',
+    name: 'OATH token settings',
+    specs: ['rfc4226', 'rfc6030'],
+    what: 'NON-SPEC (#2049). The hotp.* settings and ' +
+          'pskc.allowPlaintextImport: the code length, the two windows and ' +
+          'whether product mode accepts a plaintext PSKC seed file. There ' +
+          'is no POST beside this one: the forms post set-many to ' +
+          '/admin/config. Mirrors GET /admin/oath-tokens.' },
+  { path: '/admin-api/ssh-user-ca', group: 'Management API',
+    name: 'SSH user certificate settings', specs: [],
+    what: 'NON-SPEC (#2049). Every pki.ssh* setting of the realm\'s ' +
+          'OpenSSH user CA: its algorithms, the post-quantum rules, the ' +
+          'longest certificate with and without hardware evidence, the ' +
+          'extensions and the principals. There is no POST beside this ' +
+          'one: the forms post set-many to /admin/config. Mirrors GET ' +
+          '/admin/ssh-user-ca.' },
+  { path: '/admin-api/openpgp-settings', group: 'Management API',
+    name: 'OpenPGP settings',
+    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd', 'rfc4880',
+            'rfc9629', 'rfc9935'],
+    what: 'NON-SPEC (#2049). Every openpgp.* setting: the Web Key ' +
+          'Directory, the algorithms accepted, the smallest RSA key, the ' +
+          'post-quantum rules, the challenge lifetime and the signature ' +
+          'clock skew. There is no POST beside this one: the forms post ' +
+          'set-many to /admin/config. Mirrors GET /admin/openpgp-settings.' },
   { path: '/admin-api/mfa', group: 'Management API',
     name: 'Who holds a second factor',
     specs: ['rfc6238', 'rfc4226', 'webauthn'],
@@ -6120,6 +6733,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'entry is refused and nothing is written, so that a person ' +
           'created later under that name inherits nothing. Mirrors POST ' +
           '/admin/rbac.' },
+  { path: '/admin-api/approvals', group: 'Management API',
+    name: 'Pending approvals', specs: ['openapi'],
+    what: 'NON-SPEC (#2166, ASVS 5.0.0 2.3.5). What GET /admin/approvals ' +
+          'draws: whether two-person approval (admin.dualControl, off by ' +
+          'default) is on and in force in this realm, the table of acts ' +
+          'it holds, and every administrator act held for a second ' +
+          'administrator, pending ones first; ?id= names one. Mirrors GET ' +
+          '/admin/approvals.' },
+  { path: '/admin-api/approvals/:action', group: 'Management API',
+    name: 'Pending approval decisions', specs: ['openapi'],
+    effect: 'runs, refuses or withdraws a held administrator act',
+    what: 'NON-SPEC (#2166). approve, refuse and withdraw, with { id, ' +
+          'reason }. Approve and refuse are a second, different person\'s ' +
+          'holding the authority the act needs; an approval asks for a ' +
+          'recent sign-in and runs the stored operation through its own ' +
+          'handler as the requester\'s act. Withdraw is the requester\'s. ' +
+          'Mirrors POST /admin/approvals.' },
   { path: '/admin-api/sessions', group: 'Management API', name: 'Live sessions',
     specs: ['openapi', 'oidc', 'rfc4120', 'rfc4511'],
     what: 'NON-SPEC. Every session this service is holding right now, across ' +
@@ -6402,6 +7032,59 @@ const ENDPOINTS: EndpointEntry[] = [
           'create fails, so a caller that reads this first cannot be told ' +
           'afterwards that half of what it sent was ignored. Mirrors GET ' +
           '/admin/users/new.' },
+  { path: '/admin-api/groups/new', group: 'Management API',
+    name: 'New group form', specs: ['rfc4511', 'rfc4519'],
+    what: 'NON-SPEC. What a group may be created with, as JSON: each field ' +
+          'of the create and whether the create refuses without it — the ' +
+          'cn is required, the description, the address and the members ' +
+          'are not — plus the ou=groups container a new group would land ' +
+          'in, THIS REALM\'S. IT CREATES NOTHING: the create is POST ' +
+          '/admin-api/groups/create. Mirrors GET /admin/groups/new.' },
+  { path: '/admin-api/roles/new', group: 'Management API',
+    name: 'New role form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a role may be created with, as JSON: each field ' +
+          'of the create and whether the create refuses without it — the ' +
+          'name is required, the rest are not — plus the container roles ' +
+          'are stored in and the applications a role may be for. IT ' +
+          'CREATES NOTHING: the create is POST ' +
+          '/admin-api/roles/create-role. Mirrors GET /admin/roles/new.' },
+  { path: '/admin-api/devices/new', group: 'Management API',
+    name: 'New device form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a device may be registered with, as JSON: each ' +
+          'field of the create and whether the create refuses without it ' +
+          '— the owner is required, the rest are not — plus the closed ' +
+          'sets its choices come from. IT REGISTERS NOTHING: the create ' +
+          'is POST /admin-api/devices/create. Mirrors GET ' +
+          '/admin/devices/new.' },
+  { path: '/admin-api/attribute-sources/new', group: 'Management API',
+    name: 'New attribute source form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What an attribute source may be added with, as JSON: ' +
+          'each field of the create and whether the create refuses without ' +
+          'it — the id, the host, the database, the user, the table, its ' +
+          'key column and at least one column mapping are required, the ' +
+          'rest have defaults — plus the closed sets its choices come ' +
+          'from. IT ADDS NOTHING: the create is POST ' +
+          '/admin-api/attribute-sources/add-source. Mirrors GET ' +
+          '/admin/attribute-sources/new.' },
+  { path: '/admin-api/secret-destinations/new', group: 'Management API',
+    name: 'New secret destination form', specs: ['rfc4511'],
+    what: 'NON-SPEC. What a secret push destination may be added with, as ' +
+          'JSON: each field of the create and whether the create refuses ' +
+          'without it — the identifier and the provider always, and some ' +
+          'only for some providers (requiredWhen): the write credential ' +
+          'for all but file, the region for aws, the endpoint for azure ' +
+          'and vault, the directory for file. IT ADDS NOTHING: the create ' +
+          'is POST /admin-api/secret-destinations/add-destination. Mirrors ' +
+          'GET /admin/secret-destinations/new.' },
+  { path: '/admin-api/policies/new', group: 'Management API',
+    name: 'New policy form', specs: ['rfc4511'],
+    what: 'NON-SPEC. The kinds a named policy may be made of and, for the ' +
+          'kind asked, each field of its save and whether the save ' +
+          'refuses without it — the name always, because a save with no ' +
+          'name changes the default policy, and each field the save ' +
+          'refuses empty. IT SAVES NOTHING: a named policy ' +
+          'is the kind\'s save act under a name the realm does not hold ' +
+          'yet. Mirrors GET /admin/policies/new.' },
   { path: '/admin-api/applications/new', group: 'Management API',
     name: 'New application form', specs: ['rfc4511', 'rfc7591'],
     what: 'NON-SPEC. THE TWO CLOSED VOCABULARIES A CREATE TAKES, as JSON: ' +
@@ -6884,6 +7567,63 @@ const ENDPOINTS: EndpointEntry[] = [
           'address on their entry, with one link to the sign-in page and no ' +
           'credential in it. pause, resume and end, with { id }. The ' +
           'console\'s four acts on that page.' },
+  { path: '/admin-api/hardware-tokens', group: 'Management API',
+    name: 'Hardware tokens', specs: ['openapi'],
+    what: 'NON-SPEC (#1955). What Directory → Hardware tokens draws: the ' +
+          'physical security keys and smart cards this realm recorded, ' +
+          'each from its own attestation, paged and searched by serial or ' +
+          'person, with the passkeys and certificates on each. Mirrors GET ' +
+          '/admin/hardware-tokens.' },
+  { path: '/admin-api/hardware-tokens/oath', group: 'Management API',
+    name: 'Imported OATH tokens', specs: ['openapi', 'rfc6030'],
+    what: 'NON-SPEC (#1955 P4). The HOTP and TOTP tokens administrators ' +
+          'imported from vendors\' PSKC seed files, unassigned, assigned ' +
+          'or retired, paged and searched by serial or person. Never a ' +
+          'secret. Mirrors GET /admin/hardware-tokens (its OATH tab).' },
+  { path: '/admin-api/hardware-tokens/yubiotp', group: 'Management API',
+    name: 'Imported YubiKey OTPs', specs: ['openapi', 'yubico-otp'],
+    what: 'NON-SPEC (#2071). The YubiKey OTPs administrators imported ' +
+          'from a CSV, unassigned, assigned or retired, paged and searched ' +
+          'by serial or person; a person\'s are read off their entry, the ' +
+          'master copy. Never a key. Mirrors GET /admin/hardware-tokens ' +
+          '(its YubiKey OTP tab).' },
+  { path: '/admin-api/hardware-tokens/:action', group: 'Management API',
+    name: 'Hardware token acts',
+    specs: ['openapi', 'rfc6030', 'yubico-piv-attestation',
+          'lamps-csr-attestation'],
+    effect: 'reports a hardware token lost and retires its credentials, ' +
+            'issues a PIV slot certificate, hands over an escrowed key, or ' +
+            'issues or revokes a person\'s SSH certificate',
+    what: 'NON-SPEC (#1955). lost, with { key }: the token is marked lost, ' +
+          'each passkey on it removed, each certificate on it revoked for ' +
+          'keyCompromise, a CAEP credential-change sent for each and the ' +
+          'sessions they signed in ended. enrol-piv, with { username, ' +
+          'profile, csr, attestationCertificate?, attestationIssuer? }: a ' +
+          'PIV slot certificate issued to that person over the EST Issuing ' +
+          'CA, its YubiKey PIV attestation verified and the YubiKey ' +
+          'recorded. recover-key, with { username, serial }: that person\'s ' +
+          'escrowed piv-key-management key, which the access-control ' +
+          'policy permits only to PIV_KEY_RECOVERY, after a recent sign-in. ' +
+          'revoke-ssh, with { username, serial }: that person\'s SSH user ' +
+          'certificate revoked and put on the realm\'s KRL. issue-ssh, ' +
+          'with { username, publicKey, principals?, lifetimeS? }: an SSH ' +
+          'user certificate issued to that person, written onto their ' +
+          'entry first (#2071). The console\'s five acts on that page.' },
+  { path: '/admin-api/hardware-tokens/ssh-certificates',
+    group: 'Management API',
+    name: 'A person\'s SSH user certificates',
+    specs: ['openapi', 'openssh-certkeys'],
+    what: 'NON-SPEC (the #1955 review). The OpenSSH user certificates ' +
+          'issued to a person that have not expired, revoked ones marked: ' +
+          'serial, key type and fingerprint, principals, validity and ' +
+          'whether hardware evidence covered the key. Never a key. Mirrors ' +
+          'GET /admin/hardware-tokens (its SSH certificates tab).' },
+  { path: '/admin-api/hardware-tokens/escrowed', group: 'Management API',
+    name: 'Escrowed PIV keys', specs: ['openapi'],
+    what: 'NON-SPEC (#1955). A person\'s escrowed piv-key-management ' +
+          'certificates (piv.keyEscrow): serial, subject, validity and ' +
+          'whether each was revoked. Never a key. Mirrors GET ' +
+          '/admin/hardware-tokens.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +
@@ -6932,6 +7672,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'becomes the XACML action-id, so a policy may permit an access ' +
           'token and refuse a refresh token. `available: false` means the ' +
           'engine is not loaded here. Mirrors the dry run on /admin/roles.' },
+  { path: '/admin-api/roles/eligibility', group: 'Management API',
+    name: 'Is this person eligible for this dynamic role?',
+    specs: ['openapi', 'xacml30'],
+    what: 'NON-SPEC (#1072). One dynamic selectable role\'s own XACML ' +
+          'eligibility policy decided by the PDP for one person, as a ' +
+          'sign-in to `application` would ask it, without a sign-in: ' +
+          'eligible or not, the code when not, the decision and status (a ' +
+          'missing attribute names itself there). Only Permit is eligible. ' +
+          'It writes nothing but the roles.eligibility audit row and never ' +
+          'shows the policy or the person\'s attributes. `role` and `user` ' +
+          'are both needed; with either missing it answers `answered: ' +
+          'false`. Mirrors the test on a dynamic role\'s /admin/roles page.' },
   { path: '/admin-api/roles/:action', group: 'Management API',
     name: 'Make and change roles',
     specs: ['openapi', 'xacml30'],
@@ -7070,7 +7822,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '?seen=1, paged with ?page= and ?per=. A CODE IS NEVER SENT TO A ' +
           'CLIENT: it is on the audit row and in the log line only. READ ' +
           'ONLY — the table is source. Mirrors GET /admin/error-codes; the ' +
-          'same table is docs/v1.1.0/error-codes.md.' },
+          'same table is docs/v1.2.0/error-codes.md.' },
   { path: '/admin-api/audit-export', group: 'Management API',
     name: 'Audit export', specs: ['openapi'],
     what: 'NON-SPEC (#641). What Monitoring → Audit export draws: each ' +
@@ -7165,6 +7917,13 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
           'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/csp-reports', group: 'Management API',
+    name: 'CSP violation reports',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#2164). GET /admin/csp-reports over JSON: the Content ' +
+          'Security Policy violations browsers reported for this realm, ' +
+          'counted by directive by this node\'s front process, and the ' +
+          'forward setting. It changes nothing.' },
   { path: '/admin-api/malware-scanning', group: 'Management API',
     name: 'Malware scanning',
     specs: ['openapi'],
@@ -7442,6 +8201,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'bound before anything is listening. Whether the MAIN port is ' +
           'HTTPS is global.https, on /admin-api/config with the process\'s ' +
           'own settings. Read-only.' },
+  { path: '/admin-api/tls/key-exchange', group: 'Management API',
+    name: 'TLS key exchange negotiated',
+    specs: ['rfc8446', 'openapi'],
+    what: 'NON-SPEC (#2220). The key exchange group every completed TLS ' +
+          'handshake on this node\'s listeners negotiated since its front ' +
+          'process started, counted per listener and group, and how many ' +
+          'were post-quantum (an ML-KEM group). Drawn on ' +
+          '/admin/crypto-metadata. It changes nothing.' },
   { path: '/admin-api/tls/trust', group: 'Management API',
     name: 'Client-certificate truststore',
     specs: ['rfc5280', 'openapi'],
@@ -8771,7 +9538,7 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
     specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
-            'oidc'],
+            'oidc', 'rfc4121'],
     effect: 'answers 401 with "WWW-Authenticate: Negotiate" and, to a ' +
             'request carrying a valid service ticket, establishes the ' +
             'browser session and returns to whatever was interrupted',
@@ -9076,6 +9843,37 @@ const ENDPOINTS: EndpointEntry[] = [
           'the amr and acr of the sign-in. Needs an ?mfa= id minted by the ' +
           'held sign-in, so following it bare answers 400.'
   },
+  { path: '/wsapi/2.0/verify', group: 'Yubico OTP',
+    name: 'YK-VAL 2.0 verify',
+    specs: ['yk-val', 'yubico-otp'],
+    effect: 'checks a YubiKey OTP for a client that signed the request, ' +
+            'or answers OPERATION_NOT_ALLOWED while yubiotp.ykval is off',
+    what: 'YUBICO\'S VALIDATION PROTOCOL 2.0 (#1955 P5). GET or POST of ' +
+          'id, otp, nonce and h. Off by default: the route answers ' +
+          'OPERATION_NOT_ALLOWED and signs nothing. On, the client id and ' +
+          'the HMAC-SHA1 are checked in every mode, including development; ' +
+          'a nonce is remembered for five minutes; a matching OTP is ' +
+          'spent. Cache-Control: no-store. Nothing is sent to YubiCloud.' },
+  { path: '/authn/roles', group: 'Authentication',
+    name: 'Dynamic role step',
+    specs: ['xacml30', 'oidc'],
+    effect: 'asks which dynamic selectable roles to use for this sign-in, ' +
+            'then establishes the sign-on session it held with the choice',
+    what: 'DYNAMIC SELECTABLE ROLES (#1072). After every factor, a sign-in ' +
+          'to an application whose realm defines a dynamic role (and where ' +
+          'roles.dynamicSelection or the application\'s ' +
+          'appDynamicRoleSelection does not turn it off) is HELD while each ' +
+          'dynamic role\'s own XACML eligibility policy is decided for the ' +
+          'person — only Permit offers a role. Where the person ticked ' +
+          '"Choose roles for this sign-in" on the sign-in screen, or a ' +
+          'required role is offered, this page lists what may be chosen; ' +
+          'Continue (/authn-api/mfa/{id}/roles) holds the choice to the ' +
+          'step\'s own offer and to the policies again, and starts the ' +
+          'session with it on the session record — never in the directory. ' +
+          'A token for that application then carries the chosen roles, ' +
+          'each asked of its policy again at every issuance. Needs an ?mfa= ' +
+          'id minted by the held sign-in, so following it bare answers 400.'
+  },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
     specs: ['rfc6238', 'rfc4226', 'oidc'],
@@ -9270,11 +10068,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#572). After a wallet, rate limited on the sign-in ' +
           'bucket.' },
   { path: '/authn-api/mfa/:id/webauthn/options', group: 'Authentication',
-    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn'],
+    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn', 'ctap21'],
     what: 'NON-SPEC (#572). The step\'s challenge, RP ID, user and keys, ' +
           'and the passkey policy\'s options.' },
   { path: '/authn-api/mfa/:id/webauthn', group: 'Authentication',
-    name: 'Finish a passkey step', specs: ['webauthn'],
+    name: 'Finish a passkey step', specs: ['webauthn', 'ctap21', 'fido-u2f'],
     what: 'NON-SPEC (#572). The ceremony\'s result, verified: a ' +
           'registration where the step enrols a key, an assertion ' +
           'otherwise — decided by the step.' },
@@ -9303,6 +10101,25 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Put a post-login activity off', specs: [],
     what: 'NON-SPEC (#1096). For the profile\'s snoozeDays; refused once ' +
           'the allotted time has passed. The held session starts.' },
+  { path: '/authn-api/mfa/:id/post-login/mail', group: 'Authentication',
+    name: 'Register a post-quantum mail-encryption key',
+    specs: ['rfc9580', 'rfc8551'],
+    what: 'NON-SPEC (#2009 P2). The pqc-mail-encryption activity: an ' +
+          'OpenPGP challenge and key, or an S/MIME certificate, whose ' +
+          'encryption key is ML-KEM; the held session starts once it is ' +
+          'registered.' },
+  { path: '/authn-api/mfa/:id/post-login/piv', group: 'Authentication',
+    name: 'Re-issue a PIV certificate a post-login activity asks for',
+    specs: ['fips201'],
+    what: 'NON-SPEC (#2009 P3). The piv-reissue activity: a slot\'s ' +
+          'certificate request and its attestation, answered with the ' +
+          're-issued certificate; the held session starts once it is ' +
+          'written.' },
+  { path: '/authn-api/mfa/:id/roles', group: 'Authentication',
+    name: 'Choose the dynamic roles for this sign-in', specs: [],
+    what: 'NON-SPEC (#1072). The role step\'s choice, held to the step\'s ' +
+          'own offer and each role\'s eligibility policy now; the held ' +
+          'session starts with it.' },
   { path: '/authn-api/mfa/:id/email/send', group: 'Authentication',
     name: 'Mail a sign-in code or link', specs: [],
     what: 'NON-SPEC (#573). To the verified address only; a resend ' +
@@ -9616,6 +10433,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'section 5.3.1 does not define, as a UNION with what the access ' +
           'token carries and never as a way to take a claim away from it; a ' +
           'malformed one is refused invalid_request rather than ignored.' },
+  { path: '/oauth2/groups', group: 'OAuth 2.0 / OIDC',
+    name: 'Groups claim source',
+    specs: ['oidc', 'rfc6750', 'rfc9068', 'rfc9449'],
+    effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
+            'bare — it needs an access token this service issued',
+    what: 'THE DISTRIBUTED SOURCE OF A GROUPS CLAIM PAST ITS CAP (#2247). ' +
+          'An access token or ID Token whose groups claim would be over ' +
+          'groups.claimMaxBytes carries OpenID Connect Core section 5.6.2\'s ' +
+          '_claim_names and _claim_sources instead, pointing here, and this ' +
+          'answers the list for the presented access token\'s subject ' +
+          'as a signed application/jwt (iss, sub, aud, iat, exp and the ' +
+          'claim), as the section requires of a distributed source. The ' +
+          'token is checked as UserInfo checks one — signature, issuer, ' +
+          'sender constraint, typ, revocation — except its audience and the ' +
+          'openid scope, because a resource server\'s token is the one whose ' +
+          'claim pointed here. Only a token that itself carries the ' +
+          'reference may redeem it, and it is answered what it would have ' +
+          'carried below the cap, through its client\'s own group settings ' +
+          'and release filter, and nothing more. A client_credentials token ' +
+          'has no person and is refused.' },
   { path: '/oauth2/introspect', group: 'OAuth 2.0 / OIDC',
     name: 'Introspection ' +
       'endpoint',
@@ -10515,6 +11352,20 @@ const PROTOCOLS: Protocol[] = [
           '/account-api, the Account API group below: an operation per page ' +
           'and per form, the person always the token\'s subject, described ' +
           'by its own OpenAPI document.' },
+  { name: 'OpenPGP', groups: ['OpenPGP'],
+    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd', 'rfc4880',
+            'rfc9629', 'rfc9935'],
+    what: 'A person\'s OpenPGP key (#1955), registered on the portal or by ' +
+          'an administrator on a proof of possession — the person signs a ' +
+          'challenge with gpg --clearsign, on a YubiKey\'s OpenPGP card ' +
+          'the card signs — and held on their entry; published, if they ' +
+          'choose and the realm turned it on, in the Web Key Directory; ' +
+          'and the key their mail is encrypted to (PGP/MIME), or their ' +
+          'S/MIME certificate is (S/MIME), as they chose. A realm can ' +
+          'require encryption for chosen messages (mail.encryptionRequired), ' +
+          'which are then never sent in the clear. Nothing is recorded as ' +
+          'hardware-bound: the server cannot see a card. There is no ' +
+          'sign-in with OpenPGP.' },
   { name: 'Reporting', groups: ['Reporting'],
     specs: [],
     notAProtocol: true,
@@ -10550,7 +11401,7 @@ const PROTOCOLS: Protocol[] = [
              'gnap.pushCaFile — and gnap.pushSkipTlsVerification turns that ' +
              'off in development mode only (#171).' },
   { name: 'XACML', groups: ['XACML'],
-    specs: ['xacml30', 'xacmljson'],
+    specs: ['xacml30', 'xacmljson', 'alfa'],
     what: 'A Policy Decision Point, a policy repository that IS ' +
           'ou=policies in the embedded directory, a Policy Information ' +
           'Point that reads attributes off the subject\'s own entry, and an ' +
@@ -10561,7 +11412,9 @@ const PROTOCOLS: Protocol[] = [
           'authenticated elsewhere and asked whether they may. Held to the ' +
           'OASIS conformance suite rather than to a test written here.' },
   { name: 'AuthZEN', groups: ['AuthZEN'],
-    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback'],
+    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback',
+            'authzen-arap-catalog', 'authzen-arap-actor',
+            'authzen-arap-bulk'],
     what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
           'Enforcement Point asks one question per access and is told true ' +
           'or false, decided against the realm\'s root policy. An ADAPTER: ' +
@@ -10718,7 +11571,8 @@ const PROTOCOLS: Protocol[] = [
           'socket.',
     sockets: 'The KDC itself is TCP and UDP port 88, which this page cannot ' +
              'see.' },
-  { name: 'SPNEGO', groups: ['Kerberos'], specs: ['rfc4178', 'rfc4559'],
+  { name: 'SPNEGO', groups: ['Kerberos'],
+    specs: ['rfc4178', 'rfc4559', 'rfc4121'],
     what: 'Kerberos over HTTP: /authn/spnego answers 401 ' +
           'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser ' +
           'sends back, accepts the AP-REQ inside it against the service ' +
@@ -10741,7 +11595,8 @@ const PROTOCOLS: Protocol[] = [
              'port for the Broker API. Only the bundle endpoint is on the ' +
              'router.' },
   { name: 'PKI', groups: ['PKI'],
-    specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522'],
+    specs: ['rfc5280', 'rfc7521', 'rfc7523', 'rfc7522', 'openssh-certkeys',
+            'openssh-krl'],
     what: 'A certificate authority for the SERVICE — ONE Root, an ' +
           'Intermediate per trust realm and per the process, and an ' +
           'Issuing CA under each per use case (2026-09-11). Was ' +
@@ -10759,7 +11614,7 @@ const PROTOCOLS: Protocol[] = [
   // ===== ACME card (acme/) =====
   { name: 'ACME', groups: ['ACME'],
     specs: ['rfc8555', 'rfc9773', 'rfc8738', 'rfc8823', 'acme-profiles',
-            'acme-device-attest'],
+            'acme-device-attest', 'lamps-csr-attestation'],
     what: 'An ACME server per trust realm at /enroll/acme: an account bound ' +
           'for life to one person or application by an External Account ' +
           'Binding key, orders for dns, ip, email and permanent-identifier ' +
@@ -10770,7 +11625,8 @@ const PROTOCOLS: Protocol[] = [
   // ===== EST card (est/) =====
   { name: 'EST', groups: ['EST'],
     specs: ['rfc7030', 'rfc8951', 'rfc5967', 'lamps-csr-attestation',
-            'lamps-attestation-freshness'],
+            'lamps-attestation-freshness', 'yubico-piv-attestation',
+            'fips201'],
     what: 'Enrollment over Secure Transport: a device or a person holding a ' +
           'password, a client secret or a certificate this realm issued sends ' +
           'a base64 PKCS#10 request and is handed a certificate from the ' +
@@ -10781,7 +11637,7 @@ const PROTOCOLS: Protocol[] = [
           'Full CMC and tls-unique channel binding are not implemented.' },
   // ===== SCEP card (scep/) =====
   { name: 'SCEP', groups: ['SCEP'],
-    specs: ['rfc8894', 'rfc5280', 'rfc6960'],
+    specs: ['rfc8894', 'rfc5280', 'rfc6960', 'lamps-csr-attestation'],
     what: 'The Simple Certificate Enrolment Protocol: a device holding a ' +
           'single-use challenge password issued for one person or ' +
           'application and one profile sends a signed, encrypted PKCS#10 ' +
@@ -10806,7 +11662,7 @@ const PROTOCOLS: Protocol[] = [
           'console pages because what they describe is this family.',
     sockets: 'BER over TCP 389, and TLS on 636. Neither is on the router.' },
   { name: 'PKI / X.509', groups: ['TLS'],
-    specs: ['rfc5280', 'rfc8446'],
+    specs: ['rfc5280', 'rfc8446', 'rfc9440', 'fips201'],
     what: 'The other end of a TLS and a MUTUAL-TLS connection: the ' +
           'certificate this service presents, the truststore it verifies a ' +
           'client certificate against, and what a verified one is worth — a ' +
@@ -10817,13 +11673,14 @@ const PROTOCOLS: Protocol[] = [
              'were deleted and a client certificate is presented to the main ' +
              'port, which every row here is on. LDAPS 636 shares the ' +
              'certificate and is under LDAP.' },
-  { name: 'WebAuthn / CTAP', groups: ['Authentication'], specs: ['webauthn'],
+  { name: 'WebAuthn / CTAP', groups: ['Authentication'],
+    specs: ['webauthn', 'ctap21', 'fido-u2f'],
     what: 'A second factor on the sign-in screen every protocol here sends a ' +
           'person to: registration and assertion ceremonies against a real ' +
           'security key, with the attestation and the authenticator data ' +
           'checked rather than merely parsed.' },
   { name: 'One-time passwords (TOTP)', groups: ['Authentication'],
-    specs: ['rfc6238', 'rfc4226'],
+    specs: ['rfc6238', 'rfc4226', 'rfc6030'],
     what: 'The other second factor on the sign-in screen every protocol here ' +
           'sends a person to, and the only credential besides a Kerberos ' +
           'ticket this service really CHECKS: the code is computed from the ' +
@@ -10832,7 +11689,21 @@ const PROTOCOLS: Protocol[] = [
           'code this server drew, at /portal/mfa or while an activation link ' +
           'is spent; the person\'s own row on /admin/users is where an ' +
           'operator clears one, and /admin/totp is where the mechanism is ' +
-          'configured.' },
+          'configured. Since #1955 P4 its counter-based sibling as well: an ' +
+          'RFC 4226 HOTP token (a YubiKey OTP slot, enrolled on /portal/mfa, ' +
+          'or a vendor\'s token imported from its RFC 6030 seed file on ' +
+          'Directory → Hardware tokens and assigned or claimed by serial), ' +
+          'its counter advanced by compare-and-set, accepted at every door ' +
+          'that takes a code.' },
+  { name: 'Yubico OTP', groups: ['Yubico OTP'],
+    specs: ['yubico-otp', 'yk-val'],
+    what: 'A YubiKey OTP slot checked on this service (#1955 P5). The ' +
+          'AES-128 key stays here, so a sign-in is amr otp and never hwk. ' +
+          'Enrolment, assignment and a claim are off until ' +
+          'yubiotp.offered; a credential already held is still checked at ' +
+          'the one-time-code step. GET and POST /wsapi/2.0/verify are ' +
+          'YK-VAL 2.0 and stay OPERATION_NOT_ALLOWED until yubiotp.ykval. ' +
+          'No request is sent to YubiCloud.' },
   { name: 'Recovery codes', groups: ['Authentication'],
     specs: ['nist-800-63b'],
     // **IT CARRIED `notAProtocol` UNTIL #283 (2026-10-07)**, on the claim that

@@ -245,11 +245,13 @@ shim) are in git history.
 
 | File | What it is |
 |---|---|
-| `Dockerfile` | Build context is the REPOSITORY ROOT: `cargo build --release -p xacml-pep` over `rust/`, then a `debian:bookworm-slim` image holding the binary, `VERSION` and the `version.json` the binary stamps. OpenSSL is built into the binary (D5). |
+| `Dockerfile` | Build context is the REPOSITORY ROOT: `cargo build --release -p xacml-pep` over `rust/`, then a `debian:bookworm-slim` image holding the binary, `VERSION` and the `version.json` the binary stamps. OpenSSL is built into the binary (D5). Since #2220 the build stage also writes a pinned `cargo cyclonedx` SBOM of the package, which the image carries at `/usr/src/pep/sbom.cdx.json`: its `openssl-src` component is how the built-in OpenSSL's version is visible to a scan, and `tests/xacml_pep.js` holds `docs/v1.2.0/risky-components.md` to it. `Cargo.lock`'s advisories are the daily workflow's `cargo audit` (`.github/workflows/dependency-windows.yml`, not the merge-gating `rust` job, so a new advisory blocks no merge), with reviewed exceptions in `rust/.cargo/audit.toml`; the same workflow builds and scans this image. |
 | `enforcement_cases.json` | **Section 7.2 as a table**, the seven cases BOTH enforcement points are held to — see *The enforcement rule*. |
 | `authzen_cases.json` | **The AuthZEN mapping contract as a table** (#1179): the catalogue values and requests the service's `authzen/` and this container's port are BOTH held to — see *The AuthZEN edge PDP*. |
 | `certs/` | The compose files' default certificate mount; empty and gitignored. |
 | `openapi/` | **GENERATED (#1830)**: one OpenAPI 3.1 document per surface, from `models/pep/` — see *THE MODEL OF EVERY ENDPOINT*. Never edited by hand. |
+
+**Deployed as a scaled service on AWS by `deploy/aws/pep-cluster/` (#1284)**: an environment of its own — the image on Fargate behind an ALB with AWS WAF, its keys from Secrets Manager. `deploy/aws/CLAUDE.md`, *A remote PEP cluster*, argues it; nothing in this directory changed for it.
 
 | Rust module (`rust/bins/xacml-pep/src/`) | What it is (the Node file it replaces) |
 |---|---|
@@ -262,6 +264,7 @@ shim) are in git history.
 | `listener.rs` | The HTTPS listener whose pair is re-read from disk, and which asks for a client certificate when `PEP_AUTHZEN_CLIENT_CA` is set (#1179). |
 | `service.rs` | The one handler for both listeners, `/protected`'s decision, `GET /`. |
 | `authzen_catalogue.rs`, `authzen_map.rs` | Ports of `authzen/authzen_catalogue.ts` and `authzen/authzen_map.ts`: the catalogue grammar, the request reading and the fail-closed mapping (#1179). Pure. |
+| `authzen_binding.rs` | Which tuples the OAuth token-exchange binding answers, classified as `authzen/authzen_exchange.ts`'s `plan()` and `strayContext()` classify them, from the pulled settings (#1205). Pure. |
 | `authzen.rs` | The AuthZEN edge PDP's endpoints, the admission of a caller by the pulled list and the optional local narrowing (#1189), the batch and the metadata (#1179), and the forward of an evaluation about an application that enforces fine-grained authorization to the service (#564, P7). |
 | `proxy.rs` | **The reverse proxy (#1760)**: its two listeners, the one handler, the session mechanism's `/.iya-pep/callback` and `/.iya-pep/logout`, and the streamed, bounded forward to the upstream. See *THE REVERSE PROXY*. |
 | `proxy_config.rs` | The pulled configuration (D2, D3) read again by D2's rules and refused whole, the route table and its matching. Pure. |
@@ -641,7 +644,7 @@ What scaling DOES involve is the credential choice, and it is the PDP's
 register that makes it a choice: one certificate is one row, and a heartbeat
 replaces the row's notify URL and counters, so instances sharing a
 certificate show as one row that flips between them and are nudged one at a
-time. `docs/v1.1.0/remote-pep.md`, *Running more than one*, is where that is told to
+time. `docs/v1.2.0/remote-pep.md`, *Running more than one*, is where that is told to
 an operator; it is not repeated here.
 
 ---
@@ -728,24 +731,24 @@ keys, variables and bounds); the table below marks them.
 | `PEP_HTTPS_CERT` / `PEP_HTTPS_KEY` | — | **PATHS, re-read on an interval** — the listener's pair, issued by the PDP's realm. Unlike `PEP_TLS_CERT`, which is read once, because this pair normally does not exist when the container starts. See *The HTTPS listener*. |
 | `PEP_HTTPS_PORT` | `9443` | |
 | `PEP_HTTPS_RELOAD_INTERVAL_MS` | `5000` | Not the poll timer, deliberately: that one is the policy contract. *Managed* (`httpsReloadIntervalMs`). |
-| `PEP_AUTHZEN` | `true` | The AuthZEN edge PDP (#1179). `false` answers 501 (`STS-XPEP-0044`). *Managed* (`authzen`). |
+| `PEP_AUTHZEN` | `true` | The AuthZEN edge PDP (#1179). `false` answers 403 (`STS-XPEP-0044`; 501 before #2208 — AuthZEN 1.0 prescribes no status for a switched-off API). *Managed* (`authzen`). |
 | `PEP_AUTHZEN_CLIENT_CA` | — | **A path, read once**: the CA bundle an AuthZEN caller's certificate must chain to. Set, the HTTPS listener ASKS every client for a certificate; unset or unreadable, the edge PDP admits nobody (`STS-XPEP-0039`). |
 | `PEP_AUTHZEN_CALLERS` | — | **Optional since #1189.** A JSON array of `{ "name", "sha256", "applications" }`. Set, it NARROWS the callers pulled from the service to the certificates it names (`STS-XPEP-0054`), and before the first caller pull it decides alone, as #1179's door did (`STS-XPEP-0037`); unset, the pulled list alone decides and nothing is answered before it (`STS-XPEP-0050`). Set to a value that names nobody, it admits nobody. A malformed entry is left out (`STS-XPEP-0038`). |
 | `PEP_AUTHZEN_PDP_IDENTIFIER` | — | The metadata's `policy_decision_point`, an `https` origin with no path; unset, the origin the HTTPS request arrived at (`STS-XPEP-0045` over plain HTTP). *Managed* (`authzenPdpIdentifier`). |
-| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 504 (`STS-XPEP-0055`). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. *Managed* (`authzenForwardTimeoutMs`). |
+| `PEP_AUTHZEN_FORWARD_TIMEOUT_MS` | `5000` | How long an evaluation FORWARDED to the service (an application that enforces fine-grained authorization, #564) may take; past it the caller gets 403 (`STS-XPEP-0055`, a PEP failure; 504 before #2208). Not `PEP_TIMEOUT_MS`, because a caller is waiting on this one and nobody waits on a pull. At least 1. *Managed* (`authzenForwardTimeoutMs`). |
 | `PEP_AUDIT` | `true` | Send each decision made here to the service's audit log (#1827). `false` queues nothing new; what is queued is still sent, and the log line is unchanged either way. *Managed* (`auditEnabled`). |
 | `PEP_AUDIT_INTERVAL_MS` | `5000` | How often the queue is sent. A fixed interval, not backed off: the queue is what holds the records while the service refuses. *Managed* (`auditIntervalMs`, 1000 to a day, from the next round). |
 | `PEP_AUDIT_BATCH` | `200` | The most records in one `POST`, held to 1–500 (the service's bound). A tick sends batches while the queue holds more and the last was taken. *Managed* (`auditBatch`). |
 | `PEP_AUDIT_BUFFER` | `10000` | The most records waiting. Full, the OLDEST is dropped and counted (`STS-XPEP-0122`); a decision never waits for the queue. *Managed* (`auditBuffer`, 1 to 1,000,000); a lowered bound applies to NEW records — nothing queued is dropped for it, and each new record displaces the oldest until the queue drains below it. |
 | `PEP_RESOURCE`, `PEP_DESCRIPTION`, `PEP_TIMEOUT_MS`, `PEP_MAX_BODY_BYTES`, `PEP_LOG_LEVEL` | | `PEP_MAX_BODY_BYTES` also bounds a single AuthZEN evaluation's body (`STS-XPEP-0046`). *Managed* (`resource`, `description`, `timeoutMs`, `maxBodyBytes`, `logLevel`; `PEP_BACKOFF_MAX_MS` too, `backoffMaxMs`). |
-| `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it answers 503 with `Retry-After` to everything until its first pull since the start succeeds (`STS-XPEP-0118`), and 404 to everything while the configuration it received is empty or switched off. |
+| `PEP_PROXY` | `true` | **The reverse proxy (#1760).** `false` starts neither of its listeners and skips its pull. On, it refuses everything 403 with `Retry-After` until its first pull since the start succeeds (`STS-XPEP-0118`, a PEP failure; 503 before #2208), and 404 to everything while the configuration it received is empty or switched off. |
 | `PEP_PROXY_PORT` | `9180` | Its plain-HTTP listener, bound only with `PEP_PROXY_HTTP=true` (#1760). A port that will not bind is logged (`STS-XPEP-0063`) and the PEP goes on. |
 | `PEP_PROXY_HTTP` | `false` | **`true` binds the proxy's plain-HTTP listener on `PEP_PROXY_PORT`.** Off by default since #1760, as `PEP_HTTP`. |
 | `PEP_PROXY_HTTPS_PORT` | `9543` | Its HTTPS listener: the SAME `PEP_HTTPS_CERT`/`KEY` pair 9443 serves, re-read on the same interval, and a client is ASKED for a certificate (never required to present one) so a certificate-bound token's `cnf.x5t#S256` can be checked. No pair, no listener. |
 | `PEP_PROXY_SESSION_RECHECK_MS` | `5000` | On a session route with `signals: false` (or whose receiver would not start): how old the service's last "live" answer about a proxy session may be before the next access asks `POST /xacml/pep/session` again. `0` asks on every access. *Managed* (`proxySessionRecheckMs`). |
 | `PEP_PROXY_MAX_ACCOUNTS` | `5` | **Several accounts in one browser (#1760)**: the most accounts one browser's set holds on a `multipleAccounts` route, 1 to 32; past it a sign-in is refused (403, `STS-XPEP-0108`). *Managed* (`proxyMaxAccounts`). |
 | `PEP_PROXY_SESSION_TTL_MS` | `28800000` (8 h) | The longest a proxy session lives, whatever the service says. *Managed* (`proxySessionTtlMs`). |
-| `PEP_PROXY_MAX_SESSIONS` | `10000` | The most proxy sessions held — a new one past it is REFUSED (503, `STS-XPEP-0085`), never made by evicting somebody — and, separately, the most sign-ins in flight, where the OLDEST is dropped. *Managed* (`proxyMaxSessions`). |
+| `PEP_PROXY_MAX_SESSIONS` | `10000` | The most proxy sessions held — a new one past it is REFUSED (403, `STS-XPEP-0085`, a PEP failure), never made by evicting somebody — and, separately, the most sign-ins in flight, where the OLDEST is dropped. *Managed* (`proxyMaxSessions`). |
 | `PEP_PROXY_JWKS_TTL_MS` | `300000` | How long the realm's JWKS is used before it is fetched again. An unknown `kid` refetches at once after an ordinary fetch, then at most every 5 s. *Managed* (`proxyJwksTtlMs`). |
 | `PEP_PROXY_UPSTREAM_CA` | — | **A path, read once**: anchors for an `https` upstream, beside the system's (`STS-XPEP-0092` when unreadable). |
 | `PEP_PROXY_UPSTREAM_INSECURE` | `false` | Do not verify an `https` upstream's certificate. *Managed* (`proxyUpstreamInsecure`). |
@@ -902,11 +905,16 @@ place where both can be asked of one holding.
   named (`STS-XPEP-0042`). The pull carries the realm's AuthZEN settings
   that change the mapping or the answer, so `authzen.enabled`,
   `resolveSubjectTypes`, `batchEnabled`, `maxEvaluations`, `maxBodyBytes`
-  and `returnReasons` are the realm's here, not a second copy of them.
+  and `returnReasons` are the realm's here, not a second copy of them —
+  and since #1205 `obligationsProfile` and what classifies a
+  token-exchange tuple (above).
 * **`authzen_cases.json` IS THE CONTRACT, WRITTEN DOWN ONCE.** The service's
   `authzen/` modules and this container's ports are held to the same
   catalogue values and requests: the code each is refused with, and the
-  paths and attributes an accepted one supplies and maps to. It is
+  paths and attributes an accepted one supplies and maps to; and since
+  #1205 the Obligations Profile's outcome (`obligations`) and the
+  binding's classification with the switch on and off (`binding`),
+  `tests/authzen_map.js` S4 and S5 on the service's side. It is
   `enforcement_cases.json`'s arrangement, for the same reason — two
   implementations kept apart on purpose, and one expectation. Two details
   the port had to reproduce to pass it: members are walked in
@@ -924,15 +932,17 @@ place where both can be asked of one holding.
 * **THE RESULT IS FAIL-CLOSED AND DENY-BIASED WHATEVER `PEP_BIAS` SAYS.**
   The bias is this PEP's rule for `/protected`; an AuthZEN caller enforces
   the answer itself, and the service's answer is `enforce()` deny-biased.
-  A root policy the PDP sent and this engine would not load is a FAULT (500,
-  or a batch item's `context.error`), as the service answers a root that
-  will not load — not "no root", which would be an ordinary `false`.
+  A root policy the PDP sent and this engine would not load is a FAULT — a
+  403 here since #2208 (a PEP failure, where the service answers 500), or a
+  batch item's `context.error` — never "no root", which would be an
+  ordinary `false`.
 * **THE PIP ONLY FOR A SUBJECT TYPE THE REALM RESOLVES**, through the same
   `POST /xacml/pip` `/protected` uses; another type is decided on the
   request alone, as the service's `decide({ resolve: false })` does.
-* **NOTHING IS ANSWERED BEFORE BOTH PULLS HAVE LOADED** (`503`,
-  `STS-XPEP-0043`): with no catalogue every property would be undeclared,
-  which is an answer the service would not give.
+* **NOTHING IS ANSWERED BEFORE BOTH PULLS HAVE LOADED** (`403`, a PEP
+  failure, `STS-XPEP-0043`; `503` before #2208): with no catalogue every
+  property would be undeclared, which is an answer the service would not
+  give.
 
 ### An application that enforces fine-grained authorization is FORWARDED (#564, P7)
 
@@ -955,10 +965,10 @@ not applying.
   caller's scope never reaches the service at all.
 * **THE FAIL-SAFE BEFORE THE FIRST PULL IS THE EXISTING ONE.** The list
   travels with the catalogue, and nothing is answered before a catalogue
-  has loaded (`503`, `STS-XPEP-0043`), so there is no moment when an
+  has loaded (`403`, `STS-XPEP-0043`), so there is no moment when an
   evaluation is answered without a list to classify it by. A member that is
   not a list of identifiers refuses the WHOLE catalogue and keeps the one
-  held (`STS-XPEP-0059`; before any, `503` goes on) — unlike a malformed
+  held (`STS-XPEP-0059`; before any, the `403` goes on) — unlike a malformed
   catalogue row or caller entry, which is left out and the rest used,
   because an identifier left out here is an enforcing application decided
   from the root. An ABSENT member is an empty list: a service that does not
@@ -975,8 +985,8 @@ not applying.
   wherever it was decided; splitting keeps the semantic, the order and each
   item's own error here, in one place, and needs the PEP admitted to the
   single endpoint only. The cost is a round trip per forwarded item, in
-  order. **There is no Search API here** (*What it cannot do*), so there is
-  nothing of a search to forward.
+  order. **There is no Search API here** (*What it cannot do*): a search is
+  403 and nothing of it is forwarded.
 * **WHAT IS SENT.** The caller's request for that evaluation
   (`forwarded_body()`), with `context.application` SET to the resolved
   application whether or not the caller sent it — the service scopes the
@@ -992,14 +1002,17 @@ not applying.
   the body nor a property value is logged.
 * **WHAT COMES BACK** (`forwarded_result()`): a `200` with a boolean
   `decision` is the answer, its `context` passed on (reasons, obligations).
-  `400`, `413`, `500`, `501`, `503` are the service's status and message —
-  about the request or the application's policy (`500` is its
-  `STS-AUTHZEN-0046`) — `STS-XPEP-0057`. `401`/`403` are the service
-  refusing THIS PEP, which the caller cannot mend: `502` naming what the
-  PEP's entry needs (AUTHZEN_PEPS, the application in
-  `stsAuthzenApplication`), `STS-XPEP-0056`. Any other status `502`
-  (`0057`); a `200` without a boolean decision `502` (`0058`); no answer
-  `502`, or `504` past the timeout (`0055`). Each is the single endpoint's
+  `400` and `413` are the service's status and message, about the request
+  (`STS-XPEP-0057`). **Everything else is a PEP failure and a 403 (#2208,
+  rcbj: "Any type of PEP failure should result in a 403 being returned")**:
+  the service's `500`, `501`, `503` (a `500` is its `STS-AUTHZEN-0046`,
+  the application's policy cannot be used) or any other status, with its
+  status and message in ours (`0057`); `401`/`403`, the service refusing
+  THIS PEP, which the caller cannot mend, naming what the PEP's entry needs
+  (AUTHZEN_PEPS, the application in `stsAuthzenApplication`,
+  `STS-XPEP-0056`); a `200` without a boolean decision (`0058`); no
+  answer, or none within the timeout (`0055`; the message says which).
+  They were `502`, `504` and the service's own 5xx. Each is the single endpoint's
   status or a batch item's `context.error`, and an item's error is
   `denied` for the batch semantic, as any item error is.
 * **COUNTED AND LOGGED HERE**: `answered` counts it like any decision or
@@ -1007,7 +1020,7 @@ not applying.
   (types, action, caller, application, request id, never a value) saying it
   was forwarded, with the code when it failed. `GET /`'s
   `catalogue.fgaApplications` is a COUNT — `GET /` answers anybody.
-* **WHAT THE OPERATOR OWES**, in `docs/v1.1.0/remote-pep.md`: the PEP's own entry
+* **WHAT THE OPERATOR OWES**, in `docs/v1.2.0/remote-pep.md`: the PEP's own entry
   (the one its certificate is stored on, already holding REMOTE_PEPS) holds
   AUTHZEN_PEPS and has every enforcing application its callers ask about in
   its scope; and the realm's door admits a certificate. **Since #1210 the
@@ -1015,7 +1028,7 @@ not applying.
   for every member of `remote-peps` (`authzen/CLAUDE.md`); a PEP added to
   the group afterwards still owes them until the next enable. Nothing here
   checks that ahead of time: the service's answer is the check, and the
-  `502`'s message says what to grant.
+  `403`'s message says what to grant.
 * **NOT A PROTOCOL JOB.** No protocol job configures this container's edge
   PDP (a client CA and a caller certificate presented to it), so the forward
   is held by `cargo test` against a mock service on a loopback socket, and
@@ -1079,7 +1092,8 @@ the pulled list alone decides, and nothing is answered before it loads.
 Each refusal is the service's status for the same situation and an `XPEP`
 code of its own: a listener that asks for no certificate it can verify 401
 (`-0039`), no certificate or plain HTTP 401 (`-0035`), one that did not
-verify 401 (`-0036`), nothing pulled and no local list 503 (`-0050`), a
+verify 401 (`-0036`), nothing pulled and no local list 403 (`-0050`, a PEP
+failure; the service would answer the caller, so not a 401), a
 realm whose door is a token 401 (`-0052` — `bearer` and `mtls+bearer` admit
 no certificate alone, so the service sends no caller), a certificate the
 pulled list does not name 403 (`-0051`), an endpoint its policy does not admit
@@ -1098,13 +1112,52 @@ before the first pull, one not on the local list 403 (`-0037`). No
   on the entry and the TLS client certificates the realm issued it, so one
   enrolled over ACME, EST or SCEP and not stored is not admitted here. Each
   is narrower, never wider.
-* **WHAT LANDED BESIDE IT (#1175, #1177, #1178).** The edge PDP was written
-  against the evaluation and batch APIs only: it serves no Search API, hands
-  no Obligations Profile obligation (a Permit carrying one answers `false`,
-  the service's answer to a PEP that declared none, and
-  `context.supported_obligations` is an undeclared member here), and sends
-  no `signed_metadata`, holding none of the realm's signing keys. Each is a
-  follow-up, not a regression: the fail-closed answer is the same.
+* **SEARCH, SIGNED METADATA, ACCESS REQUESTS AND THE BINDING ARE THE
+  SERVICE'S (#1205).** `POST /access/v1/search/{subject,resource,action}` is
+  403 (`STS-XPEP-0138`; 501 before #2208) before admission. The Access
+  Request paths — the collection, the schema, a task, and cancel — are 403
+  (`STS-XPEP-0139`)
+  the same way, with the evaluation error object; a method the profile does
+  not define stays 404, and so does HEAD of any of them. `signed_metadata`
+  is omitted: this edge holds no realm signing key, and republishing the
+  service's JWT would name the wrong issuer. None of those are advertised.
+* **THE BINDING'S TUPLES ARE CLASSIFIED AS THE SERVICE CLASSIFIES THEM
+  (#1181, #1205 review).** `authzen_binding.rs` is `plan()` and
+  `strayContext()` of `authzen/authzen_exchange.ts`, read from the pulled
+  `authzen.tokenExchange`, `tokenExchangeTokenTypes` and
+  `tokenExchangeDetailTypes`. ON: every gate (any grant) and every scope
+  tuple — a LONE scope too, which the service answers a fixed false
+  (`STS-AUTHZEN-0105`) and which this edge would otherwise evaluate and
+  might answer true — and a declared detail type beside a token-exchange
+  gate, are 403 (`STS-XPEP-0140`; 501 before #2208 — this edge cannot
+  decide them, a PEP failure), as that item inside a batch, not
+  forwarded, and recorded to the service's audit log (a row deciding
+  nothing). OFF: all of those are ordinary evaluations, as there. Either
+  way a binding context member on a tuple that is not the binding's is 400
+  `STS-AUTHZEN-0101` with the service's sentence. The first version
+  classified without the switch and was wrong both ways round: it 501'd
+  gates the service evaluated, and evaluated lone scopes the service
+  refused. **An absent member is read CLOSED** — the switch on, every type
+  a detail, every token type registered — because that 403 decides nothing.
+* **OBLIGATIONS ARE HANDED WHEN DECLARED (#1177, #1205).** While the pulled
+  `authzen.obligationsProfile` is on (ABSENT IS OFF, although the setting's
+  default is on: an older service's catalogue cannot say the profile is
+  on, and handing obligations turns a Permit from false to true),
+  a Permit whose obligations all convert and were all named in
+  `context.supported_obligations` is `true`, and they travel in
+  `context.obligations`. The log obligation is still discharged here and
+  not handed. Without the declaration, or with the profile off, a Permit
+  that carries any other obligation stays `false`. The metadata lists
+  `supported_obligations` only while the profile is on.
+  `context.approval` is reserved, stripped before the catalogue walk, and
+  not written as a trusted fact: a presented one is decided without,
+  recorded `STS-AUTHZEN-0084`, and answered with the service's context for
+  an approval it cannot verify, `reason: approval_unverifiable` and
+  `next_action: none`. **The registered types' rules are GENERATED**
+  (#1390: the model is the source): `models/tools/generate_pep.mjs`
+  compiles the service's `models/authzen/authzen_members.tsp` too and
+  writes `sts-model-pep`'s `authzen_obligations.rs`, which
+  `authzen_map.rs` reads; `tests/model_pep.js` fails when it drifts.
 * **FINE-GRAINED AUTHORIZATION IS NOT DECIDED HERE** (#564): it is
   forwarded (above), so it costs a round trip and depends on the service
   being up, and a switch of enforcement reaches here on the next poll.
@@ -1139,7 +1192,10 @@ origin the HTTPS request arrived at — section 9.2.3 has a PEP refuse a
 document whose identifier is not the base it built the URL from, and the
 endpoints are served at this container's root, so an identifier with a path
 is refused at start (`STS-XPEP-0045`). It names the batch endpoint only
-while the realm has it on, and nothing unimplemented, as the service's does.
+while the realm has it on, and `supported_obligations` only while the
+realm's obligations profile is on. It names no search endpoint, no
+access-request endpoint, no `capabilities`, no `jwks_uri` and no
+`signed_metadata`.
 
 **The origin is the `Host` header, else the request's authority** (#1830):
 an HTTP/2 client sends `:authority` and no `Host`, and hyper puts it in the
@@ -1153,9 +1209,57 @@ for `/`, `/healthcheck`, `/crl/<name>` and this metadata: same status and
 headers, `Content-Length` the GET's. **Not for `/protected`**, whose GET is a
 decision — the PIP asked at the PDP, the enforcement counted and reported on
 the heartbeat — which a monitor's or a link checker's HEAD does not mean to
-ask for; it stays the generic 404 (`STS-XPEP-0009`), as before.
+ask for; it stays the generic 404 (`STS-XPEP-0009`), as before. **Not for
+the Search and Access Request paths either** (#1205): a GET of one of them
+is 403, and rewriting HEAD to GET would tell a monitor the edge answers a
+profile it does not hold. Those HEADs stay the generic 404.
 
 ## THE REVERSE PROXY (#1760)
+
+### EVERY PEP FAILURE IS A 403 (#2208)
+
+**rcbj, 2026-11-24: "Any type of PEP failure should result in a 403 being
+returned."** Whenever this container cannot reach a Permit — the service or
+one of its validation, identity or sign-in endpoints unreachable, timed out,
+answering 5xx or something that is not an answer; no configuration, policy
+or catalogue held yet; an engine fault; a relying party that cannot be
+built; no room for a proxy session; an identity the route sends that
+cannot be delivered; a binding tuple the AuthZEN edge cannot decide — the
+caller gets **403**, never a 5xx and never a pass. In the proxy it is
+`Refusal::failure()` (`proxy_auth.rs`): status 403, `access_denied`,
+logged at warn under its code, recorded as a `fault`, drawn with
+`wording()`'s failure sentences ("Access cannot be decided now", or "Try
+again later" for `0118` and `0085`) and described by a generic sentence
+(`FAILURE_DESCRIPTION`, which is how an over-HTTP client tells it from a
+Deny). On the AuthZEN edge it is the evaluation error object at 403.
+
+**Kept**: 401 with its challenge for a missing or invalid credential
+(authentication, not a failure to decide); 403 for a Deny; 429 for the
+service's password lockout (a throttle); 400, 404, 405 and 413 about the
+request itself; and the APPLICATION's own failures
+after the decision — unreachable 502 (`STS-XPEP-0069`, and `0097` for a
+`saml` route's ACS), too slow 504 (`0068`), or its own status passed
+through. `proxy_error_tests.rs` fails a row that is a 5xx and not one of
+those three codes. The codes stay on the log lines and audit rows, and
+are never sent.
+
+**The AuthZEN API switched off, and the paths this edge does not serve**
+(rcbj on #2208: "Follow the spec, but return 403 otherwise"). AuthZEN
+Authorization API 1.0 (Final, 11 January 2026) prescribes no status for
+either: section 10.1.2's Table 2 defines 400, 401, 403 and 500, and section
+9.1.1 says only "the absence of any of these parameters is sufficient for
+the PEP to determine that the PDP is not capable and therefore will not
+return a result for the associated API". The Access Request and Approval
+Profile (Draft 1) requires an `access_request_endpoint` of a PDP that
+supports it (section 12.1) and says nothing of one that does not. So
+`PEP_AUTHZEN` off (`0044`), the realm's API off (`STS-AUTHZEN-0013`,
+`0014`), the batch off (`STS-AUTHZEN-0039`), Search (`0138`) and the Access
+Request paths (`0139`) are 403 — they were 501 — and what the spec does
+govern is kept: the metadata names `access_evaluations_endpoint` only while
+the batch is on, and no search or access-request endpoint ever
+(`service.rs`'s `a_switched_off_api_is_403_and_the_metadata_names_only_what_answers`).
+The service's own `/access/v1` answers 403 in those cases too, by rcbj's
+second decision on #2208 (`authzen/CLAUDE.md`).
 
 ```
 PEP_PROXY_PORT        9180   plain HTTP, only with PEP_PROXY_HTTP=true
@@ -1230,7 +1334,7 @@ certificate where there is one), its own sync token (`?since=`) and
 failure keeps the configuration held (`STS-XPEP-0060`, `-0061`, a PDP older
 than #1760 answering 404); `configured: false` holds nothing, and the proxy
 then answers 404 to everything. **Before the first answer is loaded the
-proxy answers 503, not 404** (below). **Every member is read again by D2's rules**
+proxy refuses 403 with `Retry-After`, not 404** (below). **Every member is read again by D2's rules**
 (`proxy_config.rs`): the upstream an absolute http(s) URL with no userinfo,
 query or fragment; at most 64 routes with unique ids; a route path with no
 dot segment, `//`, `%`, backslash or control character; the mechanisms and
@@ -1309,7 +1413,7 @@ whole. The pair is upgraded together.
    configured trailing `/` is dropped). No route, or no configuration
    switched on: 404 (`STS-XPEP-0065`), and the application is never reached.
    **Before any configuration answer has been loaded since the start** this
-   step is not reached: every path, `/.iya-pep/*` included, is 503 (below).
+   step is not reached: every path, `/.iya-pep/*` included, is 403 (below).
 4. **The method**: a NON-EMPTY `methods` without it is 405 with `Allow`
    (`STS-XPEP-0066`); the next route is NOT tried. That is route matching,
    not authorization. **An EMPTY list is not a 405** — there is nothing to
@@ -1350,7 +1454,7 @@ whole. The pair is upgraded together.
    request is refused.
 9. **The forward**, below.
 
-### Not configured YET is 503, not 404 (rcbj, 2026-11-15)
+### Not configured YET is "try again later", not 404 (rcbj, 2026-11-15; a 403 since #2208)
 
 **On 8081 a recreated PEP container answered every proxy path 404
 `STS-XPEP-0065` for 56 seconds** — from its start at 19:03:59Z until
@@ -1365,15 +1469,14 @@ everything, the callback, the sign-out and the account chooser included
 
 | The proxy holds | Answered | Code |
 |---|---|---|
-| no configuration answer loaded since the start (a pull not yet made, refused, or failed) | **503** `temporarily_unavailable`, `Retry-After` the poll interval in whole seconds rounded up, at least 1; the page's "Try again later" | `STS-XPEP-0118` |
+| no configuration answer loaded since the start (a pull not yet made, refused, or failed) | **403** `access_denied` (a PEP failure; it was 503 `temporarily_unavailable` until #2208), `Retry-After` the poll interval in whole seconds rounded up, at least 1; the page's "Try again later" | `STS-XPEP-0118` |
 | an answer, `configured: false` or `enabled: false` | **404** `not_found`, deny by default. A browser's GET or HEAD of `/` is the start page (200) | `STS-XPEP-0065` |
 | an answer with routes, and the path matches none | **404** `not_found`. A browser's GET or HEAD of `/` is the start page (200) when no route matches `/` | `STS-XPEP-0065` |
 
 `loaded` never goes back to false: a later pull that fails keeps what was
-received and its 404 or its routes. **The JSON is the other 503s' shape**
-(`0085`, `0090`): `{error: "temporarily_unavailable", error_description}`,
-the description a fixed sentence of its own (`shown_description()`), never
-the code. **The log is the state change, not a line per request**
+received and its 404 or its routes. **The JSON is every refusal's shape**:
+`{error: "access_denied", error_description}`, the description a fixed
+sentence of its own (`shown_description()`), never the code. **The log is the state change, not a line per request**
 (`Sync::note_waiting()`): one warn line tagged `0118` when the first such
 request arrives, a count at most once per `WAITING_SUMMARY_EVERY` (60 s)
 while they go on, and one info line with the total when the first
@@ -1381,7 +1484,8 @@ configuration loads (`load_proxy()`). The per-request line, with the page's
 incident ID, is at debug — the one refusal whose line is. The health check
 and the decision API are untouched: `/protected` before its first policy
 pull is decided by the bias (`0005`), and the AuthZEN endpoints already
-answer 503 until their catalogue is pulled — neither had this 404.
+refused (403 now, 503 before #2208) until their catalogue is pulled —
+neither had this 404.
 
 ### What a refused PERSON sees: the service's error page (2026-11-15)
 
@@ -1395,7 +1499,7 @@ else gets the JSON it always got, byte for byte** (the
 `error_description` of `STS-XPEP-0093` and `0117` now chosen in
 `shown_description()` rather than written over the body afterwards). The
 status and the headers are the refusal's either way: a 401's
-`WWW-Authenticate`, a 405's `Allow`, a 429's and `0118`'s 503's
+`WWW-Authenticate`, a 405's `Allow`, a 429's and `0118`'s
 `Retry-After`. A browser on a
 `session` route with no session is still REDIRECTED to sign in, not shown a
 page; `0108` is always the page (the callback is a navigation).
@@ -1410,9 +1514,10 @@ page; `0108` is always the page (the callback is a navigation).
   (`docs/logo.png`, embedded, drawn at `/.iya-pep/logo.png`), the name, one
   sentence — and this shell's footer. It lists no route. A route mounted at
   `/` is that route. A client that does not accept HTML still gets the
-  404, and until the first configuration `/` is the 503 above. **What
+  404, and until the first configuration `/` is `0118`'s 403 above. **What
   the person can do** is offered only where the refusal is about WHO is
-  asking (`0086`, `0095` at 403) on a `session` route: *Use a different
+  asking (`0086`, and `0095` when the service refused, never a PEP
+  failure) on a `session` route: *Use a different
   account* (`/.iya-pep/accounts`) on a `multipleAccounts` route, a sign-out
   (`/.iya-pep/logout`) on any other. Adding an account stays on the
   chooser. English only: the PEP holds no
@@ -1465,16 +1570,20 @@ exactly ONE log line, the one carrying the code. Any other caller gets the
 model's `Refusal`, `{error, error_description}` and no other member, as
 `application/json` and `no-store`, `error` the model's name for the
 status. Either way: no `STS-` code, no script, no stack trace, a 5xx's
-description one of `shown_description()`'s generic sentences (never the
-logged reason, so never an address), and the refusal's own headers (a
+and a PEP failure's description one of `shown_description()`'s generic
+sentences (never the logged reason, so never an address), and the
+refusal's own headers (a
 405's `Allow`, a 429's and `0118`'s `Retry-After`, a 401's challenges).
 
 **THE ENUMERATION IS A TABLE, AND A SOURCE SCAN GUARDS IT.** `SOURCES` is
 every refusal the proxy constructs — status, code, the function, when —
-and how the test reaches it: 49 rows, 45 by a request in the harness, made
+and how the test reaches it: 50 rows, 46 by a request in the harness, made
 once as a browser and once as an API client, and 4 that no request
-reaches (`0075` from a failing `authorize()`, `0110` at 500, `0091`,
+reaches (`0075` from a failing `authorize()`, `0110`'s failure, `0091`,
 `0092`), drawn through `refuse()` itself (`Proxy::refusal_for_test()`).
+A PEP failure's row is `failed()`'s (#2208): a 403 drawn with
+`wording()`'s failure sentences, and the guard fails a row that is a 5xx
+but the application's own (`0068`, `0069`, `0097`'s ACS).
 `every_error_source_has_a_row` reads `proxy.rs`, `proxy_auth.rs` and
 `jwt.rs`'s `confirmation_problem()`: every `Refusal::new`/`token` and
 every literal call of the `refuse`/`refused` closures is a (status, code)
@@ -1526,9 +1635,10 @@ both ways.
 
 **What the tests found** (2026-11-16): one defect, fixed — a 5xx outside
 502, 503 and 504 (the account add page's 500 `0110`, unreachable in
-practice) was answered its logged reason as `error_description`, against
-the rule above; `shown_description()` now gives any other 5xx "The request
-could not be completed." Everything else was already the standard.
+practice, a PEP failure and a 403 since #2208) was answered its logged
+reason as `error_description`, against the rule above;
+`shown_description()` now gives any other 5xx "The request could not be
+completed." Everything else was already the standard.
 
 ### The headers that may not cross
 
@@ -1564,7 +1674,8 @@ the application's hop-by-hop headers gone (and, in mode `saml`, the
 
 **The destination is never the request's**: the configured upstream base,
 the normalised path and the original query, and the result checked to still
-be on the upstream's origin and under its path (502, `STS-XPEP-0091`). One
+be on the upstream's origin and under its path (403, `STS-XPEP-0091`: the
+proxy refusing to send it is a PEP failure, not the application's). One
 `reqwest` client per `upstreamTimeoutMs`: no redirect followed (the
 application's 302 is the client's), no environment proxy, the system's
 anchors plus `PEP_PROXY_UPSTREAM_CA` (or `PEP_PROXY_UPSTREAM_INSECURE`).
@@ -1573,9 +1684,12 @@ that fails past `maxBodyBytes`, which is a 413 even mid-stream
 (`STS-XPEP-0067`); a request with neither `Content-Length` nor
 `Transfer-Encoding` is sent with no body at all, so a GET is not turned into
 a chunked one. Past `upstreamTimeoutMs`, connect included: 504
-(`STS-XPEP-0068`); unreachable or failed: 502 (`STS-XPEP-0069`). A 5xx body
-is a generic sentence — the logged reason may name the service's or the
-application's address.
+(`STS-XPEP-0068`); unreachable or failed: 502 (`STS-XPEP-0069`). **These
+two, and `0097`'s ACS below, are the only 5xx the proxy makes**: the
+application's own failure after the decision. A client that would not
+build (`STS-XPEP-0092`) is the PEP's, a 403. A 5xx body is a generic
+sentence — the logged reason may name the service's or the application's
+address.
 
 ### Each mechanism, here and at the service (D7)
 
@@ -1590,8 +1704,8 @@ realm="<pep>"` with `error="invalid_token"` when a token was refused,
 mechanism has no scheme. **Every validation call goes through the ONE
 client** (`PdpClient::call_url()`, the absolute URL the pull named), so the
 PEP's certificate is presented and the PDP verified as for every pull. **A
-service that cannot be asked refuses, never admits** (502,
-`STS-XPEP-0075`).
+service that cannot be asked refuses, never admits** (403, a PEP failure,
+`STS-XPEP-0075`; 502 before #2208).
 
 | Mechanism | Here (`jwt.rs`, `saml_verify.rs`) | At the service |
 |---|---|---|
@@ -1734,7 +1848,8 @@ the provider offers them). The library's `Transaction` and where the browser
 was going (the normalised path and the original query, relative, NEVER
 anything the callback brings) are kept here under the state, ten minutes.
 Anything else is 401 (`STS-XPEP-0081`). A relying party that cannot be built
-is 503 (`STS-XPEP-0090`); `authorize()` failing, 502 (`STS-XPEP-0075`).
+(`STS-XPEP-0090`) and `authorize()` failing (`STS-XPEP-0075`) are PEP
+failures, 403 (503 and 502 before #2208).
 
 **`/.iya-pep/callback`** takes the state ONCE (unknown, spent or expired:
 401, `STS-XPEP-0082`), draws the proxy session's id (256 random bits), and
@@ -1749,7 +1864,7 @@ session under — subject `sub`, username `preferred_username` (else the
 is TRACKED by the receiver (`local_id`, `person`, `email`, `idp_session`).
 Then `iya_pep_session` (`HttpOnly`, `SameSite=Lax`, `Path=/`, `Secure` on
 the HTTPS listener) and a 302 to where the browser was going. A full store
-refuses BEFORE the code is spent (503, `STS-XPEP-0085`).
+refuses BEFORE the code is spent (403, a PEP failure, `STS-XPEP-0085`).
 
 **A session is the application's.** A proxy session made by one client is
 not a session on a route of another application: that route sends the
@@ -1781,8 +1896,8 @@ browser to sign in to its own.
   would not start** (`STS-XPEP-0094`, logged once per build): the session
   endpoint, as the first draft did — `POST validation.session { sid }` when
   the last answer is older than `PEP_PROXY_SESSION_RECHECK_MS` (0 asks every
-  time), `live: false` ending it, a service that cannot be asked a 502 with
-  the session kept.
+  time), `live: false` ending it, a service that cannot be asked a 403 (a
+  PEP failure) with the session kept.
 
 An ended session sends a browser to sign in again with the cookie cleared,
 and anything else gets 401. **Including a cookie naming a session the proxy
@@ -1848,8 +1963,9 @@ with `id_token_hint` and `client_id`).
 
 **In memory, bounded, purged at the insert, never on a timer**
 (`rp_session.rs`): a proxy session lives at most `PEP_PROXY_SESSION_TTL_MS`;
-past `PEP_PROXY_MAX_SESSIONS` live ones a new one is REFUSED (503,
-`STS-XPEP-0085`), because evicting would sign somebody else out; past the
+past `PEP_PROXY_MAX_SESSIONS` live ones a new one is REFUSED (403, a PEP
+failure, `STS-XPEP-0085`; 503 before #2208), because evicting would sign
+somebody else out; past the
 same number of sign-ins in flight the OLDEST is dropped, because anybody can
 start one and refusing would let anybody stop everybody signing in. A
 restart only sends each browser through a sign-in it will not see — the
@@ -1863,8 +1979,10 @@ member `identity` (it replaced `subjectHeader` and `mechanismHeader`;
 default `{ "mode": "headers", "headers": [] }`, which sends no identity).
 `proxy.rs`'s `deliver()` establishes it AFTER the decision and BEFORE
 anything is forwarded, and **a request is NEVER forwarded without the
-identity its route was configured to send**: any failure refuses it — 403
-when the service said 403, 502 otherwise — under its code. Whichever mode,
+identity its route was configured to send**: any failure refuses it 403 —
+the policy's refusal when the service said 403, a PEP failure otherwise
+(502 before #2208) — under its code; only the application's own ACS
+unreachable or answering 5xx, in mode `saml`, is a 502. Whichever mode,
 the incoming credentials are stripped unless `forwardCredentials`, and the
 subject is the one the decision used. `identity.rs` is the pure half.
 
@@ -1888,7 +2006,7 @@ must accept traffic only from the proxy**: a header carries no proof.
   evidence, claims }` → `{ claims }`), and only the claims asked are taken
   from its answer. A claim with no value sends no header. A value holding
   CR, LF or NUL, a list member holding the separator, or an object is
-  refused (502, `STS-XPEP-0096`), never forwarded.
+  refused (403, a PEP failure, `STS-XPEP-0096`), never forwarded.
 * **`jwt`**: `POST validation.identity` → `{ accessToken, tokenType:
   "Bearer", expiresIn }`, an access token THE SERVICE issues for the
   route's application (its own claim configuration, the realm's JWKS), sent
@@ -1908,8 +2026,9 @@ must accept traffic only from the proxy**: a header carries no proof.
   of the same name is removed first, so it cannot shadow one) and every
   `Set-Cookie` the application answers for a jar cookie updates the jar and
   is stripped from the answer; its other cookies pass. An ACS that will
-  not answer, answers 400 or more, or sets no cookie is 502
-  (`STS-XPEP-0097`). **The session is established again** when the
+  not answer or answers 5xx is the application's failure, 502
+  (`STS-XPEP-0097`); one that answers 400 to 499, sets no cookie, or is not
+  an absolute http(s) URL is a PEP failure, 403 (`0097` too). **The session is established again** when the
   assertion's `NotOnOrAfter` has passed, or when the application answers
   401 or a redirect to its ACS or to the identity provider (the realm
   issuer's origin): the jar is dropped and — for a request with no body,
@@ -1925,8 +2044,9 @@ library's `session_access_token()` (which refreshes it near its end) —
 `ticket` the service's Basic answer now carries (opaque, bound to this PEP
 and subject, short-lived; never the password) — `ticket`. A credential that
 gives none (a Basic answer without a ticket, a session whose token cannot be
-had) is 502 (`STS-XPEP-0098`). The service's refusal, a 200 that is not the
-mode's answer, or an endpoint the pull did not name is `STS-XPEP-0095`.
+had) is 403, a PEP failure (`STS-XPEP-0098`). The service's refusal, a 200
+that is not the mode's answer, or an endpoint the pull did not name is
+`STS-XPEP-0095`, a 403 either way.
 **Neither the evidence, the token, the assertion nor a cookie is ever
 logged.** Both caches are bounded (10,000) and purged at the insert, never
 on a timer.
@@ -1978,8 +2098,9 @@ stores' bounds (`rp_session.rs`); the proxy listener's handshake
 front of a mock application (an echo, and a SAML ACS that sets a session
 cookie) beside a mock service that is also an OpenID provider and an SSF
 poll transmitter good enough for `oidc-caep-risc`: every mechanism admitted
-and refused, unrouted 404, 405 with `Allow`, 413 declared and streamed, 504,
-502, a redirect not followed, traversal sent byte for byte over a raw socket
+and refused, unrouted 404, 405 with `Allow`, 413 declared and streamed, the
+application's 504 and 502, every PEP failure a 403, a redirect not
+followed, traversal sent byte for byte over a raw socket
 (a URL library resolves `..` before sending), credentials and forwarding
 headers stripped, the decision refusing a subject and a route's resource, a
 key rotation picked up by one refetch, Basic's 429 passed on, the SAML local
@@ -2044,7 +2165,7 @@ validation; `0076`–`0078` SAML; `0079`, `0080` Basic; `0081`–`0085`,
 route whose `methods` is empty (deny-all), refused after its decision;
 `0117` a route whose `authorization.policy` this PEP does not hold, refused
 without one; `0118` every path before the first configuration since the
-start (503, *Not configured YET*); `0087`
+start (403, *Not configured YET*); `0087`
 retired before release (the subject header D11 replaced); `0091` the
 upstream URL; `0092` the upstream's anchors; `0093` an application the pull
 says is not usable (D10); `0095`–`0098` the identity (D11); `0132` and `0133`
@@ -2067,7 +2188,7 @@ published APIs use:
 | Source | Document (`xacml-pep/openapi/`) | Rust module (`sts-model-pep`) | What |
 |---|---|---|---|
 | `pep_service.tsp` | `pep-service.json` | `pep_service` | `GET /`, `/healthcheck`, `/protected`, `POST /notify` (with the service's nudge as its body), `GET /crl/{name}` |
-| `pep_authzen.tsp` | `pep-authzen.json` | `pep_authzen` | the edge PDP's evaluation, evaluations and metadata |
+| `pep_authzen.tsp` | `pep-authzen.json` | `pep_authzen` | the edge PDP's evaluation, evaluations, metadata, and the Search and Access Request paths it answers 403 |
 | `pep_proxy.tsp` | `pep-proxy.json` | `pep_proxy` | the proxy's own paths: `/.iya-pep/*` and the start page; what EVERY route answers whatever its configuration is in the document's description and `Refusal` |
 | `pep_control_plane.tsp` | `pep-control-plane.json` | `pep_control_plane` | what the SERVICE serves the PEP: `/xacml/pep/*` and `POST /xacml/pip` |
 
@@ -2289,10 +2410,11 @@ route's policy was asked, and the code, reason and page incident ID when
 `refuse()` answered. It is queued after the answer only when `decided` — set
 when the route matched and took the method, cleared again for a body too
 large (`0067`) and for an `Established::Answer` (a redirect to sign in, whose
-decision comes on the way back). So `0118`'s 503, `0064`, `0065`, `0066`, the
+decision comes on the way back). So `0118`'s 403, `0064`, `0065`, `0066`, the
 logo, the start page and `/.iya-pep/*` are never recorded: none is a
-decision about access. `allowed` is "forwarded"; `fault` is a 5xx of the
-proxy's own (`!forwarded && status >= 500`), never one the application
+decision about access. `allowed` is "forwarded"; `fault` is a PEP failure
+(a 403 since #2208, `Refusal::failure`) or a 5xx of the proxy's own
+(`!forwarded && (failure || status >= 500)`), never one the application
 answered; `policies` is the route's policy by its NAME (the name the route
 configuration references; `decide_proxy()` does not return the document's
 `PolicyId`); `requestId` is the error page's incident ID, empty for a JSON
@@ -2644,7 +2766,9 @@ configuration->Listeners", the HTTPS listener there now as the default, and
   a failed handshake counts as `handshakeFailures` only. `memory` is read
   from `/proc/self/status` and omitted when that file cannot be read.
   `paths` counts method and path since the process started, query stripped,
-  capped at 256; 401, 403 and 503 increment `refused`, and a 404 does not.
+  capped at 256; 401 and 403 increment `refused` (every PEP failure is a 403
+  since #2208, so a 503 is no longer the PEP's and an application's own,
+  passed through, is not counted as a refusal), and a 404 does not.
   The counters are set from the process, not added to the service's copy,
   and a registration drops the snapshot. Monitoring → Remote PEPs reads
   them from `listenersInUse`.

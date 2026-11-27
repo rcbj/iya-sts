@@ -247,6 +247,13 @@ interface ActContext {
   via?: unknown;
 }
 
+// The password act a derivation follows (#2236): CAEP's word for who made
+// it, and its instant in epoch milliseconds.
+interface KeyCause {
+  initiatingEntity?: string;
+  atMs?: number;
+}
+
 interface Krb5PersonKeysDeps {
   log: typeof helpers.log;
   config: typeof config;
@@ -1117,8 +1124,12 @@ class Krb5PersonKeys {
     const indicators = Array.isArray(d.indicators) ? d.indicators.map(String)
                                                    : [];
     const otp = indicators.indexOf('otp') >= 0;
-    const amr = d.pkinit ? (d.hardware ? ['hwk'] : ['swk'])
-                         : (otp ? ['pwd', 'otp'] : ['pwd']);
+    // `sc` beside `hwk` where the evidence said the key is on a smart card
+    // (#1955 P1, the KDC's `pkinit-smartcard` indicator).
+    const amr = d.pkinit ? (d.hardware
+      ? (indicators.indexOf('pkinit-smartcard') >= 0 ? ['hwk', 'sc']
+                                                      : ['hwk'])
+      : ['swk']) : (otp ? ['pwd', 'otp'] : ['pwd']);
     const acr = otp ? 'mfa' : '1';
     let assessment: Json = null;
     let engine: Json = null;
@@ -1299,7 +1310,11 @@ class Krb5PersonKeys {
                          Number(info && info.retainPreviousMs) || 0,
                          // #820: the hash a rehash replaced.
                          (info && typeof info.previousHash === 'string' &&
-                          info.previousHash) || null);
+                          info.previousHash) || null,
+                         // #2236: who made the password act, and when.
+                         { initiatingEntity: String((info &&
+                             info.initiatingEntity) || ''),
+                           atMs: Number(info && info.atMs) || 0 });
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-KRB-0107') + 'krb5-keys: deriving the ' +
                 'Kerberos keys for ' + name + ' failed: ' +
@@ -1392,7 +1407,8 @@ class Krb5PersonKeys {
   private async derive(name: string, password: string,
                        event: string, hash: string | null,
                        holdMs?: number,
-                       previousHash?: string | null): Promise<Json> {
+                       previousHash?: string | null,
+                       cause?: KeyCause): Promise<Json> {
     const { log, principals, config, errorCodes, audit,
             kcrypto } = this.deps;
     const directory = this.directory;
@@ -1567,11 +1583,11 @@ class Krb5PersonKeys {
     // housekeeping rather than a new credential: nothing is sent for it.
     if (!(record || (info && info.kvno))) {
       this.signalKeys(name, 'create', null, 'derived from the password ' +
-                      'just ' + event + ' (kvno ' + kvno + ')');
+                      'just ' + event + ' (kvno ' + kvno + ')', cause);
     } else if (!(record && record.stamp === stamp) && event !== 'rehash') {
       // A REHASH (#847) is the same password re-stamped: no new credential.
       this.signalKeys(name, 'update', null, 'derived from a new password ' +
-                      '(kvno ' + kvno + ')');
+                      '(kvno ' + kvno + ')', cause);
     }
     log.debug('Leaving Krb5PersonKeys.derive(). kvno ' + kvno + '.');
     return { derived: true, kvno: kvno };
@@ -1588,18 +1604,34 @@ class Krb5PersonKeys {
   // `revoke` — tickets under them stop being accepted — and clearing is a
   // `delete`. The initiating entity is the administrator where an act names
   // one, and this service otherwise. Required LAZILY.
+  //
+  // A DERIVATION IS ITS PASSWORD ACT'S CONSEQUENCE (#2236): `cause` is that
+  // act's initiating entity and instant, as `credentials.ts` stated them,
+  // and the event carries both. Without them the keys of a password the
+  // person had just chosen at the sign-in screen went out as a `system`
+  // change dated after the sign-in, and the console, acting on every change
+  // that is not the person's own, revoked the token it had just been issued
+  // (STS-API-0122, then its refresh STS-OAUTH-0214 — the single-node,
+  // mariadb and cluster runs). Where the act's initiator is not known, the
+  // rule above stands.
   // -------------------------------------------------------------------------
   private signalKeys(name: string, change: string,
                      context: ActContext | null | undefined,
-                     why: string): void {
+                     why: string, cause?: KeyCause): void {
     const { log, principals } = this.deps;
     log.debug('Entering Krb5PersonKeys.signalKeys(). ' + change);
     const actor = String((context || {}).actor || '');
-    const initiating = !context ? 'system'
+    const stated = String((cause && cause.initiatingEntity) || '');
+    const initiating = !context
+      ? (['user', 'admin', 'policy', 'system'].indexOf(stated) >= 0
+          ? stated : 'system')
       : (actor && actor === name ? 'user' : 'admin');
+    const atMs = Number(cause && cause.atMs) || 0;
     try {
       const signals = require('../ssf/account_signals');
       signals.credentialChanged({ username: name,
+        eventTimestamp: !context && atMs > 0 ? Math.floor(atMs / 1000)
+                                             : undefined,
         credentialType: signals.KERBEROS_KEY_CREDENTIAL_TYPE,
         changeType: change, initiatingEntity: initiating,
         friendlyName: name + '@' + principals.REALM,
@@ -3695,6 +3727,37 @@ class Krb5PersonKeys {
               ' service principal(s).');
     return rows;
   }
+  /**
+   * The stored service principals as the scheduled service-key rotation
+   * reads them (#2220): `listServices()`'s rows, each with `ownAcceptor`,
+   * whether its key is one this service made for its own acceptor and handed
+   * to nobody. Not an answer of any API: the console's rows stay as they
+   * are.
+   *
+   * @returns the rows
+   */
+  servicesForRotation(): Json[] {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.servicesForRotation().');
+    if (!this.directory) {
+      log.debug('Leaving Krb5PersonKeys.servicesForRotation(). No ' +
+                'directory.');
+      return [];
+    }
+    const own: Record<string, boolean> = {};
+    this.directory.serviceKeyInfos().forEach(function (one) {
+      const info = self.parseInfo(one.info) || {};
+      own[String(one.identifier)] = info.generated === ACCEPTOR_GENERATED;
+    });
+    const rows = this.listServices().map(function (row) {
+      return Object.assign({}, row, { ownAcceptor: !!own[row.principal] });
+    });
+    log.debug('Leaving Krb5PersonKeys.servicesForRotation(). ' +
+              rows.length + '.');
+    return rows;
+  }
+
 
   // Replace the value of a withheld attribute for display. `ldap_server.js`
   // calls it with the LOWER-CASED names the store uses.
@@ -3856,6 +3919,11 @@ export = {
   listPeopleKeys: slot.forward('listPeopleKeys'),
   describePeople: slot.forward('describePeople'),
   listServices: slot.forward('listServices'),
+  /**
+   * Forwards to `Krb5PersonKeys.servicesForRotation()` on the installed
+   * instance.
+   */
+  servicesForRotation: slot.forward('servicesForRotation'),
   withheldValues: slot.forward('withheldValues'),
   // THE KRBTGT KEY (#169).
   krbtgtIdentifier: slot.forward('krbtgtIdentifier'),

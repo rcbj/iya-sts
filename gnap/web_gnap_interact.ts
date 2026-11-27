@@ -121,9 +121,14 @@ class GnapInteractSurface extends WebSurface {
     this.t = await this.i18n.load({ uiLocales: query.ui_locales || '' });
     if (!found || found.row.embedded) {
       this.view = null;
-      this.drawProblem(found ? 'This page could not be drawn' : 'Not a page',
-        found ? 'The service sent no state for it.'
-              : path + ' is not a page here.');
+      this.drawProblem(found
+        ? this.refusal('refusals.web.notDrawnTitle', {},
+                       'This page could not be drawn')
+        : this.refusal('refusals.web.notAPageTitle', {}, 'Not a page'),
+        found ? this.refusal('refusals.web.noState', {},
+                             'The service sent no state for it.')
+              : this.refusal('refusals.web.notAPage', { path: path },
+                             path + ' is not a page here.'));
       return;
     }
     const answer = await this.publicJson('GET',
@@ -131,8 +136,12 @@ class GnapInteractSurface extends WebSurface {
     const json = answer.json;
     if (!json) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-        'The service answered ' + answer.status + ' with no JSON.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+        this.refusal('refusals.web.answeredNoJson',
+                     { status: String(answer.status) },
+                     'The service answered ' + answer.status +
+                     ' with no JSON.'));
       return;
     }
     // THE PAGE'S GET HAS SOMETHING TO ANSWER FIRST: the browser loads it.
@@ -142,9 +151,9 @@ class GnapInteractSurface extends WebSurface {
     }
     if ((answer.status !== 200 || json.ok === false) && !json.view) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-        (json.errors || []).join(' ') ||
-        'The service answered ' + answer.status + '.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+        this.said(json) || this.answeredStatus(answer.status));
       return;
     }
     if (json.preferredLanguage && json.preferredLanguage.value) {
@@ -233,14 +242,16 @@ class GnapInteractSurface extends WebSurface {
     const mirrors = found ? 'POST ' + found.row.path.replace(':id', '{id}')
                           : '';
     if (!await this.ensureFormTable()) {
-      this.flash = { error: 'The service\'s API could not be reached.' };
+      this.flash = { error: this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.') };
       this.redraw();
       return;
     }
     const op = mirrors ? this.formTable[mirrors] : null;
     if (!op || found.row.embedded) {
-      this.flash = { error: 'This control has no API operation (' + path +
-        '), so the page refuses it rather than guess.' };
+      this.flash = { error: this.refusal('refusals.web.noOperation',
+        { control: path }, 'This control has no API operation (' + path +
+        '), so the page refuses it rather than guess.') };
       this.redraw();
       return;
     }
@@ -258,7 +269,10 @@ class GnapInteractSurface extends WebSurface {
 declare const window: any;
 declare const document: any;
 
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+// NOT WHERE THE BROWSER CHECK SAID THIS BROWSER FALLS SHORT (#2220): its
+// notice is the page.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' &&
+    !GnapInteractSurface.browserFellShort(document)) {
   new GnapInteractSurface({
     fetch: window.fetch.bind(window), location: window.location,
     history: window.history, document: document,

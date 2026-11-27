@@ -13,8 +13,8 @@ this service builds for itself.
 
 | File | What it does |
 |---|---|
-| `generate-tls.sh` | makes the server key pair on first start, and with `POSTGRES_TLS_PUBLIC_DIR` copies the certificate (never the key) there as `<CN>.crt` on every start |
-| `require-tls.sh` | rewrites every `host` rule in `pg_hba.conf` to `hostssl` |
+| `generate-tls.sh` | makes the server key pair on first start, and with `POSTGRES_TLS_PUBLIC_DIR` copies the certificate (never the key) there as `<CN>.crt` on every start; with `POSTGRES_CLIENT_CERT` also a client CA and the service role's client certificate (#2254) |
+| `require-tls.sh` | rewrites every `host` rule in `pg_hba.conf` to `hostssl`; with `POSTGRES_CLIENT_CERT`, puts the service role's certificate rule first and names the client CA |
 | `schema.sql` | **builds the schema and the least-privileged role this service dials with.** Plain SQL, idempotent, takes psql variables, and runnable by hand against any database |
 | `apply-schema.sh` | runs `schema.sql` once, on the start that creates the cluster, with the role name and password the stack was given |
 | `upgrade-1.0.0.sql` | brings a release 1.0.0 store (schema version 31) to version 32 without running `schema.sql`, and stores `xacml.pepAuthentication` = `either` for each realm with a registered remote PEP (#1827). The container does not run it |
@@ -62,6 +62,30 @@ them all.
   not optional**: without it the service starts first about half the time,
   and since 2026-08-28 a configured store that cannot be opened is fatal
   (`persistence/CLAUDE.md`), so the stack restart-loops.
+* **The service role can be made to present a client certificate (#2254),
+  and nothing in the compose file asks for it yet.** `POSTGRES_CLIENT_CERT`
+  is `off` by default; `cert` or `verify-full` makes `generate-tls.sh` mint a
+  client CA once (`client-ca.crt`/`.key` in the TLS directory, the key never
+  leaving it) and a 90-day certificate for `STS_DB_APP_USER` (its CN, which
+  is what pg_hba's `cert` method matches), and makes `require-tls.sh` put
+  `hostssl all <role> all cert` — or `scram-sha-256 clientcert=verify-full`
+  — FIRST in `pg_hba.conf` (first match wins, so the owner's and every
+  other role's rules are untouched) and write `ssl_ca_file` into
+  `postgresql.conf`, not onto the command line, where a file that does not
+  exist would stop the server in every stack that does not ask. The
+  pg_hba half is an initdb script's, so it happens on the start that
+  creates the cluster and a volume made without it needs `down -v`. With
+  `POSTGRES_TLS_CLIENT_DIR` the pair is copied there on every start, owned
+  by `POSTGRES_TLS_CLIENT_UID` (10001, the service's user) and mode 0600 —
+  a volume only `sts` may mount, since it carries the key — for
+  `persistence.databaseTlsClientCertFile` and `…KeyFile`. Deleting
+  `client.crt` makes the next start issue a new one, which is how a renewal
+  is exercised: the service reads the files again every
+  `persistence.databasePasswordRefreshS`. A launcher that turns it on owes
+  the variable, the volume and a `COMPOSE_ENV` row (the root CLAUDE.md).
+  `tests/database_client_certificate.js` F is the job that dials such a
+  database, given `STS_TEST_PG_CLIENT_CERT_URL` and the three file
+  variables.
 * **5432 is not published**, for the reason 389 and 636 are not: a host
   already running postgres fails to start the stack on a port nobody was
   thinking about.
@@ -74,12 +98,12 @@ them all.
 
 **From measuring 8081 under the LDAP bulk load** (`load-users/dbperf/` on
 the host). `docker-compose.yml` passes them after `max_connections`; it
-carries no comments, so the reasons are here. `docs/v1.1.0/docker-compose.md`
+carries no comments, so the reasons are here. `docs/v1.2.0/docker-compose.md`
 lists them for a user.
 
 **THE SAME LIST IS IN `docker-compose-quick.yml` AND
 `docker-compose-run-tests.yml` (#633)**, and in the copy of the quick file
-that `docs/v1.1.0/getting-started.md` prints. #630 changed only the first file, so
+that `docs/v1.2.0/getting-started.md` prints. #630 changed only the first file, so
 the quick start and the suite ran the defaults it had measured against, the
 quick start with 100 connections. `tests/postgres_schema.js` now holds all
 four to one list, name and value, so a setting changes in every file or the

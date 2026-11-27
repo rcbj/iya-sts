@@ -71,5 +71,8 @@
   "jobOn": "Auftrag auf dem",
   "scheduler": "Scheduler",
   "jobOnEnd": ".",
-  "settings": "Einstellungen"
+  "settings": "Einstellungen",
+  "newSource.button": "Quelle hinzufügen",
+  "newSource.yes": "ja",
+  "newSource.no": "nein"
 }

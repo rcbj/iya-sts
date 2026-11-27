@@ -1,0 +1,97 @@
+{
+  "name": "IIC166",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIC166:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n\tPolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC166:policy\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\"\n\tVersion=\"1.0\">\n\t<Description>\n        Policy for Conformance Test IIC166.\n    </Description>\n\t<Target />\n\t<Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC166:rule\">\n\t\t<Condition>\n\t\t\t<Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of-any\">\n\t\t\t\t<Function FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-regexp-match\" />\n\t\t\t\t<Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-bag\">\n\t\t\t\t\t<AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\"> *This .*is not IT! *</AttributeValue>\n\t\t\t\t\t<AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\"> This .*is IT!  </AttributeValue>\n\t\t\t\t</Apply>\n\t\t\t\t<AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr\"\n\t\t\t\t\tCategory=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#string\"\n\t\t\t\t\tMustBePresent=\"false\" />\n\t\t\t</Apply>\n\t\t</Condition>\n\t</Rule>\n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "   This  is IT!  "
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "   This  is not IT!  "
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": []
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [],
+    "advice": []
+  }
+}

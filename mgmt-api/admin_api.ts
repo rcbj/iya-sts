@@ -232,6 +232,10 @@ import certificateViews = require('../admin-core/certificate_views');
 // them in `respond()`; this file adds the same member to the GET that
 // `mirrors` that page — see the registration loop and sendJson().
 import protocolEndpoints = require('../admin-core/protocol_endpoints');
+// Two-person approval for high-risk acts (#2166). A LIBRARY in `admin-core/`,
+// built by the composition root at 18i-ii, before this file at 19, so this
+// require is a cache hit and moves nothing.
+import dualControl = require('../admin-core/dual_control');
 // 18b, required in the ORDINARY DIRECTION for the same reason as the line
 // above: `common/protocol_stack.ts` loads it, and registers
 // `/admin/encryption` through its `registerRoutes(app)`, before this file, so
@@ -706,6 +710,9 @@ interface AdminApiDeps {
   loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // Directory → Post-login activities' operations (#1111).
   loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
+  loadHardwareTokensApi(): typeof import('./hardware_tokens_api');
+  // Directory → OpenPGP keys' operations (#1955 P6).
+  loadOpenPgpApi(): typeof import('./openpgp_api');
   // Monitoring → Audit export's operations (#641).
   loadAuditExportApi(): typeof import('./audit_export_api');
   // Server configuration → Sign-in appearance's operations (#717).
@@ -735,9 +742,180 @@ type RouteApp = typeof app;
 // everything they hold.
 const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
-  'clear-email-factor', 'disable-mfa', 'disable-primary-keys', 'set-mail',
+  'clear-email-factor', 'clear-hotp', 'clear-yubi', 'disable-mfa',
+  'disable-primary-keys', 'set-mail',
   'create-app-password', 'revoke-app-password', 'export-ldif',
   'import-ldif', 'delete'];
+
+// ---------------------------------------------------------------------------
+// THE OTHER ACTS THAT NEED A RECENT SIGN-IN (#2161, ASVS 5.0.0 7.5.3; rcbj,
+// 2026-11-24). The list above names actions of `/users/:action` and
+// `/mfa/:action`, and those two handlers check it themselves. This is
+// declared by FAMILY rather than by action. `registerRoutes()` checks it
+// for every POST before the handler runs, so an action or a route added to
+// one of these families later needs no edit to be covered:
+//
+//   * by OpenAPI TAG: role grants and removals (`Admin roles`: the console
+//     roster; `Roles`: the role register, its members, permissions, owners
+//     and eligibility), the trust realms (create, change, remove), the PKI
+//     (CA, intermediate, certificates, revocation, the signer truststore,
+//     paranoid PKI mode) and the settings (`Configuration`: every
+//     `config/*` write, `global.mode` among them). A setting is not sorted
+//     into "security" and "other" here, because such a list is one a new
+//     security setting could be left off.
+//   * by ROUTE, where the tag is shared with acts that are not one of these
+//     (`Service` covers the mail outbox and the scheduler too): the signing
+//     keys (`/keys/*`: rotate, emergency, export), the data keys and the
+//     key-encryption key (`/encryption/*`), the TLS client truststore, and
+//     the secret push destinations (`/secret-destinations/*`), which hold
+//     what a rotated password is pushed with.
+//   * by ACTION, on a route whose other acts are not one of these: the
+//     krbtgt key, which signs every ticket and PAC, and a person's keytab
+//     reset, which sets their password.
+//   * and every request the gate already classifies as a Security
+//     Administrator's change (#645, `common/security_operations.ts`).
+//
+// SINCE #2247 (ASVS 5.0.0 7.5.3, the Level 3 re-sweep, 2026-11-25) the
+// families also hold every act that changes WHO CAN AUTHENTICATE, WHAT THEY
+// CAN OBTAIN, or WHERE A TOKEN, A SECRET OR A SIGN-IN MAIL GOES. #2161 had
+// left out three of the widest — the XACML and ALFA policies, the
+// federation relationships and the applications — and the sweep of every
+// other tag found more. Each verdict, and why it is a whole tag, a route or
+// named actions:
+//
+//   WHOLE TAGS. The rule is the one `Configuration` follows: a tag is
+//   taken whole where nearly every act on it is one of these and the ones
+//   that are not share their action with ones that are, so a list of "the
+//   sensitive actions" would be one a new action could be left off. What it
+//   costs an ordinary edit is at most one sign-in per
+//   `account.recentAuthMinutes` (the window counts from the sign-in, so a
+//   fresh one covers the next fifteen minutes of every family), which the
+//   console asks in its popup and resends.
+//   * `XACML`: the access policies and ALFA, which decide every grant this
+//     service makes, the PEPs, their certificates, credentials and routes,
+//     and AuthZEN's attributes and access-request decisions. A remote PEP's
+//     decision-record push shares the tag and is a program's, never asked.
+//   * `Applications`: the secrets (rotate, add, reveal), the certificates
+//     and keys, the redirect and logout addresses (`set`, `add`), the
+//     client authentication, grant types and scopes (`set`, `update-fields`),
+//     the claims, permissions and access types an application's tokens
+//     carry, fine-grained authorization, and the RFC 9728 and LDIF imports.
+//     A description is changed by the same `set` that changes a redirect
+//     URI, so the description pays too: splitting `set` by attribute is the
+//     list this rule refuses. `generate-secret` is a form helper and writes
+//     nothing; the secret it shows is set by `create`, which is asked.
+//   * `Federation`: a relationship's partner, its certificates and keys,
+//     its provisioning switches and its signals.
+//   * `SAML 2.0`, `SAML 1.1`: a service provider's registration, signing
+//     certificates and metadata — where an assertion is sent and whose
+//     request is believed.
+//   * `Authorization servers`: the RFC 7523 issuers whose assertions are
+//     taken as a client's credential or a grant.
+//   * `OpenID Federation`: the trust anchors and subordinates a client's
+//     registration is believed through.
+//   * `SPIFFE`: registration entries (who is issued which SVID), brokers,
+//     agents and their join tokens, and the federated bundles.
+//   * `Policies`: the authentication, password, passkey, session and every
+//     other named policy, and a policy import.
+//   * `Delegation`: delegated permission grants and the global consents
+//     given on everybody's behalf. Withdrawals pay as well; they are few.
+//   * `Ownership`: owners may administer what they own.
+//   * `Groups`: a group grants nothing BY BEING A GROUP, but a role or a
+//     policy is held through one, so a member added is a role granted, and
+//     `set-policy` names how its members sign in.
+//   * `Devices`: a device's key and its compliance, which decisions read. The
+//     MDM feed shares the tag and is a program's.
+//   * `Token lifetimes`, `SAML assertions`: how long what is issued lasts.
+//   * `Custom claims`, `UserInfo claims`, `Custom SAML attributes`,
+//     `Credential claims`: what an issued token, assertion or credential
+//     says, which is what a relying party authorizes on.
+//   * `SCIM`: the outbound SCIM clients — where people's data is pushed,
+//     with which credential and certificate.
+//   * `Risk`: the datasets a sign-in's risk is scored on; an emptied or
+//     rolled-back dataset is a weaker sign-in.
+//   * `UMA`: resource servers and what an owner shares with whom.
+//   * `ACME`, `EST`, `SCEP`: who may obtain a certificate (external account
+//     bindings, challenges, the RA, the host names) and revocations.
+//
+//   ROUTES, where the tag is shared with acts that are not:
+//   * `/attribute-sources` (tag `Directory`): the databases claim values
+//     are read from, and their credentials.
+//   * `/hardware-tokens` (`Directory`): OATH and YubiKey OTP assignments,
+//     PIV enrolment, key recovery, SSH certificates, YK-VAL clients — each a
+//     way in.
+//   * `/openpgp` (`Directory`): a person's mail-encryption keys, which say
+//     who can read the mail that carries their codes and links.
+//   * `/kerberos/trusts` (`Kerberos`): a cross-realm trust's key.
+//   * `/kerberos/claims` (`Kerberos`): what a ticket's PAC says, for the
+//     claims tags' reason.
+//   * `/claim-providers` (`OAuth 2.0 / OIDC`): where aggregated claims come
+//     from, and with which credential.
+//   * `/ssf` (`Shared Signals`): a stream's status, delivery and removal —
+//     whether a receiver is told a session ended.
+//   * `/listeners` (`Service`): which listener presents which certificate
+//     and serves which application.
+//   * `/audit-export` (`Monitoring`): where the audit trail goes, and
+//     whether it goes at all.
+//
+//   ACTIONS, on a route whose other acts are not:
+//   * `/users`: an activation link (whoever holds it sets the password), MFA
+//     no longer required, a certificate added (certificate sign-in), the
+//     service-account designation, owners, push destination and rotation,
+//     who may act for whom, and an administrator answering a CIBA request.
+//     The other profile edits stay unasked, as the krbtgt argument below
+//     leaves a principal's other acts.
+//   * `/tokens` and `/logout`: RESTORING a revoked token, artifact, set or
+//     Kerberos ticket, which makes a stopped credential usable again. The
+//     revocations only take away.
+//   * `/mail`: a template saved, since it is what a sign-in mail says.
+//
+//   NOT ASKED, and why: sessions and sign-outs, token and grant revocations,
+//   CAEP, RISC, a broadcast and a cleared signal (each takes something
+//   away, or reports); GNAP's two acts (a revocation, a removal); the
+//   verifier request and verifications (a presentation asked for, not
+//   trusted); credential status publication; provider commands and
+//   deliveries; the passkey report, post-login activities, the scheduler,
+//   node health, the cells' rehome, malware scanning and the console's own
+//   language (none changes who gets in or what they get). The Kerberos
+//   principals' other acts are #2161's verdict and unchanged.
+//
+// An act marked `writesNothing` (a console form helper) is not asked. As for
+// the list above, only a token with a person behind it is asked, because a
+// program has nobody to sign in again, and the window is the same
+// `account.recentAuthMinutes`. A held act (#2166) is asked here of its
+// requester, and its replay carries the APPROVER's sign-in, which
+// `decideHeld()` asks before the replay runs.
+// ---------------------------------------------------------------------------
+const RECENT_SIGN_IN_TAGS = ['Admin roles', 'Roles', 'Trust realms', 'PKI',
+  'Configuration',
+  // #2247
+  'XACML', 'Applications', 'Federation', 'SAML 2.0', 'SAML 1.1',
+  'Authorization servers', 'OpenID Federation', 'SPIFFE', 'Policies',
+  'Delegation', 'Ownership', 'Groups', 'Devices', 'Token lifetimes',
+  'SAML assertions', 'Custom claims', 'UserInfo claims',
+  'Custom SAML attributes', 'Credential claims', 'SCIM', 'Risk', 'UMA',
+  'ACME', 'EST', 'SCEP'];
+const RECENT_SIGN_IN_ROUTES = ['/keys/:action', '/encryption/:action',
+  '/tls/trust/:action', '/secret-destinations/:action',
+  // #2247
+  '/attribute-sources/:action', '/hardware-tokens/:action',
+  '/openpgp/:action', '/kerberos/trusts/:action',
+  '/kerberos/claims/:action',
+  '/claim-providers/:action', '/ssf/:action', '/listeners/:action',
+  '/audit-export/:action'];
+const RECENT_SIGN_IN_ACTIONS = {
+  '/kerberos/principals/:action': ['rotate-krbtgt', 'rotate-krbtgt-invalidate',
+    'reset-person-keytab'],
+  // #2247
+  '/users/:action': ['issue-activation', 'stop-requiring-mfa',
+    'add-certificate', 'set-service-account', 'add-service-account-owner',
+    'remove-service-account-owner', 'set-service-account-destination',
+    'rotate-password', 'set-may-act', 'set-not-delegated',
+    'set-delegation-semantics', 'answer-ciba-request'],
+  '/tokens/:action': ['restore', 'restore-artifact', 'restore-set'],
+  '/logout/:action': ['restore-token', 'restore-kerberos'],
+  '/mail/:action': ['save-template']
+};
 
 class AdminApi {
   /**
@@ -852,6 +1030,12 @@ class AdminApi {
       },
       loadPostLoginActivitiesApi: function () {
         return require('./post_login_activities_api');
+      },
+      loadHardwareTokensApi: function () {
+        return require('./hardware_tokens_api');
+      },
+      loadOpenPgpApi: function () {
+        return require('./openpgp_api');
       },
       loadAuditExportApi: function () {
         return require('./audit_export_api');
@@ -1771,15 +1955,200 @@ class AdminApi {
     const { log } = this.deps;
     log.debug("Entering AdminApi.reauthenticationOwed().");
     const caller = res && res.locals && res.locals.apiCaller;
-    const limit = Number(require('../common/config')
-      .value('account.recentAuthMinutes')) * 60;
-    if (!limit || !caller || caller.kind !== 'person' ||
-        REAUTHENTICATED_ACTIONS.indexOf(String(action)) < 0) {
+    if (REAUTHENTICATED_ACTIONS.indexOf(String(action)) < 0) {
       log.debug("Leaving AdminApi.reauthenticationOwed(). Not asked.");
       return false;
     }
-    const at = Number(caller.authTime || 0);
     log.debug("Leaving AdminApi.reauthenticationOwed().");
+    return AdminApi.signInIsStale(caller);
+  }
+
+  // Which of the families above a POST to a row is in: the family's name,
+  // or null where the act needs no recent sign-in beyond the list above.
+  /**
+   * Names the recent sign-in family a POST to a route row is in (#2161).
+   *
+   * @param entry - the route row
+   * @param action - the action the request names, '' for none
+   * @param securityChange - what the gate classified the request as, if
+   *   anything (#645)
+   * @returns the family's name, or null
+   */
+  static recentSignInFamilyOf(entry, action, securityChange?) {
+    log.debug("Entering AdminApi.recentSignInFamilyOf().");
+    const asked = String(action || '');
+    const declared = (entry && entry.actions || []).filter(function (one) {
+      return one.action === asked;
+    })[0];
+    if (declared && declared.writesNothing) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). Writes nothing.");
+      return null;
+    }
+    if (securityChange) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). A security " +
+                "change.");
+      return 'security change';
+    }
+    const route = String((entry && (entry.route || entry.path)) || '')
+      .replace(BASE, '');
+    if (entry && RECENT_SIGN_IN_TAGS.indexOf(String(entry.tag)) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + entry.tag + ".");
+      return String(entry.tag);
+    }
+    if (RECENT_SIGN_IN_ROUTES.indexOf(route) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + route + ".");
+      return route;
+    }
+    if ((RECENT_SIGN_IN_ACTIONS[route] || []).indexOf(asked) >= 0) {
+      log.debug("Leaving AdminApi.recentSignInFamilyOf(). " + route + " " +
+                asked + ".");
+      return route + ' ' + asked;
+    }
+    log.debug("Leaving AdminApi.recentSignInFamilyOf(). None.");
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE WRITE BUDGET OF ONE CALLER (#2247, ASVS 5.0.0 2.4.2; #2167's
+  // follow-up). Until this every POST here was bounded only by the ceiling on
+  // one ADDRESS (`security.requestsPerAddressPerMinute`), which a stolen
+  // console token spends from wherever it likes. So every POST that writes
+  // counts, after the gate has proved who is calling and after the body and
+  // the recent sign-in are checked, in a bucket keyed by the token's realm and
+  // subject (`websecurity.subjectActShared()`, `/account-api`'s mechanism):
+  //
+  //   * A PERSON's token counts against `adminApi.writesPerSubject` in
+  //     `adminApi.writeWindowS`: 1200 in ten minutes in product, two writes
+  //     a second sustained for ten minutes. The console sends one POST per
+  //     act and none on its own, and its bulk edits are a person's clicks —
+  //     a policy built rule by rule, a group's members added one by one, a
+  //     hundred users' fields corrected — which is a few hundred at the very
+  //     busiest; 1200 leaves that room four times over and still stops a
+  //     script driving a stolen token at the rate a script runs.
+  //   * A PROGRAM — a `client_credentials` token, or a service account's
+  //     (#221: a person entry carrying `stsServiceAccount`) — is not a
+  //     person and is counted only against
+  //     `adminApi.programWritesPerSubject`, which is 0, no limit, in every
+  //     mode. A provisioning run or a migration legitimately makes thousands
+  //     of writes in minutes, and the right number is the operator's, who
+  //     knows what their programs do; a person's number would break them.
+  //
+  // A GET is not counted, nor an act that writes nothing (a console form
+  // helper), nor a held act's replay (#2166: its approval was the POST that
+  // counted). Over the budget the answer is 429 with Retry-After,
+  // `STS-API-0148`, in this API's refusal shape. 0 counts nothing, and both
+  // are off in development, as the address ceiling is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Counts a write against its caller's budget, and refuses one over it
+   * (#2247).
+   *
+   * @param entry - the route table's row
+   * @param action - the action the request names, '' for none
+   * @param req - the request
+   * @param res - the response
+   * @returns null when nothing is counted, otherwise a promise of true when
+   *   the request was refused
+   */
+  overWriteBudget(entry, action: string, req, res): Promise<boolean> | null {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering AdminApi.overWriteBudget().");
+    const self = this;
+    const caller = res && res.locals && res.locals.apiCaller;
+    const asked = String(action || '');
+    const declared = (entry && entry.actions || []).filter(function (one) {
+      return one.action === asked;
+    })[0];
+    if (!caller || req.__dualControlReplay ||
+        (declared && declared.writesNothing)) {
+      log.debug("Leaving AdminApi.overWriteBudget(). Not counted.");
+      return null;
+    }
+    const personMost = Number(config.value('adminApi.writesPerSubject')) || 0;
+    const programMost =
+      Number(config.value('adminApi.programWritesPerSubject')) || 0;
+    if (personMost <= 0 && programMost <= 0) {
+      log.debug("Leaving AdminApi.overWriteBudget(). No budget is set.");
+      return null;
+    }
+    const program = AdminApi.callerIsProgram(caller);
+    const most = program ? programMost : personMost;
+    if (most <= 0) {
+      log.debug("Leaving AdminApi.overWriteBudget(). No budget for this " +
+                "kind of caller.");
+      return null;
+    }
+    const who = String(caller.realm || '') + '|' +
+      (caller.kind === 'application'
+        ? 'client:' + String(caller.clientId || caller.name || '')
+        : String(caller.sub || caller.name || ''));
+    const websecurity = require('../common/websecurity');
+    log.debug("Leaving AdminApi.overWriteBudget(). Counting.");
+    return websecurity.subjectActShared(
+      program ? 'admin-program-write' : 'admin-write', req, who, most,
+      Number(config.value('adminApi.writeWindowS')), 'STS-API-0148')
+      .then(function (counted) {
+        if (counted.ok) {
+          return false;
+        }
+        const seconds = Math.max(1, Math.ceil(Number(counted.retryAfterS) ||
+                                              1));
+        res.set('Retry-After', String(seconds));
+        errorCodes.mark(res, 'STS-API-0148');
+        self.sendJson(res, 429, { ok: false, errors: [
+          'Too many changes through the management API in a short ' +
+          'while. Wait ' + seconds + ' seconds and try again.'] });
+        return true;
+      });
+  }
+
+  // Whether the caller is a program rather than a person, for the write
+  // budget above: a `client_credentials` token, or a service account's.
+  // An entry that cannot be read is a person, the stricter budget.
+  /**
+   * Says whether an API caller is a program (#2247).
+   *
+   * @param caller - the gate's `res.locals.apiCaller`
+   * @returns true for an application or a service account
+   */
+  static callerIsProgram(caller): boolean {
+    log.debug("Entering AdminApi.callerIsProgram().");
+    if (!caller || caller.kind === 'application') {
+      log.debug("Leaving AdminApi.callerIsProgram(). " + !!caller);
+      return !!caller;
+    }
+    let service = false;
+    try {
+      service = serviceAccounts.isServiceAccountName(caller.name) === true;
+    } catch (e) {
+      log.debug("Caught in AdminApi.callerIsProgram(): " +
+                ((e && e.message) || e));
+      // Unreadable: a person, the stricter reading.
+      service = false;
+    }
+    log.debug("Leaving AdminApi.callerIsProgram(). " + service);
+    return service;
+  }
+
+  // Whether the PERSON behind the token signed in longer ago than
+  // `account.recentAuthMinutes` allows. Zero (development's default) asks
+  // nobody; a program is never asked.
+  /**
+   * Whether the caller must sign in again before a sensitive act.
+   *
+   * @param caller - `res.locals.apiCaller`
+   * @returns true when the sign-in is stale
+   */
+  static signInIsStale(caller) {
+    log.debug("Entering AdminApi.signInIsStale().");
+    const limit = Number(require('../common/config')
+      .value('account.recentAuthMinutes')) * 60;
+    if (!limit || !caller || caller.kind !== 'person') {
+      log.debug("Leaving AdminApi.signInIsStale(). Not asked.");
+      return false;
+    }
+    const at = Number(caller.authTime || 0);
+    log.debug("Leaving AdminApi.signInIsStale().");
     return !(at > 0 && Date.now() / 1000 - at <= limit);
   }
 
@@ -1797,6 +2166,389 @@ class AdminApi {
       error: 'insufficient_user_authentication',
       errors: ['Sign in again to make this change.'] });
     log.debug("Leaving AdminApi.refuseStaleSignIn().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // TWO-PERSON APPROVAL (#2166). The table, the store and the decisions are
+  // `admin-core/dual_control.ts`'s; what is here is the transport: which
+  // operation a POST is, the 202 a held act is answered with, the decision
+  // operations' checks, and the REPLAY of an approved act through its own
+  // handler, so it is re-validated against the state as it is when it runs.
+  // ---------------------------------------------------------------------------
+  /**
+   * The operationId of the POST this route entry answers for an action.
+   *
+   * @param entry - the route table's row
+   * @param action - the `:action` the request named, or ''
+   * @returns the operationId, or '' when the entry declares none for it
+   */
+  operationIdOf(entry, action: string): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.operationIdOf(). " + action);
+    let out = '';
+    if (Array.isArray(entry && entry.actions)) {
+      const row = entry.actions.filter(function (one) {
+        return one.action === action;
+      })[0];
+      out = row ? String(row.operationId || '') : '';
+    } else if (entry && entry.operationId) {
+      out = String(entry.operationId);
+    }
+    log.debug("Leaving AdminApi.operationIdOf(). " + (out || '(none)'));
+    return out;
+  }
+
+  /**
+   * Holds a high-risk act for a second administrator when two-person
+   * approval is on: stores it and answers 202 with its id. An act that is not
+   * held, or that runs because nobody else could decide it, is left to its
+   * handler.
+   *
+   * @param entry - the route table's row
+   * @param path - the route
+   * @param req - the request, whose body the schema has passed
+   * @param res - the response
+   * @returns true when this answered
+   */
+  holdForSecondAdministrator(entry, path: string, req, res): boolean {
+    const { log, parseBody, errorCodes } = this.deps;
+    log.debug("Entering AdminApi.holdForSecondAdministrator().");
+    const action = String((req.params && req.params.action) || '');
+    const operationId = this.operationIdOf(entry, action);
+    if (!operationId || !dualControl.rowOf(operationId)) {
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Never held.");
+      return false;
+    }
+    const body = Object.assign({}, parseBody(req) || {});
+    delete body.action;
+    const row = dualControl.heldRowFor(operationId, body);
+    if (!row) {
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Not held.");
+      return false;
+    }
+    // THE AUTHORITY THE ACT NEEDED, which the approver must hold too: a
+    // security change (#645) needs SECURITY_ADMIN, every other write here
+    // Admin Write.
+    let security = null;
+    try {
+      security = this.securityChangeOf(req);
+    } catch (e) {
+      log.debug("Caught in AdminApi.holdForSecondAdministrator(): " +
+                ((e && e.message) || e));
+    }
+    const result = dualControl.hold({
+      row: row, operationId: operationId, route: path, action: action,
+      body: body, caller: res.locals && res.locals.apiCaller,
+      authority: security ? 'SECURITY_ADMIN' : 'ADMIN_WRITE' });
+    if (result.refused) {
+      errorCodes.mark(res, result.code || 'STS-ADMIN-0975');
+      this.sendJson(res, 400, { ok: false, errors: result.errors });
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Refused.");
+      return true;
+    }
+    if (!result.held) {
+      log.debug("Leaving AdminApi.holdForSecondAdministrator(). Runs now.");
+      return false;
+    }
+    res.set('Location', BASE + '/approvals?id=' +
+            encodeURIComponent(result.request.id));
+    this.sendJson(res, 202, { ok: true, pending: true,
+      message: row.what + ' is waiting for a second administrator: ' +
+               'two-person approval is on in this realm. Another ' +
+               'administrator holding ' + result.request.authority +
+               ' approves or refuses it on /admin/approvals (POST ' + BASE +
+               '/approvals/approve with id ' + result.request.id + ') ' +
+               'before ' + result.request.expiresAt + '.',
+      approval: result.request });
+    log.debug("Leaving AdminApi.holdForSecondAdministrator(). Held " +
+              result.request.id + ".");
+    return true;
+  }
+
+  /**
+   * `GET /admin-api/approvals`: the control's state, the table, and every
+   * held act, or one.
+   *
+   * @param req - the request
+   * @param res - the response, whose locals name the caller
+   * @returns the view
+   */
+  approvalsView(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.approvalsView().");
+    const id = String((req.query && req.query.id) || '');
+    const out: any = {
+      state: dualControl.state(),
+      table: dualControl.table(),
+      requests: dualControl.list(),
+      you: this.callerNameOf(res)
+    };
+    if (id) {
+      const one = dualControl.get(id);
+      out.request = one ? dualControl.viewOf(one) : null;
+    }
+    log.debug("Leaving AdminApi.approvalsView(). " + out.requests.length);
+    return out;
+  }
+
+  /**
+   * `POST /admin-api/approvals/{action}`: approve, refuse or withdraw a held
+   * act. An approval asks for a recent sign-in as #1538's changes do, and
+   * answers the act's own answer as `result`.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the body, with `action`
+   * @returns the answer, `{ ok, status?, errorCode?, … }`, or null when this
+   *   answered already
+   */
+  async decideHeld(req, res, body) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.decideHeld(). " + body.action);
+    const caller = (res.locals && res.locals.apiCaller) || null;
+    const id = String(body.id || '');
+    const reason = String(body.reason || '');
+    if (body.action === 'refuse') {
+      log.debug("Leaving AdminApi.decideHeld(). Refuse.");
+      return dualControl.refuse(id, caller, reason);
+    }
+    if (body.action === 'withdraw') {
+      log.debug("Leaving AdminApi.decideHeld(). Withdraw.");
+      return dualControl.withdraw(id, caller, reason);
+    }
+    if (body.action !== 'approve') {
+      log.debug("Leaving AdminApi.decideHeld(). Unknown action.");
+      return { ok: false, status: 400, errorCode: 'STS-ADMIN-0970',
+               errors: ['Unknown action "' + body.action + '". The three ' +
+                        'are: approve, refuse, withdraw.'] };
+    }
+    // THE APPROVER'S RE-AUTHENTICATION: every held act is one #2161 puts
+    // under the recent-sign-in rule, so the person who lets it run must have
+    // signed in within `account.recentAuthMinutes` (0: not asked), answered
+    // as RFC 9470 says so the console signs in again in its popup.
+    if (AdminApi.signInIsStale(caller)) {
+      self.refuseStaleSignIn(req, res);
+      log.debug("Leaving AdminApi.decideHeld(). Sign in again.");
+      return null;
+    }
+    const result = await dualControl.approve(id, caller, function (row) {
+      return self.replayHeld(row, caller);
+    });
+    if (result.approval === undefined) {
+      log.debug("Leaving AdminApi.decideHeld(). Refused.");
+      return result;
+    }
+    log.debug("Leaving AdminApi.decideHeld(). Approved, " + result.status +
+              ".");
+    return { ok: result.ok,
+             status: result.ok ? 200 : 409,
+             errorCode: result.ok ? '' : 'STS-ADMIN-0980',
+             message: result.ok
+               ? 'Approved: ' + result.approval.what + ' ran as ' +
+                 result.approval.requester + '\'s act.'
+               : 'Approved, and the act was refused when it ran.',
+             errors: result.ok ? undefined
+               : [].concat((result.body && result.body.errors) || [
+                 'The act was refused when it ran.']),
+             approval: result.approval,
+             result: result.body };
+  }
+
+  /**
+   * Runs an approved held act through its own handler, as its requester's
+   * act: the body checked against the operation's schema again, the caller
+   * the requester (with the approver's recent sign-in, which is what the
+   * approval verified), and the answer captured rather than sent.
+   *
+   * @param row - the stored request
+   * @param approver - the approver, as the gate named them
+   * @returns `{ status, body }`
+   */
+  replayHeld(row, approver): Promise<{ status: number; body: any }> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.replayHeld(). " + row.operationId);
+    const entry = (ROUTES || []).filter(function (one) {
+      return one.method === 'POST' && (one.route || one.path) === row.route;
+    })[0];
+    if (!entry) {
+      log.debug("Leaving AdminApi.replayHeld(). No such route.");
+      return Promise.resolve({ status: 404, body: { ok: false, errors: [
+        'The operation ' + row.operationId + ' is no longer served.'] } });
+    }
+    const url = String(row.route).replace(':action', row.action);
+    const req: any = {
+      method: 'POST', params: { action: row.action }, query: {},
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(row.body || {}),
+      originalUrl: url, url: url, path: url,
+      __adminApiRoute: row.route,
+      __adminApiHandlerOwnsBody: !!entry.handlerOwnsBody,
+      __dualControlReplay: true
+    };
+    const checked = self.checkRequestBody(req);
+    if (!checked.ok) {
+      log.debug("Leaving AdminApi.replayHeld(). The body no longer passes.");
+      return Promise.resolve({ status: 400,
+                               body: { ok: false, errors: checked.errors } });
+    }
+    const requester = row.requester || {};
+    const caller = {
+      kind: requester.kind || 'person', name: requester.name,
+      sub: requester.sub, clientId: requester.clientId,
+      realm: requester.realm,
+      authTime: Number(approver && approver.authTime) || 0,
+      scopes: [row.authority === 'SECURITY_ADMIN' ? 'admin:security'
+                                                  : 'admin:write'],
+      roles: [row.authority], expiresAt: null, owner: false,
+      approvedBy: approver && approver.name
+    };
+    req.adminApiCaller = caller;
+    return new Promise(function (resolve) {
+      const captured = { status: 0, text: '' };
+      let settled = false;
+      // A PER-REQUEST TIMEOUT, not periodic work: a handler that never
+      // answers is a failed act, not an approval that waits for ever.
+      let timer = null;
+      const done = function () {
+        log.debug("Entering done().");
+        if (settled) {
+          log.debug("Leaving done(). Already.");
+          return;
+        }
+        settled = true;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        let body: any = {};
+        try {
+          body = JSON.parse(captured.text || '{}');
+        } catch (e) {
+          log.debug("Caught in done(): " + ((e && e.message) || e));
+          body = { ok: captured.status < 400 };
+        }
+        resolve({ status: captured.status || 500, body: body });
+        log.debug("Leaving done().");
+      };
+      // THE STAND-IN RESPONSE: what a handler and `sendJson()` call on a
+      // response, capturing the status and the text instead of sending.
+      const res: any = {
+        req: req,
+        locals: { apiCaller: caller, proseRoute: entry.proseRoute ||
+                  row.route },
+        headersSent: false,
+        status: function status(code) {
+          log.debug("Entering status(). " + code);
+          captured.status = code;
+          log.debug("Leaving status().");
+          return res;
+        },
+        type: function type() {
+          log.debug("Entering type().");
+          log.debug("Leaving type().");
+          return res;
+        },
+        set: function set() {
+          log.debug("Entering set().");
+          log.debug("Leaving set().");
+          return res;
+        },
+        vary: function vary() {
+          log.debug("Entering vary().");
+          log.debug("Leaving vary().");
+          return res;
+        },
+        send: function send(text) {
+          log.debug("Entering send().");
+          captured.text = typeof text === 'string' ? text
+            : JSON.stringify(text);
+          res.headersSent = true;
+          done();
+          log.debug("Leaving send().");
+          return res;
+        },
+        json: function json(value) {
+          log.debug("Entering json().");
+          captured.text = JSON.stringify(value);
+          res.headersSent = true;
+          done();
+          log.debug("Leaving json().");
+          return res;
+        },
+        end: function end() {
+          log.debug("Entering end().");
+          done();
+          log.debug("Leaving end().");
+          return res;
+        }
+      };
+      const next = function (e) {
+        log.debug("Entering next().");
+        log.debug("Caught in next(): " + ((e && e.message) || e));
+        if (!captured.status) {
+          captured.status = 500;
+          captured.text = JSON.stringify({ ok: false, errors: [
+            'The held act failed when it was run.'] });
+        }
+        done();
+        log.debug("Leaving next().");
+      };
+      timer = setTimeout(function () {
+        next(new Error('the held act did not answer within 120 seconds'));
+      }, 120000);
+      if (timer && typeof timer.unref === 'function') {
+        timer.unref();
+      }
+      try {
+        const answered = entry.handler(req, res, next);
+        if (answered && typeof answered.then === 'function') {
+          answered.then(function () {
+            return undefined;
+          }, next);
+        }
+      } catch (e) {
+        next(e);
+      }
+      log.debug("Leaving AdminApi.replayHeld(). Running.");
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // RFC 6750 SECTION 3.1'S `insufficient_scope`, SAID IN A HEADER (#2168).
+  //
+  // The console signs in with read scopes only (ASVS 5.0.0 10.2.3) and asks a
+  // second authorization for a write scope the first time a write needs it.
+  // It learns WHICH scope from the refusal itself rather than from a table
+  // of its own, so the gate names it on the two refusals a missing scope
+  // ends in: the access policy's (STS-API-0005) and the security change's
+  // (STS-API-0138). Only the header is added — the status, the code and the
+  // body are what they were, so a caller that reads none of it sees no
+  // change — and only for a scope the token does not carry: a token that
+  // carries it and whose subject lost the role is told nothing a second
+  // authorization could mend, so no client loops on it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the scopes a refused request lacks, in a `WWW-Authenticate`
+   * challenge of the scheme it was presented in.
+   *
+   * @param res - the response
+   * @param scheme - the presented scheme, `dpop` or `bearer`
+   * @param missing - the scopes the token does not carry, none for no
+   *   challenge
+   */
+  challengeMissingScope(res, scheme, missing) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.challengeMissingScope().");
+    const named = (missing || []).filter(Boolean);
+    if (!named.length) {
+      log.debug("Leaving AdminApi.challengeMissingScope(). None missing.");
+      return;
+    }
+    res.set('WWW-Authenticate', (scheme === 'dpop' ? 'DPoP' : 'Bearer') +
+            ' error="insufficient_scope", scope="' + named.join(' ') + '"');
+    log.debug("Leaving AdminApi.challengeMissingScope(). " +
+              named.join(' '));
   }
 
   withAction(req, body) {
@@ -1971,6 +2723,15 @@ class AdminApi {
               'optional major-version range, `;` between rules — whose ' +
               'registrations offer the list less ML-DSA, where a classical ' +
               'passkey is allowed. ' +
+              '`credProtect` (`none`, #1955; optional) asks a ' +
+              'registration\'s authenticator for CTAP 2.1 credential ' +
+              'protection at `userVerificationOptional`, ' +
+              '`userVerificationOptionalWithCredentialIDList` or ' +
+              '`userVerificationRequired`, and records the level the ' +
+              'key reports; `enforceCredProtect` (off; optional) asks ' +
+              'the browser to enforce it and refuses a key reporting a ' +
+              'lower level (STS-AUTHN-0559), and is refused on while ' +
+              '`credProtect` is `none` (STS-AUTHN-0560). ' +
               'Refused: `classical-only` with `postQuantumRequired` not ' +
               '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
               'and `pq-only` or `pq-first` where the list offered names no ' +
@@ -1991,7 +2752,8 @@ class AdminApi {
                    postQuantumAllowCredentials: 'realm',
                    registrationAlgorithms: 'realm',
                    registrationMode: 'realm', lanes: 'realm',
-                   clientRules: '' }
+                   clientRules: '', credProtect: 'none',
+                   enforceCredProtect: false }
       },
       // #539: the fifth kind, with named profiles an application or a
       // group names (#1238).
@@ -2069,7 +2831,11 @@ class AdminApi {
               'passkey as migrated only where its recorded attestation is ' +
               'post-quantum too. `noPasskeyFallback` (#1103): `classical` ' +
               'offers a person with no passkey a classical retry where ' +
-              'their device cannot make ML-DSA.',
+              'their device cannot make ML-DSA. The mail-encryption ' +
+              'activity (#2009) is a block of its own with its own switch ' +
+              '(`mailEnabled`, off by default), which a save may leave ' +
+              'out to keep what the profile stored; so is the PIV ' +
+              're-issue (#2009, `pivEnabled`).',
         example: { enabled: true, activity: 'pqc-passkey-migration',
                    snoozeDays: 7, graceDays: 30, noPasskey: 'invite',
                    method: 'automatic',
@@ -2100,7 +2866,9 @@ class AdminApi {
         ? { type: 'string', pattern: '^(default|[a-z0-9][a-z0-9-]{0,63})$',
             description: 'Which profile: `default`, or a named profile ' +
                          '(lower-case letters, digits and hyphens), which ' +
-                         'is created by its first save.' }
+                         'is created by its first save. Left out, the ' +
+                         'save edits the default profile; given empty, or ' +
+                         'null, it is refused.' }
         : { type: 'string', enum: [module.DEFAULT_PROFILE],
             description: 'Which profile. Only `default` exists.' };
       const properties: Record<string, any> = {
@@ -2328,7 +3096,7 @@ class AdminApi {
   // console page, and on 2026-08-27 eight pages arrived at once — one per
   // protocol family whose appconfig rows had no page of their own. TOTP,
   // WebAuthn, recovery codes, persistence and the cluster have joined them
-  // since, so the table holds thirteen.
+  // since, so the table held thirteen — and nineteen since #2049's six.
   //
   // THERE IS NO POST BESIDE ANY OF THEM, and that is the rule read exactly
   // rather than a gap. Every form on those pages posts `set-many` to
@@ -2377,6 +3145,24 @@ class AdminApi {
         tag: 'Recovery codes', operationId: 'getBackupCodesSettings' },
       { path: '/webauthn', console: '/admin/webauthn', tag: 'WebAuthn',
         operationId: 'getWebauthnSettings' },
+      // THE #1955 MECHANISMS AND OPENPGP (#2049): six Protocols pages, each
+      // a settings group of its own, and rule 7 owes an operation per page.
+      // The four token mechanisms and the SSH CA share the Hardware tokens
+      // tag, the way the three second factors share nothing but a page
+      // type: a reader looking for one of them looks for the others.
+      { path: '/hardware-tokens-settings',
+        console: '/admin/hardware-tokens-settings', tag: 'Hardware tokens',
+        operationId: 'getHardwareTokensSettings' },
+      { path: '/piv', console: '/admin/piv', tag: 'Hardware tokens',
+        operationId: 'getPivSettings' },
+      { path: '/yubiotp', console: '/admin/yubiotp', tag: 'Hardware tokens',
+        operationId: 'getYubiOtpSettings' },
+      { path: '/oath-tokens', console: '/admin/oath-tokens',
+        tag: 'Hardware tokens', operationId: 'getOathTokensSettings' },
+      { path: '/ssh-user-ca', console: '/admin/ssh-user-ca',
+        tag: 'Hardware tokens', operationId: 'getSshUserCaSettings' },
+      { path: '/openpgp-settings', console: '/admin/openpgp-settings',
+        tag: 'OpenPGP', operationId: 'getOpenPgpSettings' },
       { path: '/kerberos', console: '/admin/kerberos', tag: 'Kerberos',
         operationId: 'getKerberosSettings' },
       { path: '/ldap', console: '/admin/ldap', tag: 'LDAP',
@@ -2662,6 +3448,7 @@ class AdminApi {
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
+            loadHardwareTokensApi, loadOpenPgpApi,
             loadAuditExportApi, loadBrandingApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
@@ -3250,6 +4037,24 @@ class AdminApi {
       // listeners and the mapping are set here, because the mapping's write
       // is the one that may need `confirm` (rcbj's D6).
       // ---------------------------------------------------------------------
+      // CSP VIOLATION REPORTS (#2164): Monitoring > CSP reports, the counts
+      // `common/csp_reports.ts` keeps of what browsers reported to
+      // `/web/csp-report`, in the realm the call is in. Under
+      // `request_pool.js`'s NEVER_DISPATCHED with the endpoint, because the
+      // counts are the front process's.
+      { method: 'GET', path: BASE + '/csp-reports', tag: 'Service',
+        operationId: 'getCspReports',
+        mirrors: 'GET /admin/csp-reports',
+        handler: function (req, res) {
+          log.debug("Entering the management API CSP reports endpoint.");
+          const cspReports = require('../common/csp_reports');
+          self.sendJson(res, 200, Object.assign(cspReports.view(), {
+            settings: require('../admin-ui/admin')
+              .configSettingsJson(cspReports.PAGE)
+          }));
+          log.debug("Leaving the management API CSP reports endpoint.");
+        } },
+
       // MALWARE SCANNING (#1501).
       { method: 'GET', path: BASE + '/malware-scanning', tag: 'Service',
         operationId: 'getMalwareScanning',
@@ -3731,6 +4536,17 @@ class AdminApi {
       // nobody and self-asserted whichever door it came through; neither
       // surface forwards a proof or an attestation from a body.
       // ---------------------------------------------------------------------
+      // DIRECTORY → DEVICES → REGISTER A DEVICE (#1132): the create page's
+      // own view, rule 7's operation for it.
+      { method: 'GET', path: BASE + '/devices/new', tag: 'Devices',
+        operationId: 'getNewDeviceForm',
+        mirrors: 'GET /admin/devices/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-device endpoint.");
+          self.sendJson(res, 200, devicesAdmin.newView());
+          log.debug("Leaving the management API new-device endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/devices', tag: 'Devices',
         operationId: 'getDevices',
         mirrors: 'GET /admin/devices',
@@ -3786,7 +4602,9 @@ class AdminApi {
 
       ApiRows.actions({ method: 'POST',
         route: BASE + '/devices/:action', tag: 'Devices',
-        mirrors: 'POST /admin/devices',
+        // Directory → Devices → Register a device posts its create to its
+        // own path (#1132), so a refusal redraws that page.
+        mirrors: 'POST /admin/devices and POST /admin/devices/new',
         handler: function (req, res) {
           log.debug("Entering the management API devices action.");
           const result = devicesAdmin.action(
@@ -5092,6 +5910,11 @@ class AdminApi {
           // itself a credential.
           // -----------------------------------------------------------------
           { action: 'clear-totp', operationId: 'clearUserAuthenticatorApp' },
+          // #1955 P4: a one-time code token, the same act for the other
+          // kind of code.
+          { action: 'clear-hotp', operationId: 'clearUserHotpToken' },
+          // #1955 P5: a YubiKey OTP, the same act for that credential.
+          { action: 'clear-yubi', operationId: 'clearUserYubiOtp' },
 
           // -----------------------------------------------------------------
           // THE THIRD REMOVAL (2026-09-10), AND IT IS ALSO THE ONLY ISSUING
@@ -5268,6 +6091,10 @@ class AdminApi {
           // Passkeys table, and the same writer the person's own
           // `/portal/rename-key` calls.
           { action: 'rename-key', operationId: 'renameUserPasskey' },
+
+          // #1955 P7: a legacy FIDO U2F credential imported by value, the
+          // console's *Import a U2F security key* on a person's page.
+          { action: 'import-u2f-key', operationId: 'importUserU2fKey' },
 
           // #945: AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF,
           // the console's *Enrol a passkey for this person* on their page.
@@ -5467,6 +6294,18 @@ class AdminApi {
           log.debug("Leaving the management API groups endpoint.");
         } },
 
+      // DIRECTORY → GROUPS → NEW GROUP (#1132): the create page's own view,
+      // rule 7's operation for it — which fields the create takes and which
+      // it refuses without (`admin-core/create_forms.ts`).
+      { method: 'GET', path: BASE + '/groups/new', tag: 'Groups',
+        operationId: 'getNewGroupForm',
+        mirrors: 'GET /admin/groups/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-group endpoint.");
+          self.sendJson(res, 200, adminViews.newGroupJson());
+          log.debug("Leaving the management API new-group endpoint.");
+        } },
+
       // -----------------------------------------------------------------------
       // AND THE TWO WRITES (2026-09-06), WHICH CLOSED A HOLE RATHER THAN ADDING
       // A FEATURE.
@@ -5497,7 +6336,10 @@ class AdminApi {
         // to /admin/groups/owners, so its Find and Add are told apart from the
         // page's other forms; its Add and Remove reach `add-owner` and
         // `remove-owner` here.
-        mirrors: 'POST /admin/groups and POST /admin/groups/owners',
+        // AND A THIRD SINCE #1132: Directory → Groups → New group posts its
+        // create to its own path, so a refusal redraws that page.
+        mirrors: 'POST /admin/groups, POST /admin/groups/new and ' +
+                 'POST /admin/groups/owners',
         handler: function (req, res) {
           log.debug("Entering the management API groups action endpoint.");
           const body = parseBody(req);
@@ -5885,6 +6727,67 @@ class AdminApi {
         ] }),
 
       // ---------------------------------------------------------------------
+      // TWO-PERSON APPROVAL (#2166, ASVS 5.0.0 2.3.5). With
+      // `admin.dualControl` on, an act `admin-core/dual_control.ts`'s table
+      // names is HELD by the POST wrapper in `registerRoutes()` rather than
+      // run, and answered 202 with the request's id. These two are where a
+      // second administrator sees it and decides it, and the requester
+      // withdraws it: Directory → Pending approvals on the console draws the
+      // GET and posts its three buttons to the POST.
+      // ---------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/approvals', tag: 'Admin roles',
+        operationId: 'getApprovals',
+        mirrors: 'GET /admin/approvals',
+        parameters: [
+          { name: 'id', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One held act\'s id, as a 202 answer named it.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API approvals endpoint.");
+          self.sendJson(res, 200, self.approvalsView(req, res));
+          log.debug("Leaving the management API approvals endpoint.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/approvals/:action', tag: 'Admin roles',
+        mirrors: 'POST /admin/approvals',
+        handler: function (req, res, next) {
+          log.debug("Entering the management API approvals action endpoint.");
+          const body = self.withAction(req, parseBody(req));
+          Promise.resolve(self.decideHeld(req, res, body))
+            .then(function (result) {
+              if (!result) {
+                log.debug("Leaving the management API approvals action " +
+                          "endpoint. Answered already.");
+                return;
+              }
+              if (!result.ok) {
+                errorCodes.mark(res, result.errorCode || 'STS-ADMIN-0970');
+              }
+              const answer = Object.assign({}, result);
+              const status = Number(answer.status) ||
+                (answer.ok ? 200 : 400);
+              delete answer.status;
+              delete answer.errorCode;
+              self.sendJson(res, status, answer);
+              log.debug("Leaving the management API approvals action " +
+                        "endpoint. " + status);
+            }).catch(function (e) {
+              log.debug("Caught in the management API approvals action " +
+                        "endpoint: " + ((e && e.message) || e));
+              next(e);
+            });
+        },
+        actions: [
+          { action: 'approve', operationId: 'approveHeldAct' },
+
+          { action: 'refuse', operationId: 'refuseHeldAct' },
+
+          { action: 'withdraw', operationId: 'withdrawHeldAct' }
+        ] }),
+
+      // ---------------------------------------------------------------------
       // MULTI-FACTOR AUTHENTICATION (2026-09-10).
       //
       // **THE CONSOLE PAGE THIS MIRRORED IS GONE AND THIS RESOURCE IS NOT.**
@@ -5969,7 +6872,11 @@ class AdminApi {
 
           { action: 'clear-key', operationId: 'clearSecurityKey' },
 
-          { action: 'clear-email-factor', operationId: 'clearEmailFactor' }
+          { action: 'clear-email-factor', operationId: 'clearEmailFactor' },
+
+          { action: 'clear-hotp', operationId: 'clearHotpToken' },
+
+          { action: 'clear-yubi', operationId: 'clearYubiOtp' }
         ] }),
 
       // ONE CREDENTIAL'S LINEAGE (#446): the console page had no
@@ -8035,6 +8942,12 @@ class AdminApi {
           // certificate request (#1827's follow-up, phase 3).
           { action: 'issue-pep-credential',
             operationId: 'issueXacmlPepCredential' },
+          // An embedded PEP bound to the application it is embedded in
+          // (#2025).
+          { action: 'set-pep-application',
+            operationId: 'setXacmlPepApplication' },
+          { action: 'clear-pep-application',
+            operationId: 'clearXacmlPepApplication' },
           // The remote PEP's reverse proxy (#1760).
           { action: 'set-pep-proxy', operationId: 'setXacmlPepProxy' },
           { action: 'clear-pep-proxy', operationId: 'clearXacmlPepProxy' },
@@ -8636,6 +9549,47 @@ class AdminApi {
           });
         } },
 
+      // ---------------------------------------------------------------------
+      // A CERTIFICATE HANDED IN, READ (#2080): a console form helper (3cc),
+      // which writes and keeps nothing. Certificate sign-in's editors — a
+      // profile's issuers, the PEM lists of `piv.externalIssuers` and
+      // `piv.attestationAnchors`, a person's `stsCertificateBinding` — need a
+      // certificate's subject, SHA-256 and SubjectPublicKeyInfo SHA-256, and
+      // a browser computes no digest (`common/crypto.js` is the one place
+      // this service hashes). What it leads to is still a management
+      // operation: `config/set` for a setting, `users/add-attribute` for a
+      // binding. `CertificateViews.inspectView()` argues why describing
+      // what is handed in is safe here and not on the GET above.
+      // ---------------------------------------------------------------------
+      // A ROW OF ONE ACTION, `writesNothing`, as the other form helpers are
+      // (`tests/admin_api_kinds.js` holds every console POST to that).
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/console/certificates/:action',
+        kind: 'console', tag: 'PKI',
+        mirrors: 'GET /admin/piv',
+        handler: function (req, res) {
+          log.debug("Entering the console certificate inspection endpoint.");
+          const asked = String((req.params && req.params.action) || '');
+          if (asked !== 'inspect') {
+            errorCodes.mark(res, 'STS-ADMIN-0955');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'Unknown action "' + asked + '". The one is: inspect.'] });
+            log.debug("Leaving the console certificate inspection " +
+                      "endpoint. Unknown action.");
+            return;
+          }
+          const view = certificateViews.inspectView(parseBody(req));
+          if (!view.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(view) || 'STS-ADMIN-0953');
+          }
+          self.sendJson(res, view.ok ? 200 : 400, view);
+          log.debug("Leaving the console certificate inspection endpoint.");
+        },
+        actions: [
+          { action: 'inspect', operationId: 'inspectCertificates',
+            writesNothing: true }
+        ] }),
+
       // #1360. Paranoid PKI mode, the signer truststore and what is pinned.
       // ABOVE `/pki/:action` only for a reader: one more path segment means the
       // two cannot match the same request.
@@ -8684,6 +9638,61 @@ class AdminApi {
           { action: 'remove', operationId: 'removeSignerTrustAnchor' },
           { action: 'recheck', operationId: 'recheckPinnedCertificates' },
           { action: 'set-row', operationId: 'setParanoidPkiRow' }
+        ] }),
+
+      // #2118 PHASE 4. Named truststores and the use cases that trust them,
+      // the Truststores, Use cases and System truststore tabs of
+      // /admin/pki/trust. A path of its own rather than more actions under
+      // `/pki/trust`, whose `add` and `remove` already mean the signer
+      // truststore (which this API keeps, unchanged, as the `signers` view).
+      // The forms post from the two tabs, so each names its tab
+      // (`web_forms.ts` resolves `<page>#<tab> <action>` first): the page's
+      // own `add` stays `/pki/trust/add`.
+      { method: 'GET', path: BASE + '/truststores', tag: 'PKI',
+        operationId: 'getTruststores',
+        mirrors: 'GET /admin/pki/trust',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores endpoint.");
+          self.sendJson(res, 200, adminViews.namedTruststoresJson(req));
+          log.debug("Leaving the management API truststores endpoint.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/truststores/:action', tag: 'PKI',
+        mirrors: 'POST /admin/pki/trust#pki-trust-tab-truststores and ' +
+                 'POST /admin/pki/trust#pki-trust-tab-usecases',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          // AWAITED, AND THE REJECTION IS TURNED INTO A REFUSAL, `/pki/trust`'s
+          // reason: Express 4 does not look at what a handler returns.
+          adminActions.namedTruststoresAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) })
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0141');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API truststores action " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API truststores action " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0141');
+              self.sendJson(res, 500, { ok: false, errors: [e.message] });
+            });
+        },
+        actions: [
+          { action: 'show', operationId: 'showTruststore' },
+          { action: 'create', operationId: 'createTruststore' },
+          { action: 'delete', operationId: 'deleteTruststore' },
+          { action: 'add', operationId: 'addTruststoreCertificates' },
+          { action: 'remove', operationId: 'removeTruststoreCertificate' },
+          { action: 'assign', operationId: 'assignTruststores' },
+          { action: 'unassign', operationId: 'unassignTruststores' },
+          { action: 'set-keys', operationId: 'setTruststoreKeys' }
         ] }),
 
       ApiRows.actions({ method: 'POST',
@@ -8949,6 +9958,24 @@ class AdminApi {
 
           { action: 'remove', operationId: 'removeTrustAnchor' }
         ] }),
+
+      // -----------------------------------------------------------------------
+      // WHICH KEY EXCHANGE CLIENTS NEGOTIATED (#2220): the completed TLS
+      // handshakes on this node's listeners since its front process
+      // started, counted per listener and group, and how many were
+      // post-quantum — `tls/key_exchange.ts`. `/admin/crypto-metadata`'s
+      // Post-quantum tab composes it. PINNED TO THE FRONT PROCESS
+      // (`request_pool.js`'s NEVER_DISPATCHED), which holds every listener
+      // and so the counts: a worker's copy of the module counted nothing.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/tls/key-exchange', tag: 'TLS',
+        operationId: 'getTlsKeyExchange',
+        mirrors: 'GET /admin/crypto-metadata',
+        handler: function (req, res) {
+          log.debug("Entering the management API key exchange endpoint.");
+          self.sendJson(res, 200, require('../tls/key_exchange').report());
+          log.debug("Leaving the management API key exchange endpoint.");
+        } },
 
       // -----------------------------------------------------------------------
       // MONITORING → TLS CONNECTION (#597, rcbj's decision 3 on #591): what
@@ -9233,7 +10260,7 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'The FRONT of an error code: a whole code is one ' +
                          'failure condition and `STS-OAUTH` every failure in ' +
-                         'that subsystem. docs/v1.1.0/error-codes.md lists ' +
+                         'that subsystem. docs/v1.2.0/error-codes.md lists ' +
                          'them. ' +
                          'Every refused or failed request ' +
                          'carries a code; no code is ' +
@@ -9807,6 +10834,17 @@ class AdminApi {
       // caller that got a decision by adding two parameters to a listing would
       // have no way to discover it.
       // -----------------------------------------------------------------------
+      // DIRECTORY → ROLES → NEW ROLE (#1132): the create page's own view,
+      // rule 7's operation for it (`admin-core/create_forms.ts`).
+      { method: 'GET', path: BASE + '/roles/new', tag: 'Roles',
+        operationId: 'getNewRoleForm',
+        mirrors: 'GET /admin/roles/new',
+        handler: function (req, res) {
+          log.debug("Entering the management API new-role endpoint.");
+          self.sendJson(res, 200, adminViews.newRoleJson());
+          log.debug("Leaving the management API new-role endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/roles', tag: 'Roles',
         operationId: 'getRoles',
         mirrors: 'GET /admin/roles',
@@ -9907,13 +10945,71 @@ class AdminApi {
           log.debug("Leaving the management API role preview endpoint.");
         } },
 
+      // A DYNAMIC ROLE'S ELIGIBILITY, TESTED (#1072; the ticket's 5.3):
+      // one role's own policy against one person, decided by the PDP as a
+      // sign-in would ask it. A READ beside the preview: nothing is written
+      // but the audit row every eligibility decision leaves.
+      { method: 'GET', path: BASE + '/roles/eligibility', tag: 'Roles',
+        operationId: 'testRoleEligibility',
+        mirrors: 'GET /admin/roles',
+        parameters: [
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string', examples: ['oncall-operator'] },
+            description: 'The dynamic selectable role.' },
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string', examples: ['alice'] },
+            description: 'The person, by username.' },
+          { name: 'application', in: 'query', required: false,
+            schema: { type: 'string', examples: ['payroll'] },
+            description: 'The application a sign-in would be for. A role ' +
+                         'that belongs to an application is offered only ' +
+                         'on a sign-in to it.' },
+          { name: 'acr', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The authentication context class the sign-in ' +
+                         'would have met, as `urn:sts:xacml:acr`.' },
+          { name: 'amr', in: 'query', required: false,
+            schema: { type: 'string', examples: ['pwd otp'] },
+            description: 'The sign-in\'s authentication methods (RFC 8176), ' +
+                         'separated by spaces, as `urn:sts:xacml:amr`.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API role eligibility endpoint.");
+          const q = req.query || {};
+          const role = String(q.role || '').trim();
+          const user = String(q.user || '').trim();
+          // NOTHING ASKED IS `answered: false`, NOT A 400 — the preview's
+          // rule beside it, and for its reason: the role page's test is a
+          // GET form, and a read with no question in it has nothing to
+          // refuse.
+          if (!role || !user) {
+            self.sendJson(res, 200, { ok: true, answered: false,
+              why: '`role` and `user` are both needed: eligibility is one ' +
+                   'person\'s for one role.' });
+            log.debug("Leaving the management API role eligibility " +
+                      "endpoint. Not asked.");
+            return;
+          }
+          const answer = require('../xacml/role_eligibility').test(role, user, {
+            application: String(q.application || '').trim(),
+            acr: String(q.acr || '').trim(),
+            amr: String(q.amr || '').split(/\s+/).filter(Boolean),
+            actor: self.callerNameOf(res) });
+          self.sendJson(res, 200, Object.assign({ ok: true, answered: true },
+                                                answer));
+          log.debug("Leaving the management API role eligibility endpoint.");
+        } },
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/roles/:action', tag: 'Roles',
         // A SECOND CONSOLE PATH SINCE #604: the role page's Owners tab posts
         // to /admin/roles/owners, so its Find and Add are told apart from
         // the page's other forms; its Add and Remove reach `add-owner` and
         // `remove-owner` here.
-        mirrors: 'POST /admin/roles and POST /admin/roles/owners',
+        // Directory → Roles → New role posts its create to its own path
+        // (#1132), so a refusal redraws that page.
+        mirrors: 'POST /admin/roles, POST /admin/roles/new and ' +
+                 'POST /admin/roles/owners',
         handler: function (req, res) {
           log.debug("Entering the management API roles action endpoint.");
           const body = parseBody(req);
@@ -9949,7 +11045,15 @@ class AdminApi {
           // A ROLE'S OWNERS (#604): what the role page's Owners tab saves the
           // moment Add or Remove is pressed.
           { action: 'add-owner', operationId: 'addRoleOwner' },
-          { action: 'remove-owner', operationId: 'removeRoleOwner' }
+          { action: 'remove-owner', operationId: 'removeRoleOwner' },
+
+          // DYNAMIC SELECTABLE ROLES (#1072): how a role is held, and how a
+          // dynamic one is chosen at sign-in.
+          { action: 'set-membership-mode',
+            operationId: 'setRoleMembershipMode' },
+          { action: 'set-selection', operationId: 'setRoleSelection' },
+          { action: 'set-eligibility-policy',
+            operationId: 'setRoleEligibilityPolicy' }
         ] }),
 
       // -----------------------------------------------------------------------
@@ -10035,6 +11139,26 @@ class AdminApi {
       // it; the module parses both spellings and refuses anything else by
       // name.
       // -----------------------------------------------------------------------
+      // DIRECTORY → POLICIES → NEW POLICY (#1132): the create page's own
+      // view, rule 7's operation for it — the kinds, and the asked kind's
+      // fields with which of them a save refuses without.
+      { method: 'GET', path: BASE + '/policies/new', tag: 'Policies',
+        operationId: 'getNewPolicyForm',
+        mirrors: 'GET /admin/policies/new',
+        parameters: [
+          { name: 'kind', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64,
+                      examples: ['passkey'] },
+            description: 'The kind of policy to make, one of `kinds`. ' +
+                         'Without one, or with one no kind is, ' +
+                         '`createFields` is empty and `kind` null.' }
+        ],
+        handler: function (req, res) {
+          log.debug("Entering the management API new-policy endpoint.");
+          self.sendJson(res, 200, adminViews.newPolicyJson(req.query));
+          log.debug("Leaving the management API new-policy endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/policies', tag: 'Policies',
         operationId: 'getPolicies',
         mirrors: 'GET /admin/policies',
@@ -10503,6 +11627,13 @@ class AdminApi {
       // DIRECTORY → POST-LOGIN ACTIVITIES (#1111): the started activities
       // and their four acts (`mgmt-api/post_login_activities_api.ts`).
       ...loadPostLoginActivitiesApi().ROUTES,
+      // DIRECTORY → HARDWARE TOKENS (#1955 P1): the register and its
+      // lost-key act (`mgmt-api/hardware_tokens_api.ts`).
+      ...loadHardwareTokensApi().ROUTES,
+      // DIRECTORY → OpenPGP KEYS (#1955 P6): one person's key, publication
+      // and mail encryption, and the portal's seven acts for them
+      // (`mgmt-api/openpgp_api.ts`).
+      ...loadOpenPgpApi().ROUTES,
       // MONITORING → AUDIT EXPORT (#641): the destinations and their six
       // acts (`mgmt-api/audit_export_api.ts`).
       ...loadAuditExportApi().ROUTES,
@@ -11557,8 +12688,12 @@ class AdminApi {
   consoleGateOf(me) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleGateOf().");
+    // WHAT THE PERSON HOLDS, NOT WHAT THIS TOKEN CARRIES (#2168): the
+    // console's first token is a read token, and the frame says what its
+    // reader may do — a write is one second authorization away (`holds`).
+    const holds = Array.isArray(me.holds) ? me.holds : (me.roles || []);
     // SECURITY_ADMIN is the roster's `security` (#645).
-    const roles = (me.roles || []).map(function (role) {
+    const roles = holds.map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
         : (role === 'ADMIN_WRITE' ? 'write'
           : (role === 'SECURITY_ADMIN' ? 'security'
@@ -11573,7 +12708,9 @@ class AdminApi {
       username: me.caller ? String(me.caller.name || '') : '',
       authority: me.authority || null, identityRealm: me.realm || null,
       readGroup: me.readGroup, writeGroup: me.writeGroup,
-      read: !!me.read, write: !!me.write, security: !!me.security,
+      read: !!me.read,
+      write: !!me.write || holds.indexOf('ADMIN_WRITE') >= 0,
+      security: !!me.security || holds.indexOf('SECURITY_ADMIN') >= 0,
       roles: roles,
       open: enforced && !!held.open,
       closed: enforced && !!held.empty && !held.open && !roles.length,
@@ -11689,6 +12826,58 @@ class AdminApi {
     log.debug("Leaving AdminApi.consoleSetLanguage(). " + (tag || 'removed'));
   }
 
+  // ---------------------------------------------------------------------------
+  // WHAT A SECOND AUTHORIZATION COULD ADD (#2168). The console signs in with
+  // `admin:read admin:console` and asks for `admin:write` or `admin:security`
+  // the first time a write needs one, so `write` and `security` above — held
+  // ∩ carried, what THIS token is let through for — are false on its first
+  // token for everybody, and a page drawn from them would offer no form to
+  // press. `holds` is the other half: the roles the subject holds NOW, in
+  // the realm that issued the token, whose permission the token's client
+  // still declares — held ∩ declared — so the console draws a form only for
+  // somebody a write token would be issued to. It decides nothing: the gate
+  // asks held ∩ carried of every call, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles the caller's subject holds now whose permission its
+   * client may still be issued, whatever this token carries.
+   *
+   * @param res - the response, with the gate's caller and claims
+   * @param carriedRoles - the roles this token carries (held ∩ carried)
+   * @returns the role names
+   */
+  heldAdminRoles(res, carriedRoles) {
+    const { log, rolePermissions } = this.deps;
+    log.debug("Entering AdminApi.heldAdminRoles().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const claims = (res && res.locals && res.locals.apiTokenClaims) || null;
+    if (!caller || !claims || caller.kind !== 'person') {
+      log.debug("Leaving AdminApi.heldAdminRoles(). Carried only.");
+      return (carriedRoles || []).slice(0);
+    }
+    let held = [];
+    try {
+      const asked = this.declaredAdminScopes(claims, String(caller.realm),
+        ['admin:read', 'admin:write', 'admin:security']).kept;
+      held = rolePermissions.effectiveRoles(claims, asked,
+                                            String(caller.realm)).roles;
+    } catch (e) {
+      // A roster that cannot be read now adds nothing: the console then
+      // draws what this token carries, which is what it drew before.
+      log.debug("Caught in AdminApi.heldAdminRoles(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    const all = (carriedRoles || []).slice(0);
+    (held || []).forEach(function (role) {
+      if (all.indexOf(role) < 0) {
+        all.push(role);
+      }
+    });
+    log.debug("Leaving AdminApi.heldAdminRoles(). " + all.length + ".");
+    return all;
+  }
+
   meJson(req, res) {
     const { log, config, realms, mode, adminScope } = this.deps;
     log.debug("Entering AdminApi.meJson().");
@@ -11724,6 +12913,8 @@ class AdminApi {
       write: !required || roles.indexOf('ADMIN_WRITE') >= 0,
       // #645: whether a security change would be let through.
       security: !required || roles.indexOf('SECURITY_ADMIN') >= 0,
+      // #2168: what a second authorization could add to this token.
+      holds: this.heldAdminRoles(res, roles),
       expiresAt: caller ? caller.expiresAt : null,
       // The account menu's picture (#719): this realm's copy, a person's only.
       photo: caller && caller.kind === 'person'
@@ -11916,6 +13107,9 @@ class AdminApi {
         // not make it — see `common/security_operations.ts`.
         const securityChange = mdmFeed || pepFeed || consoleOp ? null
           : self.securityChangeOf(req);
+        // Kept for the route wrapper: a security change is one of the
+        // families that need a recent sign-in (#2161).
+        res.locals.securityChange = securityChange;
         const scopesWanted = mdmFeed ? 'device:compliance'
           : pepFeed ? 'xacml:pep-audit'
           : (consoleOp ? 'admin:console'
@@ -12470,6 +13664,10 @@ class AdminApi {
           log.info('admin-api: refusing ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + ': ' +
                    securityChange.detail + '.');
+          // The scope a second authorization would add (#2168), where the
+          // token lacks it; a missing role is not mended by one.
+          self.challengeMissingScope(res, presentation.scheme,
+            scopes.indexOf('admin:security') < 0 ? ['admin:security'] : []);
           errorCodes.mark(res, 'STS-API-0138');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
             'Only a Security Administrator may make this change: ' +
@@ -12619,6 +13817,28 @@ class AdminApi {
           log.info('admin-api: the access policy refused ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + '. ' +
                    policy.why);
+          // WHICH SCOPE A SECOND AUTHORIZATION WOULD ADD (#2168): the one
+          // the operation takes, where the token lacks it — `admin:write`
+          // too for a console form helper, which needs both — and an
+          // owner's `owner:write` beside it for a write on an object the
+          // caller may own, asked on an owner's read token.
+          const lacking = [];
+          if (!mdmFeed && !pepFeed && !ownerPath) {
+            if (scopes.indexOf(scopesWanted) < 0) {
+              lacking.push(scopesWanted);
+            }
+            if (requiredAllRoles.indexOf('ADMIN_WRITE') >= 0 &&
+                scopes.indexOf('admin:write') < 0) {
+              lacking.push('admin:write');
+            }
+            if (req.method !== 'GET' && !consoleOp && !securityChange &&
+                carried.indexOf('owner:read') >= 0 &&
+                carried.indexOf('owner:write') < 0 &&
+                self.ownedOperationOf(req)) {
+              lacking.push('owner:write');
+            }
+          }
+          self.challengeMissingScope(res, presentation.scheme, lacking);
           errorCodes.mark(res, 'STS-API-0005');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
             'The access policy refused this request. ' + policy.why +
@@ -12681,6 +13901,22 @@ class AdminApi {
         // its token is the session, so the caller this gate verified is
         // who they are asked about.
         req.adminApiCaller = res.locals.apiCaller;
+        // THE CLAIMS THE DECISION WAS MADE ON, for `GET /admin-api/me`'s
+        // `holds` (#2168): asked there only, never on every request.
+        res.locals.apiTokenClaims = claims;
+        // AND WHAT THE PERSON HOLDS, for the views that draw a write
+        // control (#2200): `holds`, asked only by a view that asks, once
+        // per request. What may be DONE is still the token's scope.
+        let heldRoles = null;
+        req.adminApiHeldRoles = function () {
+          log.debug("Entering adminApiHeldRoles().");
+          if (heldRoles === null) {
+            heldRoles = self.heldAdminRoles(res,
+              (res.locals.apiCaller && res.locals.apiCaller.roles) || []);
+          }
+          log.debug("Leaving adminApiHeldRoles().");
+          return heldRoles;
+        };
         // WHAT AN OWNER IS ANSWERED (#607): a read whose answer carries more
         // than the one object — the role register around one role — is
         // narrowed to it in `sendJson()`.
@@ -12860,7 +14096,7 @@ class AdminApi {
         });
         return;
       }
-      app.post(path, function (req, res) {
+      app.post(path, function (req, res, next) {
         res.locals.proseRoute = proseRoute;
         if (queryRefused(req, res)) {
           return undefined;
@@ -12911,11 +14147,51 @@ class AdminApi {
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
           return undefined;
         }
-        // WHO IS ACTING is not put into the body: each handler hands its
-        // action `callerNameOf(res)` in the action's context (rcbj on #1579,
-        // 2026-11-11), and a caller's own `actor` is refused by the closed
-        // schema above like any member the model does not declare.
-        return entry.handler(req, res);
+        // A RECENT SIGN-IN FOR THE FAMILIES THAT NEED ONE (#2161), after
+        // the body is known to be well formed and before anything acts —
+        // before a hold too (#2166), so a held act's requester has signed
+        // in recently, and the decisions on held acts (tag `Admin roles`)
+        // are asked it as well.
+        const family = AdminApi.recentSignInFamilyOf(entry, asked,
+          res.locals.securityChange);
+        if (family && AdminApi.signInIsStale(res.locals.apiCaller)) {
+          log.debug("The management API asked for a recent sign-in before " +
+                    (entry.operationId || path) + " (" + family + ").");
+          self.refuseStaleSignIn(req, res);
+          return undefined;
+        }
+        const proceed = function () {
+          // TWO-PERSON APPROVAL (#2166): a held act is stored and answered
+          // 202 here, after the gate, the schema and the recent sign-in and
+          // before the handler, so the console's forms and a program's
+          // calls meet the one check. An approved act's replay calls its
+          // handler directly (`replayHeld()`), with the approver's sign-in
+          // time, and is never held again.
+          if (!req.__dualControlReplay &&
+              self.holdForSecondAdministrator(entry, path, req, res)) {
+            return undefined;
+          }
+          // WHO IS ACTING is not put into the body: each handler hands its
+          // action `callerNameOf(res)` in the action's context (rcbj on
+          // #1579, 2026-11-11), and a caller's own `actor` is refused by
+          // the closed schema above like any member the model does not
+          // declare.
+          return entry.handler(req, res);
+        };
+        // THE WRITE BUDGET (#2247), last of the checks and before a hold,
+        // so a refused or stale request spends nothing and a held one is
+        // counted once. Synchronous while no budget is set, as before.
+        const budget = self.overWriteBudget(entry, asked, req, res);
+        if (!budget) {
+          return proceed();
+        }
+        return budget.then(function (refused) {
+          return refused ? undefined : proceed();
+        }).catch(function (e) {
+          log.debug("Caught in the management API's POST wrapper: " +
+                    ((e && e.message) || e));
+          next(e);
+        });
       });
     });
     log.debug("Leaving AdminApi.registerRoutes().");
@@ -13406,6 +14682,20 @@ export = {
    * test asks it what a body sent to an operation would be refused for.
    */
   checkRequestBody: slot.forward('checkRequestBody'),
+  /**
+   * Forwards to `AdminApi.holdForSecondAdministrator()`: the POST wrapper's
+   * two-person approval step (#2166), for a test.
+   */
+  holdForSecondAdministrator: slot.forward('holdForSecondAdministrator'),
+  /**
+   * Forwards to `AdminApi.decideHeld()`: an approve, refuse or withdraw
+   * (#2166), for a test.
+   */
+  decideHeld: slot.forward('decideHeld'),
+  /**
+   * Forwards to `AdminApi.approvalsView()` (#2166).
+   */
+  approvalsView: slot.forward('approvalsView'),
   /**
    * Forwards to `AdminApi.compileAllRequestSchemas()` on the installed
    * instance: every request schema compiled now (#617), for a test.

@@ -104,8 +104,8 @@
     "text": "Toute portée qu’un client demande est émise, quoi que liste son `oauthAllowedScope`. Dans LES DEUX modes, admin:read, admin:write, les portées SCIM et Shared Signals et la permission du débogueur ne sont émises qu’à un client dont l’`oauthAllowedScope` les liste."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Une portée hors de l’`oauthAllowedScope` du client est refusée avec invalid_scope aux points de terminaison d’autorisation, d’autorisation poussée et de jeton (STS-OAUTH-0578) et retirée d’une actualisation ou d’un échange. Un client qui ne liste rien obtient la valeur par défaut documentée : openid, profile, email, address, phone, offline_access et les portées OpenID4VCI de ce domaine. Une portée nommant une application ou une permission déléguée conserve ses propres règles."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Une portée hors de l’`oauthAllowedScope` du client est refusée avec invalid_scope aux points de terminaison d’autorisation, d’autorisation poussée et de jeton (STS-OAUTH-0578) et retirée d’une actualisation ou d’un échange. Un client qui ne liste rien obtient ce que dit oauth2.undeclaredClientScopes : openid seul par défaut (ASVS 5.0.0 10.4.11) ; identity ajoute profile, email, address et phone ; legacy, ce que conserve un magasin mis à niveau, ajoute aussi offline_access et les portées OpenID4VCI de ce domaine. Une portée nommant une application ou une permission déléguée conserve ses propres règles."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",
@@ -118,6 +118,18 @@
   "mode.requirements.declared-protocols.product": {
     "en": "01bf0ea288cde1c4",
     "text": "La règle protocol-not-declared de la politique d’émission refuse une émission par une famille de protocoles pour laquelle l’application n’est pas déclarée (STS-XACML-0084) : un ID Token pour une application déclarée pour OAuth 2.0 seul, une assertion SAML pour une application déclarée pour OpenID Connect. Une application déclarée pour rien n’est pas refusée."
+  },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "Le JSON Schema d’un type d’accès est limité à un sous-ensemble, et chacun de ses motifs à une borne"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "Une définition écrite par la console ou l’API de gestion limite son schéma aux mots-clés qu’un schéma de limites peut utiliser, et chaque motif à la borne d’une expression régulière ; tout le reste est refusé (STS-REG-0374). Une définition enregistrée avant cette règle est toujours utilisée telle qu’enregistrée, et cette ligne signale pour elle ASVS 5.0.0 1.3.12 comme non satisfait."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "La même chose."
   },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
@@ -344,8 +356,8 @@
     "text": "Les fins de poussée GNAP, les livraisons par poussée SSF, les canaux arrière de la fédération et les notifications aux PEP XACML respectent leurs paramètres …SkipTlsVerification (vérification désactivée, avec un avertissement à chaque requête) et leurs paramètres …AllowHttp (http simple vers n’importe quel hôte). Le spiffe.k8sSkipKubeletVerification de SPIRE est également respecté."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Chaque paramètre …SkipTlsVerification, ainsi que spiffe.k8sSkipKubeletVerification, est IGNORÉ — journalisé une fois avec son code — et refusé à l’écriture via /admin et /admin-api (STS-CORE-0103) ; une AC privée est atteinte via le …CaFile de la famille avec la vérification activée. Le http simple est refusé pour SSF, la fédération et XACML quoi qu’indique …AllowHttp, et autorisé pour une fin de poussée GNAP uniquement vers une adresse de bouclage (RFC 9635 section 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Chaque paramètre …SkipTlsVerification, ainsi que spiffe.k8sSkipKubeletVerification, est IGNORÉ — journalisé une fois avec son code — et refusé à l’écriture via /admin et /admin-api (STS-CORE-0103) ; une AC privée est atteinte via le …CaFile de la famille avec la vérification activée. Le http simple est refusé pour SSF, la fédération et XACML quoi qu’indique …AllowHttp, et autorisé pour une fin de poussée GNAP uniquement vers une adresse de bouclage (RFC 9635 section 2.5.2.1) — ce que les règles d’adresses sortantes refusent, de sorte qu’aucune poussée en http simple n’est délivrée (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",
@@ -419,66 +431,6 @@
     "en": "7bb2840e2f96210a",
     "text": "La liste est lue SANS 23 (journalisé une fois, STS-CORE-0106) et une écriture le nommant est refusée (STS-CORE-0103). Aucune clé RC4 n’est dérivée, stockée ou placée dans un keytab pour krbtgt, un service ou une personne ; une clé ou un ticket de cet enctype n’est jamais utilisé ; un AS-REQ ou un TGS-REQ ne proposant rien d’autre est refusé avec KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156) ; une clé de session ou une sous-clé RC4 dans un TGS-REQ, un AP-REQ ou une armure FAST est refusée (STS-KRB-0157, 0158, 0159). AES est ce qui reste."
   },
-  "mode.requirements.unscoped-people.what": {
-    "en": "313033517d6bf954",
-    "text": "Une personne a besoin d’un rôle pour SCIM et Shared Signals"
-  },
-  "mode.requirements.unscoped-people.development": {
-    "en": "0be4a760d6eebbf0",
-    "text": "Toute personne authentifiée peut lire et écrire, quel que soit le schéma utilisé."
-  },
-  "mode.requirements.unscoped-people.product": {
-    "en": "b88ebd1ed2325b97",
-    "text": "Un schéma sans portée exige Admin Read pour lire et Admin Write pour écrire, sauf si security.allowUnscopedPeople est activé. Les portées OAuth et le certificat d’une application fonctionnent comme avant."
-  },
-  "mode.requirements.named-file-roots.what": {
-    "en": "947df8a88522b407",
-    "text": "Un fichier nommé doit se trouver dans un répertoire autorisé"
-  },
-  "mode.requirements.named-file-roots.development": {
-    "en": "249a8365ea4fdbfc",
-    "text": "Un fichier nommé par un administrateur est lu là où il l’indique."
-  },
-  "mode.requirements.named-file-roots.product": {
-    "en": "027759d02863b752",
-    "text": "Un fichier n’est lu que si son chemin réel se trouve dans un répertoire listé par security.fileRoots, et la réponse n’indique pas pourquoi un chemin a échoué."
-  },
-  "mode.requirements.jwe-cbc.what": {
-    "en": "a9e47c5b53e70f9e",
-    "text": "Le chiffrement de contenu JWE est AES-GCM uniquement"
-  },
-  "mode.requirements.jwe-cbc.development": {
-    "en": "cca6834a267241c9",
-    "text": "A128CBC-HS256, A192CBC-HS384 et A256CBC-HS512 sont proposés et acceptés, et A128CBC-HS256 est la valeur par défaut."
-  },
-  "mode.requirements.jwe-cbc.product": {
-    "en": "b8bdc8b82bb08a9e",
-    "text": "Seul AES-GCM est proposé ou accepté, et il est utilisé lorsqu’un client ne nomme pas d’enc, sauf si crypto.allowCbcJwe est activé."
-  },
-  "mode.requirements.legacy-hashes.what": {
-    "en": "06838227a6e37c56",
-    "text": "Les hachages interdits ne sont pas utilisés"
-  },
-  "mode.requirements.legacy-hashes.development": {
-    "en": "5019d7e87d32f630",
-    "text": "OAEP sur SHA-1, la dérivation PKINIT SHA-1 et la somme de contrôle HMAC-MD5 de S4U2Self sont disponibles."
-  },
-  "mode.requirements.legacy-hashes.product": {
-    "en": "eb55e63c70e4152c",
-    "text": "Ils sont désactivés sauf si crypto.allowLegacyHashes est activé. TOTP reste HMAC-SHA-1 par défaut, pour la compatibilité des applications d’authentification, et PKINIT conserve le paChecksum SHA-1 défini par RFC 4556."
-  },
-  "mode.requirements.no-default-admin-name.what": {
-    "en": "be402fb23aecd2d4",
-    "text": "Aucun compte ne porte un nom d’administrateur par défaut"
-  },
-  "mode.requirements.no-default-admin-name.development": {
-    "en": "ca263c05dbdb69a5",
-    "text": "L’administrateur d’amorçage est admin, sous lequel se connectent tous les tests et procédures."
-  },
-  "mode.requirements.no-default-admin-name.product": {
-    "en": "35dface5441235f5",
-    "text": "Un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, affiché avec son mot de passe au premier démarrage, sauf si admin.allowDefaultUsername est activé."
-  },
   "mode.requirements.main-port-https.what": {
     "en": "6469fbe1118f7dc7",
     "text": "Le port principal est en HTTPS"
@@ -526,6 +478,258 @@
   "mode.requirements.declared-grants.product": {
     "en": "636b38aec05ad6d5",
     "text": "Un client qui ne déclare aucun type d’autorisation ne peut utiliser que authorization_code et refresh_token, sauf si oauth2.allowUndeclaredGrants est activé (STS-OAUTH-0598)."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Aucun compte ne porte un nom d’administrateur par défaut"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "L’administrateur d’amorçage est admin, sous lequel se connectent tous les tests et procédures."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "Un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, affiché avec son mot de passe au premier démarrage, sauf si admin.allowDefaultUsername est activé."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Les hachages interdits ne sont pas utilisés"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "OAEP sur SHA-1, la dérivation PKINIT SHA-1 et la somme de contrôle HMAC-MD5 de S4U2Self sont disponibles."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "Ils sont désactivés sauf si crypto.allowLegacyHashes est activé. TOTP reste HMAC-SHA-1 par défaut, pour la compatibilité des applications d’authentification, et PKINIT conserve le paChecksum SHA-1 défini par RFC 4556."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "Un fichier nommé doit se trouver dans un répertoire autorisé"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "Un fichier nommé par un administrateur est lu là où il l’indique."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "Un fichier n’est lu que si son chemin réel se trouve dans un répertoire listé par security.fileRoots, et la réponse n’indique pas pourquoi un chemin a échoué."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "Un second facteur est exigé de tous"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "La politique d’authentification décide et, par défaut, seuls ceux qui détiennent un second facteur doivent le présenter."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Tout le monde doit avoir un second facteur, quelle que soit la politique, sauf si authn.allowOptionalSecondFactor est activé."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Effacer un second facteur exige une preuve d’identité déclarée"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "Un administrateur peut effacer un facteur en nommant la personne."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "Un administrateur doit indiquer comment l’identité de la personne a été vérifiée. La déclaration figure dans le journal d’audit."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Les entrées de protocole sont lues strictement"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "Un paramètre de jeton répété prend sa dernière valeur, le jeton de déconnexion d’un partenaire n’a pas besoin de type explicite, les adresses transmises sont crues de n’importe qui lorsque global.trustProxy est activé sans liste, et le texte d’une erreur interne parvient à l’appelant."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "Un paramètre de jeton répété est refusé, le jeton de déconnexion d’un partenaire doit être de type logout+jwt sauf si federation.allowUntypedLogoutToken est activé, les adresses transmises exigent global.trustedProxies, et le texte d’une erreur interne reste dans le journal."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Les journaux et la base ne contiennent aucun secret connu"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "Au niveau debug, le journal contient les requêtes et réponses entières, et la base peut utiliser un mot de passe de démonstration."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "Les journaux de requêtes omettent les identifiants et les corps à tous les niveaux, un jeton ou une assertion signés ne sont journalisés que par leur taille et leur empreinte, et un mot de passe de base de données par défaut arrête le service sauf si persistence.allowDefaultDatabasePassword est activé."
+  },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "Le fichier de semences de jetons d’un fournisseur doit être chiffré"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "Un fichier de semences PSKC dont les secrets de jetons sont en clair est importé comme un fichier chiffré."
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "Un fichier de semences PSKC dont les secrets de jetons sont en clair est refusé sauf si pskc.allowPlaintextImport est activé ; un fichier chiffré est ouvert avec la clé ou le mot de passe fourni avec le téléversement, qui n’est jamais conservé."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "Un fichier de semences d’OTP YubiKey ne doit pas être une liste de clés AES"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "Un CSV de numéro de série, d’identité publique, d’identité privée et de clé AES est importé comme n’importe quel autre fichier d’inventaire."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Ce CSV est refusé sauf si yubiotp.allowPlaintextImport est activé. Les clés sont scellées une fois le fichier accepté, et le fichier lui-même n’est pas conservé."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "L’authentification unique demande avant de connecter une personne à une application"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0, SAML 1.1 et WS-Federation connectent une personne depuis sa session sans lui demander."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "Une personne est interrogée une fois par application avant que SAML 2.0, SAML 1.1 ou WS-Federation ne la connecte à celle-ci, et la réponse est conservée. saml2.ssoConsent, saml11.ssoConsent et wsfed.ssoConsent le désactivent par protocole, et la valeur propre d’une application les remplace."
+  },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "La build exacte n’est montrée qu’aux administrateurs"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "Chaque pied de page, les API de connexion, du portail et des rapports et leurs documents OpenAPI portent la version, le numéro de build, la date de build et le commit, et le User-Agent de chaque requête de ce service nomme la version."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "Aucun d’eux ne porte la build : le pied de page n’a pas de ligne de version, un document OpenAPI donne la version propre de l’API et le User-Agent n’est que le nom du produit. La console et l’API de gestion montrent toujours la build. security.publishBuildInfo à on la montre de nouveau."
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Les secrets du service proviennent d’un coffre de secrets"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "La clé de chiffrement de clés peut être un fichier, et le mot de passe de la base peut être dans un fichier ou dans la chaîne de connexion."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Les clés de chiffrement de clés proviennent d’un coffre de secrets ou d’un service de gestion de clés, et le mot de passe de la base d’un coffre de secrets. Un fichier ou un mot de passe dans la chaîne de connexion arrête le service sauf si secrets.allowLocalSecrets est activé. Une clé de chiffrement de clés précédente peut encore être un fichier, pour qu’un déploiement puisse s’en défaire."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "Le journal d’audit devrait quitter ce service"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "Rien n’est signalé à propos de l’export d’audit."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "Ajoutez une destination d’export d’audit, afin qu’une copie du journal soit hors d’atteinte en cas de compromission. Tant qu’il n’y en a pas, le service consigne un avertissement pour ce domaine."
+  },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "Le journal d’audit ne peut pas être modifié avec l’identifiant de base de données propre au service"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Là où l’état émis est conservé (workers de requêtes ou plusieurs nœuds, ou keys.source=persisted), le journal est écrit comme en mode produit. Sinon il est en mémoire et disparaît avec le processus."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Chaque événement est une ligne scellée de sts_audit, où le rôle de base de données du service peut ajouter et lire des lignes et rien d’autre ; les anciennes lignes ne partent que par la fonction de rétention du propriétaire de la table, qui en garde au moins 1000 dans chaque domaine. Là où le rôle peut modifier la table — il en est propriétaire ou détient UPDATE, DELETE ou TRUNCATE dessus —, cela est signalé comme non satisfait (STS-AUDIT-0019) et le service continue de fonctionner."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Les fichiers atteignent l’analyseur chiffrés"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "Une adresse icap:// ou icaps:// peut être utilisée."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "Seule une adresse icaps:// est utilisée, sauf si malwareScan.allowCleartext est activé."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Les sessions et les clés RSA ont des valeurs par défaut plus strictes"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "Une session n’a pas de délai d’inactivité, et les nouvelles clés RSA font 2048 bits."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "Une session prend fin après 30 minutes d’inactivité et les nouvelles clés RSA font 3072 bits, sauf si un paramètre en dispose autrement."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Le mot de passe d’amorçage reste hors du journal"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Le mot de passe généré est écrit dans le journal du service."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "f6a1cd8269e19c3e",
+    "text": "Il est écrit dans un fichier lisible par ce seul service, et le journal indique où, sauf si admin.logBootstrapPassword est activé. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Chaque client doit utiliser PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "Un client confidentiel qui n’envoie pas de code_challenge est seulement journalisé."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Il est refusé sauf si oauth2.allowConfidentialWithoutPkce est activé."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "Le chiffrement de contenu JWE est AES-GCM uniquement"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "A128CBC-HS256, A192CBC-HS384 et A256CBC-HS512 sont proposés et acceptés, et A128CBC-HS256 est la valeur par défaut."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "Seul AES-GCM est proposé ou accepté, et il est utilisé lorsqu’un client ne nomme pas d’enc, sauf si crypto.allowCbcJwe est activé."
+  },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "Le courriel S/MIME utilise un chiffrement authentifié"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "Le courriel chiffré pour un certificat S/MIME est un AuthEnvelopedData sous AES-256-GCM, sauf si mail.smimeContentEncryption vaut aes256-cbc, auquel cas un EnvelopedData sous AES-256-CBC sans protection d’intégrité est envoyé. Rien n’est signalé dans un cas comme dans l’autre."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "Identique, et tant que mail.smimeContentEncryption vaut aes256-cbc, cette ligne signale l’exigence 11.3.3 d’ASVS 5.0.0 comme non respectée."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "Une personne a besoin d’un rôle pour SCIM et Shared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Toute personne authentifiée peut lire et écrire, quel que soit le schéma utilisé."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Un schéma sans portée exige Admin Read pour lire et Admin Write pour écrire, sauf si security.allowUnscopedPeople est activé. Les portées OAuth et le certificat d’une application fonctionnent comme avant."
   },
   "mode.requirements.prefixed-cookies.what": {
     "en": "d3919ebba2136f69",
@@ -1103,6 +1307,30 @@
     "en": "1ddc02b9b0701d2a",
     "text": "ACTIVÉ (pki.paranoid=auto) : common/certificate_trust.ts soumet chaque certificat — lors d’une négociation TLS dans un sens comme dans l’autre, sous une signature, comme destinataire de chiffrement, dans une attestation — à un chemin vers une ancre que ce service connaît (le magasin de confiance des clients ou des signataires, l’AC du domaine, le réglage propre à une famille), à la validité à l’instant présent, à la révocation, et aux basicConstraints, keyUsage et extendedKeyUsage que son cas d’usage demande ; un contrôle que le cas d’usage n’a jamais exécuté est un refus. Une ligne pki.paranoid<UseCase> par cas d’usage rétablit le comportement antérieur de ce cas d’usage lorsqu’elle est désactivée, et s’affiche en rouge sur /admin/pki/trust (STS-PKI-0239)."
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "Le justificatif d'une personne pour la surface d'administration (la console, une portée admin:*) exige un appareil enregistré conforme"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "DÉSACTIVÉ (devices.requireCompliantDeviceForAdmin=auto) : un administrateur se connecte à la console depuis n'importe quel navigateur, comme avant. Mettez-le à on pour exercer la règle ici."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "ACTIVÉ (devices.requireCompliantDeviceForAdmin=auto) : la règle device-required-admin de la politique d'émission refuse, au point de terminaison de jetons, tout jeton de la console et tout jeton admin:* d'une personne qui ne vient pas d'un appareil enregistré conforme qui lui appartient (STS-DEVICE-0054). Elle est ARMÉE par domaine la première fois qu'un administrateur de la console en reçoit un depuis un appareil conforme, et jusque-là tout administrateur est admis, si bien qu'une installation sans appareil conforme n'est jamais verrouillée ; une fois armée elle reste armée, et un programme (le justificatif de gestion du déploiement) est le chemin du retour. Annuaire > Appareils indique si ce domaine est armé."
+  },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "Chaque écouteur TLS agrafe une réponse OCSP pour le certificat qu'il présente"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "INACTIF (tls.ocspStapling=auto) : un client qui demande l'état du certificat n'en reçoit aucun, comme avant, et interroge lui-même le répondeur nommé dans le certificat s'il vérifie quoi que ce soit. Réglez tls.ocspStapling=on pour agrafer ici."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "ACTIF (tls.ocspStapling=auto) : le port principal, LDAPS, le débogueur et chaque écouteur personnalisé agrafent la réponse que le propre répondeur OCSP de ce service donne pour leur certificat, produite dans le processus qui détient le socket et renouvelée avant son nextUpdate. Un certificat d'une autorité extérieure n'est pas agrafé, et une réponse qui ne peut pas être produite laisse la négociation sans elle (STS-TLS-0079), jamais en échec."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Une clé GNAP prouvée par TLS mutuel est un certificat qu’une autorité de confiance a émis pour le client"
@@ -1211,6 +1439,18 @@
     "en": "335681287a816601",
     "text": "Une telle déclaration est refusée (STS-DEVICE-0050) : une attestation capturée et rejouée dans une nouvelle demande pour la même clé n’est pas une clé créée et détenue dans un TPM à l’instant présent. Un certificat d’appareil avec une attestation TPM n’est donc émis que via EST, après /nonce (draft-ietf-lamps-attestation-freshness section 5.1)."
   },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "Un navigateur atteint le proxy inverse d’un PEP distant en https"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "Une configuration de proxy peut nommer un publicBaseUrl en http simple, si bien qu’une pile sur une seule machine n’a besoin d’aucun certificat d’écoute pour le proxy."
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "Un publicBaseUrl qui n’est pas en https est refusé (STS-XACML-0188) : la connexion du mécanisme de session y renvoie un code d’autorisation et son cookie de session est Secure."
+  },
   "mode.notYet.certificate-revocation.what": {
     "en": "90de04e6940f9577",
     "text": "La révocation est CONSULTÉE pour un certificat présenté (voir l’exigence ci-dessus) et pour un certificat ENREGISTRÉ lorsqu’il vérifie quelque chose — le registre, le répondeur OCSP (y compris le statut propre d’un répondeur délégué) et la CRL que nomme un certificat étranger, via http, https et ldaps, les CRL delta étant fusionnées et les CRL indirectes lues par émetteur, leur signataire étant récupéré à l’adresse caIssuers de la liste lorsque rien ici ne le détient. Ce qui reste relève de limites plutôt que de travail : une clé NUE enregistrée sans certificat (un JWK sans x5c) ne nomme ni émetteur ni liste, si bien que seul son retrait de l’entrée l’empêche de vérifier ; ldap: simple n’est contacté que lorsque pki.revocationLdap l’autorise ; un point de distribution nommé relativement à son émetteur de CRL n’est utilisé que si pki.revocationLdapDirectory est défini et que chaque RDN est monovalué ; et LDAPS 636 ne demande aucun certificat client, si bien que rien n’y est consulté."
@@ -1274,149 +1514,5 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "ce paramètre est réservé au mode développement."
-  },
-  "mode.requirements.second-factor-everyone.what": {
-    "en": "0fd5536cd700c440",
-    "text": "Un second facteur est exigé de tous"
-  },
-  "mode.requirements.second-factor-everyone.development": {
-    "en": "8816e275bdf92a96",
-    "text": "La politique d’authentification décide et, par défaut, seuls ceux qui détiennent un second facteur doivent le présenter."
-  },
-  "mode.requirements.second-factor-everyone.product": {
-    "en": "1eb106bd8b0a4050",
-    "text": "Tout le monde doit avoir un second facteur, quelle que soit la politique, sauf si authn.allowOptionalSecondFactor est activé."
-  },
-  "mode.requirements.session-key-defaults.what": {
-    "en": "2f8e8efd319d1e4f",
-    "text": "Les sessions et les clés RSA ont des valeurs par défaut plus strictes"
-  },
-  "mode.requirements.session-key-defaults.development": {
-    "en": "274bb878f654b30c",
-    "text": "Une session n’a pas de délai d’inactivité, et les nouvelles clés RSA font 2048 bits."
-  },
-  "mode.requirements.session-key-defaults.product": {
-    "en": "acb90dc0f26a16ec",
-    "text": "Une session prend fin après 30 minutes d’inactivité et les nouvelles clés RSA font 3072 bits, sauf si un paramètre en dispose autrement."
-  },
-  "mode.requirements.bootstrap-password-file.what": {
-    "en": "e57fcd5b373e9128",
-    "text": "Le mot de passe d’amorçage reste hors du journal"
-  },
-  "mode.requirements.bootstrap-password-file.development": {
-    "en": "2181a0af41a41ab3",
-    "text": "Le mot de passe généré est écrit dans le journal du service."
-  },
-  "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "Il est écrit dans un fichier lisible par ce seul service, et le journal indique où, sauf si admin.logBootstrapPassword est activé."
-  },
-  "mode.requirements.pkce-every-client.what": {
-    "en": "7e2c6f1869e39287",
-    "text": "Chaque client doit utiliser PKCE"
-  },
-  "mode.requirements.pkce-every-client.development": {
-    "en": "66e8ff75c554aad0",
-    "text": "Un client confidentiel qui n’envoie pas de code_challenge est seulement journalisé."
-  },
-  "mode.requirements.pkce-every-client.product": {
-    "en": "2c34add4c2d2718f",
-    "text": "Il est refusé sauf si oauth2.allowConfidentialWithoutPkce est activé."
-  },
-  "mode.requirements.malware-scan-tls.what": {
-    "en": "926957ee32cf2309",
-    "text": "Les fichiers atteignent l’analyseur chiffrés"
-  },
-  "mode.requirements.malware-scan-tls.development": {
-    "en": "6d81d272e763db8d",
-    "text": "Une adresse icap:// ou icaps:// peut être utilisée."
-  },
-  "mode.requirements.malware-scan-tls.product": {
-    "en": "dbcd39f827b0a349",
-    "text": "Seule une adresse icaps:// est utilisée, sauf si malwareScan.allowCleartext est activé."
-  },
-  "mode.requirements.factor-clear-evidence.what": {
-    "en": "d4453639b3500b23",
-    "text": "Effacer un second facteur exige une preuve d’identité déclarée"
-  },
-  "mode.requirements.factor-clear-evidence.development": {
-    "en": "9c5d644b822f24b9",
-    "text": "Un administrateur peut effacer un facteur en nommant la personne."
-  },
-  "mode.requirements.factor-clear-evidence.product": {
-    "en": "e473fffee1f00eaa",
-    "text": "Un administrateur doit indiquer comment l’identité de la personne a été vérifiée. La déclaration figure dans le journal d’audit."
-  },
-  "mode.requirements.strict-protocol-input.what": {
-    "en": "4c536228d39a5730",
-    "text": "Les entrées de protocole sont lues strictement"
-  },
-  "mode.requirements.strict-protocol-input.development": {
-    "en": "da9c69e7fe603705",
-    "text": "Un paramètre de jeton répété prend sa dernière valeur, le jeton de déconnexion d’un partenaire n’a pas besoin de type explicite, les adresses transmises sont crues de n’importe qui lorsque global.trustProxy est activé sans liste, et le texte d’une erreur interne parvient à l’appelant."
-  },
-  "mode.requirements.strict-protocol-input.product": {
-    "en": "85fca28b66faee87",
-    "text": "Un paramètre de jeton répété est refusé, le jeton de déconnexion d’un partenaire doit être de type logout+jwt sauf si federation.allowUntypedLogoutToken est activé, les adresses transmises exigent global.trustedProxies, et le texte d’une erreur interne reste dans le journal."
-  },
-  "mode.requirements.no-known-secrets.what": {
-    "en": "f3805d37f47556e7",
-    "text": "Les journaux et la base ne contiennent aucun secret connu"
-  },
-  "mode.requirements.no-known-secrets.development": {
-    "en": "bd225788d94d084d",
-    "text": "Au niveau debug, le journal contient les requêtes et réponses entières, et la base peut utiliser un mot de passe de démonstration."
-  },
-  "mode.requirements.no-known-secrets.product": {
-    "en": "9dc455e8deb093a6",
-    "text": "Les journaux de requêtes omettent les identifiants et les corps à tous les niveaux, un jeton ou une assertion signés ne sont journalisés que par leur taille et leur empreinte, et un mot de passe de base de données par défaut arrête le service sauf si persistence.allowDefaultDatabasePassword est activé."
-  },
-  "mode.requirements.secrets-from-store.what": {
-    "en": "51a0285e7263826e",
-    "text": "Les secrets du service proviennent d’un coffre de secrets"
-  },
-  "mode.requirements.secrets-from-store.development": {
-    "en": "14c3b25b8289b3fa",
-    "text": "La clé de chiffrement de clés peut être un fichier, et le mot de passe de la base peut être dans un fichier ou dans la chaîne de connexion."
-  },
-  "mode.requirements.secrets-from-store.product": {
-    "en": "8a3820f8013ed174",
-    "text": "Les clés de chiffrement de clés proviennent d’un coffre de secrets ou d’un service de gestion de clés, et le mot de passe de la base d’un coffre de secrets. Un fichier ou un mot de passe dans la chaîne de connexion arrête le service sauf si secrets.allowLocalSecrets est activé. Une clé de chiffrement de clés précédente peut encore être un fichier, pour qu’un déploiement puisse s’en défaire."
-  },
-  "mode.requirements.audit-destination.what": {
-    "en": "93abf5e422347728",
-    "text": "Le journal d’audit devrait quitter ce service"
-  },
-  "mode.requirements.audit-destination.development": {
-    "en": "9e4a085d4195578e",
-    "text": "Rien n’est signalé à propos de l’export d’audit."
-  },
-  "mode.requirements.audit-destination.product": {
-    "en": "e082de544e11ddcb",
-    "text": "Ajoutez une destination d’export d’audit, afin qu’une copie du journal soit hors d’atteinte en cas de compromission. Tant qu’il n’y en a pas, le service consigne un avertissement pour ce domaine."
-  },
-  "mode.requirements.sso-consent.what": {
-    "en": "2b06d195aa0a395d",
-    "text": "L’authentification unique demande avant de connecter une personne à une application"
-  },
-  "mode.requirements.sso-consent.development": {
-    "en": "e519a44984791111",
-    "text": "SAML 2.0, SAML 1.1 et WS-Federation connectent une personne depuis sa session sans lui demander."
-  },
-  "mode.requirements.sso-consent.product": {
-    "en": "0a4ee080bb81a76f",
-    "text": "Une personne est interrogée une fois par application avant que SAML 2.0, SAML 1.1 ou WS-Federation ne la connecte à celle-ci, et la réponse est conservée. saml2.ssoConsent, saml11.ssoConsent et wsfed.ssoConsent le désactivent par protocole, et la valeur propre d’une application les remplace."
-  },
-  "mode.requirements.pep-proxy-origin.what": {
-    "en": "697bb262238f557f",
-    "text": "Un navigateur atteint le proxy inverse d’un PEP distant en https"
-  },
-  "mode.requirements.pep-proxy-origin.development": {
-    "en": "27973f632a8e4726",
-    "text": "Une configuration de proxy peut nommer un publicBaseUrl en http simple, si bien qu’une pile sur une seule machine n’a besoin d’aucun certificat d’écoute pour le proxy."
-  },
-  "mode.requirements.pep-proxy-origin.product": {
-    "en": "3c64430130525f3e",
-    "text": "Un publicBaseUrl qui n’est pas en https est refusé (STS-XACML-0188) : la connexion du mécanisme de session y renvoie un code d’autorisation et son cookie de session est Secure."
   }
 }

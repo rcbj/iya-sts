@@ -113,6 +113,14 @@ import stsCrypto = require('../common/crypto');
 import pqcSupport = require('../common/pqc_support');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
+import certificateBinding = require('../common/certificate_binding');
+
+// WHAT `inspectView()` TAKES AT MOST (#2080): a pasted bundle is an
+// administrator's own, but a megabyte of text would hold a request worker
+// parsing it. A federal bridge bundle is a few dozen certificates.
+const INSPECT_MAX_CHARS = 262144;
+const INSPECT_MAX_CERTIFICATES = 64;
+const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
 
 // The pages a details view is drawn on. The route that draws one passes its
 // own path to the renderer, so this list decides nothing at request time; it
@@ -125,12 +133,17 @@ const PAGES = ['/admin/pki', '/admin/crypto-metadata'];
 
 interface CertificateViewsDeps {
   log: typeof log;
-  // THE THREE LAZY REQUIRES (see the header), as functions the instance calls
+  // THE LAZY REQUIRES (see the header), as functions the instance calls
   // when a view is drawn rather than when it is built: each is a cache hit by
-  // then, and none of them may be loaded from here at 18a.
+  // then, and none of the first three may be loaded from here at 18a. The
+  // fourth, the cluster membership, is a library that registers nothing; it
+  // is a loader so that a test can hand in another node's leaf.
   loadTlsServer: () => any;
   loadSpiffeCa: () => any;
   loadAdminViews: () => any;
+  // The cluster membership (`cluster/cluster.js`): the OTHER nodes' listener
+  // certificates, off their heartbeats (see `otherNodesListeners()`).
+  loadCluster: () => any;
   details: typeof details;
   errorCodes: typeof errorCodes;
   pki: typeof pki;
@@ -245,6 +258,9 @@ class CertificateViews {
       },
       loadAdminViews: function () {
         return require('./admin_views');
+      },
+      loadCluster: function () {
+        return require('../cluster/cluster');
       },
       details: details,
       errorCodes: errorCodes,
@@ -413,6 +429,10 @@ class CertificateViews {
       });
     });
 
+    this.fromSource('other cluster nodes', () => {
+      this.addOtherNodesListeners(catalogue);
+    });
+
     this.fromSource('spiffe', function () {
       // LAZILY — see the header.
       const state = loadSpiffeCa().state();
@@ -431,6 +451,110 @@ class CertificateViews {
       }
     });
     log.debug("Leaving CertificateViews.addAuthorities().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY OTHER NODE'S LISTENER CERTIFICATE (2026-11-24, GitHub Actions run
+  // 45326782254's `cluster` mode, `sts_admin_console`).
+  //
+  // A cluster node presents a listener leaf of its OWN, over its own key,
+  // under the TLS Issuing CA the cluster shares (`tls/CLAUDE.md`), and the
+  // source above reads only THIS process's. So `/admin/crypto-metadata`
+  // drawn by node A linked A's leaf, the browser's next connection was
+  // balanced to node B, and B answered the details view 404, STS-ADMIN-0641
+  // — "not held here", of a certificate this service was presenting on its
+  // main port at that moment. Not a replication lag: B never holds A's
+  // listener row, by decision (the row carries A's private key,
+  // `tls_server.js`'s `listenerKeys`), so no wait would have found it.
+  //
+  // The public half already crosses: each node publishes its leaves on its
+  // membership row (#248, for the SAML metadata), and
+  // `listenerCertificatesOfLiveNodes()` reads them out of the last state
+  // read. They are added here as authorities — a leaf this service presents
+  // is what a reader opens a details view to see, and its chain is the one
+  // the shared TLS Issuing CA already completes. A node that has left, or
+  // whose heartbeat lapsed, presents nothing a balancer sends traffic to and
+  // is not listed. Without a cluster the list is empty and nothing changes.
+  // ---------------------------------------------------------------------------
+  private addOtherNodesListeners(catalogue) {
+    const { log, details, loadCluster } = this.deps;
+    log.debug("Entering CertificateViews.addOtherNodesListeners().");
+    const cluster = loadCluster();
+    if (!cluster || typeof cluster.listenerCertificatesOfLiveNodes !==
+        'function') {
+      log.debug("Leaving CertificateViews.addOtherNodesListeners(). No " +
+                "cluster module.");
+      return;
+    }
+    let added = 0;
+    (cluster.listenerCertificatesOfLiveNodes() || []).forEach(function (b64) {
+      const body = String(b64 || '').replace(/\s+/g, '');
+      if (!body) {
+        return;
+      }
+      const pem = '-----BEGIN CERTIFICATE-----\n' +
+        (body.match(/.{1,64}/g) || []).join('\n') +
+        '\n-----END CERTIFICATE-----\n';
+      let fp = '';
+      try {
+        fp = details.fingerprintOf(pem);
+      } catch (e) {
+        log.debug("Caught in CertificateViews.addOtherNodesListeners(): " +
+                  ((e && e.message) || e));
+        return;
+      }
+      // THIS NODE'S OWN LEAF IS ON THE LIST TOO, once its row has been read,
+      // and the source above has already said where it appears.
+      if (catalogue.get(fp)) {
+        return;
+      }
+      catalogue.add(pem, 'TLS listener certificate (another cluster node)',
+                    'tls');
+      added += 1;
+    });
+    log.debug("Leaving CertificateViews.addOtherNodesListeners(). " + added +
+              ".");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A MISS READS THE MEMBERSHIP AGAIN BEFORE IT IS A 404 (2026-11-24). The
+  // list above is the last membership state THIS process read, which a
+  // request worker may not have read at all yet, or read before the other
+  // node re-issued its leaf (a Root rebuilt, `tls/CLAUDE.md`). So a
+  // fingerprint nothing here holds waits for one read of the membership
+  // rows, through to the store — `cluster.refreshState()`, the read
+  // `snapshot()` starts by itself — and is looked up once more. A keyed,
+  // bounded read on the refusal path only; no cluster, no read.
+  // ---------------------------------------------------------------------------
+  private async refreshedMembership(): Promise<boolean> {
+    const { log, loadCluster } = this.deps;
+    log.debug("Entering CertificateViews.refreshedMembership().");
+    let cluster = null;
+    try {
+      cluster = loadCluster();
+    } catch (e) {
+      log.debug("Caught in CertificateViews.refreshedMembership(): " +
+                ((e && e.message) || e));
+      cluster = null;
+    }
+    if (!cluster || typeof cluster.enabled !== 'function' ||
+        !cluster.enabled() || typeof cluster.refreshState !== 'function') {
+      log.debug("Leaving CertificateViews.refreshedMembership(). No " +
+                "cluster.");
+      return false;
+    }
+    try {
+      await cluster.refreshState();
+    } catch (e) {
+      // `refreshState()` resolves the last state on a failed read; a throw
+      // here leaves the refusal as it was, which is what it would have been.
+      log.debug("Caught in CertificateViews.refreshedMembership(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving CertificateViews.refreshedMembership(). Unread.");
+      return false;
+    }
+    log.debug("Leaving CertificateViews.refreshedMembership(). Read.");
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -553,11 +677,19 @@ class CertificateViews {
         'certificate fingerprint. It is 64 hexadecimal digits, with or ' +
         'without colons — the value /admin/pki prints in its SHA-256 column.');
     }
-    const catalogue = this.newCatalogue();
+    let catalogue = this.newCatalogue();
     this.addAuthorities(catalogue);
     let entry = catalogue.get(fp);
     if (!entry) {
       this.addHolders(catalogue);
+      entry = catalogue.get(fp);
+    }
+    if (!entry && await this.refreshedMembership()) {
+      // Another node's listener leaf, read off the membership just read —
+      // see `refreshedMembership()`. The catalogue is built again, so the
+      // chain below is built over what is current.
+      catalogue = this.newCatalogue();
+      this.addAuthorities(catalogue);
       entry = catalogue.get(fp);
     }
     if (!entry) {
@@ -717,6 +849,168 @@ class CertificateViews {
     facts.set(key, value);
   }
 
+  // -------------------------------------------------------------------------
+  // A CERTIFICATE THE ADMINISTRATOR HANDS IN, DESCRIBED (#2080).
+  //
+  // The console's form helper for certificate sign-in
+  // (`POST /admin-api/console/certificates/inspect`): the profile editor's
+  // "add an issuer from its certificate", the PEM lists of
+  // `piv.externalIssuers` and `piv.attestationAnchors`, and a person's
+  // binding editor all need what a certificate SAYS — its subject, its
+  // SHA-256, its SubjectPublicKeyInfo's SHA-256, its serial and key
+  // identifier — and a browser must not compute a digest of its own
+  // (`common/crypto.js` is the one place this service hashes).
+  //
+  // **THIS IS THE ONE VIEW HERE THAT DESCRIBES WHAT IT IS HANDED**, and the
+  // header's reason for looking up rather than parsing does not reach it:
+  // that reason is a LINK — a GET anybody can be sent, drawing an attacker's
+  // certificate under this console's header. This is a POST with the
+  // administrator's own token and their own text, answered as JSON to the
+  // page that sent it and drawn nowhere else; it writes nothing and keeps
+  // nothing, so what comes back is what they pasted, read.
+  //
+  // A PERSON'S BINDINGS (`bindings: true`): the values the high-affinity
+  // methods of `common/certificate_binding.ts` look the FIRST certificate up
+  // by, in `bindingValueOf()`'s grammar — `spki-sha256` from the leaf alone,
+  // and `issuer-serial` and `issuer-ski` from its issuer, found among the
+  // other certificates handed in or in the client truststore by the one
+  // whose key verifies the leaf's signature (`crypto.certificateSignedWith()`,
+  // as `signedPath()` links a chain). No issuer found is said, and the two
+  // issuer-scoped values are left out rather than guessed.
+  // -------------------------------------------------------------------------
+  /**
+   * Describes the certificates in a PEM text, and optionally the binding
+   * values of the first.
+   *
+   * @param body - `{ pem, bindings }`
+   * @returns `{ ok, errors, certificates, issuer, bindings }`, a refusal
+   *   marked with its code
+   */
+  inspectView(body) {
+    const { log, loadTlsServer, errorCodes: codes } = this.deps;
+    log.debug("Entering CertificateViews.inspectView().");
+    const text = String((body && body.pem) || '');
+    // The code is MARKED on the answer, never a member of it: it is
+    // recorded on the request's row and never sent (root CLAUDE.md).
+    const refused = function (code, message) {
+      log.debug("Leaving CertificateViews.inspectView(). Refused.");
+      return codes.mark({ ok: false, errors: [message], certificates: [],
+                          issuer: null, bindings: [] }, code);
+    };
+    if (text.length > INSPECT_MAX_CHARS) {
+      return refused('STS-ADMIN-0953', 'The text is longer than ' +
+                     INSPECT_MAX_CHARS + ' characters.');
+    }
+    const blocks = text.match(PEM_BLOCK) || [];
+    if (!blocks.length) {
+      return refused('STS-ADMIN-0953', 'The text holds no PEM certificate ' +
+                     '(-----BEGIN CERTIFICATE-----).');
+    }
+    if (blocks.length > INSPECT_MAX_CERTIFICATES) {
+      return refused('STS-ADMIN-0953', 'The text holds ' + blocks.length +
+                     ' certificates, more than ' + INSPECT_MAX_CERTIFICATES +
+                     '.');
+    }
+    const parsed = [];
+    for (let i = 0; i < blocks.length; i++) {
+      try {
+        const cert = stsCrypto.parseCertificate(blocks[i]);
+        parsed.push({ pem: blocks[i], cert: cert,
+                      facts: stsCrypto.certificateFacts(cert) });
+      } catch (e) {
+        log.debug("Caught in CertificateViews.inspectView(): " +
+                  ((e && e.message) || e));
+        return refused('STS-ADMIN-0954', 'Certificate ' + (i + 1) +
+                       ' could not be read: ' + ((e && e.message) || e) +
+                       '.');
+      }
+    }
+    const shown = parsed.map(function (one) {
+      const f = one.facts;
+      const uuids = ((f.san && f.san.uri) || []).filter(function (u) {
+        return /^urn:uuid:/i.test(String(u));
+      });
+      return {
+        pem: one.pem,
+        subject: String(f.subject || ''),
+        issuer: String(f.issuer || ''),
+        serialHex: String(f.serialHex || ''),
+        notBefore: new Date(f.notBefore).toISOString(),
+        notAfter: new Date(f.notAfter).toISOString(),
+        ca: !!f.ca,
+        selfIssued: !!f.selfIssued,
+        fingerprint256: String(f.fingerprint256 || ''),
+        sha256: stsCrypto.digest('sha256', one.cert.raw, 'hex'),
+        spkiSha256: String(f.spkiSha256 || ''),
+        ski: String(f.ski || ''),
+        keyUsage: Array.isArray(f.keyUsage) ? f.keyUsage.slice(0) : [],
+        extendedKeyUsage: Array.isArray(f.eku) ? f.eku.slice(0) : [],
+        cardUuids: uuids.map(String)
+      };
+    });
+    let issuer = null;
+    const values = [];
+    if (body && body.bindings === true) {
+      const leaf = parsed[0];
+      const candidates = parsed.slice(1).map(function (one) {
+        return { pem: one.pem, from: 'bundle' };
+      });
+      try {
+        const tls = loadTlsServer();
+        const anchors = (tls && tls.truststore && tls.truststore.list)
+          ? (tls.truststore.list().anchors || []) : [];
+        anchors.forEach(function (row) {
+          if (row && row.pem) {
+            candidates.push({ pem: String(row.pem), from: 'truststore' });
+          }
+        });
+      } catch (e) {
+        // No truststore in this process: the bundle's own certificates are
+        // the only candidates, and the answer says no issuer was found.
+        log.debug("Caught in CertificateViews.inspectView(): " +
+                  ((e && e.message) || e));
+      }
+      for (let i = 0; i < candidates.length && !issuer; i++) {
+        try {
+          const above = stsCrypto.parseCertificate(candidates[i].pem);
+          if (stsCrypto.certificateSignedWith(leaf.cert, above.publicKey) ===
+              true) {
+            const facts = stsCrypto.certificateFacts(above);
+            issuer = { subject: String(facts.subject || ''),
+                       spkiSha256: String(facts.spkiSha256 || ''),
+                       from: candidates[i].from };
+          }
+        } catch (e) {
+          // A candidate whose key cannot verify this signature is not its
+          // issuer; the next one is asked.
+          log.debug("Caught in CertificateViews.inspectView(): " +
+                    ((e && e.message) || e));
+        }
+      }
+      const add = function (method, raw) {
+        const value = certificateBinding.bindingValueOf(raw);
+        if (value) {
+          values.push({ method: method, value: value });
+        }
+      };
+      const f = leaf.facts;
+      if (f.spkiSha256) {
+        add('spki-sha256', 'spki-sha256:' + f.spkiSha256);
+      }
+      if (issuer && issuer.spkiSha256 && f.serialHex) {
+        add('issuer-serial', 'issuer-serial:' + issuer.spkiSha256 + ':' +
+            f.serialHex);
+      }
+      if (issuer && issuer.spkiSha256 && f.ski) {
+        add('issuer-ski', 'issuer-ski:' + issuer.spkiSha256 + ':' + f.ski);
+      }
+    }
+    log.debug("Leaving CertificateViews.inspectView(). " + shown.length +
+              " certificate(s).");
+    return { ok: true, errors: [], certificates: shown,
+             issuer: issuer, bindings: values };
+  }
+
   // ---------------------------------------------------------------------------
   // WHETHER A CERTIFICATE CARRIES A POST-QUANTUM KEY, `pqc_support.of()`'s
   // answer for `{ certificatePem }`, parsed once per certificate text (#352).
@@ -785,6 +1079,7 @@ export = {
   detailsView: slot.forward('detailsView'),
   listView: slot.forward('listView'),
   pqcOf: slot.forward('pqcOf'),
+  inspectView: slot.forward('inspectView'),
   // For the #352 test: how many parsed facts are held, and a way to forget
   // them so a count starts from nothing.
   factsHeld: (): number => facts.size,

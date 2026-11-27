@@ -114,6 +114,9 @@
 // OWNED HERE (local: true): this repository's register and management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
@@ -672,6 +675,12 @@ async function test() {
     // default since #269: the default plus it, so the compromise section
     // can check that it still goes out where it is named.
     overrides: { "global.mode": "development",
+                 // EVERY PERSON'S EVENTS ON AN APPLICATION'S
+                 // STREAM, AS BEFORE #2234: this job's receivers hear
+                 // about people never signed in to them
+                 // (`ssf.applicationStreamScope`; the scope itself is
+                 // `sts_ssf_application_sessions.js`'s).
+                 "ssf.applicationStreamScope": "all",
                  "risc.autoEmitTypes": "account-purged,account-disabled," +
                    "account-enabled,identifier-changed,identifier-recycled," +
                    "account-credential-change-required," +
@@ -1416,7 +1425,7 @@ async function test() {
   const sentBack = /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(hopped.location);
   const back = sentBack ? await signInAt(rp, hopped.location) : "";
   hopped = back ? await rp.go("GET", back) : hopped;
-  const answered = hopped.location.indexOf(REDIRECT) === 0
+  const answered = urls.isAt(hopped.location, REDIRECT)
     ? new URL(hopped.location).searchParams : null;
   check("a session with no compliant device is sent to sign in again, and " +
         "then refused unmet_authentication_requirements", function () {

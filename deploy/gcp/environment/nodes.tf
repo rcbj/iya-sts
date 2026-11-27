@@ -40,7 +40,17 @@ locals {
   # The settings every node agrees on (AWS: `node_environment`). The cluster
   # refuses a node whose must-agree settings differ, so they are spelt once.
   node_environment = merge({
-    STS_MODE                    = var.sts_mode
+    STS_MODE = var.sts_mode
+    # THE MAIN PORT IS HTTPS, SAID WHERE THE HEALTH CHECK CAN SEE IT
+    # (#1284, the fix AWS needed first). Every appconfig file sets
+    # `global.https` (env/CLAUDE.md), so the service is HTTPS without this,
+    # but the image's Docker HEALTHCHECK runs common/healthcheck_probe.js,
+    # which loads no configuration and takes its scheme from STS_HTTPS alone:
+    # unset, it speaks plain HTTP to 8081 and Docker reports every node
+    # `unhealthy`. On AWS that replaced every node; here the load balancer
+    # asks /healthcheck itself, so it is a false status rather than an outage
+    # — fixed all the same. The value is the appconfig's, so nothing changes.
+    STS_HTTPS                   = "true"
     STS_PERSISTENCE_MODE        = "postgres"
     STS_PERSISTENCE_COORDINATE  = "true"
     STS_KEYS_SOURCE             = "persisted"

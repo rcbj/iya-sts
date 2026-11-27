@@ -398,17 +398,26 @@ function refusedNew(t, drawn, names) {
           'Refused.',
           'E3. a refusal that names no error still says it was refused');
   const html = policies.body(kit.context(), again.json);
-  const at = html.indexOf('id="passkey-sub-new"');
-  const form = html.slice(at, html.indexOf('</form>', at));
+  // THE FORM IS NEW POLICY'S OWN PAGE SINCE #1132, drawn from the policies
+  // view (composed as `policies`) and the redraw's state; the tab links to
+  // it.
+  const page = policies.newPolicyBody(kit.context(),
+    { kind: 'passkey', kinds: [], createFields: [], policies: again.json,
+      state: kept });
+  // From the top of the page: the refusal is drawn above the form.
+  const form = page.slice(0, page.indexOf('</form>'));
   t.check(form.indexOf('name="newProfile" value="1"') >= 0 &&
           form.indexOf('value="' + names.group + '"') >= 0 &&
           /name="precedence" min="1" max="1000" value="9"/.test(form) &&
           /name="minPinLength"[^>]*value="12"/.test(form) &&
           /name="allowUsernameless"[^>]*value="TRUE" checked/.test(form) &&
+          /name="requireUsernameless"[^>]*value="FALSE" checked/.test(form) &&
+          !/name="requireUsernameless"[^>]*value="TRUE" checked/.test(form) &&
           /value="disallow" selected/.test(form) &&
           form.indexOf(why) >= 0,
           'E4. the New policy form still holds the name, the precedence, ' +
-          'the PIN length, the ticked box, the chosen enum and the refusal');
+          'the PIN length, Yes on the chosen boolean, No on one that was ' +
+          'not, the chosen enum and the refusal');
   const namedAt = html.indexOf('id="passkey-profile-' + names.group + '"');
   const namedForm = html.slice(namedAt, html.indexOf('</form>', namedAt));
   t.check(namedForm.indexOf('value="12"') < 0 &&

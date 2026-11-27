@@ -82,17 +82,22 @@ const CATEGORIES = [
     // #64: the layout's `{{reason}}`, finishing "because it is ...".
     reason: 'a security notice about your account, which cannot be turned ' +
             'off',
+    // #1955 P6: the Subject an ENCRYPTED message of this category goes out
+    // under (`encryptedSubjectFor()`), the real one being inside.
+    encryptedSubject: 'A security notice from {{service}}',
     what: 'Something happened to your account: it was disabled, your ' +
           'sessions were ended, your password changed, a credential was ' +
           'marked compromised, recovery was started, your address changed.' },
   { id: 'account', optional: false,
     label: 'Links you or an administrator asked for',
     reason: 'something you or an administrator asked for',
+    encryptedSubject: 'A message from {{service}}',
     what: 'A password reset link, an activation link, an address ' +
           'verification link, a test message.' },
   { id: 'notification', optional: true,
     label: 'Notifications',
     reason: 'a notification, which you can turn off on your portal',
+    encryptedSubject: 'A notification from {{service}}',
     what: 'Everything else this service may tell you about: an ' +
           'application asking for access that waits for your approval on ' +
           'the portal (#432). (#64\'s sign-in codes and links are SECURITY ' +
@@ -189,6 +194,25 @@ const BUILT_IN: TemplateSpec[] = [
     html: '<p>The password of the account <strong>{{username}}</strong> ' +
           'was changed at {{when}} ({{how}}).</p><p>If this was not you, ' +
           'contact whoever manages your account now.</p>' },
+  // #2163 (ASVS 5.0.0 6.3.7): every other credential added or removed, one
+  // line each in `{{what}}` — a list when one act changed several — and who
+  // did it in `{{by}}`. What changed is named by its kind and label, never
+  // by anything secret.
+  { id: 'credential-changed', category: 'security',
+    title: 'A credential of yours was added or removed',
+    values: ['username', 'when', 'what', 'by'],
+    links: [],
+    subject: 'The credentials of your {{service}} account changed',
+    text: 'The credentials of the account {{username}} were changed at ' +
+          '{{when}}, {{by}}: {{what}}.\n\nIf this was not you and you ' +
+          'did not ask for it, sign in now, review your security settings ' +
+          'and sign out your other sessions, or contact whoever manages ' +
+          'your account.\n',
+    html: '<p>The credentials of the account <strong>{{username}}</strong> ' +
+          'were changed at {{when}}, {{by}}: {{what}}.</p><p>If this was ' +
+          'not you and you did not ask for it, sign in now, review your ' +
+          'security settings and sign out your other sessions, or contact ' +
+          'whoever manages your account.</p>' },
   { id: 'account-disabled', category: 'security',
     title: 'Your account was disabled',
     values: ['username', 'when', 'why'],
@@ -236,6 +260,45 @@ const BUILT_IN: TemplateSpec[] = [
           'started at {{when}} by {{by}}.</p><p>If this was not you or ' +
           'somebody you asked, contact whoever manages your account ' +
           'now.</p>' },
+  // #2162 (ASVS 5.0.0 6.3.5): a sign-in that succeeded looking unusual, and
+  // a run of refused passwords. The link is the person's recent sign-ins,
+  // where saying a sign-in was not them signs every session out.
+  { id: 'sign-in-alert', category: 'security',
+    title: 'An unusual sign-in to your account',
+    values: ['username', 'when', 'place', 'device', 'method', 'what'],
+    links: ['link'],
+    subject: 'An unusual sign-in to your {{service}} account',
+    text: 'Somebody signed in to the account {{username}} at {{when}}, and ' +
+          'it looked unusual: {{what}}.\n\nWhere, approximately: ' +
+          '{{place}}\nWith: {{device}}\nHow: {{method}}\n\nIf this was ' +
+          'you, there is nothing to do. If it was not, open your recent ' +
+          'sign-ins and say so there, which signs every session of yours ' +
+          'out, then change your password:\n\n{{link}}\n',
+    html: '<p>Somebody signed in to the account <strong>{{username}}' +
+          '</strong> at {{when}}, and it looked unusual: {{what}}.</p>' +
+          '<p>Where, approximately: {{place}}</p><p>With: {{device}}</p>' +
+          '<p>How: {{method}}</p><p>If this was you, there is nothing to ' +
+          'do. If it was not, <a href="{{link}}">open your recent ' +
+          'sign-ins</a> and say so there, which signs every session of ' +
+          'yours out, then change your password.</p>' },
+  { id: 'sign-in-refusals', category: 'security',
+    title: 'Refused sign-in attempts on your account',
+    values: ['username', 'when', 'count', 'minutes'],
+    links: ['link'],
+    subject: 'Refused sign-in attempts on your {{service}} account',
+    text: '{{count}} attempts to sign in to the account {{username}} with ' +
+          'a wrong password were refused in the {{minutes}} minute(s) ' +
+          'before {{when}}.\n\nIf this was you, there is nothing to do. ' +
+          'If it was not, somebody may be trying to guess your password: ' +
+          'sign in, review your recent sign-ins, and change your password ' +
+          'if it might be known.\n\n{{link}}\n',
+    html: '<p>{{count}} attempts to sign in to the account <strong>' +
+          '{{username}}</strong> with a wrong password were refused in the ' +
+          '{{minutes}} minute(s) before {{when}}.</p><p>If this was you, ' +
+          'there is nothing to do. If it was not, somebody may be trying to ' +
+          'guess your password: sign in, <a href="{{link}}">review your ' +
+          'recent sign-ins</a>, and change your password if it might be ' +
+          'known.</p>' },
   { id: 'address-changed', category: 'security',
     title: 'Your address was changed',
     values: ['username', 'when', 'address'],
@@ -375,6 +438,31 @@ const BUILT_IN: TemplateSpec[] = [
           '{{justification}}</p><p>The policy allows emergency access to ' +
           'this. <a href="{{link}}">Review it</a>, and revoke it if it was ' +
           'not warranted.</p>' },
+  // THE REQUESTER, WHEN AN APPROVAL THEY WERE GIVEN IS REVOKED (#1203).
+  // No link: the portal page is the approver's, and a link without
+  // global.publicBaseUrl is refused.
+  { id: 'authzen-access-revoked', category: 'notification',
+    title: 'An approval of an access request you submitted was revoked',
+    values: ['username', 'approver', 'subject', 'action', 'resource',
+             'application'],
+    links: [],
+    subject: '{{service}}: an approval of an access request you ' +
+             'submitted was revoked',
+    text: 'An approval of an access request you submitted, ' +
+          '{{username}}, was revoked by {{approver}}.\n\n{{subject}} ' +
+          'asked to {{action}} {{resource}} in the application ' +
+          '{{application}}. That approval no longer stands. A later ' +
+          'evaluation that carries it is not approved. Submit a new ' +
+          'access request if the access is still needed.\n',
+    html: '<p>An approval of an access request you submitted, ' +
+          '<strong>{{username}}</strong>, was revoked by ' +
+          '<strong>{{approver}}</strong>.</p>' +
+          '<p><strong>{{subject}}</strong> asked to ' +
+          '<strong>{{action}}</strong> <strong>{{resource}}</strong> ' +
+          'in the application <strong>{{application}}</strong>. That ' +
+          'approval no longer stands. A later evaluation that carries ' +
+          'it is not approved. Submit a new access request if the ' +
+          'access is still needed.</p>' },
   { id: 'pki-pin-status', category: 'security',
     title: 'A certificate this realm relies on changed state',
     values: ['changes'],
@@ -478,6 +566,56 @@ const BUILT_IN: TemplateSpec[] = [
           'the sign-in page. It does not sign you in and carries nothing ' +
           'about your account. If you did not expect this message, ignore ' +
           'it, or ask whoever manages your account.</p>' },
+  // #2009 P4: the same reminder for the two other post-login activities,
+  // one message each, so what the mail says is what the sign-in will ask.
+  // `common/post_login_kinds.ts`'s table names which activity is sent which.
+  { id: 'post-login-reminder-mail-encryption', category: 'notification',
+    title: 'A reminder to register a post-quantum mail-encryption key',
+    values: ['username'],
+    links: ['signin'],
+    subject: 'Register a post-quantum mail-encryption key for {{service}}',
+    text: '{{service}} asks {{username}} to register a new key for ' +
+          'encrypting mail that uses post-quantum cryptography (ML-KEM): ' +
+          'an OpenPGP key or an S/MIME certificate. Mail encrypted to a ' +
+          'classical key today can be read once that key is broken.\n\n' +
+          'Sign in here, and you will be asked to register it right after ' +
+          'you sign in:\n\n{{signin}}\n\nThe link only opens the sign-in ' +
+          'page. It does not sign you in and carries nothing about your ' +
+          'account. If you did not expect this message, ignore it, or ask ' +
+          'whoever manages your account.\n',
+    html: '<p>{{service}} asks <strong>{{username}}</strong> to register a ' +
+          'new key for encrypting mail that uses post-quantum cryptography ' +
+          '(ML-KEM): an OpenPGP key or an S/MIME certificate. Mail ' +
+          'encrypted to a classical key today can be read once that key is ' +
+          'broken.</p><p><a href="{{signin}}">Sign in</a>, and you will be ' +
+          'asked to register it right after you sign in.</p><p>The link ' +
+          'only opens the sign-in page. It does not sign you in and carries ' +
+          'nothing about your account. If you did not expect this message, ' +
+          'ignore it, or ask whoever manages your account.</p>' },
+  { id: 'post-login-reminder-piv-reissue', category: 'notification',
+    title: 'A reminder to renew a PIV certificate',
+    values: ['username'],
+    links: ['signin'],
+    subject: 'Renew your PIV certificate for {{service}}',
+    text: '{{service}} asks {{username}} to enrol a new certificate for ' +
+          'the PIV smart card or security key they sign in with: the one ' +
+          'it holds was signed with a classical algorithm, or expires soon. ' +
+          'Have the card with you, and a tool that makes a certificate ' +
+          'request from it, such as ykman.\n\nSign in here, and you will ' +
+          'be asked to enrol it right after you sign in:\n\n{{signin}}\n\n' +
+          'The link only opens the sign-in page. It does not sign you in ' +
+          'and carries nothing about your account. If you did not expect ' +
+          'this message, ignore it, or ask whoever manages your account.\n',
+    html: '<p>{{service}} asks <strong>{{username}}</strong> to enrol a ' +
+          'new certificate for the PIV smart card or security key they sign ' +
+          'in with: the one it holds was signed with a classical algorithm, ' +
+          'or expires soon. Have the card with you, and a tool that makes a ' +
+          'certificate request from it, such as ykman.</p><p><a ' +
+          'href="{{signin}}">Sign in</a>, and you will be asked to enrol it ' +
+          'right after you sign in.</p><p>The link only opens the sign-in ' +
+          'page. It does not sign you in and carries nothing about your ' +
+          'account. If you did not expect this message, ignore it, or ask ' +
+          'whoever manages your account.</p>' },
   { id: 'reset-refused-attempt', category: 'security',
     title: 'A password reset was refused',
     values: ['username', 'when'],
@@ -496,6 +634,27 @@ const BUILT_IN: TemplateSpec[] = [
           'again with an unused recovery code. If it was not, somebody ' +
           'knows your account name and address; contact whoever manages ' +
           'your account.</p>' },
+  // #2247 (ASVS 5.0.0 6.4.5): the certificates a person holds that expire
+  // soon, every one due in one message, each line saying what, when and how
+  // to renew it (`common/credential_expiry.ts`).
+  { id: 'credential-expiring', category: 'security',
+    title: 'A credential of yours expires soon',
+    values: ['username', 'what'],
+    links: ['link'],
+    subject: 'A credential of your {{service}} account expires soon',
+    text: 'These credentials of the account {{username}} expire soon: ' +
+          '{{what}}.\n\nRenew each one before it expires, or it will stop ' +
+          'working. Where a line names a page of your portal, sign in to ' +
+          'it here:\n\n{{link}}\n\nWhere it says to ask your ' +
+          'administrator, contact whoever manages your account. If you no ' +
+          'longer use one of them, you can ignore its line.\n',
+    html: '<p>These credentials of the account <strong>{{username}}' +
+          '</strong> expire soon: {{what}}.</p><p>Renew each one before it ' +
+          'expires, or it will stop working. Where a line names a page of ' +
+          'your portal, <a href="{{link}}">sign in to your portal</a>.</p>' +
+          '<p>Where it says to ask your administrator, contact whoever ' +
+          'manages your account. If you no longer use one of them, you can ' +
+          'ignore its line.</p>' },
   // -------------------------------------------------------------------------
   // #64: THE STANDARD LAYOUT, wrapped round EVERY message's body. Not a
   // message itself — `send()` refuses it by name — and reworded per realm
@@ -778,6 +937,41 @@ class MailTemplates {
     }
     helpers.log.debug("Leaving MailTemplates.reasonFor(). English.");
     return cat.reason;
+  }
+
+  // THE SUBJECT OF AN ENCRYPTED MESSAGE (#1955 P6): the category's neutral
+  // subject in a language — the translation along the chain, else the
+  // English of `CATEGORIES` — with `{{service}}` filled in. The Subject of
+  // an encrypted message is not encrypted, so it says no more than which
+  // kind of message it is and whose.
+  /**
+   * The neutral Subject an encrypted message of a category goes out under.
+   *
+   * @param id - the category's id
+   * @param language - the language the message went out in
+   * @param values - the message's values (`service` is read)
+   * @returns the subject
+   */
+  static encryptedSubjectFor(id: string, language: string,
+                             values: Json): string {
+    helpers.log.debug("Entering MailTemplates.encryptedSubjectFor(). " + id);
+    const cat = MailTemplates.category(id) || MailTemplates.category('account');
+    const files = MailTemplates.localeFiles();
+    const chain = MailTemplates.chainFor(language);
+    let text = String(cat.encryptedSubject || '');
+    for (let i = 0; i < chain.length; i++) {
+      const file = files[chain[i]];
+      const one = file && file.categories && file.categories[cat.id];
+      if (one && typeof one.encryptedSubject === 'string' &&
+          one.encryptedSubject) {
+        text = one.encryptedSubject;
+        break;
+      }
+    }
+    const service = String((values && values.service) || 'this service')
+      .replace(/[\r\n]+/g, ' ');
+    helpers.log.debug("Leaving MailTemplates.encryptedSubjectFor().");
+    return text.replace(/\{\{\s*service\s*\}\}/g, service);
   }
 
   // Every `{{name}}` in a piece of text.

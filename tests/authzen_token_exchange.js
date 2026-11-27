@@ -18,7 +18,7 @@
 //   F. THE FIXED RULES: which tuples are the binding's, the context members
 //      and their one JSON type, the subject types, and every fixed `false`
 //      (another grant, an unregistered type, a third party, a scope with no
-//      gate or naming somebody else) — and `docs/v1.1.0/authzen.md`'s table is
+//      gate or naming somebody else) — and `docs/v1.2.0/authzen.md`'s table is
 //      `FIXED_RULES`.
 //   C. THE CATALOGUE may add a row (`context.tenant`, whose attribute
 //      reaches the exchange question) and may not override one: every
@@ -34,8 +34,26 @@
 //   N. NARROWING ONLY: `context.issuance` carries `token_lifetime` (never
 //      over the subject token's remaining life) and, for a scopeless
 //      request, `granted_scope` (a subset of the subject token's), and
-//      nothing else; a subject token with no life left is a false gate;
-//      `narrowOnly()` drops a value that would broaden.
+//      nothing else on the success path; a subject token with no life
+//      left is a false gate; `narrowOnly()` drops a value that would
+//      broaden, including a claim the subject token does not carry.
+//      `shape()` keeps a narrowing claim and drops a wider audience;
+//      an empty audience withdraws the target (#1201).
+//   D. AUTHORIZATION-DETAIL TUPLES (#1201): a declared type beside a gate
+//      is the exchange subject's cell. A type that does not enforce is
+//      granted as asked, in either mode. A cell for anybody else,
+//      including a Txn-Token's requesting party, is false (0128). No
+//      gate leaves it an ordinary evaluation (0101 when it carries a
+//      binding member). An enforcing type is covered by the subject
+//      token's authorization_details and issued here before the
+//      fine-grained decider is asked (0129 otherwise) — "issued here"
+//      read, with oauth2.issuer unpinned, from the request's base as the
+//      token endpoint names itself (D13); a deny is 0130
+//      and a fault is HTTP 500 (0046) with the STS-FGA code on the row.
+//      `declaredTypes()` throwing while planning logs 0131 and
+//      recognizes nothing. The bound, the decider and `shape()` are
+//      this file's; the protocol job holds the non-enforcing grant, the
+//      stranger and the missing gate.
 //   S. SCOPE TUPLES: the exchange stage, the client's declaration and the
 //      roles, by mode.
 //   J. ID-JAG (two levels) AND TXN-TOKEN (the requesting party's own scope
@@ -122,7 +140,7 @@ function inMode(m, fn) {
 
 // The surface, with an admitted caller and a recorded audit: the doors are
 // tests/authzen_evaluation.js's, and this file is about the item path.
-function surfaceOf(recorded) {
+function surfaceOf(recorded, counted) {
   log.debug("Entering surfaceOf().");
   const az = require('../authzen/authzen');
   const deps = az.AuthzenSurface.defaultDeps();
@@ -143,7 +161,16 @@ function surfaceOf(recorded) {
   deps.loadMonitor = function () {
     log.debug("Entering loadMonitor().");
     log.debug("Leaving loadMonitor().");
-    return { record: function () { return null; } };
+    return {
+      record: function () {
+        log.debug("Entering record().");
+        if (counted) {
+          counted.n += 1;
+        }
+        log.debug("Leaving record().");
+        return null;
+      }
+    };
   };
   log.debug("Leaving surfaceOf().");
   return new az.AuthzenSurface(deps);
@@ -151,13 +178,13 @@ function surfaceOf(recorded) {
 
 // One request, answered item by item as POST /access/v1/evaluations does:
 // the defaults merged, the whole planned, each evaluated in order.
-function ask(surface, defaults, items, rows) {
+function ask(surface, defaults, items, rows, req) {
   log.debug("Entering ask().");
   const az = require('../authzen/authzen');
   const bodies = (items && items.length ? items : [{}]).map(function (one) {
     return az.AuthzenSurface.merged(defaults || {}, one);
   });
-  const plan = surface.planOf(bodies);
+  const plan = surface.planOf(bodies, req);
   const out = bodies.map(function (body, i) {
     return surface.evaluateOne(body, { name: 'az-pep' }, rows || [],
                                'az#' + i, 'test', plan, i);
@@ -205,11 +232,22 @@ function fixtures(t) {
     app('az-idp', { appAllowedToDelegateTo: ['az-peer'],
                     oauthAllowedScope: ['files.read'] }),
     app('az-wl', { appAllowedToDelegateTo: ['az-back'],
-                   oauthAllowedScope: ['txn:read', 'read:docs'] })
+                   oauthAllowedScope: ['txn:read', 'read:docs'] }),
+    app('az-pay', { oauthAuthorizationDetailsType:
+                    ['payment_initiation'] }),
+    app('az-bank', { oauthAuthorizationDetailsType: ['account_access'] })
   ];
   t.check(made.every(function (one) { return one && one.ok; }),
           'precondition: the applications were created',
           JSON.stringify(made.filter(function (one) { return !one.ok; })));
+  // Enforced AFTER the type is written: a definition on an application
+  // that already enforces is refused, and this type has no policy of
+  // its own. The tests install the decider.
+  const enforced = applications.setFgaState('az-bank', { enforced: true },
+                                            { actor: 'test' });
+  t.check(enforced.ok === true,
+          'precondition: az-bank enforces fine-grained authorization',
+          JSON.stringify(enforced));
   const bob = credentials.setNotDelegated('az-bob', true);
   t.check(bob.ok, 'precondition: az-bob carries stsNotDelegated',
           JSON.stringify(bob));
@@ -248,13 +286,13 @@ function theFixedRules(t, surface) {
           exchange.TOKEN_TYPES.txn_token ===
             'urn:ietf:params:oauth:token-type:txn_token',
           'F2. the registered token types, ID-JAG and Txn-Token among them');
-  const docs = fs.readFileSync(path.join(ROOT, 'docs/v1.1.0/authzen.md'),
+  const docs = fs.readFileSync(path.join(ROOT, 'docs/v1.2.0/authzen.md'),
                                'utf8');
   const missing = exchange.FIXED_RULES.filter(function (one) {
     return docs.indexOf(one.member) < 0;
   }).map(function (one) { return one.member; });
   t.check(exchange.FIXED_RULES.length >= 15 && !missing.length,
-          'F3. docs/v1.1.0/authzen.md publishes every fixed rule (' +
+          'F3. docs/v1.2.0/authzen.md publishes every fixed rule (' +
           exchange.FIXED_RULES.length + ')', missing.join('; '));
   t.check(catalogue.BINDING_CONTEXT.join() ===
           Object.keys(exchange.CONTEXT_TYPES).join(),
@@ -324,6 +362,14 @@ function theFixedRules(t, surface) {
             'F11. a third party for one target is false, and so is a scope ' +
             'tuple naming somebody other than the exchange subject',
             JSON.stringify(r));
+    r = ask(surface, { resource: { type: 'audience', id: BACK },
+                       context: { subject_token: {
+                         authorization_details: 'nope' } } },
+            [{ subject: { type: 'user', id: 'az-alice' },
+               action: { name: ACCESS } }]);
+    t.check(r[0].status === 400 && codeOf(r) === 'STS-AUTHZEN-0100',
+            'F12. subject_token.authorization_details is an array of ' +
+            'objects', JSON.stringify(r));
   } finally {
     config.clearOverride('authzen.tokenExchange');
   }
@@ -585,9 +631,54 @@ function theNarrowing(t, surface) {
         { subjectToken: { scope: 'read:docs' } });
       t.check(JSON.stringify(shaped) === '{"token_lifetime":30}',
               'N3. a granted_scope wider than the subject token is not ' +
-              'sent, and sub, aud, act, may_act and claims never are',
+              'sent, and a claim the subject token does not carry is ' +
+              'not sent, nor are sub, aud, act or may_act',
               JSON.stringify(shaped));
     });
+    const narrowed = exchange.narrowOnly({ token_lifetime: 30,
+      claims: { groups: ['staff'], scope: 'read:docs', extra: 'no' } },
+      { subjectToken: { groups: ['staff', 'admin'] } });
+    t.check(JSON.stringify(narrowed) ===
+            '{"token_lifetime":30,"claims":{"groups":["staff"]}}',
+            'N4. a claim array that is a proper subset is kept; a ' +
+            'reserved name and a claim the subject token does not ' +
+            'carry are not sent', JSON.stringify(narrowed));
+    const widened = exchange.shape({ token_lifetime: 30,
+      audience: ['https://other.example', BACK] },
+      { subjectToken: {} }, BACK);
+    t.check(widened.deny === false && widened.code === '' &&
+            JSON.stringify(widened.issuance) === '{"token_lifetime":30}',
+            'N5. an audience naming another resource id is not sent',
+            JSON.stringify(widened));
+    const repeated = exchange.shape({ token_lifetime: 30,
+      audience: [BACK, BACK] }, { subjectToken: {} }, BACK);
+    t.check(repeated.deny === false &&
+            JSON.stringify(repeated.issuance) === '{"token_lifetime":30}',
+            'N6. an audience that only repeats this gate\'s resource id ' +
+            'does not narrow it, so it is omitted',
+            JSON.stringify(repeated));
+    const withdrawn = exchange.shape({ token_lifetime: 30, audience: [] },
+      { subjectToken: {} }, BACK);
+    t.check(withdrawn.deny === true &&
+            withdrawn.code === 'STS-AUTHZEN-0134' &&
+            withdrawn.issuance === null,
+            'N7. an empty audience withdraws the target',
+            JSON.stringify(withdrawn));
+    const sameClaims = exchange.shape(
+      { claims: { groups: ['admin', 'staff'] } },
+      { subjectToken: { groups: ['staff', 'admin'] } });
+    t.check(sameClaims.deny === false && sameClaims.issuance === null,
+            'N8. a claim set equal to the subject token\'s, in any ' +
+            'order, is omitted', JSON.stringify(sameClaims));
+    const lower = exchange.shape({ claims: { max: 5 } },
+      { subjectToken: { max: 9 } });
+    const higher = exchange.shape({ claims: { max: 12 } },
+      { subjectToken: { max: 9 } });
+    t.check(JSON.stringify(lower.issuance) === '{"claims":{"max":5}}' &&
+            higher.issuance === null,
+            'N9. a smaller non-negative integer is a ceiling; a larger ' +
+            'number is not sent',
+            JSON.stringify({ lower: lower, higher: higher }));
   } finally {
     config.clearOverride('authzen.tokenExchange');
   }
@@ -717,6 +808,316 @@ function theTokenTypes(t, surface) {
   log.debug("Leaving theTokenTypes().");
 }
 
+function theDetails(t) {
+  log.debug("Entering theDetails().");
+  t.log.info('=== D. authorization-detail tuples ===');
+  const recorded = [];
+  const counted = { n: 0 };
+  const surface = surfaceOf(recorded, counted);
+  const fga = require('../common/fga_gate');
+  const before = fga.deciderInstalled();
+  const ISSUER = 'https://az-issuer.example';
+  const az = require('../authzen/authzen');
+  const detailOf = function (subject, actionName, type, id, token,
+                             tokenType) {
+    log.debug("Entering detailOf().");
+    const g = gates({ type: 'user', id: 'az-alice' },
+                    { type: 'client', id: 'az-front' }, BACK,
+                    { client_id: 'az-front', subject_token: token },
+                    tokenType);
+    g.items.push({ subject: subject, action: { name: actionName },
+                   resource: { type: type, id: id } });
+    log.debug("Leaving detailOf().");
+    return g;
+  };
+  const lastRow = function () {
+    log.debug("Entering lastRow().");
+    const row = recorded[recorded.length - 1] || {};
+    log.debug("Leaving lastRow().");
+    return row;
+  };
+  config.setOverride('authzen.tokenExchange', true);
+  config.setOverride('oauth2.issuer', ISSUER);
+  try {
+    config.clearOverride('authzen.tokenExchange');
+    const offBodies = [az.AuthzenSurface.merged(
+      { resource: { type: 'payment_initiation', id: 'pay-1' } },
+      { subject: { type: 'user', id: 'az-alice' },
+        action: { name: 'read' } })];
+    const off = surface.planOf(offBodies);
+    t.check(off.entries[0].kind === '',
+            'D1. off, a declared type is not a detail tuple',
+            JSON.stringify(off.entries));
+    config.setOverride('authzen.tokenExchange', true);
+    ['development', 'product'].forEach(function (m) {
+      t.log.info('=== D. detail tuples, in ' + m + ' ===');
+      inMode(m, function () {
+        const open = detailOf({ type: 'user', id: 'az-alice' }, 'read',
+                              'payment_initiation', 'pay-1',
+                              { aud: 'az-front' });
+        const granted = ask(surface, open.defaults, open.items);
+        const planned = surface.planOf(open.items.map(function (one) {
+          return az.AuthzenSurface.merged(open.defaults, one);
+        }));
+        t.check(planned.entries[2].kind === 'subject-detail' &&
+                granted[0].decision === true &&
+                granted[1].decision === true &&
+                granted[2].decision === true &&
+                String(lastRow().detail).indexOf('decided by fixed rule') >=
+                  0,
+                'D2. ' + m + ': a declared type that does not enforce, ' +
+                'beside the gates, is granted as asked',
+                JSON.stringify(granted));
+        const other = detailOf({ type: 'user', id: 'az-bob' }, 'read',
+                               'payment_initiation', 'pay-1',
+                               { aud: 'az-front' });
+        const stranger = ask(surface, other.defaults, other.items);
+        t.check(stranger[2].decision === false &&
+                stranger[2].code === 'STS-AUTHZEN-0128',
+                'D3. ' + m + ': a detail naming somebody else is false',
+                JSON.stringify(stranger[2]));
+        const party = detailOf({ type: 'client', id: 'az-front' }, 'read',
+                               'payment_initiation', 'pay-1',
+                               { aud: 'az-front', scope: 'read:docs' },
+                               'txn_token');
+        const txn = ask(surface, party.defaults, party.items);
+        t.check(txn[2].decision === false &&
+                txn[2].code === 'STS-AUTHZEN-0128',
+                'D4. ' + m + ': a Txn-Token detail for the requesting ' +
+                'party is false; that exception is scopes only',
+                JSON.stringify(txn[2]));
+        const alone = ask(surface,
+          { resource: { type: 'payment_initiation', id: 'pay-1' },
+            context: { client_id: 'az-front' } },
+          [{ subject: { type: 'user', id: 'az-alice' },
+             action: { name: 'read' } }]);
+        const alonePlan = surface.planOf([az.AuthzenSurface.merged(
+          { resource: { type: 'payment_initiation', id: 'pay-1' },
+            context: { client_id: 'az-front' } },
+          { subject: { type: 'user', id: 'az-alice' },
+            action: { name: 'read' } })]);
+        t.check(alonePlan.entries[0].kind === '' &&
+                alone[0].status === 400 &&
+                alone[0].code === 'STS-AUTHZEN-0101',
+                'D5. ' + m + ': a declared type with no gate, carrying ' +
+                'a binding member, is not a detail tuple',
+                JSON.stringify({ plan: alonePlan.entries, item: alone }));
+      });
+    });
+    const logged = [];
+    const deps = exchange.AuthzenTokenExchange.defaultDeps();
+    const realLog = deps.log;
+    deps.log = {
+      debug: function () {
+        log.debug("Entering debug().");
+        const out = realLog.debug.apply(realLog, arguments);
+        log.debug("Leaving debug().");
+        return out;
+      },
+      info: function () {
+        log.debug("Entering info().");
+        const out = realLog.info.apply(realLog, arguments);
+        log.debug("Leaving info().");
+        return out;
+      },
+      warn: function () {
+        log.debug("Entering warn().");
+        const out = realLog.warn.apply(realLog, arguments);
+        log.debug("Leaving warn().");
+        return out;
+      },
+      error: function (msg) {
+        log.debug("Entering error().");
+        logged.push(String(msg));
+        const out = realLog.error.apply(realLog, arguments);
+        log.debug("Leaving error().");
+        return out;
+      }
+    };
+    deps.loadAuthorizationDetails = function () {
+      log.debug("Entering loadAuthorizationDetails().");
+      log.debug("Leaving loadAuthorizationDetails().");
+      return {
+        declaredTypes: function () {
+          log.debug("Entering declaredTypes().");
+          log.debug("Leaving declaredTypes().");
+          throw new Error('registry');
+        }
+      };
+    };
+    const custom = new exchange.AuthzenTokenExchange(deps);
+    const thrown = custom.plan([
+      { subject: { type: 'user', id: 'az-alice' },
+        action: { name: ACCESS },
+        resource: { type: 'audience', id: BACK } },
+      { subject: { type: 'user', id: 'az-alice' },
+        action: { name: 'read' },
+        resource: { type: 'payment_initiation', id: 'pay-1' } }
+    ]);
+    t.check(thrown.entries[1].kind === '' && logged.some(function (line) {
+      return line.indexOf('STS-AUTHZEN-0131') >= 0;
+    }), 'D6. a declaredTypes() throw while planning logs 0131 and ' +
+        'recognizes no detail',
+        JSON.stringify({ kind: thrown.entries[1].kind, logged: logged }));
+    inMode('product', function () {
+      const covered = [{ type: 'account_access', locations: ['acct-1'],
+                         actions: ['read'], datatypes: ['contacts'] }];
+      const token = { aud: 'az-front', iss: ISSUER,
+                      authorization_details: covered };
+      let calls = 0;
+      fga.setDecider(function () {
+        log.debug("Entering decider().");
+        calls += 1;
+        log.debug("Leaving decider().");
+        return { outcome: 'permit', code: '', why: '' };
+      });
+      const asked = detailOf({ type: 'user', id: 'az-alice' },
+                             'read:contacts', 'account_access', 'acct-1',
+                             token);
+      const permitted = ask(surface, asked.defaults, asked.items);
+      t.check(permitted[2].decision === true && calls === 1 &&
+              String(lastRow().detail).indexOf(
+                'decided by fine-grained authorization') >= 0,
+              'D7. a cell covered by the subject token, and issued ' +
+              'here, is the decider\'s permit',
+              JSON.stringify({ item: permitted[2], calls: calls,
+                               row: lastRow() }));
+      calls = 0;
+      const missed = detailOf({ type: 'user', id: 'az-alice' },
+                              'read:contacts', 'account_access', 'acct-1',
+                              { aud: 'az-front', iss: ISSUER,
+                                authorization_details: [{
+                                  type: 'account_access',
+                                  locations: ['other'],
+                                  actions: ['read'],
+                                  datatypes: ['contacts'] }] });
+      const uncovered = ask(surface, missed.defaults, missed.items);
+      t.check(uncovered[2].decision === false &&
+              uncovered[2].code === 'STS-AUTHZEN-0129' && calls === 0,
+              'D8. a grant of another location is not a cover, and the ' +
+              'decider is not asked',
+              JSON.stringify({ item: uncovered[2], calls: calls }));
+      fga.setDecider(function () {
+        log.debug("Entering decider().");
+        log.debug("Leaving decider().");
+        throw new Error('should not be asked');
+      });
+      const unissued = detailOf({ type: 'user', id: 'az-alice' },
+                                'read:contacts', 'account_access',
+                                'acct-1', { aud: 'az-front',
+                                  authorization_details: covered });
+      const foreign = ask(surface, unissued.defaults, unissued.items);
+      t.check(foreign[2].decision === false &&
+              foreign[2].code === 'STS-AUTHZEN-0129' &&
+              foreign[2].status === 200,
+              'D9. a subject token with no iss is not issued here, so ' +
+              'the cell is false before the decider',
+              JSON.stringify(foreign[2]));
+      fga.setDecider(function () {
+        log.debug("Entering decider().");
+        calls += 1;
+        log.debug("Leaving decider().");
+        return { outcome: 'permit', code: '', why: '' };
+      });
+      calls = 0;
+      const bare = detailOf({ type: 'user', id: 'az-alice' },
+                            'authorization_detail', 'account_access',
+                            'acct-1',
+                            { aud: 'az-front', iss: ISSUER,
+                              authorization_details: [{
+                                type: 'account_access',
+                                locations: ['acct-1'] }] });
+      const located = ask(surface, bare.defaults, bare.items);
+      t.check(located[2].decision === true && calls === 1,
+              'D10. authorization_detail names no action, so a grant of ' +
+              'the location covers the cell',
+              JSON.stringify({ item: located[2], calls: calls }));
+      fga.setDecider(function () {
+        log.debug("Entering decider().");
+        log.debug("Leaving decider().");
+        return { outcome: 'deny', code: 'STS-FGA-0014', why: 'no' };
+      });
+      const deniedAsk = detailOf({ type: 'user', id: 'az-alice' },
+                                 'read:contacts', 'account_access',
+                                 'acct-1', token);
+      const denied = ask(surface, deniedAsk.defaults, deniedAsk.items);
+      t.check(denied[2].decision === false &&
+              denied[2].code === 'STS-AUTHZEN-0130' &&
+              lastRow().errorCode === 'STS-AUTHZEN-0130',
+              'D11. a decider deny is false under 0130, not the FGA code',
+              JSON.stringify({ item: denied[2], row: lastRow() }));
+      fga.setDecider(function () {
+        log.debug("Entering decider().");
+        log.debug("Leaving decider().");
+        return { outcome: 'failure', code: 'STS-FGA-0015', why: '' };
+      });
+      counted.n = 0;
+      const faultedAsk = detailOf({ type: 'user', id: 'az-alice' },
+                                  'read:contacts', 'account_access',
+                                  'acct-1', token);
+      const faulted = ask(surface, faultedAsk.defaults, faultedAsk.items);
+      t.check(faulted[2].status === 500 &&
+              faulted[2].code === 'STS-AUTHZEN-0046' &&
+              lastRow().errorCode === 'STS-FGA-0015' &&
+              counted.n === 2,
+              'D12. a decider failure is HTTP 500 under 0046, the FGA ' +
+              'code stays on the audit row, and the fault is not counted',
+              JSON.stringify({ item: faulted[2], row: lastRow(),
+                               counted: counted.n }));
+    });
+    // D13 (#1201's review): a default deployment pins no oauth2.issuer and
+    // has no oauth-oidc listener of its own. The issuer is then the one
+    // the token endpoint names itself by for the request's base, so a
+    // subject token it issued is "issued here", and the cell is decided.
+    config.clearOverride('oauth2.issuer');
+    inMode('product', function () {
+      const listeners = require('../common/listener_map');
+      const helpers = require('../common/helpers');
+      const req = {
+        protocol: 'https', headers: {}, socket: {},
+        stsListener: listeners.MAIN,
+        get: function (name) {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return String(name).toLowerCase() === 'host'
+            ? 'az-main.example:8443' : undefined;
+        }
+      };
+      const own = helpers.baseUrlOf(req, 'oauth-oidc');
+      const covered = [{ type: 'account_access', locations: ['acct-1'],
+                         actions: ['read'], datatypes: ['contacts'] }];
+      let calls = 0;
+      fga.setDecider(function () {
+        log.debug("Entering decider().");
+        calls += 1;
+        log.debug("Leaving decider().");
+        return { outcome: 'permit', code: '', why: '' };
+      });
+      const asked = detailOf({ type: 'user', id: 'az-alice' },
+                             'read:contacts', 'account_access', 'acct-1',
+                             { aud: 'az-front', iss: own,
+                               authorization_details: covered });
+      const withBase = ask(surface, asked.defaults, asked.items, [], req);
+      const withoutBase = ask(surface, asked.defaults, asked.items);
+      t.check(/^https:\/\/az-main\.example:8443/.test(own) &&
+              withBase[2].decision === true && calls === 1 &&
+              withoutBase[2].decision === false &&
+              withoutBase[2].code === 'STS-AUTHZEN-0129',
+              'D13. with oauth2.issuer unpinned and no oauth-oidc listener, ' +
+              'a subject token the main listener\'s token endpoint issued ' +
+              'is issued here; with no request to read a base from it is ' +
+              'not', JSON.stringify({ own: own, withBase: withBase[2],
+                                       withoutBase: withoutBase[2],
+                                       calls: calls }));
+    });
+  } finally {
+    fga.setDecider(before);
+    config.clearOverride('oauth2.issuer');
+    config.clearOverride('authzen.tokenExchange');
+  }
+  log.debug("Leaving theDetails().");
+}
+
 function theMetadata(t, surface) {
   log.debug("Entering theMetadata().");
   t.log.info('=== M. the metadata, and off ===');
@@ -782,6 +1183,7 @@ function run(t) {
       theNarrowing(t, surface);
       theScopes(t, surface);
       theTokenTypes(t, surface);
+      theDetails(t);
       theMetadata(t, surface);
     });
   } finally {
@@ -792,6 +1194,7 @@ function run(t) {
 
 module.exports = {
   name: 'authzen_token_exchange',
-  describe: 'the AuthZEN OAuth token-exchange binding, direction A (#1181)',
+  describe: 'the AuthZEN OAuth token-exchange binding, direction A ' +
+    '(#1181, #1201)',
   run: run
 };

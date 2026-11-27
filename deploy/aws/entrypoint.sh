@@ -20,7 +20,7 @@
 #
 # Config (env vars):
 #   TF_STACK     environment | global | foundation | spiffe-realm
-#                | suite-callbacks                               (environment)
+#                | suite-callbacks | pep-cluster                 (environment)
 #   TF_ENV       the environment's name, 2-12 [a-z0-9]           (dev)
 #   TF_CELL      a MULTI-CELL environment's cell, e.g. `euw1`: one cell's
 #                environment, spiffe-realm or suite-callbacks stack. Unset
@@ -34,6 +34,7 @@
 #   TF_CELL_PARALLEL    how many cells a multi-cell apply or destroy runs
 #                at once, after the primary (#367)                      (6)
 #   TF_REALM     spiffe-realm only: the realm id, or `default`
+#   TF_PEP_CLUSTER  pep-cluster only: the cluster's name (#1284)      (aws)
 #   TF_ACTION    init | validate | plan | apply | destroy | output
 #                | output-json | ecr-password                                  (plan)
 #   AWS_REGION   the HOME region: the state bucket, the image repository
@@ -254,6 +255,23 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/certificate.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
+  pep-cluster)
+    # A REMOTE XACML PEP CLUSTER (#1284, deploy/aws/pep-cluster/): AN
+    # ENVIRONMENT OF ITS OWN, named by TF_ENV like any other (`testpep`),
+    # with its own VPC, load balancer and WAF, and nothing read from an
+    # iya-sts environment's state. Its state is under `environment/` because
+    # that is the one prefix the deployer may write; it is NOT a dependent
+    # of any iya-sts environment, so destroy_dependent_stacks leaves it alone.
+    # The name goes into an S3 key, so its grammar is checked here.
+    : "${TF_PEP_CLUSTER:=aws}"
+    [[ "${TF_PEP_CLUSTER}" =~ ^[a-z0-9][a-z0-9-]{0,11}$ ]] || \
+      die "TF_STACK=pep-cluster needs TF_PEP_CLUSTER, 1-12 [a-z0-9-]; got '${TF_PEP_CLUSTER}'."
+    [ -z "${MULTI_CELL}" ] || \
+      die "TF_STACK=pep-cluster is an environment of its own; ${TF_ENV} is an iya-sts multi-cell environment's name. Give the PEP environment a name of its own."
+    TF_DIR=/workspace/deploy/aws/pep-cluster
+    STATE_KEY="environment/${TF_ENV}/pep-cluster/${TF_PEP_CLUSTER}.tfstate"
+    export TF_VAR_environment="${TF_ENV}" TF_VAR_cluster="${TF_PEP_CLUSTER}"
+    ;;
   suite-callbacks)
     # The suite's callback task for one run (deploy/aws/suite-callbacks/),
     # created and destroyed by run-suite.sh around each run.
@@ -261,7 +279,7 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/suite-callbacks.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
-  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | certificate | spiffe-realm | suite-callbacks)." ;;
+  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | certificate | spiffe-realm | suite-callbacks | pep-cluster)." ;;
 esac
 
 # A STACK BUILT ON ONE CELL (#98) is that cell's: its state is under the
@@ -303,6 +321,21 @@ fi
 # records. The Workload API port is no longer published (#324). It is still
 # accepted, and still given a placeholder on destroy, so state that
 # published it can be planned and removed.
+if [ "${TF_STACK}" = "pep-cluster" ];
+then
+  case "${TF_ACTION}" in
+    plan|apply)
+      [ -n "${TF_VAR_image_tag:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_image_tag (the pep-<tag> and companion-<tag> images)."
+      [ -n "${TF_VAR_allowed_cidrs:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_allowed_cidrs, e.g. '[\"203.0.113.4/32\"]'."
+      ;;
+    *)
+      : "${TF_VAR_image_tag:=unused}"
+      : "${TF_VAR_allowed_cidrs:=[\"192.0.2.1/32\"]}"
+      export TF_VAR_image_tag TF_VAR_allowed_cidrs
+      ;;
+  esac
+fi
+
 if [ "${TF_STACK}" = "suite-callbacks" ];
 then
   case "${TF_ACTION}" in
@@ -978,6 +1011,12 @@ if { [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "certificate" ]; } &
 then
   say "variables: envs/${TF_ENV}.tfvars"
   VAR_FILE_ARGS=(-var-file="${ENV_DIR}/envs/${TF_ENV}.tfvars")
+fi
+# A PEP ENVIRONMENT's values are its own (#1284): pep-cluster/envs/.
+if [ "${TF_STACK}" = "pep-cluster" ] && [ -f "${TF_DIR}/envs/${TF_ENV}.tfvars" ];
+then
+  say "variables: pep-cluster/envs/${TF_ENV}.tfvars"
+  VAR_FILE_ARGS=(-var-file="${TF_DIR}/envs/${TF_ENV}.tfvars")
 fi
 # A cell, the global stack and a cell's certificate read the environment's
 # cells file (#98).

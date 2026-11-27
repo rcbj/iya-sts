@@ -42,7 +42,8 @@
 //     a policy. It is `artifact`-placed, because the row lives in a cell.
 //   * **THE BYTES DECIDE THE TYPE**, never a header or a file name, and only
 //     JPEG and PNG are kept. SVG is the one to name: it is a document that can
-//     carry script. What is kept is REWRITTEN first (`stripped()`): metadata
+//     carry script. What is kept is REWRITTEN first (`image_metadata.ts`,
+//     shared with the logo since #2140): metadata
 //     out — a phone's EXIF holds where it was taken, and this image is served
 //     to anybody with the address — and nothing after the image's end, so a
 //     file cannot be a picture and something else at once. It is served
@@ -71,6 +72,7 @@ import errorCodes = require('./error_codes');
 import stsCrypto = require('./crypto');
 import mode = require('./mode');
 import cellLocator = require('./cell_locator');
+import ImageMetadata = require('./image_metadata');
 
 const log = helpers.log;
 
@@ -97,14 +99,6 @@ const FETCH_TIMEOUT_MS = 10000;
 // so the person's minimum cannot apply to a copy. This only refuses a
 // tracking pixel presented as a photo.
 const SMALLEST_COPY = 16;
-
-// The chunks of a PNG a viewer needs: its image and how to colour it. Everything
-// else — text, EXIF, an animation's frames, a chunk nobody registered — goes.
-const PNG_KEPT = Object.freeze(['IHDR', 'PLTE', 'IDAT', 'IEND', 'tRNS', 'gAMA',
-                                'cHRM', 'sRGB', 'iCCP', 'sBIT', 'pHYs']);
-
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47,
-                                   0x0d, 0x0a, 0x1a, 0x0a]);
 
 // `<rid>` -> `{ type, data (base64), sha256, width, height, bytes, sub,
 // updatedAt }`. Per realm at the declaration (root CLAUDE.md, trust realms 2),
@@ -188,117 +182,14 @@ class ProfilePhoto {
                                  height: number } {
     log.debug("Entering ProfilePhoto.sniff().");
     // The logo's reader (#717): one answer to what a file is. WebP is the one
-    // it knows that is not kept here, because `stripped()` has no writer for
-    // it and an image that cannot be cleaned is not served to the world.
+    // it knows that is not kept here. Until #2140 that was because nothing
+    // could clean one; `image_metadata.ts` can now (the logo's WebP goes
+    // through it), but a photo stays JPEG or PNG, as `profilePhoto` has
+    // always said, until somebody asks for more.
     const seen = require('./branding').sniff(bytes);
     const kept = seen.type === 'image/jpeg' || seen.type === 'image/png';
     log.debug("Leaving ProfilePhoto.sniff(). " + seen.type);
     return kept ? seen : { type: '', width: 0, height: 0 };
-  }
-
-  /**
-   * A JPEG with its metadata segments and anything after its end removed.
-   *
-   * APP0 (JFIF), APP2 (a colour profile) and APP14 (Adobe's colour transform,
-   * without which some files decode wrongly) stay; every other application
-   * segment and every comment goes. A file that is not walkable to its scan
-   * is not an image this service will rewrite, and it answers null.
-   *
-   * @param b - the file, starting with the SOI marker
-   * @returns the rewritten file, or null
-   */
-  static strippedJpeg(b: Buffer): Buffer | null {
-    log.debug("Entering ProfilePhoto.strippedJpeg().");
-    const pieces: Buffer[] = [b.slice(0, 2)];
-    let i = 2;
-    while (i + 4 <= b.length) {
-      if (b[i] !== 0xff) {
-        log.debug("Leaving ProfilePhoto.strippedJpeg(). Not a marker.");
-        return null;
-      }
-      const marker = b[i + 1];
-      if (marker === 0xff) {
-        i += 1;
-        continue;
-      }
-      if (marker === 0xda) {
-        // The scan. Everything from here is the image, to the LAST end marker
-        // in the file: bytes after that are what a polyglot is made of.
-        const end = b.lastIndexOf(Buffer.from([0xff, 0xd9]));
-        if (end <= i) {
-          log.debug("Leaving ProfilePhoto.strippedJpeg(). No end.");
-          return null;
-        }
-        pieces.push(b.slice(i, end + 2));
-        log.debug("Leaving ProfilePhoto.strippedJpeg().");
-        return Buffer.concat(pieces);
-      }
-      const length = b.readUInt16BE(i + 2);
-      if (length < 2 || i + 2 + length > b.length) {
-        log.debug("Leaving ProfilePhoto.strippedJpeg(). A bad length.");
-        return null;
-      }
-      const application = marker >= 0xe0 && marker <= 0xef;
-      const keptApplication = marker === 0xe0 || marker === 0xe2 ||
-                              marker === 0xee;
-      const dropped = marker === 0xfe || (application && !keptApplication);
-      if (!dropped) {
-        pieces.push(b.slice(i, i + 2 + length));
-      }
-      i += 2 + length;
-    }
-    log.debug("Leaving ProfilePhoto.strippedJpeg(). No scan.");
-    return null;
-  }
-
-  /**
-   * A PNG holding only the chunks in `PNG_KEPT`, and nothing after `IEND`.
-   *
-   * @param b - the file, starting with the PNG signature
-   * @returns the rewritten file, or null when it does not walk to `IEND`
-   */
-  static strippedPng(b: Buffer): Buffer | null {
-    log.debug("Entering ProfilePhoto.strippedPng().");
-    if (!b.slice(0, 8).equals(PNG_SIGNATURE)) {
-      log.debug("Leaving ProfilePhoto.strippedPng(). No signature.");
-      return null;
-    }
-    const pieces: Buffer[] = [b.slice(0, 8)];
-    let i = 8;
-    while (i + 12 <= b.length) {
-      const length = b.readUInt32BE(i);
-      const end = i + 12 + length;
-      if (end > b.length) {
-        log.debug("Leaving ProfilePhoto.strippedPng(). A bad length.");
-        return null;
-      }
-      const name = b.toString('latin1', i + 4, i + 8);
-      if (PNG_KEPT.indexOf(name) >= 0) {
-        pieces.push(b.slice(i, end));
-      }
-      if (name === 'IEND') {
-        log.debug("Leaving ProfilePhoto.strippedPng().");
-        return Buffer.concat(pieces);
-      }
-      i = end;
-    }
-    log.debug("Leaving ProfilePhoto.strippedPng(). No IEND.");
-    return null;
-  }
-
-  /**
-   * The file as it will be kept, or null when it cannot be rewritten.
-   *
-   * @param bytes - the file
-   * @param type - its type, from `sniff()`
-   * @returns the rewritten file, or null
-   */
-  static stripped(bytes: Buffer, type: string): Buffer | null {
-    log.debug("Entering ProfilePhoto.stripped(). " + type);
-    const out = type === 'image/png' ? ProfilePhoto.strippedPng(bytes)
-                                     : ProfilePhoto.strippedJpeg(bytes);
-    log.debug("Leaving ProfilePhoto.stripped().");
-    return out;
   }
 
   /**
@@ -340,7 +231,7 @@ class ProfilePhoto {
                      'at least ' + minPixels + ' and at most ' +
                      limits.maxPixels + '.');
     }
-    const kept = ProfilePhoto.stripped(b, seen.type);
+    const kept = ImageMetadata.stripped(b, seen.type);
     if (!kept) {
       log.debug("Leaving ProfilePhoto.checked(). Not rewritable.");
       return refusal('STS-PORTAL-0630', 400,

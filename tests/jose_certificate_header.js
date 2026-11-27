@@ -21,7 +21,8 @@
 //      not know.
 //   B. EVERY SIGNER NAMES A USE CASE. A scan of the source for every call that
 //      signs a JWS — `signJwt`, `signJwtAs`, `signJwtAsAsync`, `.signJws`,
-//      `.signJwsAsync`, `signPublishedDocument` — outside the primitive itself.
+//      `.signJwsAsync`, `signPublishedDocument`, and their off-the-loop
+//      twins — outside the primitive itself.
 //      Each must name one or carry `// certificate-header: none — <why>`. This
 //      is what makes "anywhere a certified key signs" a property of the build
 //      rather than of a reviewer's memory, and it is the only section that
@@ -83,8 +84,11 @@ const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
                     'authn/authn-spa.js'];
 
 // `signJwtAsync` since #820 (2026-10-21): the access, refresh and ID tokens a
-// caller can wait for are signed on libuv's thread pool.
-const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsync|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
+// caller can wait for are signed on libuv's thread pool. The `…OffLoop` and
+// `signPublishedDocumentAsync` doors since #1955's P8 follow-up (2026-11-23):
+// a realm key in the HSM signs off the event loop through them, so they sign
+// what the synchronous doors signed and name a use case the same way.
+const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsync|\bsignJwtAsAsync|\bsignJwtOffLoop|\bsignJwtAsOffLoop|\.signJws|\.signJwsAsync|\.signJwsOffLoop|\bsignPublishedDocument|\bsignPublishedDocumentAsync)\(/g;
 
 // A TOKEN'S SIGNING PLAN (#820, 2026-10-21): `accessTokenUnsigned()` and
 // `refreshTokenPlan()` build the payload and the signing options together,
@@ -166,6 +170,21 @@ function scanSigners() {
         continue;
       }
       const statement = statementFrom(text, match.index);
+      // A METHOD DEFINITION is not a call either (2026-11-23): a class
+      // method's head — the name at the start of its line, after nothing but
+      // modifiers, a parameter list with no call in it, an optional return
+      // type and the body's brace. Until #1993 the two
+      // `signPublishedDocument` heads passed only because the first
+      // statement of their bodies happened to name `certificateHeaderFor`;
+      // when the body moved into `publishedDocumentPlan()` they were
+      // reported as calls. The signing calls inside them are still scanned.
+      const METHOD_MODIFIERS =
+        /^\s*(?:(?:private|public|protected|static|async)\s+)*$/;
+      const METHOD_HEAD = /^\w+\([^()]*\)\s*(?::[^{};=]*)?\{/;
+      if (METHOD_MODIFIERS.test(before) &&
+          METHOD_HEAD.test(text.slice(match.index))) {
+        continue;
+      }
       const above = lines.slice(Math.max(0, lineNo - 4), lineNo).join('\n');
       if (/certificate-header: none/.test(above)) {
         if (!/certificate-header: none\s*—\s*\S/.test(above)) {
@@ -207,6 +226,9 @@ function scanSigners() {
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.JCH_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.JCH_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');
@@ -347,7 +369,7 @@ function childMain() {
          'C1. with nothing configured, an access token from /oauth2/token ' +
          'carries x5u and not x5c', r.status + ' ' + JSON.stringify(aHeader));
     const expectedPrefix = origin + '/pki/chain/default/';
-    note(String(aHeader.x5u).indexOf(expectedPrefix) === 0 &&
+    note(urls.isUnder(aHeader.x5u, expectedPrefix) &&
          /\/[0-9a-f]{64}\.pem$/.test(String(aHeader.x5u)),
          'C2. and it names this service\'s own origin — the one the request ' +
          'arrived at — the default realm\'s scope and a SHA-256',
@@ -494,8 +516,8 @@ function childMain() {
          'C14. a realm carrying x5c gets its OWN leaf inline, under the same ' +
          'Root',
          inRealm.status + ' ' + JSON.stringify(Object.keys(realmHeader)));
-    note(String(realmIdHeader.x5u).indexOf(origin + '/pki/chain/' + REALM +
-                                          '/') === 0,
+    note(urls.isUnder(realmIdHeader.x5u,
+                      origin + '/pki/chain/' + REALM + '/'),
          'C15. and its ID Token\'s x5u names the realm\'s scope',
          realmIdHeader.x5u);
     r = await issue('');

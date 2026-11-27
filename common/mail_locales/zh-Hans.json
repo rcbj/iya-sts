@@ -30,6 +30,11 @@
       "text": "账户 {{username}} 的密码已于 {{when}} 更改（{{how}}）。\n\n如果这不是您本人操作，请立即联系您的账户管理员。\n",
       "html": "<p>账户 <strong>{{username}}</strong> 的密码已于 {{when}} 更改（{{how}}）。</p><p>如果这不是您本人操作，请立即联系您的账户管理员。</p>"
     },
+    "credential-changed": {
+      "subject": "您的 {{service}} 账户凭据已更改",
+      "text": "账户 {{username}} 的凭据于 {{when}} 被更改（{{by}}）：{{what}}。\n\n如果这不是您本人所为，也不是您要求的，请立即登录，检查您的安全设置并注销其他会话，或联系管理您账户的人员。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的凭据于 {{when}} 被更改（{{by}}）：{{what}}。</p><p>如果这不是您本人所为，也不是您要求的，请立即登录，检查您的安全设置并注销其他会话，或联系管理您账户的人员。</p>"
+    },
     "account-disabled": {
       "subject": "您的 {{service}} 账户已被停用",
       "text": "账户 {{username}} 已于 {{when}} 被停用。{{why}}\n\n在重新启用之前，任何人都无法登录此账户，并且其所有会话均已结束。\n",
@@ -49,6 +54,16 @@
       "subject": "您的 {{service}} 账户已开始恢复",
       "text": "账户 {{username}} 的恢复已于 {{when}} 由 {{by}} 发起。\n\n如果这不是您本人或您委托的人操作，请立即联系您的账户管理员。\n",
       "html": "<p>账户 <strong>{{username}}</strong> 的恢复已于 {{when}} 由 {{by}} 发起。</p><p>如果这不是您本人或您委托的人操作，请立即联系您的账户管理员。</p>"
+    },
+    "sign-in-alert": {
+      "subject": "您的 {{service}} 账户有一次异常登录",
+      "text": "有人于 {{when}} 登录了账户 {{username}}，看起来有异常：{{what}}。\n\n大致地点：{{place}}\n使用：{{device}}\n方式：{{method}}\n\n如果是您本人，无需任何操作。如果不是，请打开您的最近登录记录并在那里说明，这会注销您的所有会话，然后更改密码：\n\n{{link}}\n",
+      "html": "<p>有人于 {{when}} 登录了账户 <strong>{{username}}</strong>，看起来有异常：{{what}}。</p><p>大致地点：{{place}}</p><p>使用：{{device}}</p><p>方式：{{method}}</p><p>如果是您本人，无需任何操作。如果不是，请<a href=\"{{link}}\">打开您的最近登录记录</a>并在那里说明，这会注销您的所有会话，然后更改密码。</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "您的 {{service}} 账户有被拒绝的登录尝试",
+      "text": "在 {{when}} 之前的 {{minutes}} 分钟内，有 {{count}} 次使用错误密码登录账户 {{username}} 的尝试被拒绝。\n\n如果是您本人，无需任何操作。如果不是，可能有人在尝试猜测您的密码：请登录，查看您的最近登录记录，如果密码可能已被他人知道，请更改密码。\n\n{{link}}\n",
+      "html": "<p>在 {{when}} 之前的 {{minutes}} 分钟内，有 {{count}} 次使用错误密码登录账户 <strong>{{username}}</strong> 的尝试被拒绝。</p><p>如果是您本人，无需任何操作。如果不是，可能有人在尝试猜测您的密码：请登录，<a href=\"{{link}}\">查看您的最近登录记录</a>，如果密码可能已被他人知道，请更改密码。</p>"
     },
     "address-changed": {
       "subject": "您的 {{service}} 账户的电子邮件地址已更改",
@@ -74,6 +89,11 @@
       "subject": "{{service}}：已授予紧急访问权限，请您审核",
       "text": "一项将您（{{username}}）列为审批人之一的请求已被立即授予紧急访问权限，未经审批人批准：{{subject}} 可以在短时间内通过 {{requester}} 在应用程序 {{application}} 中对 {{resource}} 执行 {{action}}。\n\n给出的理由：{{justification}}\n\n策略允许对此进行紧急访问。请审核，如不合理请撤销：\n\n{{link}}\n",
       "html": "<p>一项将您（<strong>{{username}}</strong>）列为审批人之一的请求已被立即授予紧急访问权限，未经审批人批准：<strong>{{subject}}</strong> 可以在短时间内通过 {{requester}} 在应用程序 <strong>{{application}}</strong> 中对 <strong>{{resource}}</strong> 执行 <strong>{{action}}</strong>。</p><p>给出的理由：{{justification}}</p><p>策略允许对此进行紧急访问。请<a href=\"{{link}}\">审核</a>，如不合理请撤销。</p>"
+    },
+    "authzen-access-revoked": {
+      "subject": "{{service}}：您提交的访问请求的一项批准已被撤销",
+      "text": "您提交的一项访问请求的批准，{{username}}，已由 {{approver}} 撤销。\n\n{{subject}} 请求在应用程序 {{application}} 中 {{action}} {{resource}}。该批准不再有效。之后携带它的评估不会被批准。如果仍需要该访问，请提交新的访问请求。\n",
+      "html": "<p>您提交的一项访问请求的批准，<strong>{{username}}</strong>，已由 <strong>{{approver}}</strong> 撤销。</p><p><strong>{{subject}}</strong> 请求在应用程序 <strong>{{application}}</strong> 中 <strong>{{action}}</strong> <strong>{{resource}}</strong>。该批准不再有效。之后携带它的评估不会被批准。如果仍需要该访问，请提交新的访问请求。</p>"
     },
     "pki-pin-status": {
       "subject": "{{service}}：本领域所依赖的证书状态已更改",
@@ -114,6 +134,21 @@
       "subject": "{{service}} 测试邮件",
       "text": "这是一封测试邮件，应 {{username}} 的请求，于 {{when}} 通过 {{transport}} 传输方式发送。\n",
       "html": "<p>这是一封测试邮件，应 <strong>{{username}}</strong> 的请求，于 {{when}} 通过 {{transport}} 传输方式发送。</p>"
+    },
+    "post-login-reminder-mail-encryption": {
+      "subject": "为 {{service}} 注册用于邮件加密的后量子密钥",
+      "text": "{{service}} 请 {{username}} 注册一个使用后量子密码（ML-KEM）的新邮件加密密钥：OpenPGP 密钥或 S/MIME 证书。今天用经典密钥加密的邮件，一旦该密钥被破解就能被读取。\n\n请在此登录，登录后会立即要求您注册：\n\n{{signin}}\n\n此链接只会打开登录页面。它不会让您登录，也不包含任何关于您账户的信息。如果您没有预期收到这封邮件，可以忽略它，或询问管理您账户的人员。\n",
+      "html": "<p>{{service}} 请 <strong>{{username}}</strong> 注册一个使用后量子密码（ML-KEM）的新邮件加密密钥：OpenPGP 密钥或 S/MIME 证书。今天用经典密钥加密的邮件，一旦该密钥被破解就能被读取。</p><p><a href=\"{{signin}}\">登录</a>后会立即要求您注册。</p><p>此链接只会打开登录页面。它不会让您登录，也不包含任何关于您账户的信息。如果您没有预期收到这封邮件，可以忽略它，或询问管理您账户的人员。</p>"
+    },
+    "post-login-reminder-piv-reissue": {
+      "subject": "为 {{service}} 续订您的 PIV 证书",
+      "text": "{{service}} 请 {{username}} 为登录所用的 PIV 智能卡或安全密钥申领新证书：卡上的证书是用经典算法签发的，或即将过期。请带上这张卡，以及一个能从卡上生成证书请求的工具，例如 ykman。\n\n请在此登录，登录后会立即要求您申领：\n\n{{signin}}\n\n此链接只会打开登录页面。它不会让您登录，也不包含任何关于您账户的信息。如果您没有预期收到这封邮件，可以忽略它，或询问管理您账户的人员。\n",
+      "html": "<p>{{service}} 请 <strong>{{username}}</strong> 为登录所用的 PIV 智能卡或安全密钥申领新证书：卡上的证书是用经典算法签发的，或即将过期。请带上这张卡，以及一个能从卡上生成证书请求的工具，例如 ykman。</p><p><a href=\"{{signin}}\">登录</a>后会立即要求您申领。</p><p>此链接只会打开登录页面。它不会让您登录，也不包含任何关于您账户的信息。如果您没有预期收到这封邮件，可以忽略它，或询问管理您账户的人员。</p>"
+    },
+    "credential-expiring": {
+      "subject": "您的 {{service}} 账户有凭据即将到期",
+      "text": "账户 {{username}} 的以下凭据即将到期：{{what}}。\n\n请在每项到期前续订，否则它将无法再使用。 如果某一行提到您门户中的某个页面，请在此登录：\n\n{{link}}\n\n如果它让您联系管理员，请联系管理您账户的人。如果您不再使用其中某项，可以忽略它那一行。\n",
+      "html": "<p>账户 <strong>{{username}}</strong> 的以下凭据即将到期：{{what}}。</p><p>请在每项到期前续订，否则它将无法再使用。 如果某一行提到您门户中的某个页面，请<a href=\"{{link}}\">登录您的门户</a>。</p><p>如果它让您联系管理员，请联系管理您账户的人。如果您不再使用其中某项，可以忽略它那一行。</p>"
     }
   },
   "layout": {
@@ -122,8 +157,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}}（{{realm}}）。您收到此邮件，是因为它是{{reason}}。</small></p>"
   },
   "categories": {
-    "security": { "reason": "一封关于您账户的安全通知，无法关闭" },
-    "account": { "reason": "您或管理员请求的内容" },
-    "notification": { "reason": "一条通知，您可以在门户中关闭" }
+    "security": {
+      "reason": "一封关于您账户的安全通知，无法关闭",
+      "encryptedSubject": "来自 {{service}} 的安全通知"
+    },
+    "account": {
+      "reason": "您或管理员请求的内容",
+      "encryptedSubject": "来自 {{service}} 的消息"
+    },
+    "notification": {
+      "reason": "一条通知，您可以在门户中关闭",
+      "encryptedSubject": "来自 {{service}} 的通知"
+    }
   }
 }

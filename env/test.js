@@ -34,7 +34,7 @@ var config = {
     // is the endpoint a caller reaches BEFORE it trusts anything — so the
     // first fetch of the certificate has to be made with verification off
     // (`curl -k`). That is the ordinary bootstrap for a service that
-    // regenerates its key every start, and docs/v1.1.0/tls.md says so.
+    // regenerates its key every start, and docs/v1.2.0/tls.md says so.
     //
     // STS_HTTPS still wins over this file, so `STS_HTTPS=false` is the way back
     // to a plain port without editing anything.

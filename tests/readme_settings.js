@@ -8,7 +8,7 @@
 // ===========================================================================
 // THE SETTINGS TABLES, AGAINST THE TABLE THAT DECLARES THE SETTINGS.
 //
-// The tables are in `docs/v1.1.0/configuration.md` (*Every setting*). They were
+// The tables are in `docs/v1.2.0/configuration.md` (*Every setting*). They were
 // in README.md, which is where this file's name comes from.
 //
 // `readme_ports.js` next door holds ten rows of README to `config.js`. This
@@ -34,7 +34,7 @@
 // WHY IN PROCESS, which is the question tests/CLAUDE.md asks first.
 //
 // Every claim here is a comparison between two FILES in this repository —
-// `docs/v1.1.0/configuration.md` and `common/config.js`. No running service
+// `docs/v1.2.0/configuration.md` and `common/config.js`. No running service
 // could be asked, and nothing here binds a port or issues anything. Same shape
 // as `readme_ports.js`, `postgres_schema.js` and `xacml_pep.js`'s COPY set.
 //
@@ -82,7 +82,7 @@ const config = require('../common/config');
 const log = require('bunyan').createLogger({ name: 'readme_settings',
   level: process.env.LOG_LEVEL || 'info' });
 
-const README = path.join(__dirname, '..', 'docs', 'v1.1.0',
+const README = path.join(__dirname, '..', 'docs', 'v1.2.0',
                          'configuration.md');
 
 // A settings row is `| \`key\` | \`ENV_VAR\` | ... |`. The key may carry a
@@ -113,7 +113,7 @@ function run(t) {
   log.debug("Entering run().");
   const found = rows();
   if (!t.check(found.length > 150,
-               'docs/v1.1.0/configuration.md has a settings table to check',
+               'docs/v1.2.0/configuration.md has a settings table to check',
                'found ' + found.length + ' rows, which is too few to be that ' +
                'table; either the format changed — in which case change ROW ' +
                'here too — or a table that was being kept honest is gone')) {
@@ -197,6 +197,6 @@ function run(t) {
 
 module.exports = {
   name: 'readme_settings',
-  describe: "docs/v1.1.0/configuration.md's settings tables against config.js",
+  describe: "docs/v1.2.0/configuration.md's settings tables against config.js",
   run: run
 };

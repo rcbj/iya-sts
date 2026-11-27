@@ -8,7 +8,16 @@
 //! POST /access/v1/evaluation                 one evaluation (section 6)
 //! POST /access/v1/evaluations                a batch (section 7)
 //! GET  /.well-known/authzen-configuration    the metadata (section 9)
+//! POST /access/v1/search/{subject,resource,action}
+//!                                            403: the service's Search APIs
+//! POST /access/v1/access-requests and the
+//!   task, schema and cancel paths            403: the service's profile
 //! ```
+//!
+//! A token-exchange binding tuple is 403 on the evaluation endpoints (a PEP
+//! failure: this edge cannot decide it), as an item error inside a batch. `signed_metadata` is omitted. Obligations
+//! are handed when the PEP declared every type and the realm's profile is
+//! on. `context.approval` is recognized and not used.
 //!
 //! **THE SERVICE'S CONTRACT, NOT A SECOND ONE.** A request is read and
 //! mapped by `authzen_map.rs` against the catalogue pulled from the
@@ -56,6 +65,7 @@ use sts_xacml::pdp::{AttributeResolver, EvaluationOptions};
 use sts_xacml::request::{Response, Status};
 
 use crate::audit::{self, Record};
+use crate::authzen_binding::{self, Classified};
 use crate::authzen_map::{self, Trusted};
 use crate::enforce::Enforcer;
 use crate::listener::Transport;
@@ -67,6 +77,37 @@ use crate::sync::{Callers, Catalogue};
 pub const EVALUATION_PATH: &str = "/access/v1/evaluation";
 pub const EVALUATIONS_PATH: &str = "/access/v1/evaluations";
 pub const METADATA_PATH: &str = "/.well-known/authzen-configuration";
+
+/// The Search APIs (#1175). The edge does not hold the directory or the
+/// catalogues, so each POST is 403 (501 before #2208) and the metadata
+/// does not name them.
+pub const SEARCH_SUBJECT_PATH: &str = "/access/v1/search/subject";
+pub const SEARCH_RESOURCE_PATH: &str = "/access/v1/search/resource";
+pub const SEARCH_ACTION_PATH: &str = "/access/v1/search/action";
+
+/// The Access Request and Approval Profile (#1180). The edge does not hold
+/// the approval store. These paths are 403 (501 before #2208); a POST to
+/// the item path
+/// without `/cancel` stays 404, as does every method not listed.
+pub const ACCESS_REQUESTS_PATH: &str = "/access/v1/access-requests";
+// The path scan (`tests/model_pep.js`) reads a `*_PATH` literal only when
+// it sits on the same line as `=`. The dispatch parses the item and cancel
+// tails, so those two constants are for the scan. rustfmt would wrap them.
+#[rustfmt::skip]
+pub const ACCESS_REQUEST_SCHEMA_PATH: &str = "/access/v1/access-requests/schema";
+#[allow(dead_code)]
+pub const ACCESS_REQUEST_PATH: &str = "/access/v1/access-requests/{id}";
+#[allow(dead_code)]
+#[rustfmt::skip]
+pub const ACCESS_REQUEST_CANCEL_PATH: &str = "/access/v1/access-requests/{id}/cancel";
+
+const SEARCH_MESSAGE: &str = "The Search APIs are answered by the service, \
+    which holds the directory and the resource and action catalogues. This \
+    edge PDP does not.";
+
+const ACCESS_REQUEST_MESSAGE: &str = "The Access Request and Approval \
+    Profile is answered by the service, which holds the approval store. \
+    This edge PDP does not.";
 
 /// The three batch semantics (section 7.1.2), the first the default.
 pub const SEMANTICS: [&str; 3] = [
@@ -110,6 +151,17 @@ impl Reply {
             pretty: true,
         }
     }
+}
+
+/// Whether a `Content-Type` value names `application/json`, with or without
+/// parameters, compared case-insensitively (RFC 9110 section 8.3.1) —
+/// `authzen.ts`'s `isJsonType()`. An absent header is not JSON: AuthZEN 1.0
+/// section 10.1's MUST is to include it (#936).
+pub fn is_json_type(value: Option<&str>) -> bool {
+    value
+        .and_then(|v| v.split(';').next())
+        .map(|t| t.trim().eq_ignore_ascii_case("application/json"))
+        .unwrap_or(false)
 }
 
 /// A caller this container admitted.
@@ -161,12 +213,92 @@ pub fn endpoint_name(path: &str) -> &'static str {
     }
 }
 
+/// The tail after `/access/v1/access-requests/`, when there is one. The
+/// prefix is a variable so a path scan does not read it as `{name}`.
+fn access_requests_tail(path: &str) -> Option<&str> {
+    let prefix = "/access/v1/access-requests/";
+    let tail = path.strip_prefix(prefix)?;
+    if tail.is_empty() {
+        return None;
+    }
+    Some(tail)
+}
+
+fn access_request_item(path: &str) -> bool {
+    match access_requests_tail(path) {
+        Some(tail) => tail != "schema" && !tail.contains('/'),
+        None => false,
+    }
+}
+
+fn access_request_cancel(path: &str) -> bool {
+    let Some(tail) = access_requests_tail(path) else {
+        return false;
+    };
+    let Some(id) = tail.strip_suffix("/cancel") else {
+        return false;
+    };
+    !id.is_empty() && !id.contains('/')
+}
+
+fn search_path(path: &str) -> bool {
+    path == SEARCH_SUBJECT_PATH
+        || path == SEARCH_RESOURCE_PATH
+        || path == SEARCH_ACTION_PATH
+}
+
+/// Which service-only path this method hits, if it hits one. `None` for
+/// HEAD and for every method the profile does not answer, so those stay
+/// the generic 404.
+fn refusal_of(
+    method: &str,
+    path: &str,
+) -> Option<(&'static str, &'static str)> {
+    if method == "POST" && search_path(path) {
+        return Some(("STS-XPEP-0138", SEARCH_MESSAGE));
+    }
+    let access_request = (method == "POST" && path == ACCESS_REQUESTS_PATH)
+        || (method == "GET" && path == ACCESS_REQUEST_SCHEMA_PATH)
+        || (method == "GET" && access_request_item(path))
+        || ((method == "POST" || method == "DELETE")
+            && access_request_cancel(path));
+    if access_request {
+        return Some(("STS-XPEP-0139", ACCESS_REQUEST_MESSAGE));
+    }
+    None
+}
+
+/// A 403 for a Search or Access Request path, after the caller has already
+/// checked that the edge PDP is on. The body is the evaluation error
+/// object. The code is logged here and never sent.
+///
+/// **403, NOT 501 (#2208, rcbj: "Follow the spec, but return 403
+/// otherwise").** AuthZEN 1.0 (Final) prescribes no status for an API a
+/// PDP does not serve or has switched off: its section 10.1.2 defines 400,
+/// 401, 403 and 500 only, and section 9.1.1 says only that the metadata's
+/// absence of an endpoint tells the PEP the PDP "is not capable" — which
+/// this edge honours by never naming these paths there. The Access Request
+/// profile is not in the specification at all. So the rule's fallback: 403.
+pub fn refused_here(method: &str, path: &str) -> Option<Reply> {
+    let (code, message) = refusal_of(method, path)?;
+    Some(Reply::error(403, code, message))
+}
+
+/// HEAD of a path that some other method answers 403. Those HEADs are not
+/// rewritten to GET, so a monitor is not told the edge answers them.
+pub fn head_is_absent(path: &str) -> bool {
+    ["GET", "POST", "DELETE"]
+        .iter()
+        .any(|method| refusal_of(method, path).is_some())
+}
+
 /// WHO IS ASKING, by the one door: a certificate presented on the HTTPS
 /// listener, verified against `PEP_AUTHZEN_CLIENT_CA`, found by its SHA-256
 /// on the caller list pulled from the service (#1189) and admitted there to
 /// `endpoint` — narrowed, when `PEP_AUTHZEN_CALLERS` is set, to the
 /// certificates it names. Before the first pull the local list decides
-/// alone when it is set, and nothing is answered (503) when it is not.
+/// alone when it is set, and nothing is admitted (403, a PEP failure since
+/// #2208, where it was 503) when it is not.
 /// Each refusal is the service's status for the same situation — 401 for a
 /// caller that is nobody, 403 for one that may not ask — and, the door
 /// being certificates alone, carries no `WWW-Authenticate` (there is no
@@ -219,7 +351,7 @@ pub fn admit(
     if !callers.loaded {
         if !options.authzen_callers_configured {
             return Err(Reply::error(
-                503,
+                403,
                 "STS-XPEP-0050",
                 "This edge PDP has not yet pulled from its PDP the callers \
                  the service admits to its AuthZEN API, and has no \
@@ -412,18 +544,19 @@ fn service_message(answer: &Answer) -> String {
 
 /// What the service's answer to a forwarded evaluation is to the caller
 /// (#564, P7). A decision is passed on, `context` and all. EVERYTHING ELSE
-/// IS AN ERROR, never `false`:
+/// IS AN ERROR, never `false`, and since #2208 every PEP failure among
+/// them is a 403 — never a 5xx:
 ///
-/// * no answer: 504 when the time ran out, 502 otherwise (`STS-XPEP-0055`);
+/// * no answer, the time run out or nobody listening: 403
+///   (`STS-XPEP-0055`);
 /// * 401 or 403: the service refused THIS PEP, which is the operator's to
-///   mend and not the caller's — 502, saying what the PEP's entry needs
+///   mend and not the caller's — 403, saying what the PEP's entry needs
 ///   (`STS-XPEP-0056`);
-/// * 400, 413, 500, 501, 503: the service's own status and message, which
-///   are about the request or the application's policy
-///   (`STS-XPEP-0057`; a 500 is `STS-AUTHZEN-0046`'s "the policy cannot be
-///   used" there);
-/// * any other status, or a 200 with no boolean `decision`: 502
-///   (`STS-XPEP-0057`, `-0058`).
+/// * 400 or 413: the service's own status and message, which are about the
+///   request (`STS-XPEP-0057`);
+/// * 500, 501, 503 (a 500 is `STS-AUTHZEN-0046`'s "the policy cannot be
+///   used"), any other status, or a 200 with no boolean `decision`: 403
+///   with the service's status and message (`STS-XPEP-0057`, `-0058`).
 fn forwarded_result(
     answer: &Answer,
     application: &str,
@@ -432,7 +565,7 @@ fn forwarded_result(
     if let Some(why) = &answer.error {
         return if answer.timed_out {
             ItemResult::failed(
-                504,
+                403,
                 "STS-XPEP-0055",
                 format!(
                     "\"{}\" enforces fine-grained authorization, which only \
@@ -444,7 +577,7 @@ fn forwarded_result(
             )
         } else {
             ItemResult::failed(
-                502,
+                403,
                 "STS-XPEP-0055",
                 format!(
                     "\"{}\" enforces fine-grained authorization, which only \
@@ -464,7 +597,7 @@ fn forwarded_result(
                 .and_then(Value::as_bool);
             let Some(decision) = decision else {
                 return ItemResult::failed(
-                    502,
+                    403,
                     "STS-XPEP-0058",
                     format!(
                         "The service answered the evaluation forwarded for \
@@ -488,7 +621,7 @@ fn forwarded_result(
             }
         }
         401 | 403 => ItemResult::failed(
-            502,
+            403,
             "STS-XPEP-0056",
             format!(
                 "\"{}\" enforces fine-grained authorization, which only the \
@@ -504,19 +637,21 @@ fn forwarded_result(
                 service_message(answer)
             ),
         ),
-        400 | 413 | 500 | 501 | 503 => ItemResult::failed(
+        400 | 413 => ItemResult::failed(
             answer.status,
             "STS-XPEP-0057",
             service_message(answer),
         ),
         other => ItemResult::failed(
-            502,
+            403,
             "STS-XPEP-0057",
             format!(
                 "\"{}\" enforces fine-grained authorization, which only the \
                  service decides, and the service answered HTTP {} to the \
-                 forwarded evaluation.",
-                application, other
+                 forwarded evaluation: {}",
+                application,
+                other,
+                service_message(answer)
             ),
         ),
     }
@@ -554,11 +689,17 @@ async fn forward_to(
 impl Pep {
     /// Whether the edge PDP answers at all, before anything is read: this
     /// container's switch, a catalogue and a policy pull held, and the
-    /// realm's own `authzen.enabled` (with the API's object).
+    /// realm's own `authzen.enabled` (with the API's object). Every refusal
+    /// here is a 403 (#2208). AuthZEN 1.0 (Final) prescribes no status for
+    /// an API a PDP has switched off — section 10.1.2 defines 400, 401, 403
+    /// and 500 only, and section 9.1.1 says only that an endpoint absent
+    /// from the metadata tells the PEP the PDP "is not capable" — so a
+    /// switched-off API takes the owner's fallback, 403, as nothing pulled
+    /// yet does.
     pub(crate) fn authzen_off(&self, catalogue: &Catalogue) -> Option<Reply> {
         if !self.options.now().authzen {
             return Some(Reply::error(
-                501,
+                403,
                 "STS-XPEP-0044",
                 "The AuthZEN API is turned off on this edge PDP \
                  (PEP_AUTHZEN).",
@@ -566,7 +707,7 @@ impl Pep {
         }
         if !catalogue.loaded || !self.sync.ever_loaded() {
             return Some(Reply::error(
-                503,
+                403,
                 "STS-XPEP-0043",
                 "This edge PDP has not yet pulled the policies and the \
                  AuthZEN attribute catalogue from its PDP, so it cannot map \
@@ -576,7 +717,7 @@ impl Pep {
         if !catalogue.settings.enabled {
             return Some(if catalogue.api_object {
                 Reply::error(
-                    501,
+                    403,
                     "STS-AUTHZEN-0013",
                     "The AuthZEN API is turned off in this realm \
                      (authzen.enabled, or xacml.enabled, whose engine it \
@@ -584,7 +725,7 @@ impl Pep {
                 )
             } else {
                 Reply::error(
-                    501,
+                    403,
                     "STS-AUTHZEN-0014",
                     "This realm has no sts-authzen-api application, the \
                      AuthZEN API's resource object, so the API is off here.",
@@ -595,8 +736,12 @@ impl Pep {
     }
 
     /// The metadata (section 9), naming only what answers: the single
-    /// endpoint, and the batch one while the realm has it on. No search
-    /// endpoint, no `capabilities`, no `signed_metadata` — as the service.
+    /// endpoint, the batch one while the realm has it on, and
+    /// `supported_obligations` while the realm's obligations profile is on.
+    /// No search endpoint, no access-request endpoint, no `capabilities`,
+    /// no `jwks_uri`, no `signed_metadata` — this edge holds no realm
+    /// signing key, and republishing the service's JWT would name the
+    /// wrong issuer.
     pub(crate) fn authzen_metadata(
         &self,
         transport: &Transport,
@@ -629,12 +774,19 @@ impl Pep {
             "policy_decision_point": base,
             "access_evaluation_endpoint": format!("{}{}", base, EVALUATION_PATH)
         });
-        if catalogue.settings.batch_enabled {
-            if let Some(map) = out.as_object_mut() {
+        if let Some(map) = out.as_object_mut() {
+            if catalogue.settings.batch_enabled {
                 map.insert(
                     "access_evaluations_endpoint".into(),
                     json!(format!("{}{}", base, EVALUATIONS_PATH)),
                 );
+            }
+            if catalogue.settings.obligations_profile {
+                let types = authzen_map::SUPPORTED_OBLIGATION_TYPES
+                    .iter()
+                    .map(|name| Value::String((*name).to_string()))
+                    .collect();
+                map.insert("supported_obligations".into(), Value::Array(types));
             }
         }
         Reply {
@@ -645,11 +797,13 @@ impl Pep {
     }
 
     /// `POST /access/v1/evaluation` and `POST /access/v1/evaluations`, after
-    /// the request id: the switches, the caller, the body, the answer.
+    /// the request id: the switches, the caller, the media type, the body,
+    /// the answer.
     pub(crate) async fn authzen_post(
         &self,
         batch: bool,
         transport: &Transport,
+        content_type: Option<&str>,
         body: Result<Vec<u8>, ()>,
         id: &str,
     ) -> Reply {
@@ -658,8 +812,10 @@ impl Pep {
             return off;
         }
         if batch && !catalogue.settings.batch_enabled {
+            // Not advertised in the metadata while it is off (section
+            // 9.1.1), and no status prescribed for it: 403 (#2208).
             return Reply::error(
-                501,
+                403,
                 "STS-AUTHZEN-0039",
                 &format!(
                     "The batch endpoint is turned off in this realm \
@@ -695,6 +851,20 @@ impl Pep {
             Ok(caller) => caller,
             Err(refused) => return refused,
         };
+        // SECTION 10.1: "Requests MUST include a Content-Type header with
+        // the value application/json"; RFC 9110 section 15.5.16 says what
+        // a server answers otherwise. After the caller is admitted, so a
+        // stranger is told 401 first, and before the body is read — the
+        // service's `notJson()`, with its code (#936). Until then this PDP
+        // read a `text/plain` body as JSON and answered it.
+        if !is_json_type(content_type) {
+            return Reply::error(
+                415,
+                "STS-AUTHZEN-0117",
+                "The request must carry Content-Type: application/json \
+                 (AuthZEN 1.0 section 10.1).",
+            );
+        }
         if batch {
             return self.authzen_batch(&caller, &catalogue, body, id).await;
         }
@@ -709,21 +879,21 @@ impl Pep {
                 ),
             );
         };
+        let parsed = body_of(&bytes);
+        let class =
+            authzen_binding::classify(&[Some(&parsed)], &catalogue.settings)
+                .remove(0);
         let item = self
             .evaluate_one(
-                &body_of(&bytes),
+                &parsed,
                 &caller,
                 &catalogue,
                 id,
                 EVALUATION_PATH,
+                class,
             )
             .await;
-        match item.error {
-            Some((status, message)) => {
-                Reply::error(status, item.code, &message)
-            }
-            None => Reply::decision(answer_of(item.decision, item.context)),
-        }
+        reply_of(item)
     }
 
     /// One batch (section 7): its bounds, its semantic, each item decided in
@@ -812,15 +982,22 @@ impl Pep {
         // NO ITEMS IS ONE EVALUATION, answered as the single endpoint would.
         if items.is_empty() {
             let single = merged(given, &json!({})).unwrap_or(Value::Null);
+            let class = authzen_binding::classify(
+                &[Some(&single)],
+                &catalogue.settings,
+            )
+            .remove(0);
             let one = self
-                .evaluate_one(&single, caller, catalogue, id, EVALUATIONS_PATH)
+                .evaluate_one(
+                    &single,
+                    caller,
+                    catalogue,
+                    id,
+                    EVALUATIONS_PATH,
+                    class,
+                )
                 .await;
-            return match one.error {
-                Some((status, message)) => {
-                    Reply::error(status, one.code, &message)
-                }
-                None => Reply::decision(answer_of(one.decision, one.context)),
-            };
+            return reply_of(one);
         }
         // THE BATCH ID ON EVERY RECORD: the caller's, or one made here, so
         // the lines of one batch are found together (decision 9).
@@ -838,9 +1015,20 @@ impl Pep {
         } else {
             id.to_string()
         };
+        // THE WHOLE BATCH IS CLASSIFIED AT ONCE, on the merged items, as
+        // the service plans it: a token-exchange gate anywhere in it makes
+        // a declared detail type beside it the binding's.
+        let prepared: Vec<Option<Value>> =
+            items.iter().map(|item| merged(given, item)).collect();
+        let classes = authzen_binding::classify(
+            &prepared.iter().map(Option::as_ref).collect::<Vec<_>>(),
+            &catalogue.settings,
+        );
         let mut out = Vec::new();
-        for (i, item) in items.iter().enumerate() {
-            let one = match merged(given, item) {
+        for (i, (request, class)) in
+            prepared.into_iter().zip(classes).enumerate()
+        {
+            let one = match request {
                 None => ItemResult::failed(
                     400,
                     "STS-AUTHZEN-0001",
@@ -853,6 +1041,7 @@ impl Pep {
                         catalogue,
                         &format!("{}#{}", batch_id, i),
                         EVALUATIONS_PATH,
+                        class,
                     )
                     .await
                 }
@@ -879,6 +1068,70 @@ impl Pep {
         Reply::decision(json!({ "evaluations": out }))
     }
 
+    /// A binding tuple's 403 (`STS-XPEP-0140`; 501 before #2208), logged
+    /// and RECORDED as every
+    /// answer this edge gives is (#1827): a row in the service's audit log,
+    /// `authzen.remote.decision`, deciding nothing. The record carries what
+    /// any AuthZEN record carries, each type and name cut to the length a
+    /// read would have allowed, since this body was not read; no
+    /// application, which a read would have checked first.
+    fn refuse_binding(
+        &self,
+        body: &Value,
+        caller: &Caller,
+        batch_id: &str,
+        endpoint: &str,
+        why: &'static str,
+    ) -> ItemResult {
+        let text = |entity: &str, member: &str| {
+            let said = body
+                .get(entity)
+                .and_then(Value::as_object)
+                .and_then(|object| object.get(member))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            crate::authzen_catalogue::js_slice(said, authzen_map::MAX_TEXT)
+        };
+        let message = authzen_binding::binding_message(why);
+        tracing::info!(
+            "{}xacml-pep: authzen: {} refused {} for a {} to {} a {}, caller \
+             \"{}\"{}: {}",
+            tag("STS-XPEP-0140"),
+            endpoint,
+            why,
+            text("subject", "type"),
+            text("action", "name"),
+            text("resource", "type"),
+            caller.name,
+            if batch_id.is_empty() {
+                String::new()
+            } else {
+                format!(", request {}", batch_id)
+            },
+            message
+        );
+        self.audit.record(Record {
+            at: sts_core::time::iso_now(),
+            kind: "authzen".into(),
+            decision: String::new(),
+            allowed: false,
+            fault: false,
+            code: "STS-XPEP-0140".into(),
+            resource: text("resource", "type"),
+            action: text("action", "name"),
+            bias: Bias::DenyBiased.as_str().to_string(),
+            why: message.clone(),
+            caller: caller.name.clone(),
+            subject_type: text("subject", "type"),
+            endpoint: endpoint.to_string(),
+            request_id: batch_id.to_string(),
+            ..Record::default()
+        });
+        // The edge cannot decide it, so a PEP failure: 403 (#2208), where
+        // it was 501.
+        ItemResult::failed(403, "STS-XPEP-0140", message)
+    }
+
     /// Decides one evaluation for an admitted caller, and records it — a
     /// log line, and (unless it was FORWARDED, which the service recorded
     /// itself) a decision record sent to the service's audit log (#1827).
@@ -889,7 +1142,26 @@ impl Pep {
         catalogue: &Catalogue,
         batch_id: &str,
         endpoint: &str,
+        class: Classified,
     ) -> ItemResult {
+        // BEFORE THE READ (#1181, #1205), classified as the service
+        // classifies (`authzen_binding.rs`). A binding tuple is the
+        // service's: this edge holds neither delegation nor the directory.
+        // It is logged and recorded here, and the single-response path
+        // does not log it again.
+        match class {
+            Classified::Binding(why) => {
+                return self
+                    .refuse_binding(body, caller, batch_id, endpoint, why);
+            }
+            // A binding member on a tuple that is not the binding's is the
+            // service's 400, not an undeclared property (0004): the
+            // service refuses it before it reads the request.
+            Classified::Stray(message) => {
+                return ItemResult::failed(400, "STS-AUTHZEN-0101", message);
+            }
+            Classified::Ordinary => {}
+        }
         let evaluation = match authzen_map::read(body, &catalogue.rows) {
             Ok(evaluation) => evaluation,
             Err(refusal) => {
@@ -1016,23 +1288,40 @@ impl Pep {
         };
         let enforcement = Enforcer::new(Bias::DenyBiased)
             .enforce(answer.decision, &answer.obligations);
-        let outcome =
-            authzen_map::outcome(&answer, &enforcement, policies.root_refused);
+        // The profile off, or no declaration, hands nothing: a realm that
+        // turned obligations off must not be wider at the edge.
+        let declared = if catalogue.settings.obligations_profile {
+            evaluation.supported_obligations.as_deref()
+        } else {
+            None
+        };
+        let outcome = authzen_map::outcome(
+            &answer,
+            &enforcement,
+            policies.root_refused,
+            declared,
+        );
         self.sync
             .count_authzen((!outcome.fault).then_some(outcome.decision));
         // THE RECORD: who asked, about which application, the two types and
         // the action, the request id, the decision — never a property value,
         // an id the caller sent, or a credential (decision 9 on #563).
+        // A presented approval is not a refusal of the decision: the
+        // service still decides, and so does this edge, without using it.
         let code = if outcome.fault {
             "STS-AUTHZEN-0028"
+        } else if !outcome.obligation_problems.is_empty() {
+            "STS-AUTHZEN-0041"
         } else if !outcome.undischargeable.is_empty() {
             "STS-AUTHZEN-0029"
+        } else if evaluation.approval_present {
+            "STS-AUTHZEN-0084"
         } else {
             ""
         };
         let line = format!(
             "xacml-pep: authzen: {} decided {} for a {} to {} a {}, caller \
-             \"{}\", application \"{}\"{}{}{}.",
+             \"{}\", application \"{}\"{}{}{}{}{}{}.",
             endpoint,
             if outcome.fault {
                 "nothing (a fault)".to_string()
@@ -1064,6 +1353,30 @@ impl Pep {
                     "; refused for the obligation {}",
                     outcome.undischargeable.join(", ")
                 )
+            },
+            if outcome.obligations.is_empty() {
+                String::new()
+            } else {
+                let types = outcome
+                    .obligations
+                    .iter()
+                    .filter_map(|one| one.get("type").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("; handed {}", types)
+            },
+            if outcome.obligation_problems.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; obligation problems: {}",
+                    outcome.obligation_problems.join("; ")
+                )
+            },
+            if evaluation.approval_present {
+                "; an approval was presented and not used"
+            } else {
+                ""
             }
         );
         // THE RECORD FOR THE SERVICE carries what the line carries and
@@ -1101,10 +1414,12 @@ impl Pep {
             request_id: batch_id.to_string(),
             ..Record::default()
         });
+        // A FAULT IS A PEP FAILURE, a 403 (#2208), never a 5xx and never
+        // `false`: the caller is told it could not be evaluated.
         if outcome.fault {
             tracing::error!("{}{} {}", tag(code), line, outcome.why);
             return ItemResult::failed(
-                500,
+                403,
                 "STS-AUTHZEN-0028",
                 "The PDP could not evaluate the request.".to_string(),
             );
@@ -1114,16 +1429,62 @@ impl Pep {
         } else {
             tracing::info!("{}{}", tag(code), line);
         }
+        let mut context = if catalogue.settings.return_reasons {
+            Some(authzen_map::reasons(&outcome))
+        } else {
+            None
+        };
+        // Obligations travel even when reasons are off. When both are
+        // present they share the one context object.
+        if !outcome.obligations.is_empty() {
+            let mut map = context
+                .as_ref()
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            map.insert(
+                "obligations".into(),
+                Value::Array(outcome.obligations.clone()),
+            );
+            context = Some(Value::Object(map));
+        }
+        // A PRESENTED APPROVAL (#1180) is the service's re-evaluation
+        // context, whatever the decision: this edge cannot verify one, so
+        // it says what the service says of an approval it cannot verify
+        // (`AccessRequests.reevaluation()`), and that no request follows —
+        // the edge serves no access-request endpoint.
+        if evaluation.approval_present {
+            let mut map = context
+                .as_ref()
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            map.insert("reason".into(), json!("approval_unverifiable"));
+            map.insert("next_action".into(), json!("none"));
+            context = Some(Value::Object(map));
+        }
         ItemResult {
             status: 200,
             decision: outcome.decision,
-            context: catalogue
-                .settings
-                .return_reasons
-                .then(|| authzen_map::reasons(&outcome)),
+            context,
             error: None,
             code: "",
         }
+    }
+}
+
+/// A single evaluation's reply. A binding 403 was already logged in
+/// `evaluate_one`; every other error is logged here.
+fn reply_of(item: ItemResult) -> Reply {
+    match item.error {
+        Some((status, message)) if item.code == "STS-XPEP-0140" => Reply {
+            status,
+            body: json!({ "error": { "status": status,
+                                     "message": message } }),
+            pretty: true,
+        },
+        Some((status, message)) => Reply::error(status, item.code, &message),
+        None => Reply::decision(answer_of(item.decision, item.context)),
     }
 }
 
@@ -1192,7 +1553,8 @@ mod tests {
 
     /// The door before the pull, and the transport: no client CA admits
     /// nobody; plain HTTP or no certificate is 401; one that did not verify
-    /// is 401; with no list pulled and none configured, 503; with only the
+    /// is 401; with no list pulled and none configured, 403 (a PEP failure,
+    /// #2208); with only the
     /// local list, #1179's door — on it is the caller it names, off it 403.
     #[test]
     fn admits_by_certificate_alone() {
@@ -1235,8 +1597,8 @@ mod tests {
         let bare = options_with(Vec::new());
         assert_eq!(
             status(admit(&bare, true, &peer(&fp, true), &none, e)),
-            Some(503),
-            "nothing pulled and nothing configured answers nothing"
+            Some(403),
+            "nothing pulled and nothing configured admits nobody"
         );
     }
 
@@ -1346,6 +1708,17 @@ mod tests {
     }
 
     #[test]
+    fn reads_only_application_json_as_json() {
+        assert!(is_json_type(Some("application/json")));
+        assert!(is_json_type(Some("Application/JSON; charset=utf-8")));
+        assert!(is_json_type(Some(" application/json ;charset=UTF-8")));
+        assert!(!is_json_type(Some("text/plain")));
+        assert!(!is_json_type(Some("application/json-patch+json")));
+        assert!(!is_json_type(Some("")));
+        assert!(!is_json_type(None));
+    }
+
+    #[test]
     fn merges_an_item_over_the_defaults_whole() {
         let defaults = json!({ "subject": { "type": "user", "id": "a" },
                                "resource": { "type": "doc", "id": "1",
@@ -1438,7 +1811,7 @@ mod tests {
         };
         let enforced = Enforcer::new(Bias::DenyBiased)
             .enforce(answer.decision, &answer.obligations);
-        let decided = outcome(&answer, &enforced, false);
+        let decided = outcome(&answer, &enforced, false, None);
         for body in [
             answer_of(decided.decision, None),
             answer_of(decided.decision, Some(reasons(&decided))),
@@ -1504,7 +1877,7 @@ mod tests {
                     json!({ "error": { "status": 500,
                     "message": "The application's policy cannot be used." } }),
                 ),
-                500,
+                403,
                 "STS-XPEP-0057",
             ),
             (
@@ -1522,14 +1895,16 @@ mod tests {
                     json!({ "error": { "status": 403,
                     "message": "not admitted" } }),
                 ),
-                502,
+                403,
                 "STS-XPEP-0056",
             ),
-            (answered(401, json!({})), 502, "STS-XPEP-0056"),
-            (answered(404, json!({})), 502, "STS-XPEP-0057"),
+            (answered(401, json!({})), 403, "STS-XPEP-0056"),
+            (answered(404, json!({})), 403, "STS-XPEP-0057"),
+            (answered(501, json!({})), 403, "STS-XPEP-0057"),
+            (answered(503, json!({})), 403, "STS-XPEP-0057"),
             (
                 answered(200, json!({ "decision": "yes" })),
-                502,
+                403,
                 "STS-XPEP-0058",
             ),
             (
@@ -1537,7 +1912,7 @@ mod tests {
                     error: Some("connection refused".into()),
                     ..Answer::default()
                 },
-                502,
+                403,
                 "STS-XPEP-0055",
             ),
             (
@@ -1546,12 +1921,15 @@ mod tests {
                     timed_out: true,
                     ..Answer::default()
                 },
-                504,
+                403,
                 "STS-XPEP-0055",
             ),
         ];
+        // EVERY PEP FAILURE IS A 403 (#2208): no 5xx is made here, and the
+        // service's 400 and 413, about the request, are its own.
         for (answer, status, code) in cases {
             let one = forwarded_result(&answer, "payments", 5000);
+            assert!(one.status < 500, "{:?}", answer.json);
             assert_eq!(one.status, status, "{:?}", answer.json);
             assert_eq!(one.code, code, "{:?}", answer.json);
             assert!(one.error.is_some() && !one.decision);
@@ -1570,9 +1948,11 @@ mod tests {
             "payments",
             5000,
         );
-        assert_eq!(
-            passed.error.unwrap().1,
-            "The application's policy cannot be used."
+        let said = passed.error.unwrap().1;
+        assert!(
+            said.ends_with("The application's policy cannot be used."),
+            "{}",
+            said
         );
     }
 
@@ -1581,8 +1961,8 @@ mod tests {
     /// realm's path is the PDP URL's, the body arrives with
     /// `context.application` and the caller's members, `X-Request-ID`
     /// travels, the service's decision comes back, its 500 and its refusal
-    /// of the PEP are errors, a slow service is a 504 within the bound, and
-    /// nobody listening is a 502.
+    /// of the PEP are errors, a slow service is refused within the bound,
+    /// and nobody listening is refused — each a 403, a PEP failure (#2208).
     #[tokio::test]
     async fn forwards_to_the_realms_evaluation_endpoint() {
         use axum::extract::Json;
@@ -1676,23 +2056,25 @@ mod tests {
         );
         let broken =
             forward_to(&client, &ask("other"), "payments", "", 1000).await;
-        assert_eq!((broken.status, broken.code), (500, "STS-XPEP-0057"));
+        assert_eq!((broken.status, broken.code), (403, "STS-XPEP-0057"));
         assert!(!broken.decision);
         let refused =
             forward_to(&client, &ask("refused"), "payments", "", 1000).await;
-        assert_eq!((refused.status, refused.code), (502, "STS-XPEP-0056"));
+        assert_eq!((refused.status, refused.code), (403, "STS-XPEP-0056"));
         let slow = forward_to(&client, &ask("slow"), "payments", "", 200).await;
-        assert_eq!((slow.status, slow.code), (504, "STS-XPEP-0055"));
+        assert_eq!((slow.status, slow.code), (403, "STS-XPEP-0055"));
 
-        // NOBODY LISTENING: a port bound and released.
-        let gone = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let dead = gone.local_addr().unwrap().port();
-        drop(gone);
+        // NOBODY LISTENING: a port bound and not listening, held to the
+        // end, so the kernel cannot hand it to another test's listener
+        // in between (a port bound and RELEASED could be, #1935).
+        let held = tokio::net::TcpSocket::new_v4().unwrap();
+        held.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let dead = held.local_addr().unwrap().port();
         options.pdp_url = format!("http://127.0.0.1:{}/realm/r1", dead);
         let nowhere = PdpClient::new(&options).unwrap();
         let down =
             forward_to(&nowhere, &ask("read"), "payments", "", 1000).await;
-        assert_eq!((down.status, down.code), (502, "STS-XPEP-0055"));
+        assert_eq!((down.status, down.code), (403, "STS-XPEP-0055"));
         assert!(!down.decision);
     }
 
@@ -1754,6 +2136,7 @@ mod tests {
                 &catalogue,
                 "r-1",
                 EVALUATION_PATH,
+                Classified::Ordinary,
             )
             .await;
         assert!(forwarded.error.is_none() && forwarded.decision);
@@ -1765,6 +2148,7 @@ mod tests {
                 &catalogue,
                 "r-2",
                 EVALUATION_PATH,
+                Classified::Ordinary,
             )
             .await;
         assert!(here.error.is_none() && !here.decision);
@@ -1804,6 +2188,165 @@ mod tests {
         );
         let sent = serde_json::to_string(one).unwrap();
         assert!(!sent.contains("alice") && !sent.contains("d1"));
+    }
+
+    fn edge_pep() -> crate::service::Pep {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.audit_enabled = true;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = std::sync::Arc::new(crate::sync::Sync::new(
+            client.clone(),
+            options.clone(),
+        ));
+        crate::service::Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            crate::pip::RemotePip::new(client, false),
+            std::sync::Arc::new(crate::listener::HttpsListener::new(
+                "", "", 0, 5000, None,
+            )),
+        )
+    }
+
+    /// One request's items classified as the service classifies them, then
+    /// evaluated: a binding tuple is 403 before it is read or forwarded and
+    /// is recorded for the service's audit log; with the binding off the
+    /// same tuples are ordinary and a binding member is 0101.
+    async fn decide(
+        pep: &crate::service::Pep,
+        catalogue: &Catalogue,
+        bodies: &[Value],
+    ) -> Vec<ItemResult> {
+        let caller = Caller {
+            name: "edge-caller".into(),
+            applications: vec!["todo-app".into()],
+        };
+        let items: Vec<Option<&Value>> = bodies.iter().map(Some).collect();
+        let classes =
+            crate::authzen_binding::classify(&items, &catalogue.settings);
+        let mut out = Vec::new();
+        for (body, class) in bodies.iter().zip(classes) {
+            out.push(
+                pep.evaluate_one(
+                    body,
+                    &caller,
+                    catalogue,
+                    "b-1",
+                    EVALUATIONS_PATH,
+                    class,
+                )
+                .await,
+            );
+        }
+        out
+    }
+
+    #[tokio::test]
+    async fn a_binding_tuple_is_classified_as_the_service_classifies_it() {
+        let pep = edge_pep();
+        let audit = pep.audit.clone();
+        let person = || json!({ "type": "user", "id": "alice" });
+        let gate = json!({
+            "subject": person(),
+            "action": { "name": "issue:access_token:token_exchange" },
+            "resource": { "type": "audience", "id": "https://api.example" },
+            "context": { "application": "todo-app", "may_act": { "sub": "g" } }
+        });
+        let scope = json!({
+            "subject": person(),
+            "action": { "name": "read" },
+            "resource": { "type": "protected_resource", "id": "documents.read" }
+        });
+        let act = json!({
+            "subject": person(),
+            "action": { "name": "read" },
+            "resource": { "type": "document", "id": "d1" },
+            "context": { "act": { "sub": "gateway" } }
+        });
+        let mut on = Catalogue::default();
+        on.settings.token_exchange = true;
+        on.settings.detail_types = Some(vec!["document".into()]);
+        on.settings.token_types = Some(vec!["access_token".into()]);
+        // ON: the gate and a LONE scope are 403 — the service answers a
+        // lone scope a fixed false (STS-AUTHZEN-0105), which an ordinary
+        // evaluation here could widen — and the binding member on a tuple
+        // that is not the binding's is 0101.
+        let lone = decide(&pep, &on, std::slice::from_ref(&scope)).await;
+        assert_eq!(lone[0].code, "STS-XPEP-0140");
+        assert!(lone[0].error.as_ref().unwrap().1.contains("(a scope)"));
+        let alone = decide(&pep, &on, std::slice::from_ref(&act)).await;
+        assert_eq!(alone[0].code, "STS-AUTHZEN-0101");
+        assert_eq!(alone[0].error.as_ref().unwrap().0, 400);
+        let batch = decide(&pep, &on, &[gate.clone(), act.clone()]).await;
+        assert_eq!(batch[0].code, "STS-XPEP-0140");
+        assert_eq!(batch[0].error.as_ref().unwrap().0, 403);
+        assert!(batch[0].error.as_ref().unwrap().1.contains("(a gate)"));
+        assert!(batch[1].error.as_ref().unwrap().1.contains("(a detail)"));
+        // EVERY 403 OF THEM IS RECORDED (#1827), deciding nothing.
+        let queued = audit.queued_for_test();
+        let refused: Vec<_> = queued
+            .iter()
+            .filter(|one| one.code == "STS-XPEP-0140")
+            .collect();
+        assert_eq!(refused.len(), 3);
+        assert!(refused.iter().all(|one| one.kind == "authzen"
+            && one.decision.is_empty()
+            && !one.allowed
+            && !one.fault
+            && one.caller == "edge-caller"
+            && one.request_id == "b-1"));
+        assert_eq!(refused[0].resource, "protected_resource");
+        assert_eq!(refused[1].action, "issue:access_token:token_exchange");
+        // OFF: the same gate and scope are ordinary evaluations (no
+        // catalogue row names may_act, so the gate's member is 0101 first),
+        // and the binding member says the binding is off.
+        let mut off = Catalogue::default();
+        off.settings.token_exchange = false;
+        let plain = decide(&pep, &off, &[gate, scope, act]).await;
+        assert_eq!(plain[0].code, "STS-AUTHZEN-0101");
+        assert!(plain[1].error.is_none() && !plain[1].decision);
+        assert_eq!(plain[2].code, "STS-AUTHZEN-0101");
+        assert!(plain[2].error.as_ref().unwrap().1.ends_with(
+            "the binding is off in this realm (authzen.tokenExchange)."
+        ));
+        assert_eq!(
+            audit
+                .queued_for_test()
+                .iter()
+                .filter(|one| one.code == "STS-XPEP-0140")
+                .count(),
+            3,
+            "nothing more is refused with the binding off"
+        );
+    }
+
+    /// An approval is decided without being used, recorded as presented
+    /// and not used, and answered with the service's context for an
+    /// approval it cannot verify.
+    #[tokio::test]
+    async fn an_approval_is_answered_as_unverifiable() {
+        let pep = edge_pep();
+        let audit = pep.audit.clone();
+        let mut catalogue = Catalogue::default();
+        catalogue.settings.token_exchange = false;
+        let approval = json!({
+            "subject": { "type": "user", "id": "alice" },
+            "action": { "name": "read" },
+            "resource": { "type": "document", "id": "d1" },
+            "context": { "approval": { "id": "t1", "state": "signed" } }
+        });
+        let decided = decide(&pep, &catalogue, &[approval]).await;
+        let one = &decided[0];
+        assert!(one.error.is_none() && !one.decision);
+        assert_eq!(
+            one.context,
+            Some(json!({ "reason": "approval_unverifiable",
+                         "next_action": "none" }))
+        );
+        let queued = audit.queued_for_test();
+        assert_eq!(queued.last().unwrap().code, "STS-AUTHZEN-0084");
     }
 
     #[test]

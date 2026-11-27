@@ -153,6 +153,7 @@
   "registrationHtml.signalsNote": "CAEP: {caep}। RISC, जब किसी व्यक्ति का डिवाइस समझौताग्रस्त हो या हटाया जाए: {risc}। विषय है {subject}। अनुपालन परिवर्तन केवल तभी बाहर जाता है जब वह बात बदले जिसकी सूचना प्राप्तकर्ता को दी जा सकती है: CAEP compliant और not-compliant जानता है, और unknown को not-compliant के रूप में भेजा जाता है।",
   "registrationHtml.decidesHeading": "डिवाइस पर निर्णय क्या करता है",
   "registrationHtml.decidesNote": "जोखिम अंक: संकेत {signals} — अंतिम दो अंक घटाते हैं; unregistered-device तब चलता है {expect, select, yes {यहाँ किसी के लिए भी (devices.expectRegistered)} other {केवल उस व्यक्ति के लिए जिसने एक डिवाइस पंजीकृत किया}}। जारी करने की नीति ({policy}): एक समझौताग्रस्त डिवाइस {refuse, select, yes {<strong>अस्वीकृत</strong>} other {केवल एक जोखिम संकेत}} है; एक अनुपालक पंजीकृत डिवाइस {require, select, yes {<strong>आवश्यक</strong>} attested {<strong>आवश्यक</strong>, और अनुप्रमाणित} other {आवश्यक नहीं (डिफ़ॉल्ट रूप से बंद)}} है। acr <code>{acr}</code>, और दावा {claim}।",
+  "registrationHtml.adminDeviceNote": "एडमिन कंसोल और किसी व्यक्ति का admin:* टोकन: {state, select, armed {हर व्यवस्थापक के लिए एक अनुपालक पंजीकृत डिवाइस <strong>आवश्यक</strong> है (devices.requireCompliantDeviceForAdmin), {armedAt} से सक्रिय।} pending {<strong>अभी लागू नहीं</strong>: किसी व्यवस्थापक ने अनुपालक पंजीकृत डिवाइस से साइन इन नहीं किया है, इसलिए हर व्यवस्थापक को प्रवेश मिलता है। उपयोगकर्ता पोर्टल के डिवाइस पृष्ठ पर अपना डिवाइस पंजीकृत करें, डिवाइस सूची में उसे अनुपालक चिह्नित करें, और उस पर मौजूद पासकी या प्रमाणपत्र से साइन इन करें: वह साइन-इन आवश्यकता को सक्रिय करता है, और वह सक्रिय रहती है।} other {कोई डिवाइस आवश्यक नहीं (यहाँ devices.requireCompliantDeviceForAdmin बंद है; product में यह डिफ़ॉल्ट रूप से चालू है)।}}",
   "registrationHtml.settings": "सेटिंग",
   "monitorHtml.devices": "डिवाइस",
   "monitorHtml.keys": "कुंजियाँ",
@@ -187,5 +188,8 @@
   "monitorHtml.thRegistered": "पंजीकृत",
   "monitorHtml.thRemoved": "हटाए गए",
   "monitorHtml.thEvicted": "निकाले गए",
-  "monitorHtml.thCompliance": "अनुपालन: {source}"
+  "monitorHtml.thCompliance": "अनुपालन: {source}",
+  "newDevice.button": "डिवाइस पंजीकृत करें",
+  "newDevice.key": "पहली कुंजी",
+  "newDevice.keyHint": "केवल इसके प्रकार के साथ दर्ज होती है"
 }

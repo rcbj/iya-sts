@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "पहले ही देखा गया हस्ताक्षर, इसलिए अनुरोध अस्वीकार हुआ"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "हार्डवेयर टोकन रजिस्टर"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "इस रीयल्म में हर भौतिक हार्डवेयर टोकन (YubiKey, स्मार्ट कार्ड) की एक पंक्ति, विक्रेता और सीरियल नंबर से: इसे कौन रखता है, इसका मॉडल और इस पर क्रेडेंशियल। सीरियल नंबर केवल सत्यापन से दर्ज होता है। कभी कोई रहस्य नहीं।"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "b2eadcf654a8cb28",
+    "text": "प्रवर्तित: कोई प्रक्रिया जो पंक्तियाँ रखती है वे प्रति क्षेत्र 5,000 का कैश हैं; सबसे पुरानी हटाई जाती हैं और अगली बार माँगे जाने पर स्टोर से फिर पढ़ी जाती हैं; रजिस्टर स्वयं उन क्रेडेंशियल से सीमित है जिन्हें वह सूचीबद्ध करता है (FIDO के लिए webauthn.maxKeysPerPerson)।"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "टोकन हटाए जाने तक; खोया हुआ टोकन रखा जाता है, खोया हुआ चिह्नित।"
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "RFC 9278 कुंजी पहचानकर्ता"
@@ -702,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "mail.dedupWindowS में उसी कार्य के लिए पहले से कतारबद्ध संदेश का डुप्लिकेट मानकर दबाया गया संदेश"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "OATH टोकन सूची"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "हर उस HOTP या TOTP कुंजी के लिए एक पंक्ति जिसे किसी व्यवस्थापक ने विक्रेता की PSKC सीड फ़ाइल (RFC 6030) से आयात किया, विक्रेता, सीरियल नंबर और कुंजी id से कुंजीबद्ध: असाइन नहीं (उसका सीक्रेट सील), किसी व्यक्ति को असाइन (सीक्रेट हटाया गया, अब उसकी प्रविष्टि पर) या सेवानिवृत्त।"
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "c93f702fb2bd8e60",
+    "text": "प्रवर्तित: कोई प्रक्रिया जो पंक्तियाँ रखती है वे प्रति क्षेत्र 5,000 का कैश हैं; सबसे पुरानी हटाई जाती हैं और अगली बार माँगे जाने पर स्टोर से फिर पढ़ी जाती हैं; सूची उस से सीमित है जो व्यवस्थापक आयात करते हैं, प्रति फ़ाइल अधिकतम 2,000 कुंजियाँ।"
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "जब तक असाइन न किया गया टोकन हटाया न जाए; असाइन या सेवानिवृत्त टोकन रखा जाता है।"
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
@@ -1106,6 +1138,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "जब तक शृंखला समाप्त न हो (उसका न्यूनतम exp, 10.4), और अधिकतम oidfed.resolveCacheS।"
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP पंजीकरण चुनौतियाँ"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "OpenPGP कुंजी पंजीकृत कर रहे प्रत्येक व्यक्ति के लिए एक चुनौती: वह पाठ जिस पर वे gpg --clearsign से हस्ताक्षर करते हैं, उसका nonce और उसकी समाप्ति का समय। nonce पर क्लस्टर दावे के ज़रिए, केवल एक बार उपयोग होती है।"
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "bcb019b421b3e33e",
+    "text": "प्रवर्तित: कोई प्रक्रिया जो चुनौतियाँ रखती है वे प्रति क्षेत्र 5,000 का कैश हैं; सबसे पुरानी हटाई जाती हैं और अगली बार माँगे जाने पर स्टोर से फिर पढ़ी जाती हैं; स्टोर प्रति व्यक्ति एक रखता है (entryUUID द्वारा कुंजीबद्ध), प्रत्येक openpgp.challengeLifetimeS के लिए।"
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Web Key Directory प्रकाशन"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Web Key Directory प्रत्येक हैश किए गए पते के लिए कौन-सी OpenPGP कुंजी लौटाती है: धारक (एक entryUUID) और उनके द्वारा प्रकाशित फ़िंगरप्रिंट। यह एक संकेतक है: कुंजी स्वयं प्रविष्टि से पढ़ी जाती है। कभी भी गोपनीय नहीं।"
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "67c6603e0b96fd95",
+    "text": "प्रवर्तित: कोई प्रक्रिया जो पंक्तियाँ रखती है वे प्रति क्षेत्र 5,000 का कैश हैं; सबसे पुरानी हटाई जाती हैं और अगली बार माँगे जाने पर स्टोर से फिर पढ़ी जाती हैं; रजिस्टर प्रत्येक ऐसे व्यक्ति के लिए एक पंक्ति रखता है जिसने इसे चुना।"
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "जब तक व्यक्ति प्रकाशन बंद न करे या कुंजी न हटाए।"
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
@@ -1623,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "एक टिकट उसके डाइजेस्ट से मिला"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico OTP सूची"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "हर उस YubiKey OTP के लिए एक पंक्ति जिसे किसी व्यवस्थापक ने CSV से आयात किया, सीरियल नंबर से कुंजीबद्ध: असाइन नहीं (उसकी AES कुंजी सील), किसी व्यक्ति को असाइन (सीक्रेट हटाया गया, अब उसकी प्रविष्टि पर) या सेवानिवृत्त।"
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "1b2409611ca2ae53",
+    "text": "प्रवर्तित: कोई प्रक्रिया जो पंक्तियाँ रखती है वे प्रति क्षेत्र 5,000 का कैश हैं; सबसे पुरानी हटाई जाती हैं और अगली बार माँगे जाने पर स्टोर से फिर पढ़ी जाती हैं।"
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "जब तक असाइन न किया गया टोकन हटाया न जाए; असाइन या सेवानिवृत्त टोकन रखा जाता है।"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "सबसे-कम-हाल-में-उपयोग क्रम में एक परिबद्ध कैश।"
@@ -1710,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "बासी: क्रेडेंशियल को त्याग दिया गया"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "जारी किए गए SSH उपयोगकर्ता प्रमाणपत्र"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "इस रीयल्म के SSH उपयोगकर्ता CA द्वारा जारी हर OpenSSH उपयोगकर्ता प्रमाणपत्र की एक पंक्ति, सीरियल के अनुसार: वह किसका है (urn:uuid), कुंजी का फ़िंगरप्रिंट, उसके प्रिंसिपल, उसकी अवधि और क्या वह रद्द किया गया। कभी कोई कुंजी नहीं।"
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "e9eaf8f07040a227",
+    "text": "लागू: किसी प्रोसेस द्वारा रखी गई पंक्तियाँ प्रति रील्म 5,000 की माँग पर भरी जाने वाली विंडो हैं; किसी पंक्ति का प्रमाणपत्र समाप्त होने पर वह स्टोर से निकल जाती है।"
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "प्रमाणपत्र की समाप्ति तक।"
   }
 }

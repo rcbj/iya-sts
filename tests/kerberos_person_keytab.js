@@ -297,6 +297,17 @@ async function keytabChild() {
   // --- D. the administrator's reset, with a typed password ---
   const PW2 = 'Admin-Chosen-Passw0rd!-2';
   credentials.setPasswordResetRequired('ktowner', true);
+  // A FORCED CHANGE STILL OWED (#2160): in product the reset is refused
+  // before anything changes, because the KDC would refuse the keytab; the
+  // person changes their password first, which this stands in for.
+  const kvnoBeforeOwed = kvnoOf('ktowner');
+  out.owed = product ? brief(await reset({ username: 'ktowner',
+                                           password: PW2 })) : null;
+  out.owedUnchanged = kvnoOf('ktowner') === kvnoBeforeOwed &&
+    credentials.passwordResetRequired('ktowner');
+  if (product) {
+    credentials.setPasswordResetRequired('ktowner', false);
+  }
   const link = credentials.issuePasswordReset('ktowner');
   out.linkIssued = link.ok;
   const typed = await reset({ username: 'ktowner', password: PW2 });
@@ -399,6 +410,35 @@ async function keytabChild() {
   out.state = personKeys.personKerberosState('ktowner');
   out.viewKerberos = (views.userDetailJson({ query: {} }, 'ktowner') ||
                       { json: {} }).json.kerberos || null;
+  // --- G3. keys derived from the person's OWN choice say so (#2236) ---
+  // The forced change at the sign-in screen (and the portal's change, reset
+  // and activation) set the password with `initiatingEntity: 'user'`. The
+  // keys are derived after it, asynchronously; their credential-change must
+  // carry the act's initiator and instant, or the console — which acts on
+  // every change not the person's own — revokes the token it just issued.
+  if (product) {
+    const before = recorded.length;
+    const PW3 = 'Own-Chosen-Passw0rd!-3';
+    const actAt = Math.floor(Date.now() / 1000);
+    out.ownChoice = credentials.setPassword('ktowner', PW3,
+      { initiatingEntity: 'user' }).ok;
+    await personKeys.idle();
+    out.ownChoiceSignals = recorded.slice(before).filter(function (n) {
+      return n.credentialType === 'urn:iya:sts:credential-type:kerberos-key';
+    }).map(function (n) {
+      return { change: n.changeType, initiating: n.initiatingEntity,
+               at: n.eventTimestamp, actAt: actAt };
+    });
+    // And one an administrator's door set, which names nobody: as before.
+    const before2 = recorded.length;
+    credentials.setPassword('ktowner', 'Admin-Typed-Passw0rd!-5');
+    await personKeys.idle();
+    out.unstatedSignals = recorded.slice(before2).filter(function (n) {
+      return n.credentialType === 'urn:iya:sts:credential-type:kerberos-key';
+    }).map(function (n) {
+      return n.changeType + ':' + n.initiatingEntity;
+    });
+  }
   // --- G2. a person's Kerberos keys over CAEP (#236) ---
   if (product) {
     out.dropped = brief(personKeys.dropPreviousPersonKeys('ktowner',
@@ -572,9 +612,17 @@ function productAssertions(t, r) {
           'the OLD password is refused KDC_ERR_PREAUTH_FAILED and the new ' +
           'one signs in', JSON.stringify([r.oldPasswordAfterTyped,
                                           r.newPasswordAfterTyped]));
+  // #2160: the reset neither sets nor clears `pwdReset`. In product it is
+  // refused while a change is owed, so the job clears the flag first (the
+  // person's own change), and the reset does not set it again.
+  t.check(r.owed && !r.owed.ok && r.owed.codeOf === 'STS-ADMIN-0969' &&
+          r.owedUnchanged,
+          'a keytab reset for somebody who must change their password is ' +
+          'refused STS-ADMIN-0969, and nothing changed',
+          JSON.stringify(r.owed));
   t.check(r.forcedAfterTyped === false,
-          'the person is NOT made to change it at their next sign-in (a ' +
-          'pending forced change was cleared) — that would end the keytab');
+          'the reset does not make them change it at their next sign-in ' +
+          '— that would end the keytab');
   t.check(r.linkIssued && r.linkAfterTyped === false,
           'an outstanding reset link is spent by the reset');
   t.check(Object.keys(r.ownAfterReset).length > 0 &&
@@ -643,6 +691,20 @@ function productAssertions(t, r) {
           'create for the first key, update for a new password\'s kvno, ' +
           'revoke when the previous versions are dropped and delete when ' +
           'they are cleared', JSON.stringify(seen));
+  const chosen = r.ownChoiceSignals || [];
+  t.check(r.ownChoice === true && chosen.length === 1 &&
+          chosen[0].change === 'update' && chosen[0].initiating === 'user' &&
+          typeof chosen[0].at === 'number' &&
+          chosen[0].at >= chosen[0].actAt &&
+          chosen[0].at <= chosen[0].actAt + 1,
+          'keys derived from a password the person chose are their own ' +
+          'change (initiating_entity user), dated at the act, so the ' +
+          'console does not revoke the token it just issued (#2236)',
+          JSON.stringify(chosen));
+  t.check(JSON.stringify(r.unstatedSignals) ===
+          JSON.stringify(['update:system']),
+          'and a set that names nobody still sends a system change',
+          JSON.stringify(r.unstatedSignals));
   log.debug("Leaving productAssertions().");
 }
 
@@ -675,6 +737,10 @@ function developmentAssertions(t, r) {
           JSON.stringify([r.nobody, r.disabled]));
   t.check(!r.auditHasKeytab && !r.auditHasPassword,
           'no audit row carries a keytab or a password');
+  t.check(r.forcedAfterTyped === true && r.owed === null,
+          'a pending forced change is NOT cleared by a keytab reset (#2160); ' +
+          'development does not refuse the reset, as its KDC does not ' +
+          'check the flag');
   log.debug("Leaving developmentAssertions().");
 }
 

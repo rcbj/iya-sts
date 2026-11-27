@@ -19,8 +19,9 @@
 // protocol (here the OIDC authorization endpoint) answers its relying party.
 //
 // Over a REAL HANDSHAKE, on a listener the child builds with the main port's
-// posture (`requestCert: true, rejectUnauthorized: false` over `common/app`
-// and the client truststore), as `tests/tls_client_certificates.js` does:
+// posture (`tls_server.clientAuthOptions('optional')`, the call server.js
+// makes, over `common/app` and the client truststore), as
+// `tests/tls_client_certificates.js` does:
 //
 //   A. THE OFFER AND THE SIGN-IN: no offer on a connection that presents
 //      nothing; the offer naming the holder on one that presents their
@@ -39,6 +40,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const childProcess = require('child_process');
 const https = require('https');
 const path = require('path');
@@ -234,9 +238,8 @@ async function childBody() {
   CA_PEM.value = caPem;
   const listener = https.createServer(Object.assign({
     cert: serverLeaf.cert, key: serverLeaf.key,
-    ca: tls.clientTruststoreOptions().ca,
-    requestCert: true, rejectUnauthorized: false
-  }, tls.protocolOptions()), app);
+    ca: tls.clientTruststoreOptions().ca
+  }, tls.clientAuthOptions('optional'), tls.protocolOptions()), app);
   // Its own key and certificate kept when the truststore is applied (#472's
   // door for a listener that presents a certificate of its own).
   tls.trustClientCertificatesOn(listener,
@@ -339,7 +342,7 @@ async function childBody() {
   const back = await get(port, b.jar, done.location, pem(mine),
                          mine.issued.privateKeyPem);
   const landed = String(back.headers.location || '');
-  t.check(landed.indexOf(REDIRECT) === 0 && /[?&]code=/.test(landed),
+  t.check(urls.isAt(landed, REDIRECT) && /[?&]code=/.test(landed),
           'A6: and the authorization endpoint answers the relying party ' +
           'with a code — the protocol endpoint itself is unchanged',
           back.status + ' ' + landed);

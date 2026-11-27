@@ -1,0 +1,97 @@
+{
+  "name": "IIC346",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIC346:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" \n\t\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \n\t\tPolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC346:policy\" \n\t\tRuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" \n\t\tVersion=\"1.0\" \n\t\t>\n    <Description>\n        Policy for Conformance Test IIC346.\n        Purpose - Function Evaluation - Set Functions: yearMonthDuration-at-least-one-member-of\n    </Description>\n    <Target/>\n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC346:rule\">\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:yearMonthDuration-at-least-one-member-of\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:yearMonthDuration-bag\">\n                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#yearMonthDuration\">P1Y</AttributeValue>\n                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#yearMonthDuration\">P5Y7M</AttributeValue>\n            </Apply>\n            <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr\" \n            \tCategory=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" \n            \tDataType=\"http://www.w3.org/2001/XMLSchema#yearMonthDuration\" \n            \tMustBePresent=\"false\"/>\n\t\t  </Apply>\n        </Condition>\n    </Rule>\n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#yearMonthDuration",
+                "value": "P1Y"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#yearMonthDuration",
+                "value": "P1Y"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": []
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [],
+    "advice": []
+  }
+}

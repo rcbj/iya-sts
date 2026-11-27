@@ -68,8 +68,8 @@
     "text": "客戶端密碼到期"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "檢查每個應用程式的每個客戶端密碼：對持有將在 oauth2.clientSecretExpiryWarningDays 內到期之密碼的應用程式，以及所有密碼都已到期的應用程式，各寫一筆稽核記錄；並移除應用程式在另持有未到期密碼時的已到期密碼——絕不移除其最後一個，該密碼會保留，且在產品模式下被拒絕。"
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "檢查每個應用程式的每個客戶端密碼：對持有將在 oauth2.clientSecretExpiryWarningDays 內到期之密碼的應用程式，以及所有密碼都已到期的應用程式，各寫一筆稽核記錄；並移除應用程式在另持有未到期密碼時的已到期密碼——絕不移除其最後一個，該密碼會保留，且在產品模式下被拒絕。首先，它會輪替 oauth2.clientSecretAutoRotate 中所列、且將在 oauth2.clientSecretAutoRotateDays 內到期之每個應用程式的密碼。"
   },
   "sched.jobs.oauth2.command-sweep.describe": {
     "en": "fb4789a8030f5374",
@@ -90,6 +90,14 @@
   "sched.jobs.persistence.tombstone-purge.describe": {
     "en": "56aed2e95604a1b4",
     "text": "從此叢集的儲存區中刪除已結束之產生數據列中早於 persistence.mintedRetention 的墓碑，每批 5000 筆、每次執行最多 20 批（在以單元方式部署的服務中，為此單元自己的數據庫）。"
+  },
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "9e62432e54429d50",
+    "text": "向進行中的登入後活動涵蓋的人員（#1111）寄送登入提醒，登入後該活動會請他們完成：註冊後量子通行金鑰、後量子電郵加密金鑰或新的 PIV 證書，每項活動都有自己的電郵。每次執行在游標之後讀取每個已啟動活動人群（領域，或其各群組的聯集）的一批，只向有待完成該活動的人寄送，絕不在提醒間隔內或超過其上限寄送，並為每個已啟動活動的每次執行寫一筆稽核紀錄。"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "在設定檔的 mailKeepClassical 天數過去後，移除登入後電郵加密活動在取代它的後量子金鑰旁保留的傳統 OpenPGP 金鑰（#2009，D3）：從此人的項目中移除，因而也從 Web Key Directory 中移除。只走訪保留金鑰的記錄，從不走訪目錄，每移除一個金鑰寫一筆稽核記錄。時間已過的金鑰已經不會出現在目錄與任何頁面中，無論此工作是否執行過。"
   },
   "sched.jobs.risk.dataset-directory.title": {
     "en": "73f11f291cb6c096",

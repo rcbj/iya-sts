@@ -506,6 +506,29 @@ app.use(function refuseForeignEdge(req, res, next) {
 });
 
 // ---------------------------------------------------------------------------
+// A CLIENT CERTIFICATE A TLS-TERMINATING PROXY FORWARDED (RFC 9440, #2012).
+// From a proxy named by both its certificate and its address
+// (`tls.trustedProxyCertificates`, `tls.trustedProxyAddresses`), the
+// forwarded certificate is verified here and the request's socket is replaced
+// by a view answering it, for every door below; from anybody else the
+// headers are removed. Here, in the front process, so a request worker is
+// handed the forwarded certificate (`request_pool.js`'s `peerOf()` reads the
+// view) and never the headers; below the realm and the edge refusal, and
+// above the resumed-chain wait, which reads the socket.
+// `common/forwarded_client_certificate.ts` argues it. Built at the first
+// request, so this file's own load order does not change.
+// ---------------------------------------------------------------------------
+let forwardedCertificate = null;
+// A HOT PATH: every request passes it, so no Entering/Leaving pair.
+app.use(function forwardedClientCertificateLazily(req, res, next) {
+  if (!forwardedCertificate) {
+    forwardedCertificate =
+      require('./forwarded_client_certificate').middleware();
+  }
+  forwardedCertificate(req, res, next);
+});
+
+// ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and
 // cannot be handed one: the ORIGIN of the `x5u` address a signed token carries
 // (common/jose_certificate_header.js, 2026-09-13). Entered for the life of the
@@ -911,13 +934,31 @@ const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 // whose type is JSON, XML or plain text gets this one instead. An SVG keeps
 // the base policy: it is XML, and it may style itself. A route that set its
 // own policy is left alone.
+//
+// **AND THE CERTIFICATE AND CMS BODIES ARE NOT PAGES EITHER (#2236).** The
+// EST, SCEP, ACME, CRL and OCSP answers — a certs-only PKCS#7, a PKCS#8, a
+// CSR attributes list, a CRL, an OCSP response, a PEM chain, and EST's
+// server-key multipart — are read by enrollment clients and never rendered.
+// They had the page policy and, since #2164, `Reporting-Endpoints` too, and
+// with #2181's CORP that was one header too many for libest's estclient,
+// Cisco's reference EST client: it reads AT MOST SIXTEEN header lines
+// (`MAX_HEADERS` in `est_client_http.c`) and counts the seventeenth, and the
+// blank line after it, as the body, so every dispatched product answer failed
+// "Content Length (5470) and body length (5491) mismatch" — 21 bytes, which
+// is `Connection: close` and two CRLFs. The declared length was right; the
+// client stopped reading headers early. tests/est_wire_headers.js holds the
+// count.
 // ---------------------------------------------------------------------------
 const NOT_A_PAGE_POLICY = contentSecurityPolicy({
   'style-src': null,
   'img-src': null
 });
-const NOT_A_PAGE_TYPES =
-  /^\s*(?:application\/(?:[^\s;]+\+)?(?:json|xml)|text\/(?:plain|xml))\s*(?:;|$)/i;
+const NOT_A_PAGE_TYPES = new RegExp(
+  '^\\s*(?:application\\/(?:[^\\s;]+\\+)?(?:json|xml)|text\\/(?:plain|xml)|' +
+  'application\\/(?:pkcs7-mime|pkcs8|pkcs10|pkix-cert|pkix-crl|' +
+  'pkix-pkipath|ocsp-response|csrattrs|pem-certificate-chain|' +
+  'x-pki-message|x-x509-ca-cert|x-x509-ca-ra-cert|x-x509-next-ca-cert|' +
+  'x-pkcs7-certificates)|multipart\\/mixed)\\s*(?:;|$)', 'i');
 
 // ---------------------------------------------------------------------------
 // THE BROWSER FEATURES A PAGE OF THIS SERVICE MAY USE (Qualys QID 150248,
@@ -1028,6 +1069,51 @@ function framedContentSecurityPolicy(origins, overrides) {
 const CHARSET_TYPES =
   /^\s*(?:text\/[^\s;]+|application\/xml|[^\s;/]+\/[^\s;]+\+xml)\s*(?:;|$)/i;
 
+// ---------------------------------------------------------------------------
+// CROSS-ORIGIN ISOLATION ON EVERY RESPONSE (#2181, ASVS 5.0.0 3.4.8, 3.5.8).
+//
+// `Cross-Origin-Resource-Policy: same-site` on every response that names
+// none, so another site cannot embed what this service answers (an image, a
+// script, a document) in a page of its own with the user's cookies. SITE,
+// not origin: this host's other listeners are other ORIGINS (another port)
+// of the same site, and a page on one loads from another today. A response
+// that names its own keeps it: the three applications' `same-origin`
+// (`shell_document.ts`), a profile photo's and the sign-in logo's
+// `cross-origin`.
+//
+// `Cross-Origin-Opener-Policy: same-origin` on every HTML DOCUMENT that names
+// none, EXCEPT a document a relying party may show in a popup of its own.
+// COOP on a document opened by another site's window puts it in a browsing
+// context group of its own and SEVERS it from its opener, for good: a
+// relying party that signs a person in through a popup would never get its
+// answer back. Every endpoint on that path keeps no COOP, as it had none
+// before (the sign-in screens' reason, `shell_document.ts`): the
+// authorization endpoint and its auto-post, the sign-in and consent
+// screens, every SAML, WS-Federation, GNAP and federation page, the
+// identity-provider-initiated launch, sign-out and the OP iframe.
+// ---------------------------------------------------------------------------
+const POPUP_PATH_PREFIXES = ['/oauth2/authorize', '/oauth2/autopost',
+  '/oauth2/consent', '/oauth2/logout', '/oauth2/check_session', '/authn',
+  '/saml2', '/saml11', '/wsfed', '/gnap', '/federation', '/launch',
+  '/logout', '/tls/sign-in'];
+
+// A HOT PATH: asked by `writeHead()` for every HTML response, so no
+// Entering/Leaving pair, which would put two debug lines on every page served.
+/**
+ * Tells whether a path is one a relying party may open in a popup of its own
+ * (#2181): such a document carries no Cross-Origin-Opener-Policy.
+ *
+ * @param path - the request's path, the realm's prefix already stripped
+ * @returns true for the authorization and sign-in path
+ */
+function opensInRelyingPartyPopup(path) {
+  const p = String(path || '');
+  return POPUP_PATH_PREFIXES.some(function (prefix) {
+    return p === prefix || p.indexOf(prefix + '/') === 0 ||
+           p.indexOf(prefix + '?') === 0;
+  });
+}
+
 app.use(function (req, res, next) {
   log.debug("Entering the security-headers middleware.");
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -1078,6 +1164,26 @@ app.use(function (req, res, next) {
         CONTENT_SECURITY_POLICY && NOT_A_PAGE_TYPES.test(shown)) {
       res.setHeader('Content-Security-Policy', NOT_A_PAGE_POLICY);
     }
+    // EVERY PAGE REPORTS A VIOLATION (#2164, ASVS 5.0.0 3.4.7), with the
+    // same guarantee as `frame-ancestors` and for its reason: the base
+    // policy, a route's relaxation through contentSecurityPolicy(), the OP
+    // iframe's framedContentSecurityPolicy(), a policy written out by a leaf
+    // and one put back above all pass through here, so the two directives and
+    // `Reporting-Endpoints` are added HERE, once, rather than in each door.
+    // To the realm's own path (`common/csp_reports.ts`), because a realm's
+    // listener answers nothing else. A response that is not a page — the
+    // type test above — runs nothing and reports nothing, so it is left as
+    // it is; so is a policy that already names a report-uri.
+    const policy = String(res.getHeader('Content-Security-Policy') || '');
+    if (policy && policy.indexOf('report-uri') < 0 &&
+        !NOT_A_PAGE_TYPES.test(shown)) {
+      const cspReports = require('./csp_reports');
+      const prefix = realms.prefixOf(req.realm);
+      res.setHeader('Content-Security-Policy',
+                    policy + '; ' + cspReports.directives(prefix));
+      res.setHeader('Reporting-Endpoints',
+                    cspReports.reportingEndpoints(prefix));
+    }
     // A SIGN-IN STEP'S ID LEAVES THE ADDRESS (#1454): `common/step_address.ts`.
     const location = res.getHeader('Location');
     if (typeof location === 'string' && location.indexOf('?') > 0) {
@@ -1092,6 +1198,14 @@ app.use(function (req, res, next) {
         res.setHeader('Location', stepAddress.hide(location,
           authn.stepApplication));
       }
+    }
+    // CROSS-ORIGIN ISOLATION (#2181), above: a value a route set stands.
+    if (!res.getHeader('Cross-Origin-Resource-Policy')) {
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+    }
+    if (!res.getHeader('Cross-Origin-Opener-Policy') &&
+        /^\s*text\/html/i.test(shown) && !opensInRelyingPartyPopup(req.path)) {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     }
     const type = res.getHeader('Content-Type');
     if (typeof type === 'string' && CHARSET_TYPES.test(type) &&
@@ -1243,6 +1357,24 @@ function unlessStreamedUpload(parser) {
     parser(req, res, next);
   };
 }
+
+// `common/csp_reports.ts`'s PATH, below a realm's prefix; a test holds the
+// two equal.
+const CSP_REPORT_PATH = '/web/csp-report';
+
+// A CSP VIOLATION REPORT IS READ BEFORE THE PARSERS BELOW (#2164): their
+// limit is 5 MB, and a report's is 16 KiB, decided with the per-address
+// limit and the encoding before a byte is kept. `common/csp_reports.ts`'s
+// intake() answers a refusal itself; on success the parsers find the body
+// already read and leave it alone. Lazily, so this file's load order does not
+// change. Hot path: every request asks. No Entering/Leaving pair — one would
+// drown the log; intake() logs its own.
+app.use(function cspReportIntake(req, res, next) {
+  if (req.method !== 'POST' || req.path !== CSP_REPORT_PATH) {
+    return next();
+  }
+  return require('./csp_reports').intake(req, res, next);
+});
 
 app.use(unlessStreamedUpload(bodyParser.raw({
   type: ['application/kerberos', 'application/octet-stream',
@@ -1618,6 +1750,7 @@ module.exports = Object.assign(app, {
   // requires this file — and because a relaxation belongs beside the policy
   // it relaxes, where the next reader will find both.
   contentSecurityPolicy: contentSecurityPolicy,
+  opensInRelyingPartyPopup: opensInRelyingPartyPopup,
   framedContentSecurityPolicy: framedContentSecurityPolicy,
   CONTENT_SECURITY_POLICY: CONTENT_SECURITY_POLICY,
   // For the one page that builds URLs in a script and therefore cannot have

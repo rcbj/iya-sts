@@ -91,6 +91,8 @@ import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import mode = require('../common/mode');
 import vcDataIntegrity = require('./vc_data_integrity');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 
 // A loose JSON-shaped value: a token's claims, a DID document.
 type Json = any;
@@ -1520,9 +1522,13 @@ class Siop {
   signInOutcome(verified: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Siop.signInOutcome().");
-    const refuse = function (code: string, reason: string): Json {
+    // A catalog sentence (#2006), its key kept as `reasonMessage` because
+    // the outcome is put in the Verifier's transaction store, which keeps
+    // only the English.
+    const refuse = function (code: string, reason: string | Sentence): Json {
       log.debug("Leaving Siop.signInOutcome(). " + code);
-      return { ok: false, errorCode: code, reason: reason, username: '',
+      return { ok: false, errorCode: code, reason: reason,
+               reasonMessage: Sentence.stored(reason), username: '',
                subject: '' };
     };
     if (!verified || !verified.ok) {
@@ -1530,9 +1536,8 @@ class Siop {
       // #693) says so; any other is the token not verifying.
       return verified && verified.errorCode
         ? refuse(String(verified.errorCode), String(verified.reason || ''))
-        : refuse('STS-VC-0090', 'The self-issued ID Token did not ' +
-                 'verify, so it signs nobody in. The checks above say ' +
-                 'which rule it broke.');
+        : refuse('STS-VC-0090',
+                 Sentence.say('refusals.wallet.idTokenNotVerified'));
     }
     const username = this.ownerOf(verified.subject);
     // A DID THIS REALM PUBLISHED WHOSE KEY NO WALLET PROVED (#1291) signs
@@ -1544,20 +1549,16 @@ class Siop {
         return one.subject === verified.subject;
       })[0] : null;
     if (row && (row.proof === PROOF_REALM || row.proof === PROOF_ISSUED)) {
-      return refuse('STS-VC-0164', 'The self-issued ID Token names ' +
-                    verified.subject + ', a DID this realm published ' +
-                    (row.proof === PROOF_REALM
-                      ? 'with a key it keeps, which signs nobody in.'
-                      : 'with a key it handed over and nobody has proved ' +
-                        'with a wallet; prove it on your portal\'s ' +
-                        'Self-issued IDs page first.'));
+      return refuse('STS-VC-0164', row.proof === PROOF_REALM
+        ? Sentence.say('refusals.wallet.didRealmKey',
+                       { subject: String(verified.subject) })
+        : Sentence.say('refusals.wallet.didUnproved',
+                       { subject: String(verified.subject) }));
     }
     if (!username) {
-      return refuse('STS-VC-0091', 'The self-issued ID Token verified, and ' +
-                    'its subject ' + verified.subject + ' is not enrolled ' +
-                    'for anybody here. A self-issued key signs in only the ' +
-                    'person who enrolled it — sign in another way and enrol ' +
-                    'it on your portal\'s Self-issued IDs page.');
+      return refuse('STS-VC-0091',
+        Sentence.say('refusals.wallet.subjectNotEnrolled',
+                     { subject: String(verified.subject) }));
     }
     log.debug("Leaving Siop.signInOutcome(). " + username + ".");
     return { ok: true, errorCode: '', reason: '', username: username,

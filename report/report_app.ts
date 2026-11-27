@@ -40,6 +40,12 @@ const log = bunyan.createLogger({ name: 'sts-report' });
 const BASE = '/report';
 
 const REPORT_STYLE = [
+  // THE BAR A SECOND AUTHORIZATION DRAWS (#2168, `SpaClient.drawStepBar()`),
+  // the console's session-ended bar: over the page, which stays under it.
+  '.reauth { position: fixed; left: 0; right: 0; top: 0; z-index: 60;',
+  '  background: #fff4e5; border-bottom: 2px solid #f0a020;',
+  '  padding: 10px 16px; display: flex; flex-wrap: wrap;',
+  '  gap: .5em 1em; align-items: center; }',
   'body { margin: 0; background: #f4f4f7; color: #1f2330;',
   '  font: 16px/1.45 system-ui, sans-serif; }',
   '.wrap { max-width: 64rem; margin: 0 auto; padding: 1rem; }',
@@ -309,6 +315,9 @@ class ReportApp {
     log.debug("Entering shellDocument().");
     const refused = registered && registered.ok === false;
     const there = elsewhere || {};
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from the `browser`
+    // catalog; the English is the words it always had.
+    const t = ShellDocument.translator();
     const html = ShellDocument.document({
       title: 'Reports — IYA STS',
       attributes: [
@@ -325,7 +334,9 @@ class ReportApp {
         ? '<p class="err">' + Html.esc(registered.why ||
           'Reports cannot sign in at this address.') + '</p>'
         : null,
-      noscript: '<p class="err">This page needs its script.</p>',
+      noscript: '<p class="err">' + ShellDocument.said(t,
+        'browser.noscript.report', 'This page needs its script.') + '</p>',
+      translator: t,
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     log.debug("Leaving shellDocument().");

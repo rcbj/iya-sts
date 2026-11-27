@@ -1,6 +1,7 @@
 {
   "yes": "oui",
   "no": "non",
+  "follows": "comme {row}",
   "configuration": "Configuration",
   "schema": "Schéma",
   "saveProfile": "Enregistrer le profil",
@@ -230,5 +231,7 @@
   "transfer.view.trustedHeading": "Autres domaines auxquels ce domaine fait confiance",
   "transfer.view.noneTrusted": "Ce domaine ne fait confiance aux exports de politiques d'aucun autre domaine.",
   "transfer.view.kind": "Type",
-  "transfer.view.addedBy": "Ajouté par"
+  "transfer.view.addedBy": "Ajouté par",
+  "newPolicy.button": "Nouvelle politique",
+  "newPolicy.choose": "Choisissez le type de politique à créer."
 }

@@ -307,7 +307,18 @@ class Krb5PkinitCodec {
   // (RFC 8636) }, and PKAuthenticator ::= SEQUENCE { cusec [0] INTEGER, ctime
   // [1] KerberosTime, nonce [2] INTEGER (0..4294967295), paChecksum [3] OCTET
   // STRING OPTIONAL, ..., freshnessToken [4] OCTET STRING OPTIONAL (RFC
-  // 8070) }. KDFAlgorithmId ::= SEQUENCE { kdf-id [0] OBJECT IDENTIFIER }.
+  // 8070), paChecksum2 [5] PAChecksum2 OPTIONAL (MS-PKCA) }. KDFAlgorithmId
+  // ::= SEQUENCE { kdf-id [0] OBJECT IDENTIFIER }.
+  //
+  // PAChecksum2 (#2125) is MS-PKCA section 2.2.3's: PAChecksum2 ::= SEQUENCE
+  // { checksum [0] OCTET STRING, algorithmIdentifier [1] AlgorithmIdentifier
+  // }, the KDC-REQ-BODY's digest under SHA-1, SHA-256, SHA-384 or SHA-512.
+  // The section gives the type but not the field's tag, saying only that it
+  // "follows the freshness token specified in [RFC8070] section 4", so it is
+  // the next tag, [5] — the number Heimdal's pkinit.asn1 gives it and the one
+  // Windows sends. AlgorithmIdentifier is RFC 5280 section 4.1.1.2's; the
+  // SHA-2 OIDs take absent parameters (RFC 5754 section 2), and a NULL is
+  // read and ignored, as RFC 5754 asks of a receiver.
   //
   // THE NONCE IS ECHOED AS IT WAS READ. MIT's client encodes it as a signed
   // 32-bit INTEGER, so a value with the top bit set arrives negative; the
@@ -318,7 +329,8 @@ class Krb5PkinitCodec {
    * Encodes an AuthPack, for a client (the suite's own).
    *
    * @param pack - `{ cusec, ctime, nonce, paChecksum, freshnessToken,
-   *   clientPublicValue, supportedKdfs, clientDhNonce }`
+   *   paChecksum2: { checksum, algorithm }, clientPublicValue,
+   *   supportedKdfs, clientDhNonce }`
    * @returns the DER
    */
   static encAuthPack(pack: Json): Uint8Array {
@@ -330,7 +342,10 @@ class Krb5PkinitCodec {
       pack.paChecksum
         ? { tag: 3, value: asn1.encOctetString(pack.paChecksum) } : null,
       pack.freshnessToken
-        ? { tag: 4, value: asn1.encOctetString(pack.freshnessToken) } : null
+        ? { tag: 4, value: asn1.encOctetString(pack.freshnessToken) } : null,
+      pack.paChecksum2
+        ? { tag: 5, value: Krb5PkinitCodec.encPaChecksum2(pack.paChecksum2) }
+        : null
     ].filter(Boolean));
     const fields: Json[] = [{ tag: 0, value: authenticator }];
     if (pack.clientPublicValue) {
@@ -352,8 +367,9 @@ class Krb5PkinitCodec {
    *
    * @param bytes - the SignedData's eContent
    * @returns `{ cusec, ctime, nonce, paChecksum, freshnessToken,
-   *   clientPublicValue, supportedKdfs, clientDhNonce, supportedCmsTypes }`;
-   *   `supportedKdfs` is null when the field is absent
+   *   paChecksum2, clientPublicValue, supportedKdfs, clientDhNonce,
+   *   supportedCmsTypes }`; `supportedKdfs` and `paChecksum2` are null when
+   *   the field is absent, and `paChecksum2` is `{ checksum, algorithm }`
    * @throws Error when it does not decode
    */
   static readAuthPack(bytes: Uint8Array): Json {
@@ -368,6 +384,7 @@ class Krb5PkinitCodec {
       nonce: asn1.decInteger(fastCodec.required(a, 2, 'PKAuthenticator')),
       paChecksum: a[3] ? asn1.decOctetString(a[3]) : null,
       freshnessToken: a[4] ? asn1.decOctetString(a[4]) : null,
+      paChecksum2: a[5] ? Krb5PkinitCodec.readPaChecksum2(a[5]) : null,
       clientPublicValue: f[1] ? f[1].raw : null,
       supportedCmsTypes: f[2] ? asn1.decSequenceOf(f[2]).length : 0,
       clientDhNonce: f[3] ? asn1.decOctetString(f[3]) : null,
@@ -376,6 +393,48 @@ class Krb5PkinitCodec {
         : null
     };
     log.debug('Leaving Krb5PkinitCodec.readAuthPack().');
+    return out;
+  }
+
+  /**
+   * Encodes MS-PKCA section 2.2.3's PAChecksum2.
+   *
+   * @param c - `{ checksum, algorithm }`, the digest and its OID, dotted
+   * @returns the DER
+   */
+  static encPaChecksum2(c: Json): Uint8Array {
+    log.debug('Entering Krb5PkinitCodec.encPaChecksum2().');
+    log.debug('Leaving Krb5PkinitCodec.encPaChecksum2().');
+    return asn1.encTaggedSequence([
+      { tag: 0, value: asn1.encOctetString(c.checksum) },
+      { tag: 1, value: asn1.encSequence([
+        Krb5PkinitCodec.encOid(c.algorithm)]) }]);
+  }
+
+  /**
+   * Decodes MS-PKCA section 2.2.3's PAChecksum2. The AlgorithmIdentifier's
+   * parameters are not returned: none of the four digests it names has any.
+   *
+   * @param t - the SEQUENCE's TLV
+   * @returns `{ checksum, algorithm }`, the OID dotted
+   * @throws Error when it does not decode
+   */
+  static readPaChecksum2(t: Json): Json {
+    log.debug('Entering Krb5PkinitCodec.readPaChecksum2().');
+    const f = fastCodec.fieldsOf(t, 'PAChecksum2');
+    const algorithmId = asn1.decSequenceOf(
+      fastCodec.required(f, 1, 'PAChecksum2'));
+    if (!algorithmId.length) {
+      log.debug('Leaving Krb5PkinitCodec.readPaChecksum2(). Empty.');
+      // error-code: none — a decoder; the caller refuses what does not decode
+      throw new Error('krb5-pkinit: PAChecksum2 has an empty ' +
+                      'AlgorithmIdentifier');
+    }
+    const out = {
+      checksum: asn1.decOctetString(fastCodec.required(f, 0, 'PAChecksum2')),
+      algorithm: Krb5PkinitCodec.decOid(algorithmId[0])
+    };
+    log.debug('Leaving Krb5PkinitCodec.readPaChecksum2().');
     return out;
   }
 

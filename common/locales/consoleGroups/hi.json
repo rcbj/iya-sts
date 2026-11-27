@@ -129,5 +129,10 @@
   "ownerProtection.save": "सहेजें",
   "ownerProtection.closedAnyway": "बॉक्स जो भी कहे, यह अपने स्वामियों के लिए बंद है:",
   "ownerProtection.isMarked": "एक व्यवस्थापक ने इसे इसके स्वामियों के लिए बंद कर दिया है।",
-  "ownerProtection.notMarked": "किसी व्यवस्थापक ने इसे इसके स्वामियों के लिए बंद नहीं किया है।"
+  "ownerProtection.notMarked": "किसी व्यवस्थापक ने इसे इसके स्वामियों के लिए बंद नहीं किया है।",
+  "newGroup.button": "नया समूह",
+  "newGroup.linkNote": "नए समूह का फ़ॉर्म, इसका आवश्यक फ़ील्ड लाल रंग से घिरा है।",
+  "newGroup.noDirectory": "इस प्रक्रिया के पास समूह बनाने के लिए कोई डायरेक्टरी नहीं है।",
+  "newGroup.groupHint": "समूह का नाम, और उसका RDN",
+  "newGroup.membersHint": "प्रति पंक्ति एक या अल्पविराम से अलग: एक उपयोगकर्ता नाम या कोई भी DN"
 }

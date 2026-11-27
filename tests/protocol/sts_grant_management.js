@@ -38,10 +38,14 @@
 // management API.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -201,7 +205,7 @@ async function authorizeError(clientId, params) {
     const links = page.match(/href="([^"]+)"/g) || [];
     for (let i = 0; i < links.length && !location; i++) {
       const href = links[i].slice(6, -1).replace(/&amp;/g, "&");
-      if (href.indexOf(REDIRECT) === 0) {
+      if (urls.isAt(href, REDIRECT)) {
         location = href;
       }
     }
@@ -235,11 +239,18 @@ async function test() {
   await ok(base + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Grant management " + STAMP },
     "created the realm");
+  // Temporary, then the person's own (#2160, `own_password.js`).
   await ok(realmApi + "/users/create", {
     username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Grants " + ALICE, givenName: "Grants", sn: ALICE,
                   mail: ALICE + "@grants.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return send(realmApi + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
   await ok(realmApi + "/applications/create",
            application(A, "client_secret_basic"), "client A");
   await ok(realmApi + "/applications/create",
@@ -326,7 +337,7 @@ async function test() {
         function () {
     [noAction, createWithId, unknown, otherClients, publicClient]
       .forEach(function (r) {
-        assert.ok(r.location.indexOf(REDIRECT) === 0, r.location);
+        assert.ok(urls.isAt(r.location, REDIRECT), r.location);
       });
     assert.strictEqual(noAction.error, "invalid_request");
     assert.strictEqual(createWithId.error, "invalid_request");

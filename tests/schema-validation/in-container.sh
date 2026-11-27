@@ -177,11 +177,21 @@ startNode() {
   NODE_PIDS+=($!)
 }
 
+# VERIFIED (#1954's follow-up): against tests/tools/trust.js's anchorsFor(),
+# the known roots or else the Root the stage's revocation listener publishes
+# on 8082 (the balancer forwards it in the cluster stage), as the token tool
+# below does on its own. LOG_LEVEL=fatal keeps trust.js's bunyan lines out.
 probe() {
-  node -e '
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-    fetch(process.argv[1] + "/healthcheck").then(function (r) {
-      process.exit(r.status === 200 ? 0 : 1);
+  LOG_LEVEL=fatal node -e '
+    var trust = require(require("path").resolve("tests/tools/trust.js"));
+    var url = new URL(process.argv[1] + "/healthcheck");
+    trust.anchorsFor(url.href).then(function (ca) {
+      var req = require("https").get({ host: url.hostname, port: url.port,
+                                       path: url.pathname, ca: ca,
+                                       timeout: 5000 },
+        function (res) { process.exit(res.statusCode === 200 ? 0 : 1); });
+      req.on("error", function () { process.exit(1); });
+      req.on("timeout", function () { req.destroy(); process.exit(1); });
     }, function () { process.exit(1); });' "$1"
 }
 
@@ -283,8 +293,9 @@ stage() {
     FAILED=1; stopStage; return
   fi
   local token
-  token="$(NODE_TLS_REJECT_UNAUTHORIZED=0 \
-    node tests/tools/admin-api-token.js "${url}" 2> /dev/null | tail -n 1)"
+  # The tool verifies the listener itself (trust.js's anchorsFor()).
+  token="$(node tests/tools/admin-api-token.js "${url}" 2> /dev/null \
+    | tail -n 1)"
   export STS_ADMIN_API_TOKEN="${token}" STS_TEST_SERVICE_URL="${url}" \
     STS_LDAP_URL="ldap://${url#https://}"
   STS_LDAP_URL="${STS_LDAP_URL%:8081}:389"; export STS_LDAP_URL

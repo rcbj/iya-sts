@@ -313,7 +313,7 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
 
 @js(#{
     `additionalProperties`:false,
-    `properties`:#{`name`:#{`type`:"string"},`mfaNote`:#{`type`:"boolean"}},
+    `properties`:#{`name`:#{`type`:"string"},`mfaNote`:#{`type`:"boolean"},`handoff`:#{`type`:"string",`description`:"Where `certSignIn.handoff` is on and no certificate has arrived yet (#2012): the link to the listener that asks for a smart card or certificate, `/authn/certificate/continue?h=…`, with `name` empty."},`refused`:#{`type`:"string",`description`:"What that listener refused last, in English, or empty (#2012)."}},
     `$types`:#["object","null"]
   }) @hoisted model get_authn_api_pending__id__r200_application_json_view_certificate_h4 {}
 
@@ -407,6 +407,7 @@ op `getScreen`(`parameters/0/schema`: SignInId,
       `protocol`?: string;
       `application`?: string;
       `error`?: string;
+      `refusal`?: NullableRefusal;
       `locked`?: string;
       `hint`?: string;
       `screen`?: boolean;
@@ -423,6 +424,7 @@ op `getScreen`(`parameters/0/schema`: SignInId,
         `via`?: string
       };
       `remember`?: boolean;
+      `chooseRoles`?: boolean;
       `anonymous`?: boolean;
       `passkey`?: boolean;
       `usernameless`?: boolean;
@@ -587,6 +589,7 @@ op `signInWithPassword`(`parameters/0/schema`: SignInId,
     `use_webauthn`?: EmptyTextOr01TrueFalseOnOffYesNo;
     `webauthn_only`?: EmptyTextOr01TrueFalseOnOffYesNo;
     `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `choose_roles`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -914,6 +917,7 @@ op `signInByEmail`(`parameters/0/schema`: SignInId,
     `username`?: EmptyTextOrStringMin1Max256;
     `kind`: "code" | "link";
     `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `choose_roles`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -1065,6 +1069,7 @@ op `signInWithPasskey`(`parameters/0/schema`: SignInId,
   `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:65536}) `credential`?: string;
     `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `choose_roles`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -1128,7 +1133,8 @@ op `getPasswordChange`(`parameters/0/schema`: SignInId,
     `csrf`?: string;
     `uiLocales`?: string;
     `preferredLanguage`?: WithValuePopulated;
-    `view`?: {`id`?: string; `username`?: string; `notice`?: string}
+    `view`?: {`id`?: string; `username`?: string; `notice`?: string;
+              `noticeRefusal`?: NullableRefusal}
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -1342,10 +1348,10 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: SignInId,
       }
     },
     `security`:#[],
-    `x-mirrors`:"GET /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open, /authn/post-login"
+    `x-mirrors`:"GET /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open, /authn/post-login, /authn/roles"
   })
 op `getStep`(`parameters/0/schema`: SignInId,
-  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["totp","webauthn","backup-code","password","setup","email-code","email-link","email-link-open","post-login"]}]}}) `parameters/1/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["totp","webauthn","backup-code","password","setup","email-code","email-link","email-link-open","post-login","roles"]}]}}) `parameters/1/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}]}}) `parameters/2/schema`: unknown,
   `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc82,
   `responses/400/content/application~1json/schema`: WithOkCsrfUiLocalesEtc82,
@@ -1360,7 +1366,7 @@ op `getStep`(`parameters/0/schema`: SignInId,
     `operationId`:"checkCode",
     `tags`:#["Sign-in"],
     `summary`:"Checks a one-time code from an authenticator app",
-    `description`:"RFC 6238, checked in every mode and rate limited by identity and address; a refused code keeps the step.\n\nThe door of the sign-in surface's `POST /authn/totp`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+    `description`:"RFC 6238, checked in every mode and rate limited by identity and address; a refused code keeps the step. With `code2` as well, the two are consecutive codes of the person's HOTP token, which resynchronise it (RFC 4226 section 7.4) and finish the step, behind the same budget.\n\nThe door of the sign-in surface's `POST /authn/totp`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
     `parameters`:#[
       #{
         `name`:"id",
@@ -1410,7 +1416,7 @@ op `getStep`(`parameters/0/schema`: SignInId,
   })
 op `checkCode`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: WithMaxLengthCode,
+  `requestBody/content/application~1json/schema`: WithMaxLengthCodeCode2,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
   }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
@@ -2116,6 +2122,253 @@ op `ignoreOffer`(`parameters/0/schema`: SignInId,
 op `registerPostLoginPasskey`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
+
+
+// #2009 P2: THE POST-LOGIN MAIL-ENCRYPTION ACTIVITY'S ACTS
+// (`authn.ts`'s `postLoginMailAct()`).
+@endpoint("/authn-api/mfa/{id}/post-login/mail",
+  "post",
+  #{
+    `operationId`:"answerPostLoginMail",
+    `tags`:#["Sign-in"],
+    `summary`:"Moves the person's mail encryption to a post-quantum key, as a post-login activity asks",
+    `description`:"The mail-encryption activity (#2009). `openpgp-challenge` issues the OpenPGP registration challenge, kept on the step and drawn by its page (`postLogin.mail.challenge`), and the next step is the page again. `openpgp-register` takes the signed challenge (`signed`, from `gpg --clearsign`) and the public key (`publicKey`): the proof of possession and every rule are the OpenPGP registration's, and the key's encryption key must be one of RFC 9980's ML-KEM composites (STS-OPENPGP-0033); the classical key it replaces is kept beside it, and published with it, for the profile's `mailKeepClassical` days. `smime-register` takes an uploaded certificate (`certificate`, PEM or base64 DER) whose key must be ML-KEM (STS-AUTHN-0600) and which names the entry's address. A kind the step does not offer is refused (STS-AUTHN-0601), and so is this act at another activity's step (STS-AUTHN-0602). Done, mail to the person is encrypted with the new key and the session the sign-in was held for starts; where the realm can take nothing the step offered any more, it starts without it (STS-AUTHN-0603).\n\nThe door of the sign-in surface's `POST /authn/post-login`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+        `schema`:null
+      }
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"Refused: `{ ok: false, errors }` — the body, the id, or the act itself.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"No Origin of this service, or no CSRF token bound to this browser's session.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `415`:#{
+        `description`:"Not a JSON body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"Too many attempts.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[],
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`act`:"openpgp-challenge"}}}},
+    `x-mirrors`:"POST /authn/post-login"
+  })
+op `answerPostLoginMail`(`parameters/0/schema`: SignInId,
+  `parameters/1/schema`: string,
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"What the person does: ask for the OpenPGP challenge, register an OpenPGP key, or upload an S/MIME certificate."}) `act`: "openpgp-challenge" | "openpgp-register" | "smime-register";
+    @js(#{`maxLength`:65536,`description`:"`openpgp-register`: the public key, ASCII-armored."}) `publicKey`?: string;
+    @js(#{`maxLength`:16384,`description`:"`openpgp-register`: the challenge as `gpg --clearsign` signed it."}) `signed`?: string;
+    @js(#{`maxLength`:65536,`description`:"`smime-register`: the ML-KEM certificate, PEM or base64 DER."}) `certificate`?: string
+  },
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
+
+// #2009 P3: THE POST-LOGIN PIV RE-ISSUE'S ACTS
+// (`authn.ts`'s `postLoginPivAct()`).
+@endpoint("/authn-api/mfa/{id}/post-login/piv",
+  "post",
+  #{
+    `operationId`:"answerPostLoginPiv",
+    `tags`:#["Sign-in"],
+    `summary`:"Enrols new PIV slot certificates, as a post-login activity asks",
+    `description`:"The PIV certificate re-issue (#2009). `piv-enrol` takes one due slot (`slot`: 9a, 9c, 9d or 9e) and the three texts of the PIV enrolment form: the certificate request the card signed (`csr`, from `ykman piv certificates request`), the slot's attestation certificate (`slotPem`, `ykman piv keys attest`) and the f9 certificate (`attestationPem`). The certificate is issued by this realm's EST Issuing CA with the step's person as the caller, every rule the form's (the profile in `est.allowedProfiles`, the attestation, the identity rule); it is kept on the step with its chain and the `ykman piv certificates import` command, drawn by its page (`postLogin.piv.issued`), and the next step is the page again. The certificate it replaces is revoked (`superseded`) when the new one is first used to sign in, not now. A slot the step does not ask for is refused (STS-AUTHN-0620), and one whose profile the realm no longer enrols (STS-AUTHN-0621). `piv-continue`, once every due slot has a new certificate, finishes the activity and starts the session the sign-in was held for (STS-AUTHN-0622 before). Where the realm enrols no profile the step asked for any more, the session starts without it (STS-AUTHN-0623); this act at another activity's step is refused (STS-AUTHN-0602).\n\nThe door of the sign-in surface's `POST /authn/post-login`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+        `schema`:null
+      }
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"Refused: `{ ok: false, errors }` — the body, the id, or the act itself.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"No Origin of this service, or no CSRF token bound to this browser's session.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `415`:#{
+        `description`:"Not a JSON body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"Too many attempts.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[],
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`act`:"piv-continue"}}}},
+    `x-mirrors`:"POST /authn/post-login"
+  })
+op `answerPostLoginPiv`(`parameters/0/schema`: SignInId,
+  `parameters/1/schema`: string,
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"What the person does: enrol one slot's certificate, or go on once every slot has one."}) `act`: "piv-enrol" | "piv-continue";
+    @js(#{`description`:"`piv-enrol`: the slot, 9a, 9c, 9d or 9e."}) `slot`?: "9a" | "9c" | "9d" | "9e";
+    @js(#{`maxLength`:32768,`description`:"`piv-enrol`: the certificate request the card signed, PEM."}) `csr`?: string;
+    @js(#{`maxLength`:32768,`description`:"`piv-enrol`: the slot's attestation certificate, PEM."}) `slotPem`?: string;
+    @js(#{`maxLength`:32768,`description`:"`piv-enrol`: the f9 attestation certificate, PEM."}) `attestationPem`?: string
+  },
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
+
+
+@endpoint("/authn-api/mfa/{id}/roles",
+  "post",
+  #{
+    `operationId`:"chooseRoles",
+    `tags`:#["Sign-in"],
+    `summary`:"Chooses the dynamic roles to use for this sign-in",
+    `description`:"The role step (#1072): the dynamic selectable roles ticked, by name, from those the step offered. The choice is held against the step's own offer — never what the browser says was offered — and against each role's eligibility policy now: a role not offered (STS-XACML-0325), two of one exclusive group (0326), a required role left out (0327) or a role no longer eligible (0328) is refused, and the step is drawn again. Accepted, the session the sign-in was held for starts with the choice on it, for the application this sign-in is for. An empty list chooses none, where no role offered is required.\n\nThe door of the sign-in surface's `POST /authn/roles`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+    `parameters`:#[
+      #{
+        `name`:"id",
+        `in`:"path",
+        `required`:true,
+        `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+        `schema`:null
+      }
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"Refused: `{ ok: false, errors }` — the body, the id, or the act itself.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"No Origin of this service, or no CSRF token bound to this browser's session.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `415`:#{
+        `description`:"Not a JSON body.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `429`:#{
+        `description`:"Too many attempts.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[],
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`roles`:#["oncall"]}}}},
+    `x-mirrors`:"POST /authn/roles"
+  })
+op `chooseRoles`(`parameters/0/schema`: SignInId,
+  `parameters/1/schema`: string,
+  `requestBody/content/application~1json/schema`: {
+    @js(#{`maxItems`:50}) `roles`?: (EmptyTextOrStringMin1Max256)[]
+  },
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
   }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,

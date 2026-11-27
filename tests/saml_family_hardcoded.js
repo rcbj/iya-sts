@@ -154,6 +154,21 @@ function withMode(config, which, fn) {
   }
 }
 
+// `withMode()` around a function that answers a promise (#1955 P8
+// follow-up: the SAML 1.1 responder signs off the event loop, so its
+// handler answers once the promise settles): the mode stays set until then.
+async function withModeAsync(config, which, fn) {
+  log.debug("Entering withModeAsync().");
+  config.setOverride('global.mode', which);
+  try {
+    const out = await fn();
+    log.debug("Leaving withModeAsync().");
+    return out;
+  } finally {
+    config.clearOverride('global.mode');
+  }
+}
+
 function soapRequest(inner) {
   log.debug("Entering soapRequest().");
   log.debug("Leaving soapRequest().");
@@ -189,7 +204,7 @@ function rst(inner, security) {
 
 const SFH_APPLIES_TO = 'https://sfh-rp-' + process.pid + '.example';
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const config = require('../common/config');
   const stsCrypto = require('../common/crypto');
@@ -636,18 +651,18 @@ function run(t) {
   t.log.info('G. the SAML 1.1 responder');
   // -------------------------------------------------------------------------
   const responder = handlerFor(app, 'post', '/saml11/responder');
-  const ask = function (inner) {
+  const ask = async function (inner) {
     log.debug("Entering ask().");
     const res = fakeRes();
     const req = fakeReq('POST', '/saml11/responder', {}, soapRequest(inner));
-    responder(req, res);
+    await responder(req, res);
     log.debug("Leaving ask().");
     return res;
   };
   const attributeQuery = '<samlp:AttributeQuery Resource="urn:rp:test">' +
     '<saml:Subject><saml:NameIdentifier>erin</saml:NameIdentifier>' +
     '</saml:Subject></samlp:AttributeQuery>';
-  const devAttr = withMode(config, 'development',
+  const devAttr = await withModeAsync(config, 'development',
                            function () { return ask(attributeQuery); });
   t.check(/samlp:Success/.test(devAttr.body) &&
           /AttributeStatement/.test(devAttr.body),
@@ -663,7 +678,7 @@ function run(t) {
       name +
       '</saml:NameIdentifier></saml:Subject></samlp:AuthenticationQuery>';
   };
-  const devNobody = withMode(config, 'development', function () {
+  const devNobody = await withModeAsync(config, 'development', function () {
     return ask(authQuery('never-signed-in-' + Date.now()));
   });
   t.check(/samlp:Success/.test(devNobody.body) &&
@@ -673,12 +688,12 @@ function run(t) {
           'RETURNS NO ASSERTION, in either mode', devNobody.body.slice(0, 400));
   const who = 'aq-' + Date.now();
   authn.startSession(fakeRes(), who, ['swk'], '1', 'a client certificate', {});
-  const devReal = withMode(config, 'development',
+  const devReal = await withModeAsync(config, 'development',
                            function () { return ask(authQuery(who)); });
   t.check(/AuthenticationMethod="urn:ietf:rfc:2246"/.test(devReal.body),
           'and one about a real session states how THAT session authenticated',
           devReal.body.slice(0, 600));
-  const prodAttr = withMode(config, 'product',
+  const prodAttr = await withModeAsync(config, 'product',
                             function () { return ask(attributeQuery); });
   t.check(/samlp:Requester/.test(prodAttr.body) &&
           /PRODUCT/.test(prodAttr.body),

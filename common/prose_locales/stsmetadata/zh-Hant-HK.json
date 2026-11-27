@@ -216,8 +216,12 @@
     "text": "full：每個授權回應都攜帶 iss，包括錯誤回應，且兩份探索文件都公告 authorization_response_iss_parameter_supported，讓客戶端知道可以要求它。"
   },
   "stsmetadata.specs.rfc8705.coverage": {
-    "en": "924a15881d40c04d",
-    "text": "full——第 2 至 5 節。「第 5 節」（#139）：在主連接埠會索取客戶端證書的情況下，每個讀取證書的端點都是自己的別名，因此 mtls_endpoint_aliases 以其自己的地址指名權杖、撤銷、內省、PAR 與 UserInfo 端點。「第 2 節」：tls_client_auth 驗證證書鏈已驗證通過的證書，該證書須由此領域簽發給該應用程式（urn:sts:application:），或攜帶五個已註冊主體參數之一（subject_dn 以名稱比較、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 比對 jwks 的 x5c 或指紋；宣告的方法在每種模式下、於權杖與 PAR 端點都會被遵守。「第 3 節」：任何攜帶證書的請求，其存取權杖與重新整理權杖上都有 cnf[\"x5t#S256\"]，在每個受保護端點與 /admin-api 檢查，並在內省時回報；註冊 tls_client_certificate_bound_access_tokens 的客戶端若沒有證書會被拒絕。「第 4 與 7.1 節」：公開客戶端的重新整理權杖與證書繫結，以證書驗證的客戶端可使用新證書重新整理。「未經驗證」的證書仍會繫結，如第 3 節所允許。僅在主連接埠為 TLS 時（global.https），也只在那裡公告 tls_client_certificate_bound_access_tokens。從不從代理標頭讀取證書。"
+    "en": "b53effdbb54d526a",
+    "text": "full——第 2 至 5 節。「第 5 節」（#139）：在主連接埠會索取客戶端證書的情況下，每個讀取證書的端點都是自己的別名，因此 mtls_endpoint_aliases 以其自己的地址指名權杖、撤銷、內省、PAR 與 UserInfo 端點。「第 2 節」：tls_client_auth 驗證證書鏈已驗證通過的證書，該證書須由此領域簽發給該應用程式（urn:sts:application:），或攜帶五個已註冊主體參數之一（subject_dn 以名稱比較、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 比對 jwks 的 x5c 或指紋；宣告的方法在每種模式下、於權杖與 PAR 端點都會被遵守。「第 3 節」：任何攜帶證書的請求，其存取權杖與重新整理權杖上都有 cnf[\"x5t#S256\"]，在每個受保護端點與 /admin-api 檢查，並在內省時回報；註冊 tls_client_certificate_bound_access_tokens 的客戶端若沒有證書會被拒絕。「第 4 與 7.1 節」：公開客戶端的重新整理權杖與證書繫結，以證書驗證的客戶端可使用新證書重新整理。「未經驗證」的證書仍會繫結，如第 3 節所允許。僅在主連接埠為 TLS 時（global.https），也只在那裡公告 tls_client_certificate_bound_access_tokens。只有作為 RFC 9440 的證書時，才會從標頭讀取證書，且只來自依其證書與地址指出的終止 TLS 之代理（#2012）。"
+  },
+  "stsmetadata.specs.rfc9440.coverage": {
+    "en": "b761bd646855719e",
+    "text": "partial: 來源伺服器的那一半，預設為關閉（#2012）。Client-Cert 與 Client-Cert-Chain 只從管理員「同時」依其連線所用的客戶端證書與其地址指出的終止 TLS 之代理讀取（tls.trustedProxyCertificates、tls.trustedProxyAddresses）；轉送的證書鏈在此處驗證至客戶端信任存放區，然後在每道門上代替交握中的證書。來自任何其他傳送者時，這兩個標頭會被移除並記錄。此服務從不充當代理。"
   },
   "stsmetadata.specs.rfc8707.coverage": {
     "en": "bc07e530c0abe862",
@@ -260,8 +264,8 @@
     "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=1-advanced（依領域設定，或具名授權伺服器的 fapi 成員），即 Baseline 再加上更多（#139）：以值或以參照傳遞的 JWS 簽署請求物件（第 1 項），exp 與 nbf 在 60 分鐘內，aud 為簽發者（第 13、15、17 項）；response_type 為 code id_token，或 code 搭配 JARM（第 2 項）；ID Token 作為帶有 s_hash 的分離式簽章（5.2.2.1）；僅限受發送者約束的存取權杖——mTLS，或 DPoP（除非 oauth2.fapiRequireMtls）——並發布 mtls_endpoint_aliases（第 5、6 項）；tls_client_auth、self_signed_tls_client_auth 或 private_key_jwt，且沒有公開客戶端（第 14、16 項）；推送的請求使用 PKCE S256（第 18 項，並依該節所述放寬 Baseline 第 7 項）；雙向的每個簽章都使用 PS256 或 ES256，絕不使用 RSA1_5（8.6），此伺服器預設以 PS256 簽署。主控台、入口網站與偵錯工具皆符合：推送至 PAR 的已簽署請求物件、JARM，以及已繫結的權杖。「未」涵蓋：一致性測試套件（#176）。"
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-security（依領域設定，或具名授權伺服器的 fapi 成員），一個獨立的設定檔（#140）：開啟 RFC 9700 模式；僅限機密客戶端，透過 mTLS 或 private_key_jwt，斷言的 aud 為字串形式的簽發者（5.3.2.1 第 3、6、8 項）；僅限受發送者約束的權杖，透過 mTLS 或 DPoP（第 4-5 項）；不輪替重新整理權杖，除非 oauth2.refreshTokenRotation 強制輪替（第 9 項）；60 秒的授權碼（第 11 項）；超前 60 秒以上的 iat 或 nbf 會被拒絕（第 13 項）；僅限 code，必須使用 PAR 且需驗證客戶端，PKCE S256，redirect_uri 須推送，request_uri 少於 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 與 EC 224 位元（5.4.1）。TLS（5.2）：BCP 195 的加密套件是每個接聽程式的預設值，偏好 TLS 1.3。DPoP nonce 仍為選用，同意則遵循一般規則。Attacker Model 沒有規範性要求；docs/v1.1.0/oauth-security.md 將每種攻擊者類別對應到阻止它的機制。主控台、入口網站與偵錯工具皆符合。「未」涵蓋：一致性測試套件（#176）。"
+    "en": "01028f08fd980cb6",
+    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-security（依領域設定，或具名授權伺服器的 fapi 成員），一個獨立的設定檔（#140）：開啟 RFC 9700 模式；僅限機密客戶端，透過 mTLS 或 private_key_jwt，斷言的 aud 為字串形式的簽發者（5.3.2.1 第 3、6、8 項）；僅限受發送者約束的權杖，透過 mTLS 或 DPoP（第 4-5 項）；不輪替重新整理權杖，除非 oauth2.refreshTokenRotation 強制輪替（第 9 項）；60 秒的授權碼（第 11 項）；超前 60 秒以上的 iat 或 nbf 會被拒絕（第 13 項）；僅限 code，必須使用 PAR 且需驗證客戶端，PKCE S256，redirect_uri 須推送，request_uri 少於 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 與 EC 224 位元（5.4.1）。TLS（5.2）：BCP 195 的加密套件是每個接聽程式的預設值，偏好 TLS 1.3。DPoP nonce 仍為選用，同意則遵循一般規則。Attacker Model 沒有規範性要求；docs/v1.2.0/oauth-security.md 將每種攻擊者類別對應到阻止它的機制。主控台、入口網站與偵錯工具皆符合。「未」涵蓋：一致性測試套件（#176）。"
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -288,12 +292,12 @@
     "text": "full，在每種模式下（#143，於 #139 中建置）：response_mode query.jwt、fragment.jwt、form_post.jwt 與 jwt（code 使用 query，其他使用 fragment）；回應參數附 iss、aud 與 exp（oauth2.jarmResponseLifetimeS），以客戶端的 authorization_signed_response_alg 簽署（RS256，或 FAPI 1.0 Advanced 下的 PS256），並在其註冊了 authorization_encrypted_response_alg 時加密；錯誤以相同方式回應；含明文權杖的 query.jwt 會被拒絕（2.3.1）；第 3 與 4 節的元數據與註冊成員。"
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "84ea7cdfbe803962",
-    "text": "partial，依賴方端：註冊（第 7.1 節）與斷言（第 7.2 節）都會驗證——挑戰、來源、RP ID 雜湊、用戶在場與用戶驗證旗標、BE/BS、認證的 alg 是否符合 pubKeyCredParams、1023 位元組的認證 id、簽章計數器，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章，支援 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 與 ML-DSA-44/65/87（RFC 9964）金鑰。自 #105 起，「證明陳述」會以第 8 節全部八種格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）在 webauthn.attestationPolicy 下驗證——by-mode 在產品模式下為 verify-if-present，在開發模式下為 off——其憑證鏈依已設定的錨點與 FIDO Metadata Service 的根憑證驗證，查詢其撤銷狀態，並拒絕 MDS 回報為遭入侵的型號。自 #643 起，可同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰（webauthn.pqcAlongsideClassical）：每個通道都有自己的使用者識別碼（第 5.4.3 節）、演算法清單與 excludeCredentials，Signal API（第 5.1.10 節）依通道各傳送一次。尚缺：企業證明（第 5.4.7 節）沒有 RP ID 允許清單，且不處理驗證延伸。與偵錯工具自己的解碼器獨立撰寫，讓兩者可以相互核對（tests/webauthn_cross_impl.js）。"
+    "en": "e293d58d8fdd5cd1",
+    "text": "partial，依賴方端：註冊（第 7.1 節）與斷言（第 7.2 節）都會驗證——挑戰、來源、RP ID 雜湊、用戶在場與用戶驗證旗標、BE/BS、認證的 alg 是否符合 pubKeyCredParams、1023 位元組的認證 id、簽章計數器，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章，支援 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 與 ML-DSA-44/65/87（RFC 9964）金鑰。自 #105 起，「證明陳述」會以第 8 節全部八種格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）在 webauthn.attestationPolicy 下驗證——by-mode 在產品模式下為 verify-if-present，在開發模式下為 off——其憑證鏈依已設定的錨點與 FIDO Metadata Service 的根憑證驗證，查詢其撤銷狀態，並拒絕 MDS 回報為遭入侵的型號。自 #643 起，可同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰（webauthn.pqcAlongsideClassical）：每個通道都有自己的使用者識別碼（第 5.4.3 節）、演算法清單與 excludeCredentials，Signal API（第 5.1.10 節）依通道各傳送一次。企業證明（第 5.4.7 節）只針對 webauthn.attestationEnterpriseRpIds 列出的 RP ID 請求。hints 成員（第 5.4.8 節）依通行金鑰原則傳送。延伸（第 10 節）：請求 credProps（10.1.3）並記錄其 rk；依通行金鑰原則請求 CTAP 2.1 的 credProtect 與 minPinLength，並從驗證器資料中讀取其輸出（見 CTAP 2.1）；appid（10.1.1）與 appidExclude（10.1.2）服務於管理員匯入到某人項目上的舊版 FIDO U2F 憑證，在 webauthn.u2fAppIds 列出其 AppID 之前處於關閉狀態：只有當用戶端傳回 appid true 時，判斷提示的 rpIdHash 才以 AppID 的 SHA-256 為準，這樣的金鑰只能用於第二因素步驟，註冊時會請求 appidExclude，以免同一金鑰被註冊兩次。尚缺：其他已註冊的延伸（largeBlob、prf 等）既不請求也不處理；AppID 只在其主機相同或互為尾碼的 RP ID 上使用——這裡既不取得也不提供 FIDO AppID and Facet Specification 的 TrustedFacets 清單。與偵錯工具自己的解碼器獨立撰寫，讓兩者可以相互核對（tests/webauthn_cross_impl.js）。"
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full——就 RFC 6238 對它的需求而言：第 5.3 節基於 HMAC-SHA-1、SHA-256 或 SHA-512 的動態截斷，六至八位數，計數器為八位元組 big-endian 值。依規格自己的附錄 D 測試向量驗證（tests/totp.js），這正是自行實作而不採用程式庫的意義所在：該截斷的四個步驟每一個都曾有人做錯，而公布的測試向量是唯一能抓出錯誤的檢查。「未」涵蓋：以計數器為基礎的 HOTP 作為驗證機制——此處沒有任何東西持有會隨使用而遞增的計數器，因為唯一的呼叫端是下方以時間為基礎的建構方式。"
+    "en": "5ab7b9d048e74e7e",
+    "text": "full，驗證者端，「僅作為第二因素」（#1955 P4）：第 5.3 節以 HMAC-SHA-1、SHA-256 或 SHA-512 進行的動態截斷，六到八位數字，計數器為八位元組大端值，已對照附錄 D 本身的測試向量驗證（tests/totp.js、tests/hotp.js）；每個憑證一個計數器，具第 7.4 節的前瞻（hotp.window，預設 10，0 合法）以及由兩個連續驗證碼重新同步（hotp.resyncWindow）；第 7.2 節的重送拒絕，計數器在儲存區以 compare-and-set 推進，因此兩個節點或 worker 絕不會接受同一個驗證碼；透過登入的驗證碼額度實現第 7.3 節的節流。YubiKey OTP 插槽由入口網站的 otpauth://hotp 碼或 ykman 指令編程；供應商的權杖則以匯入方式取得（RFC 6030）。它取得 amr otp，僅匯入的權杖取得 hwk。未涵蓋：第 7.3 節的延遲機制本身（改由額度拒絕），以及 OCRA（RFC 6287）。"
   },
   "stsmetadata.specs.rfc6238.coverage": {
     "en": "c1c0873ee396c9b0",
@@ -387,9 +391,9 @@
     "en": "c6914ceb37d9389d",
     "text": "partial：email 識別碼類型與 email 設定檔。不執行 email-reply-00 挑戰（不會寄送任何內容至該地址）；地址為該人自己的 mail 屬性時即獲授權。"
   },
-  "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial：透過 EST 與 SCEP 的裝置設定檔，PKCS#10 請求的 id-aa-attestation 屬性（至多一個，恰好一個 AttestationBundle，僅限證書與其他選項）；唯一會驗證的聲明類型是 TCG 的 tcg-attest-tpm-certify，採用第 20 版附錄 A.2.3 的語法，此語法未被任何後續版本或 TCG 文件取代（#257）。不讀取 CRMF 擴充（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 提供。"
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "d223f1239342ae1c",
+    "text": "partial: 四個金鑰插槽作為證書設定檔（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，後者預設不讓任何人登入）；外部 PIV 或 CAC 卡片在宣告 PIV Authentication 原則時依其 urn:uuid subjectAltName 中的卡片 UUID 對應（預設為關閉）；第 6.2.3.1 節的 PKI-AUTH 作為證書登入設定檔（#2012）：簽發者、keyUsage、extendedKeyUsage 以及 RFC 5280 原則處理沿路徑帶過的原則（包括對應），以及依簽發者與序號、簽發者與 SKI、金鑰、證書或卡片 UUID 繫結至一個帳戶，在領域要求時附帶經驗證的撤銷狀態，如有需要可位於獨立的接聽程式上。不支援 FASC-N、CHUID、卡片管理或生物辨識。"
   },
   "stsmetadata.specs.rfc7030.coverage": {
     "en": "bc9984adc698cc63",
@@ -568,8 +572,12 @@
     "text": "第 3.11 節中對請求驗證所得主體的別名。GET、PUT、PATCH 與 DELETE 會將認證資訊解析為目錄項目，並委派給 /Users/{id} 使用的「同一組」User 處理常式，因此不會有第二條需要保持同步的讀寫路徑。過去它對每個方法都回應 501，因為這裡沒有任何驗證，而其中「兩個 501 至今仍然正確」並予以保留：「匿名」呼叫端沒有可作為別名的主體（別名無法使用，這與資源不存在不同），而 POST 會建立一個依定義早已存在的主體。指名某個沒有項目者的認證資訊——client_credentials 權杖、客戶端憑證——則改為得到 404。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "b9f18166e17e9c9d",
-    "text": "經驗證的客戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 客戶端身分的憑證、未儲存在本領域恰好一個項目之 userCertificate 中的外部憑證授權單位憑證（從不依一般名稱比對），以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。"
+    "en": "86c9267a55ef2564",
+    "text": "經驗證的客戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 客戶端身分的憑證、未儲存在本領域恰好一個項目之 userCertificate 中的外部憑證授權單位憑證（從不依一般名稱比對），以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。在管理員指定的 TLS 終止代理伺服器之後（tls.trustedProxyCertificates 與 tls.trustedProxyAddresses，預設關閉），憑證為 RFC 9440 的 Client-Cert 與 Client-Cert-Chain，在此以交握時的方式驗證；來自其他任何來源的這些標頭都會被移除。"
+  },
+  "stsmetadata.endpoints./authn/certificate/continue.what": {
+    "en": "7a42e6050c748fd8",
+    "text": "「證書登入交接」（#2012，預設為關閉：certSignIn.handoff）。登入畫面連結到此處，位於 certificate-sign-in 應用程式所對應的接聽程式上——其 clientAuth 會要求證書——因此只在這一個請求上要求智能卡及其 PIN。證書依畫面自身之證書入口的要求檢查，繫結至待處理的登入與瀏覽器的登入工作階段（兩個請求都攜帶它），然後瀏覽器被送回畫面，畫面以其持有者的身分繼續。未知、已使用或已過期的交接以 400 回應，未攜帶發起瀏覽器之工作階段而到達的交接以 403 回應。"
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -892,8 +900,8 @@
     "text": "規格行為之上的非規格介面。以 JSON 提供的已使用斷言歷史：此領域接受過且尚未到期的每個 RFC 7523 與 RFC 7522 斷言，附歷史保存位置（持久、跨程序不可分割）、相對於 oauth2.assertionReplayCacheSize 的即時計數，可依文字、格式、用途與狀態篩選，並以 ?page= 與 ?per= 分頁。任何數據列中都不含斷言與認證資訊。唯讀。對應 GET /admin/used-assertions。"
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "非規格端點。本服務可能產生之每種失敗狀況的中央表格，STS-<SUBSYSTEM>-<NNNN>，以 JSON 提供：每個代碼及其子系統、失敗的是什麼、以其協定自身詞彙告知「客戶端」的內容，以及此領域保存的稽核記錄中有多少數據列帶有它——可依子系統、文字與 ?seen=1 篩選，並以 ?page= 與 ?per= 分頁。代碼絕不會傳送給客戶端：它只出現在稽核數據列與記錄行中。唯讀——此表格就是原始碼。對應 GET /admin/error-codes；相同的表格即 docs/v1.1.0/error-codes.md。"
+    "en": "d4977def3313bbf1",
+    "text": "非規格端點。本服務可能產生之每種失敗狀況的中央表格，STS-<SUBSYSTEM>-<NNNN>，以 JSON 提供：每個代碼及其子系統、失敗的是什麼、以其協定自身詞彙告知「客戶端」的內容，以及此領域保存的稽核記錄中有多少數據列帶有它——可依子系統、文字與 ?seen=1 篩選，並以 ?page= 與 ?per= 分頁。代碼絕不會傳送給客戶端：它只出現在稽核數據列與記錄行中。唯讀——此表格就是原始碼。對應 GET /admin/error-codes；相同的表格即 docs/v1.2.0/error-codes.md。"
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

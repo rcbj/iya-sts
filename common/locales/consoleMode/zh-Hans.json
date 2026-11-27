@@ -30,5 +30,22 @@
   "waivedBy": "管理员已在此领域豁免：<code>{requirement}</code>（{section}，{level}），因为 <code>{setting}</code> 已开启。BCP 的其他所有要求仍然有效。",
   "requirementNotMet": "此处未满足：<code>{requirement}</code>（{section}），原因是 <code>{setting}</code>。",
   "waivedPerApplication": "按应用程序：只有当应用程序的 <code>{attribute}</code> 列出其请求的响应类型时，它才能使用这些响应类型；该属性由管理员或应用程序的所有者设置。自行注册的客户端只能启用 <code>{setting}</code> 所列的类型：{value}。",
-  "waivedPerApplicationNone": "按应用程序：只有当应用程序的 <code>{attribute}</code> 列出其请求的响应类型时，它才能使用这些响应类型；该属性由管理员或应用程序的所有者设置。自行注册的客户端无法启用其中任何一种，因为 <code>{setting}</code> 为空。"
+  "waivedPerApplicationNone": "按应用程序：只有当应用程序的 <code>{attribute}</code> 列出其请求的响应类型时，它才能使用这些响应类型；该属性由管理员或应用程序的所有者设置。自行注册的客户端无法启用其中任何一种，因为 <code>{setting}</code> 为空。",
+  "dualHeading": "双人审批",
+  "dualLead": "此领域中的高风险管理员操作是否等待第二位管理员（<code>admin.dualControl</code>）。在两种模式下它都是领域的设置，而非模式差异；放在这里是因为本页回答它是否生效。",
+  "dualInForce": "生效：被暂缓的操作等待第二位管理员。",
+  "dualOnNotInForce": "已开启，但并非对每种权限都生效。",
+  "dualOff": "关闭。",
+  "dualThAuthority": "权限",
+  "dualThHolders": "能够决定的人",
+  "dualThInForce": "生效",
+  "dualYes": "是",
+  "dualNo": "否",
+  "dualLink": "待审批（{n, plural, =1 {一项操作等待中} other {# 项操作等待中}}）",
+  "dbHeading": "数据库凭据",
+  "dbLead": "本服务如何向其数据库证明自己的身份（<code>persistence.databaseTlsClientCertFile</code>、<code>persistence.databasePasswordProvider</code>）。这是两种模式共有的设置，而不是模式之间的差异；列在这里，是因为连接如何认证是本页回答的问题。",
+  "dbCertificateAndPassword": "客户端证书和密码。",
+  "dbCertificate": "客户端证书，无密码。",
+  "dbPassword": "密码；不出示客户端证书。",
+  "dbNeither": "既无客户端证书也无密码：数据库在两者都没有的情况下接受连接。"
 }

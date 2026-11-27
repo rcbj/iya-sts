@@ -671,6 +671,34 @@ async function mergeSection(t, kek) {
           'a certificate slot both nodes filled keeps the first, and the ' +
           'displaced certificate\'s serial is kept in the issued register ' +
           'so OCSP does not answer `unknown` about it', slot.row);
+  const sshBase = {
+    sshUserCa: { fingerprint: 'old' },
+    sshIssued: [{ serialHex: '10', notAfter: future }]
+  };
+  const sshMerge = pkiMerge.merge(sshBase, {
+    sshUserCa: { fingerprint: 'mine' },
+    sshIssued: [
+      { serialHex: 'aa', notAfter: future, revokedAt: '2026-01-02T00:00:00Z' },
+      { serialHex: 'ee', notAfter: '2000-01-01T00:00:00Z' }
+    ]
+  }, {
+    sshUserCa: { fingerprint: 'theirs' },
+    sshIssued: [
+      { serialHex: 'aa', notAfter: future, revokedAt: '2026-01-03T00:00:00Z' },
+      { serialHex: 'bb', notAfter: future }
+    ]
+  });
+  t.equal(sshMerge.row.sshUserCa.fingerprint, 'theirs',
+          'the SSH user CA is first writer wins');
+  t.check(sshMerge.row.sshIssued.some(function (one) {
+    return one.serialHex === 'aa' &&
+      one.revokedAt === '2026-01-02T00:00:00Z';
+  }) && sshMerge.row.sshIssued.some(function (one) {
+    return one.serialHex === 'bb';
+  }) && !sshMerge.row.sshIssued.some(function (one) {
+    return one.serialHex === 'ee';
+  }), 'SSH serials union, the earliest revocation survives, and expired ' +
+      'certificates are pruned', sshMerge.row.sshIssued);
   log.debug("Leaving mergeSection().");
 }
 

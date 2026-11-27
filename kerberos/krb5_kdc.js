@@ -160,7 +160,7 @@ const delegation = require('../common/delegation');
 //
 // (History: when it was added, this require owed the parent project's `sts/`
 // COPY set a line, `COPY sts/common/issuance_gate.js ./sts/common/`. Nothing
-// is owed since #1280; `docs/v1.1.0/parent-project-migration.md` records it.)
+// is owed since #1280; `docs/v1.2.0/parent-project-migration.md` records it.)
 const gate = require('../common/issuance_gate');
 // THE MODE. A LEAF (rule 3) requiring only `config`, and already loaded:
 // `common/helpers.js` requires it, and `krb5_principals.js` below does too.
@@ -3166,7 +3166,7 @@ async function answerAnonymousAsReq(request, fast, pkinit) {
   });
   if (!result.ok) {
     log.debug('Leaving answerAnonymousAsReq(). Refused.');
-    // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+    // error-code: none — the code is the refusal's own, STS-KRB-0178..0197 or 0260..0262, chosen in krb5_pkinit.ts
     return refuse(result.code, result.errorCode, result.eText, result.eData);
   }
   const authtime = now();
@@ -3568,7 +3568,7 @@ async function answerAsReq(request, fast) {
     if (!result.ok) {
       log.debug("Leaving answerAsReq(). PKINIT refused.");
       return errorReply(result.code, {
-        // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+        // error-code: none — the code is the refusal's own, STS-KRB-0178..0197 or 0260..0262, chosen in krb5_pkinit.ts
         errorCode: result.errorCode,
         crealm: body.realm, cname: body.cname, sname: body.sname,
         eText: result.eText, eData: result.eData || null
@@ -3728,6 +3728,23 @@ async function answerAsReq(request, fast) {
         eText: asRoleAnswer.why
       });
     }
+  }
+  // A REQUIRED DYNAMIC ROLE (#1072, rcbj's decision 5): a KDC has no
+  // sign-in screen to choose one on. A service ticket is for its service's
+  // application; a ticket-granting ticket names none, and is asked about the
+  // realm-wide required roles. KDC_ERR_POLICY, as the policy's refusal.
+  const asRoleRefusal = require('../authn/role_selection').noBrowserRefusal({
+    username: body.cname.name.join('/'),
+    application: isTgtRequest(body.sname) ? ''
+      : ((body.sname || {}).name || []).join('/') + '@' + asRealm,
+    protocol: 'Kerberos' });
+  if (asRoleRefusal) {
+    log.debug("Leaving answerAsReq(). A required dynamic role.");
+    return errorReply(12, {
+      errorCode: 'STS-XACML-0332',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: asRoleRefusal.why
+    });
   }
 
   // Issue. The session key is fresh per ticket; both copies of it — the one in
@@ -4895,6 +4912,21 @@ async function answerTgsReq(request, state) {
       errorCode: 'STS-KRB-0039',
       cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
       eText: kerberosRoleAnswer.why });
+  }
+  // A REQUIRED DYNAMIC ROLE (#1072), for a service ticket this realm's
+  // person asks for: the application is the service's.
+  const tgsRoleRefusal = !presenterAcross && !isTgtRequest(body.sname)
+    ? require('../authn/role_selection').noBrowserRefusal({
+      username: presenterName,
+      application: serviceName + '@' + answeringRealm,
+      protocol: 'Kerberos' })
+    : null;
+  if (tgsRoleRefusal) {
+    log.debug("Leaving answerTgsReq(). A required dynamic role.");
+    return errorReply(12, { crealm: ticketPart.crealm,
+      errorCode: 'STS-XACML-0332',
+      cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
+      eText: tgsRoleRefusal.why });
   }
 
   // THE CROSS-REALM PATH (#430): a ticket issued from a TGT another realm

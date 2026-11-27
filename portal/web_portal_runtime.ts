@@ -61,13 +61,19 @@
 import SpaClient = require('../common/web_spa_client');
 import WebSafeDom = require('../common/web_safe_dom');
 import WebMessages = require('../common/web_messages');
+// An answer's refusal in the page's language where it names a catalog
+// message (#2006; the write budget's, #2167), its English otherwise.
+import WebSaid = require('../common/web_said');
 import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
 import PhotoPicker = require('./web_photo');
+import PemFile = require('./web_pem_file');
 import WebAccounts = require('../common/web_accounts');
+import WebClipboard = require('../common/web_clipboard');
+import WebPageState = require('../common/web_page_state');
 import DocLinks = require('../common/web_doc_links');
 import WebNavSections = require('../common/web_nav_sections');
 import WebAnnouncements = require('../common/web_announcements');
@@ -80,12 +86,21 @@ type Json = any;
 
 // The portal's client: public, DPoP-bound (`sender_constraints.js`).
 const CLIENT_ID = 'sts-user-portal';
-// An ID Token for who signed in, the one scope the account API takes, and an
-// owner's two on the management API (#607) — issued only to a person who
-// owns something, so a token without them is the ordinary case.
-const SCOPE = 'openid account:manage owner:read owner:write';
+// An ID Token for who signed in, the account API's read scope, and an
+// owner's read scope on the management API (#607) — issued only to a person
+// who owns something, so a token without it is the ordinary case. READ
+// SCOPES ONLY SINCE #2168 (ASVS 5.0.0 10.2.3, rcbj's decision): the first
+// write either API refuses for want of `account:manage` or `owner:write`
+// asks for it by a second authorization (`SpaClient.stepUp()`), silently
+// while the sign-on session holds; reads keep the read tokens.
+const SCOPE = 'openid account:read owner:read';
+// What a second authorization may add (#2168).
+const WRITE_SCOPES = ['account:manage', 'owner:write'];
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-portal-signin';
+// What a page held when a step had to leave it (#2220,
+// `common/web_page_state.ts`), the console's #508 arrangement.
+const RESTORE_KEY = 'sts-portal-restore';
 // How long before an access token's expiry it is refreshed, in seconds.
 const REFRESH_EARLY = 30;
 // The account API's base.
@@ -109,6 +124,18 @@ const OWN_EXTRAS = ['expect', 'another', 'login_hint'];
  * The user portal's runtime: sign-in, routing and forms.
  */
 class PortalRuntime extends SpaClient {
+  /**
+   * Addresses that used to be pages (#2308). A bookmark and a mail still
+   * name them; the column does not. Each value is the Tokens and keys
+   * tab that draws the same cards.
+   */
+  static readonly MOVED: Record<string, string> = {
+    [kit.BASE + '/tokens']:
+      kit.BASE + '/tokens-and-keys#tk-hardware-tokens',
+    [kit.BASE + '/openpgp']:
+      kit.BASE + '/tokens-and-keys#tk-openpgp'
+  };
+
   private me: Json;
   // `GET /account-api/locale`'s answer, for a page drawn for nobody: its
   // language data and the build.
@@ -120,6 +147,9 @@ class PortalRuntime extends SpaClient {
   // a query name its operation does not declare.
   private queryNames: Json;
   private view: Json;
+  // What a post on a page of tabs answered once, for the page asked again
+  // (#2053): `{ member, json }`, or null.
+  private keptAnswer: Json = null;
   // The announcement banner's poller (#1086), once the person is known.
   private announcements: WebAnnouncements | null = null;
   // What an act left to say on the next page drawn: `{ message, error }`.
@@ -153,7 +183,8 @@ class PortalRuntime extends SpaClient {
       clientId: CLIENT_ID, scope: SCOPE,
       elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
                    '/logout': 'data-sts-authn' },
-      accountKey: ACCOUNT_KEY
+      accountKey: ACCOUNT_KEY,
+      writeScopes: WRITE_SCOPES
     });
     this.dirty = false;
     this.openSection = null;
@@ -241,6 +272,8 @@ class PortalRuntime extends SpaClient {
                      extra?: Json): Promise<string> {
     const params: Json = {
       response_type: 'code', client_id: CLIENT_ID,
+      // The read scopes; a second authorization's replace them below
+      // (#2168), as `extra` replaces anything it names.
       redirect_uri: this.url(kit.BASE + '/callback'), scope: SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
       // BOTH RESOURCES (#607, RFC 8707): the account API's token is redeemed
@@ -304,6 +337,11 @@ class PortalRuntime extends SpaClient {
     // A JARM answer is opened and checked first (`SpaClient`).
     const query = await this.openAuthorizationResponse(
       this.callbackParameters());
+    // A SECOND AUTHORIZATION'S WINDOW (#2168) hands its answer back to the
+    // page whose write is waiting on it, and redeems nothing.
+    if (this.handBackStepUp(query, this.prefix + kit.BASE + '/callback')) {
+      return;
+    }
     let saved: Json = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -376,6 +414,8 @@ class PortalRuntime extends SpaClient {
     this.env.history.replaceState(null, '',
       this.prefix + String(saved.returnTo || kit.BASE));
     await this.route();
+    // What the page held when a step had to leave it (#2220).
+    this.restorePageState();
     // AN ACCOUNT THIS TAB ADDED TO THE BROWSER is announced, so the other
     // tabs' menus are read again (#561); a reload as the same account is
     // not a change.
@@ -462,6 +502,7 @@ class PortalRuntime extends SpaClient {
     // THE IDENTITY IT IS SENT FOR (#561): a switch aborts it, and whatever
     // comes back after one is null, as a sign-in that began is.
     const identity = this.identity;
+    let stepped = false;
     for (let attempt = 0; attempt < 3; attempt++) {
       const access = await this.ownerAccess();
       if (identity !== this.identity) {
@@ -475,9 +516,14 @@ class PortalRuntime extends SpaClient {
         return { status: 403, json: { ok: false, errors: [
           this.t.text('portalOwned.edit.noToken')] } };
       }
+      // THE OWNER'S WRITE TOKEN FOR ANYTHING BUT A GET, while one is held
+      // (#2168); the owner token, refreshed from the read grant, otherwise.
+      const written = method !== 'GET'
+        ? this.writeTokenFor(this.ownerResource()) : '';
+      const token = written || access.token;
       const headers: Json = {
-        'Authorization': 'DPoP ' + access.token,
-        'DPoP': await this.proof(method, target, access.token),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json',
         'Accept-Language': this.t.lang
       };
@@ -507,9 +553,28 @@ class PortalRuntime extends SpaClient {
         if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
           continue;
         }
-        // A token that stopped being one: drop it, and refresh once.
-        this.ownerToken = '';
+        // A token that stopped being one: drop it, and refresh once. A
+        // write token is never refreshed (#2168): it is dropped, and the
+        // write goes again on the owner token.
+        if (written) {
+          this.dropWriteToken(this.ownerResource());
+        } else {
+          this.ownerToken = '';
+        }
         if (attempt < 2) {
+          continue;
+        }
+      }
+      // A WRITE THE OWNER'S READ TOKEN CANNOT MAKE (#2168): the API names
+      // `owner:write`, the second authorization gets it, and the write goes
+      // once more, from memory.
+      if (!stepped && SpaClient.insufficientScopeOf(res).length) {
+        stepped = true;
+        if (await this.stepUp(this.ownerResource(),
+                              SpaClient.insufficientScopeOf(res))) {
+          if (identity !== this.identity) {
+            return null;
+          }
           continue;
         }
       }
@@ -561,9 +626,13 @@ class PortalRuntime extends SpaClient {
       return NEEDS_SIGN_IN;
     }
     for (let attempt = 0; attempt < 3; attempt++) {
+      // THE READ TOKEN FOR A GET, AND A WRITE TOKEN FOR ANYTHING ELSE WHILE
+      // ONE IS HELD (#2168).
+      const token = this.tokenFor(method, this.resource());
+      const writing = token !== this.accessToken;
       const headers: Json = {
-        'Authorization': 'DPoP ' + this.accessToken,
-        'DPoP': await this.proof(method, target, this.accessToken),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json'
       };
       if (body !== undefined && body !== null) {
@@ -594,6 +663,12 @@ class PortalRuntime extends SpaClient {
       if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
         continue;
       }
+      // A WRITE TOKEN IS NEVER REFRESHED (#2168): one refused is dropped,
+      // and the write goes again on the read token.
+      if (writing) {
+        this.dropWriteToken(this.resource());
+        continue;
+      }
       if (/invalid_token/.test(challenge) && await this.refresh()) {
         continue;
       }
@@ -601,6 +676,86 @@ class PortalRuntime extends SpaClient {
     }
     this.accessToken = '';
     return NEEDS_SIGN_IN;
+  }
+
+  // THE PORTAL'S HALF OF A SECOND AUTHORIZATION (#2168, `SpaClient`'s
+  // `stepUp()`): its callback, where it goes when no window can be opened,
+  // and the bar's words in the person's language.
+  /**
+   * The portal's callback, a second authorization's `redirect_uri`.
+   *
+   * @returns the URL
+   */
+  callbackUrl(): string {
+    return this.url(kit.BASE + '/callback');
+  }
+
+  /**
+   * Signs in on this page for a write scope. The change waiting is not
+   * sent: the person makes it again when the page is back, with the page's
+   * choices put back.
+   *
+   * @param scope - the scope to sign in with
+   * @param prompt - `login`, or '' for none
+   * @returns nothing
+   */
+  async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    // THE PAGE'S CHOICES GO FIRST (#2220), as the console's do (#508).
+    this.savePageState();
+    await this.beginSignIn(this.here() + String(this.env.location.hash || ''),
+      prompt ? { scope: scope, prompt: prompt, max_age: '0' }
+             : { scope: scope });
+  }
+
+  /**
+   * Keeps the page's choices across a sign-in that leaves it (#2220,
+   * `common/web_page_state.ts`).
+   *
+   * @returns nothing
+   */
+  savePageState(): void {
+    WebPageState.save(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
+  }
+
+  /**
+   * After a sign-in that left the page: puts its choices back for the same
+   * realm, page and person, and says nothing was sent.
+   *
+   * @returns nothing
+   */
+  restorePageState(): void {
+    const done = WebPageState.take(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
+    if (done.state === 'none') {
+      return;
+    }
+    const t = this.t;
+    const key = done.state === 'other' ? 'browser.stateOtherPerson'
+                                       : 'browser.stateRestored';
+    const doc = this.env.document;
+    const main = doc && doc.querySelector ? doc.querySelector('.main') : null;
+    if (main && t && t.has(key)) {
+      WebSafeDom.insert(main, 'afterbegin', '<div class="' +
+        (done.state === 'other' ? 'err' : 'ok') + '" role="status">' +
+        t.html(key) + '</div>');
+    }
+  }
+
+  /**
+   * The step's bar's words, from the portal's catalog where it has them.
+   *
+   * @returns `SpaClient.stepWords()`'s shape
+   */
+  stepWords(): Json {
+    const english = super.stepWords();
+    const t = this.t;
+    const out: Json = {};
+    Object.keys(english).forEach(function (name: string) {
+      const key = 'portal.step.' + name;
+      out[name] = t && t.has(key) ? t.text(key) : english[name];
+    });
+    return out;
   }
 
   /**
@@ -615,7 +770,19 @@ class PortalRuntime extends SpaClient {
    */
   async apiJson(method: string, path: string, body?: Json): Promise<Json> {
     const identity = this.identity;
-    const res = await this.sendOnce(method, this.url(path), body);
+    let res = await this.sendOnce(method, this.url(path), body);
+    // A WRITE THE READ TOKEN CANNOT MAKE (#2168): the account API names
+    // `account:manage`, the second authorization gets it, and the write is
+    // sent once more — the same closure, so it never leaves memory. A step
+    // that does not end with the scope answers the refusal as it was.
+    const named = res && res !== ABORTED && res !== NEEDS_SIGN_IN
+      ? SpaClient.insufficientScopeOf(res) : [];
+    if (named.length && await this.stepUp(this.resource(), named)) {
+      if (identity !== this.identity) {
+        return null;
+      }
+      res = await this.sendOnce(method, this.url(path), body);
+    }
     if (res === ABORTED) {
       return null;
     }
@@ -640,6 +807,44 @@ class PortalRuntime extends SpaClient {
    *
    * @returns whether it is in hand
    */
+  // A FIELD THE OPERATION TAKES AS A LIST OR A NUMBER (#2053): a form
+  // field is text, and the account API refuses a string where its model
+  // has an array or an integer. A form names such fields in `data-array`
+  // (a list typed separated by commas or spaces) and `data-integer`; an
+  // empty number is left out, as an unset optional member.
+  /**
+   * Turns a form's list and number fields into the types the operation
+   * takes, in place.
+   *
+   * @param form - the form
+   * @param fields - its fields, as `formFields()` read them
+   * @returns nothing
+   */
+  static typedFields(form: Json, fields: Json): void {
+    const names = function (attribute: string): string[] {
+      return String((form && form.getAttribute &&
+                     form.getAttribute(attribute)) || '')
+        .split(/\s+/).filter(Boolean);
+    };
+    names('data-array').forEach(function (name: string) {
+      if (fields[name] !== undefined) {
+        fields[name] = [].concat(fields[name]).join(',').split(/[\s,]+/)
+          .filter(Boolean);
+      }
+    });
+    names('data-integer').forEach(function (name: string) {
+      if (fields[name] === undefined) {
+        return;
+      }
+      const text = String(fields[name]).trim();
+      if (!text) {
+        delete fields[name];
+      } else if (/^-?\d+$/.test(text)) {
+        fields[name] = Number(text);
+      }
+    });
+  }
+
   async ensureFormTable(): Promise<boolean> {
     if (this.formTable) {
       return true;
@@ -745,12 +950,14 @@ class PortalRuntime extends SpaClient {
    *
    * @param title - what went wrong
    * @param detail - the detail
+   * @param more - optional; markup drawn after the detail (#2220: the link
+   *   to what this service needs from a browser)
    * @returns nothing
    */
-  drawProblem(title: string, detail: string): void {
+  drawProblem(title: string, detail: string, more?: string): void {
     this.put(title, PortalShell.bare('<div class="card"><h1>' +
       kit.esc(title) + '</h1><div class="err">' + kit.esc(detail) +
-      '</div><p><a href="' + kit.BASE + '">' +
+      '</div>' + (more || '') + '<p><a href="' + kit.BASE + '">' +
       (this.t.has('portal.signIn') ? this.t.html('portal.signIn')
                                    : 'Sign in') +
       '</a></p></div>'));
@@ -807,6 +1014,24 @@ class PortalRuntime extends SpaClient {
    */
   async route(): Promise<void> {
     const path = this.portalPath(this.env.location.pathname) || kit.BASE;
+    // THE TWO PAGES TOKENS AND KEYS REPEATED (#2308). The column no
+    // longer lists them. The shell answers every `/portal/*` path, so a
+    // bookmark would otherwise be "not a page". This runs before
+    // sign-in, so the return is the tab that is drawn. `replaceState`,
+    // so Back does not land on the old address. The destinations are
+    // not keys of `MOVED`. A `replaceState` that did not move the
+    // address must not call `route()` again.
+    const moved = PortalRuntime.MOVED[path];
+    if (moved) {
+      const next = this.prefix + moved;
+      this.env.history.replaceState(null, '', next);
+      const shown = String(this.env.location.pathname || '') +
+        String(this.env.location.hash || '');
+      if (shown === next) {
+        await this.route();
+      }
+      return;
+    }
     if (path === kit.BASE + '/callback') {
       await this.finishSignIn();
       return;
@@ -890,7 +1115,11 @@ class PortalRuntime extends SpaClient {
       }
       this.view = { page: page, query: query, json: { owned: {
         status: loaded.status, answer: loaded.json || {},
-        canWrite: this.ownerMay('owner:write'), query: query } } };
+        // OWNER_WRITE is held on OWNER_READ's condition (`roles.js`), so an
+        // owner's read token says the write scope is one second
+        // authorization away (#2168); the write asks for it.
+        canWrite: this.ownerMay('owner:write') ||
+          this.ownerMay('owner:read'), query: query } } };
       this.drawView();
       return;
     }
@@ -927,10 +1156,33 @@ class PortalRuntime extends SpaClient {
     const own = json.view && (json.view.refused || json.view.notOffered ||
                               json.view.tooMany);
     if ((answer.status !== 200 || json.ok === false) && !own) {
-      this.flash = { error: (json.errors || []).join(' ') ||
+      this.flash = { error: WebSaid.saidWith(this.t, json) ||
                             'The account API answered ' + answer.status + '.' };
     }
-    this.view = { page: page, query: query, json: json.view || json };
+    let drawn = json.view || json;
+    // A PAGE OF TABS OVER OTHER PAGES' OPERATIONS (#2053): each composed
+    // member is that operation's view, asked with the same token; one that
+    // refuses is its refusal, which its tab draws.
+    if (page.compose) {
+      drawn = Object.assign({}, drawn);
+      const members = Object.keys(page.compose);
+      for (let i = 0; i < members.length; i++) {
+        const got = await this.apiJson('GET', page.compose[members[i]]);
+        const body = (got && got.json) || {};
+        drawn[members[i]] = got && got.status === 200
+          ? (body.view || body) : { ok: false, refused: true };
+      }
+      if (identity !== this.identity) {
+        return;
+      }
+      // What a post on one tab answered once (an issued SSH certificate),
+      // kept across the page being asked again.
+      if (this.keptAnswer) {
+        drawn[this.keptAnswer.member] = this.keptAnswer.json;
+        this.keptAnswer = null;
+      }
+    }
+    this.view = { page: page, query: query, json: drawn };
     this.drawView();
   }
 
@@ -976,6 +1228,7 @@ class PortalRuntime extends SpaClient {
     target.searchParams.forEach(function (value: string, name: string) {
       fields[name] = value;
     });
+    PortalRuntime.typedFields(form, fields);
     if (!await this.ensureFormTable()) {
       this.flash = { error: 'The account API could not be reached.' };
       this.drawView();
@@ -1149,7 +1402,7 @@ class PortalRuntime extends SpaClient {
     const v = json.view || {};
     const ownRefusal = !!(v.refused || v.notOffered || v.tooMany);
     const said = json.ok === false
-      ? (ownRefusal ? {} : { error: (json.errors || []).join(' ') ||
+      ? (ownRefusal ? {} : { error: WebSaid.saidWith(this.t, json) ||
                                     'Refused (' + answer.status + ').' })
       : { message: String(json.message || '') };
     if (Array.isArray(json.files) && json.files.length) {
@@ -1172,6 +1425,28 @@ class PortalRuntime extends SpaClient {
     }
     if (json.signedOut) {
       this.signOut();
+      return;
+    }
+    // A FORM ON A PAGE OF TABS (#2053) posts to the page whose operation
+    // its tab is drawn from, and its answer goes back into that tab's
+    // member: the page, its address and its fragment stay.
+    const holder = this.view && this.view.page && this.view.page.members;
+    if (holder && path && Object.prototype.hasOwnProperty.call(holder,
+                                                               path)) {
+      const member = holder[path];
+      this.flash = said;
+      if (json.view) {
+        this.view = { page: this.view.page, query: this.view.query,
+          json: member === ''
+            ? Object.assign({}, this.view.json, json.view)
+            : Object.assign({}, this.view.json, { [member]: json.view }) };
+        this.drawView();
+        this.showFresh();
+        return;
+      }
+      this.keptAnswer = json.ok === false ? null
+        : { member: member + 'Answer', json: json };
+      await this.route();
       return;
     }
     if (json.view) {
@@ -1507,13 +1782,11 @@ class PortalRuntime extends SpaClient {
         const source = from ? doc.getElementById(from) : null;
         const text = source ? String(source.value || source.textContent || '')
                             : String(button.getAttribute('data-copy') || '');
-        if (nav && nav.clipboard && nav.clipboard.writeText) {
-          nav.clipboard.writeText(text).then(function () {
-            return undefined;
-          }, function () {
-            return undefined;
-          });
-        }
+        // THE CONSOLE'S FALLBACK, AND THEN WORDS (#2220): without
+        // `navigator.clipboard`, or refused by it, a selected text area and
+        // `execCommand('copy')`; the button says in the page's language
+        // whether it copied, so a failure is not silent.
+        WebClipboard.copyFrom(doc, nav, self.t, button, text);
       });
     }
     PortalWebAuthn.wire(doc, this.env.window || {}, function (form: Json) {
@@ -1530,10 +1803,13 @@ class PortalRuntime extends SpaClient {
           return undefined;
         });
       }
-    });
+    }, this.t);
     PortalRuntime.wireDependentSelects(doc);
     // The Overview's profile photo (#719): choosing a file draws the preview.
     PhotoPicker.wire(doc, this.env.window || {}, this.t);
+    // The PIV enrolment's PEM boxes (#2294): a chosen file is checked in
+    // the browser and put in its box only when it is the PEM it takes.
+    PemFile.wire(doc, this.t);
     // `/portal/delegate`'s search (2026-10-20): asked through this
     // runtime's own token, its answers drawn in place.
     DelegatePages.wire(doc, this.env.window || {}, function (path: string) {
@@ -1607,6 +1883,22 @@ class PortalRuntime extends SpaClient {
    * @returns nothing
    */
   async start(): Promise<void> {
+    // NO WEBCRYPTO, NO SIGN-IN (#2143): one sentence, and nothing else.
+    if (SpaClient.webCryptoMissing(this.env)) {
+      const words = await this.noWebCryptoWords('portal');
+      this.t = words.t;
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
+      return;
+    }
+    // NO SESSION STORAGE, NO SIGN-IN (#2220): the same, in its words.
+    if (SpaClient.sessionStorageMissing(this.env)) {
+      const words = await this.noStorageWords('portal');
+      this.t = words.t;
+      this.drawProblem(words.title, words.text,
+                       SpaClient.browserSupportHtml(words.t));
+      return;
+    }
     const self = this;
     this.env.document.addEventListener('click', function (event: Json) {
       self.onClick(event);

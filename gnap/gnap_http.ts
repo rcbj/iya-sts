@@ -41,6 +41,20 @@
 //      is `common/outbound_tls.ts`'s, shared with SSF, federation and XACML.
 //      Every insecure request is warned about. An optional host allowlist,
 //      `gnap.pushAllowedHosts`.
+//   3a. **The outbound policy's ADDRESS RULES** (#1614, ASVS 5.0.0 1.3.6),
+//      `federation/federation_http.ts`'s, as an RFC 9101 `request_uri` has
+//      had them since #1609: nothing is dialled with `federation.outbound`
+//      off, a host `security.outboundAllowedHosts` leaves out is refused,
+//      and in product every address the name resolves to is checked against
+//      the loopback, private, link-local and reserved ranges and the
+//      connection is PINNED to the address that was checked — so a name
+//      cannot answer a public address to the check and a private one to the
+//      connection (`STS-GNAP-0606`). Registration (2) does not cover it: in
+//      development nothing need be registered, and in product a client may
+//      register itself. Asked twice — at the grant request
+//      (`addressVerdict()`, from `gnap_grants.ts`), so a client learns at
+//      once that its URI will never be dialled, and again at the push, which
+//      is what is pinned, since a name may resolve elsewhere by then.
 //   4. **No redirects, a capped response, a timeout.** A 3xx is a failure — a
 //      redirect is how an allowed host forwards the request somewhere that is
 //      not — and nothing the client returns is read beyond its status.
@@ -68,7 +82,11 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import version = require('../common/version');
+// Whether the User-Agent may name the build (#2142).
+import mode = require('../common/mode');
 import OutboundTls = require('../common/outbound_tls');
+// The shared agent, deadline and connect timeout (#2220).
+import OutboundLimits = require('../common/outbound_limits');
 
 // What a push answers. It never rejects.
 interface PushResult {
@@ -77,6 +95,15 @@ interface PushResult {
   errorCode?: string;
   why?: string;
   url?: string;
+}
+
+// What `addressVerdict()` answers (#1614). It never rejects.
+interface AddressVerdict {
+  ok: boolean;
+  why: string;
+  errorCode: string;
+  // `vetHost()`'s answer, when the address was allowed.
+  vetted: any;
 }
 
 interface GnapHttpDeps {
@@ -88,21 +115,13 @@ interface GnapHttpDeps {
   errorCodes: { mark<T>(res: T, code: string): T };
   http: typeof http;
   https: typeof https;
+  // `federation/federation_http`'s `outboundAllowed()`, `vetHost()` and
+  // `pinnedLookup()` (#1614). Optional: absent, the module is required
+  // lazily where it is asked, so `defaultDeps()` closes no require cycle.
+  federationHttp?: any;
 }
 
 const log = helpers.log;
-
-const USER_AGENT = (function () {
-  try {
-    return version.userAgent('gnap-push-finish');
-  } catch (e) {
-    log.debug("Caught in a callback in module scope: " +
-              ((e && e.message) || e));
-    // The version record is never allowed to stop a request (root CLAUDE.md,
-    // Versioning); a bare product token is the degraded answer.
-    return 'sts (gnap-push-finish)';
-  }
-}());
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
@@ -131,9 +150,27 @@ const PUSH_TRANSPORT = {
  */
 class GnapHttp {
   /**
-   * The User-Agent a push finish is sent with.
+   * The User-Agent a push finish is sent with: asked per push since #2142,
+   * because product leaves the build out and the mode is per realm.
+   *
+   * @returns the header value
    */
-  static readonly USER_AGENT = USER_AGENT;
+  static userAgent(): string {
+    log.debug("Entering GnapHttp.userAgent().");
+    try {
+      const out = version.userAgent('gnap-push-finish',
+                                    mode.publishesBuildDetail());
+      log.debug("Leaving GnapHttp.userAgent().");
+      return out;
+    } catch (e) {
+      log.debug("Caught in GnapHttp.userAgent(): " +
+                ((e && e.message) || e));
+      // The version record is never allowed to stop a request (root
+      // CLAUDE.md, Versioning); a bare product token is the degraded answer.
+      log.debug("Leaving GnapHttp.userAgent(). Bare token.");
+      return 'sts (gnap-push-finish)';
+    }
+  }
   /**
    * The most of a client's response a push finish reads.
    */
@@ -231,18 +268,88 @@ class GnapHttp {
     return { why: '', errorCode: '' };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE OUTBOUND POLICY'S ADDRESS RULES FOR A PUSH FINISH URI (#1614, ASVS
+  // 5.0.0 1.3.6) — see the header, bound 3a. Resolves `{ ok, why, errorCode,
+  // vetted }` and never rejects; `vetted` is `vetHost()`'s answer, whose
+  // `address` (product only) is what the connection is pinned to. A URI that
+  // is not an http(s) URL is `ok` here: `urlVerdict()` is what refuses it,
+  // with its own code. `federation_http` is required LAZILY, as
+  // `oauth-oidc/request_object.ts` does: a library, asked only at a grant
+  // request or a push, and reached through its module so a test can stand in
+  // for `vetHost()` there.
+  // ---------------------------------------------------------------------------
+  /**
+   * Applies the outbound policy's address rules to a push finish URI:
+   * `federation.outbound`, `security.outboundAllowedHosts`, and in product
+   * the internal-address check whose answer the push is pinned to (#1614).
+   *
+   * @param raw - the client's finish URI
+   * @returns a promise of `{ ok, why, errorCode, vetted }`; never rejects
+   */
+  addressVerdict(raw: unknown): Promise<AddressVerdict> {
+    const { log } = this.deps;
+    log.debug("Entering GnapHttp.addressVerdict().");
+    let target: URL;
+    try {
+      target = new URL(String(raw || ''));
+    } catch (e) {
+      log.debug("Caught in GnapHttp.addressVerdict(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving GnapHttp.addressVerdict(). Not a URL: " +
+                "urlVerdict() refuses it.");
+      return Promise.resolve({ ok: true, why: '', errorCode: '',
+                               vetted: null });
+    }
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') {
+      log.debug("Leaving GnapHttp.addressVerdict(). Not http(s): " +
+                "urlVerdict() refuses it.");
+      return Promise.resolve({ ok: true, why: '', errorCode: '',
+                               vetted: null });
+    }
+    const fedHttp = this.deps.federationHttp ||
+      require('../federation/federation_http');
+    if (!fedHttp.outboundAllowed()) {
+      log.debug("Leaving GnapHttp.addressVerdict(). federation.outbound " +
+                "is off.");
+      return Promise.resolve({ ok: false, errorCode: 'STS-GNAP-0606',
+        why: 'the push finish URI ' + target.origin + ' will not be ' +
+             'dialled: federation.outbound is off, so this service makes ' +
+             'no outbound request', vetted: null });
+    }
+    log.debug("Leaving GnapHttp.addressVerdict(). Vetting the host.");
+    return Promise.resolve(fedHttp.vetHost(target.hostname)).then(
+      function (vetted: any): AddressVerdict {
+        if (!vetted || !vetted.ok) {
+          return { ok: false, errorCode: 'STS-GNAP-0606',
+            why: 'the push finish URI ' + target.origin + ' will not be ' +
+                 'dialled: ' + String((vetted && vetted.why) ||
+                                      'its host was refused')
+                   .replace(/\.+$/, ''), vetted: null };
+        }
+        return { ok: true, why: '', errorCode: '', vetted: vetted };
+      }, function (e: any): AddressVerdict {
+        log.debug("Caught in GnapHttp.addressVerdict(): " +
+                  ((e && e.message) || e));
+        return { ok: false, errorCode: 'STS-GNAP-0606',
+          why: 'the push finish URI ' + target.origin + ' will not be ' +
+               'dialled: its host could not be vetted', vetted: null };
+      });
+  }
+
   /**
    * POSTs a push interaction finish message to the client's callback URI.
    *
-   * Refuses before any socket opens when `gnap.pushFinish` is off or the URI
-   * fails `urlVerdict()`.
+   * Refuses before any socket opens when `gnap.pushFinish` is off, the URI
+   * fails `urlVerdict()`, or its address fails `addressVerdict()` (#1614);
+   * the connection is pinned to the address that was checked.
    *
    * @param url - the client's finish URI
    * @param message - the `{ hash, interact_ref }` body
    * @returns `{ ok, status }`, with `why` and `errorCode` on a failure
    */
   pushFinish(url: string, message: unknown): Promise<PushResult> {
-    const { log, config, errorCodes, http, https } = this.deps;
+    const { log, config, errorCodes } = this.deps;
     log.debug("Entering GnapHttp.pushFinish().");
     if (!config.value('gnap.pushFinish')) {
       log.debug("Leaving GnapHttp.pushFinish(). Switched off.");
@@ -261,6 +368,25 @@ class GnapHttp {
         errorCode: code,
         why: problem.why, url: url }, code));
     }
+    const self = this;
+    log.debug("Leaving GnapHttp.pushFinish(). Vetting the address.");
+    return this.addressVerdict(url).then(function (verdict) {
+      if (!verdict.ok) {
+        return errorCodes.mark({ ok: false, status: 0,
+          errorCode: verdict.errorCode, why: verdict.why, url: url },
+          verdict.errorCode);
+      }
+      return self.dialPush(url, message, verdict.vetted);
+    });
+  }
+
+  // The POST itself, once `addressVerdict()` has allowed the address; in
+  // product `vetted.address` is what the connection is pinned to.
+  private dialPush(url: string, message: unknown,
+                   vetted: any): Promise<PushResult> {
+    const { log, config, errorCodes, http, https } = this.deps;
+    const self = this;
+    log.debug("Entering GnapHttp.dialPush().");
     const target = new URL(url);
     const secure = target.protocol === 'https:';
     if (!secure) {
@@ -276,21 +402,21 @@ class GnapHttp {
     const transport = secure ? OutboundTls.tlsVerdict(PUSH_TRANSPORT,
                                                       target.origin) : null;
     if (transport && !transport.ok) {
-      log.debug("Leaving GnapHttp.pushFinish(). " + transport.why);
+      log.debug("Leaving GnapHttp.dialPush(). " + transport.why);
       return Promise.resolve(errorCodes.mark({ ok: false, status: 0,
         errorCode: transport.errorCode,
         why: transport.why, url: url }, transport.errorCode));
     }
     const body = Buffer.from(JSON.stringify(message), 'utf8');
     const timeout = Number(config.value('gnap.pushTimeoutMs')) || 5000;
-    log.debug("Leaving GnapHttp.pushFinish(). Dialling " + target.origin +
+    log.debug("Leaving GnapHttp.dialPush(). Dialling " + target.origin +
               ".");
     return new Promise(function (resolve) {
       let settled = false;
       const done = function (result: PushResult) {
-        log.debug("Entering GnapHttp.pushFinish().done().");
+        log.debug("Entering GnapHttp.dialPush().done().");
         if (settled) {
-          log.debug("Leaving GnapHttp.pushFinish().done().");
+          log.debug("Leaving GnapHttp.dialPush().done().");
           return;
         }
         settled = true;
@@ -298,7 +424,7 @@ class GnapHttp {
           errorCodes.mark(result, result.errorCode);
         }
         resolve(Object.assign({ url: url }, result));
-        log.debug("Leaving GnapHttp.pushFinish().done().");
+        log.debug("Leaving GnapHttp.dialPush().done().");
       };
       let request: http.ClientRequest;
       const requestOptions: https.RequestOptions = {
@@ -309,11 +435,19 @@ class GnapHttp {
         method: 'POST',
         headers: { 'Content-Type': 'application/json',
                    'Content-Length': body.length,
-                   'User-Agent': USER_AGENT },
+                   'User-Agent': GnapHttp.userAgent() },
         rejectUnauthorized: !transport || transport.rejectUnauthorized
       };
       if (transport && transport.ca) {
         requestOptions.ca = transport.ca;
+      }
+      // PINNED (#1614): the address `vetHost()` checked, whatever the name
+      // resolves to now. The Host header and the TLS server name still come
+      // from the URL, so the certificate is checked against the client's name.
+      if (vetted && vetted.address) {
+        const fedHttp = self.deps.federationHttp ||
+          require('../federation/federation_http');
+        requestOptions.lookup = fedHttp.pinnedLookup(vetted);
       }
       // The host check, and the verified chain held to the path rules
       // (#201, `OutboundTls.checkServerIdentity()`). Set only when present:
@@ -321,6 +455,7 @@ class GnapHttp {
       if (transport && transport.checkServerIdentity) {
         requestOptions.checkServerIdentity = transport.checkServerIdentity;
       }
+      OutboundLimits.useAgent(requestOptions, secure);
       try {
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
@@ -357,13 +492,20 @@ class GnapHttp {
           done({ ok: false, status: 0, errorCode: 'STS-GNAP-0605',
                  why: 'the push timed out after ' + timeout + 'ms' });
         });
+        OutboundLimits.guard(request, {
+          timeoutMs: timeout, secure: secure, where: target.origin,
+          onTimeout: function (why: string) {
+            done({ ok: false, status: 0, errorCode: 'STS-GNAP-0605',
+                   why: 'the push ' + why });
+          }
+        });
         request.on('error', function (error) {
           done({ ok: false, status: 0, errorCode: 'STS-GNAP-0604',
                  why: 'the push could not be delivered: ' + error.message });
         });
         request.end(body);
       } catch (e) {
-        log.debug("Caught in GnapHttp.pushFinish(): " +
+        log.debug("Caught in GnapHttp.dialPush(): " +
                   ((e && e.message) || e));
         done({ ok: false, status: 0, errorCode: 'STS-GNAP-0604',
                why: 'the push could not be started: ' + e.message });
@@ -431,6 +573,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   urlProblem: slot.forward('urlProblem'),
   urlVerdict: slot.forward('urlVerdict'),
+  addressVerdict: slot.forward('addressVerdict'),
   PUSH_TRANSPORT: PUSH_TRANSPORT,
   pushFinish: slot.forward('pushFinish')
 };

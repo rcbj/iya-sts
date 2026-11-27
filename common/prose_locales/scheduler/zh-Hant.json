@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "雙人審批的過期"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "將每項為第二位管理員而暫緩、且已過截止時間的管理員操作（#2166）改為已過期並寫入其稽核列，在已完成的操作完成一週後將其刪除，並修復待決操作清單。讀取本身會套用截止時間，因此這是記錄與清理，而從不是作出決定的部分。"
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "屬性來源：排程重新整理"
@@ -36,8 +44,8 @@
     "text": "AuthZEN 存取請求到期"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "e0a885271868119c",
-    "text": "將每個已超過 expires_at 的待處理 AuthZEN 存取請求（#1180）移為 expired——寫入其稽核列並傳送其回呼——並在已完成一天之後，或其核准失效之後（以較晚者為準）將其移除。讀取時會自行套用截止時間，因此這裡只是記錄與清理，從不負責決定。"
+    "en": "19cf8cda48af4f1e",
+    "text": "將每個超過 expires_at 的待處理 AuthZEN 存取請求（#1180）改為 expired——寫入其稽核列並傳送其回呼——在已完成的請求完成一天後將其移除（若其核准到期較晚，則於核准到期時），在可申請拒絕的時間窗口結束一天後將其移除，並對因網路錯誤或 HTTP 5xx 而失敗的回呼傳遞進行重試，直到嘗試上限，每次等待為上一次的兩倍（#1202）。回呼仍在嘗試時保留已完成的請求，核准者解析為無人的待處理請求改為 failed。讀取本身會套用截止時間，因此這只是記錄與清理，從不作出決定。"
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -78,6 +86,22 @@
   "sched.jobs.cluster.rate-window-purge.describe": {
     "en": "772463775db370a2",
     "text": "從所有節點共用的資料表中刪除已過去的速率限制時間窗。"
+  },
+  "sched.jobs.cluster.secret-refresh.title": {
+    "en": "31d0e7053d4c2868",
+    "text": "共用機密重新整理"
+  },
+  "sched.jobs.cluster.secret-refresh.describe": {
+    "en": "fa78bd980f9c99b8",
+    "text": "從儲存區重新讀取此程序的共用機密，使任何節點上進行的輪替在此處生效。"
+  },
+  "sched.jobs.cluster.secret-rotate.title": {
+    "en": "d3d4b732eed27968",
+    "text": "共用機密輪替"
+  },
+  "sched.jobs.cluster.secret-rotate.describe": {
+    "en": "fb2e7e7289cce894",
+    "text": "每隔 cluster.secretRotationDays 輪替屬於金鑰的每個共用機密（CSRF、ACME nonce、Shared Signals 接收端、OpenID Federation 頁面、登出結果與 DBSC 金鑰）：發布下一個值，十分鐘後使其成為目前值，舊值在 cluster.secretOverlapS 內仍被接受。成對主體機密與啟動名稱機密是識別碼，永不輪替。"
   },
   "sched.jobs.devices.android-status-recheck.title": {
     "en": "fe97755c55eeb3e2",
@@ -143,6 +167,30 @@
     "en": "71471822b228b1b8",
     "text": "在 GNAP 授與結束、已無其權杖可被出示時，刪除為該授與限額所保留的累計值（#432）。"
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "項目上的硬體權杖"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "把寫入項目未成功的硬體權杖、OATH 權杖和 YubiKey OTP 權杖寫到其持有人的項目上，並在一個程序中首次執行時，把在權杖保存到項目之前登記的每個權杖複製到其持有人上。"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "重建硬體權杖索引"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "根據人員項目上的權杖（它們是主資料）重寫硬體權杖登記簿以及 OATH 和 YubiKey OTP 清單：在還原之後或某個索引與項目不一致時手動執行。"
+  },
+  "sched.jobs.keys.credential-signer-rotate.title": {
+    "en": "1b6cffa22d5fa379",
+    "text": "憑證簽署者輪替"
+  },
+  "sched.jobs.keys.credential-signer-rotate.describe": {
+    "en": "ecfb6ab7190ae162",
+    "text": "當每個專用憑證簽署者的金鑰使用達到 keys.credentialSignerRotationIntervalDays 時，將其金鑰族切換到新金鑰。被取代的金鑰不再簽署任何內容並保持發布，因此它簽署的每個憑證仍可驗證。"
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "資料加密金鑰的值計數"
@@ -175,6 +223,14 @@
     "en": "a4d23163545ebff6",
     "text": "立即輪替每把已儲存的資料加密金鑰——或某個領域的、或某個類別的；被取代的金鑰會繼續開啟它們所密封的內容，直到重新密封為止。"
   },
+  "sched.jobs.keys.encryption-key-rotate.title": {
+    "en": "519aa9c557fa082b",
+    "text": "請求解密金鑰輪替"
+  },
+  "sched.jobs.keys.encryption-key-rotate.describe": {
+    "en": "292c187290e7f89f",
+    "text": "當請求物件加密金鑰、OpenID4VCI 請求加密金鑰和 KEM 解密金鑰使用達到 keys.encryptionKeyRotationIntervalDays 時將其取代。新金鑰立即發布；被取代的金鑰在 keys.encryptionKeyOverlapDays 內仍可解密。"
+  },
   "sched.jobs.keys.kek-rotate-now.title": {
     "en": "56ce4e44eba4fdbf",
     "text": "手動金鑰加密金鑰輪替"
@@ -199,6 +255,14 @@
     "en": "6fffa44535aa160d",
     "text": "立即輪替此領域的 krbtgt 金鑰。若使用 invalidate，則不保留先前版本：在此之前核發的每個 TGT 都會被拒絕，並由一個 Shared Signals 事件通告。"
   },
+  "sched.jobs.krb5.service-key-rotate.title": {
+    "en": "16aadd75f4f7e6ab",
+    "text": "Kerberos 服務金鑰輪替"
+  },
+  "sched.jobs.krb5.service-key-rotate.describe": {
+    "en": "11521ab3fb58060c",
+    "text": "當本服務為其自身接受方產生的金鑰使用達到 krb5.serviceKeyRotationIntervalDays 時，以下一個 kvno 的新隨機金鑰取代它，並在其下簽發的票證最長存活期間保留被取代的金鑰，且該視窗開啟期間絕不輪替。已交出 keytab 的金鑰會被回報為到期而不是被輪替：其服務需要安裝新的 keytab。"
+  },
   "sched.jobs.ldap.connection-mirror-maintenance.title": {
     "en": "053ed0f531573935",
     "text": "LDAP 連線鏡像維護"
@@ -206,6 +270,14 @@
   "sched.jobs.ldap.connection-mirror-maintenance.describe": {
     "en": "76f7213ce5e8a506",
     "text": "刪除已不再是成員的節點的鏡像 LDAP 連線，以及已超過有效期限的登出指令。"
+  },
+  "sched.jobs.mail.credential-expiry.title": {
+    "en": "a20d0db8172e755d",
+    "text": "認證資料到期提醒"
+  },
+  "sched.jobs.mail.credential-expiry.describe": {
+    "en": "5b5b9bc9023205c4",
+    "text": "向憑證將在 mail.expiryReminderDays 某一天數內到期的每個人傳送提醒，列出每個到期的憑證：是什麼、哪天到期以及如何續約，每人一封郵件，每個憑證每個步驟一次。只讀取到期索引中今天或過去三十天內到期的列，從不讀取目錄，但在索引建立前已持有的憑證登錄完成之前，每次執行會讀取一部分人員。"
   },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
@@ -244,8 +316,8 @@
     "text": "用戶端密碼到期"
   },
   "sched.jobs.oauth2.client-secret-expiry.describe": {
-    "en": "bf894947ce420111",
-    "text": "檢查每個應用程式的每個用戶端密碼：對持有將在 oauth2.clientSecretExpiryWarningDays 內到期之密碼的應用程式，以及所有密碼都已到期的應用程式，各寫一筆稽核記錄；並移除應用程式在另持有未到期密碼時的已到期密碼——絕不移除其最後一個，該密碼會保留，且在產品模式下被拒絕。"
+    "en": "d4cb0d1e9d4a5e70",
+    "text": "檢查每個應用程式的每個用戶端密碼：對持有將在 oauth2.clientSecretExpiryWarningDays 內到期之密碼的應用程式，以及所有密碼都已到期的應用程式，各寫一筆稽核記錄；並移除應用程式在另持有未到期密碼時的已到期密碼——絕不移除其最後一個，該密碼會保留，且在產品模式下被拒絕。首先，它會輪替 oauth2.clientSecretAutoRotate 中所列、且將在 oauth2.clientSecretAutoRotateDays 內到期之每個應用程式的密碼。"
   },
   "sched.jobs.oauth2.command-sweep.title": {
     "en": "e200c4ae261a2eb6",
@@ -383,6 +455,14 @@
     "en": "98370fb755b4ba95",
     "text": "在以單元方式部署的服務中，以相同的批次從全域層的資料庫中刪除早於 persistence.mintedRetention 的已結束產生資料列的墓碑；其執行在全域層中認領，因此每個時段只有一個單元執行。在只有一個資料庫的服務中關閉，由另一項清理涵蓋。"
   },
+  "sched.jobs.pki.ca-renew.title": {
+    "en": "cc4113b60886af6d",
+    "text": "CA 憑證續期"
+  },
+  "sched.jobs.pki.ca-renew.describe": {
+    "en": "8879042a18ef5cc5",
+    "text": "依序續期根 CA、每個中繼 CA 和每個簽發 CA（在其提前期 pki.rootRenewalLeadDays、pki.caRenewalLeadDays 內），使用相同的金鑰和主體，因此它簽署的一切仍可驗證。續期後的根憑證與被取代的根憑證並列發布，直到後者到期。匯入的 CA 由其營運者續期。"
+  },
   "sched.jobs.pki.pins.audit.title": {
     "en": "3ccb80617905a1db",
     "text": "已釘選憑證稽核"
@@ -396,8 +476,16 @@
     "text": "登入後活動郵件"
   },
   "sched.jobs.post-login.activity-mail.describe": {
-    "en": "5081eadb5d5abbeb",
-    "text": "向進行中的登入後活動涵蓋的人員（#1111）寄送登入提醒，登入後該活動會請他們註冊後量子通行金鑰。每次執行在游標之後讀取每個已啟動活動人群（領域，或其各群組的聯集）的一批，只向有待完成該活動的人寄送，絕不在提醒間隔內或超過其上限寄送，並為每個已啟動活動的每次執行寫一筆稽核紀錄。"
+    "en": "9e62432e54429d50",
+    "text": "向進行中的登入後活動涵蓋的人員（#1111）寄送登入提醒，登入後該活動會請他們完成：註冊後量子通行金鑰、後量子郵件加密金鑰或新的 PIV 憑證，每項活動都有自己的郵件。每次執行在游標之後讀取每個已啟動活動人群（領域，或其各群組的聯集）的一批，只向有待完成該活動的人寄送，絕不在提醒間隔內或超過其上限寄送，並為每個已啟動活動的每次執行寫一筆稽核紀錄。"
+  },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "移除保留的傳統 OpenPGP 金鑰"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "在設定檔的 mailKeepClassical 天數過去後，移除登入後郵件加密活動在取代它的後量子金鑰旁保留的傳統 OpenPGP 金鑰（#2009，D3）：從此人的項目中移除，因而也從 Web Key Directory 中移除。只走訪保留金鑰的記錄，從不走訪目錄，每移除一個金鑰寫一筆稽核記錄。時間已過的金鑰已經不會出現在目錄與任何頁面中，無論此工作是否執行過。"
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
@@ -655,6 +743,38 @@
     "en": "bd4794eda9c5d2d2",
     "text": "暫停、停用或刪除接收者已閒置 ssf.inactivityTimeoutS 的串流（SSF 1.0 section 8.1.1），暫停或停用前會先以 stream-updated 事件通告；並對已有 ssf.verificationEveryS 未從此傳送者收到驗證事件的每個已啟用串流送出驗證事件（section 8.1.4）。"
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "項目上的 SSH 使用者憑證"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "把簽發時未能寫入項目的 SSH 使用者憑證寫到其持有人的項目（stsSshUserCertificate）上，移除已過期的憑證，並在一個程序中首次執行時，把在憑證保存到項目之前簽發的憑證複製到其持有人上。"
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "SSH 使用者 CA 撤銷清單"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "在已簽發憑證被撤銷後重新整理每個領域的 OpenSSH 使用者 CA KRL，並移除已過期的撤銷。"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.title": {
+    "en": "39405433a9c454c6",
+    "text": "OCSP 裝訂重新整理"
+  },
+  "sched.jobs.tls.ocsp-staple-refresh.describe": {
+    "en": "3af2959d2639d8a7",
+    "text": "每隔 pki.crlLifetimeMinutes 的四分之一，從本服務自己的回應器重新產生本程序每個監聽器（主連接埠、LDAPS、偵錯器和自訂監聽器）裝訂的 OCSP 回應，使裝訂始終遠早於其 nextUpdate，且在別處做出的撤銷能夠到達它。在每個節點的前端程序中執行。"
+  },
+  "sched.jobs.tls.server-certificate-renew.title": {
+    "en": "d7afa3328270e140",
+    "text": "監聽器憑證續期"
+  },
+  "sched.jobs.tls.server-certificate-renew.describe": {
+    "en": "33005219cf398f22",
+    "text": "當本程序主連接埠、LDAPS 和偵錯工具所出示憑證的剩餘有效期不足三分之一或進入 tls.serverCertificateRenewLeadDays 時，使用相同金鑰續期，並在不重新啟動的情況下放到每個通訊端上。在每個節點的前端程序中執行，由其將續期後的憑證交給請求工作執行緒。"
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "TLS 工作階段票證金鑰輪替"
@@ -670,6 +790,14 @@
   "sched.jobs.uma.sweep.describe": {
     "en": "167f79e724fe8b34",
     "text": "移除每個超過其有效期的 User-Managed Access 許可票證、持久化宣告權杖、RPT 記錄與待處理的擁有者核准（#1168）。讀取時會自行套用期限，因此這只是清理，絕不是作出決定的環節。"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.title": {
+    "en": "dce74787b5ae6954",
+    "text": "Yubico OTP nonce 清掃"
+  },
+  "sched.jobs.yubiotp.nonce-sweep.describe": {
+    "en": "21922132f2f9b5f8",
+    "text": "丟棄超過五分鐘的 YK-VAL nonce，以及超過一萬筆時最舊的那些，使 nonce 對應不再增長。"
   },
   "sched.sentence.onDemand": {
     "en": "92e0ecb68dc6ec36",

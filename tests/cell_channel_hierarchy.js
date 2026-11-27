@@ -170,7 +170,10 @@ function handshake(port, leaf, rootPem) {
     const socket = tls.connect({
       host: '127.0.0.1', port: port, servername: 'localhost',
       key: leaf.keyPem, cert: [leaf.certPem].concat(leaf.chainPem).join('\n'),
-      ca: [rootPem], minVersion: 'TLSv1.3', rejectUnauthorized: false
+      // VERIFIED against the Root the case names: a chain that does not
+      // reach it fails the handshake, and `connected` stays false with the
+      // reason in `error`, which is what every case asserts against.
+      ca: [rootPem], minVersion: 'TLSv1.3'
     }, function () {
       out.connected = true;
       out.authorized = socket.authorized;

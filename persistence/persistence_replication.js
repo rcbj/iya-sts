@@ -846,6 +846,17 @@ function createReplication(label) {
     const applyMs = c.applyMs + (c.applyingSince ? now - c.applyingSince : 0);
     const otherMs = Math.max(0, applyMs - rowsMs - preparedMs - turnMs);
     const holesMs = (c.holesMs || 0) + (c.holing ? now - c.holing : 0);
+    // AND WHETHER THE APPLY IN FLIGHT IS WAITING ON THIS PROCESS'S OWN FLUSH
+    // (#1934): in run #551 the line named the directory row being applied
+    // for 44 minutes and not that what held it was a flush in this very
+    // process. An applier that can say so carries `ownFlushWait()`.
+    let own = null;
+    Object.keys(appliers || {}).forEach(function (kind) {
+      const applier = appliers[kind];
+      if (!own && applier && typeof applier.ownFlushWait === 'function') {
+        own = applier.ownFlushWait();
+      }
+    });
     log.debug("Leaving pullCostText().");
     return ' The ' + (runningPull ? 'pull in flight' : 'latest pull') +
            ' began ' + (now - c.startedAt) + ' ms ago: ' +
@@ -865,7 +876,19 @@ function createReplication(label) {
            (preparing ? '; preparing "' + preparing.kind + '" rows for ' +
             (now - preparing.since) + ' ms' : '') +
            (c.turning ? '; waiting for a turn of the event loop for ' +
-            (now - c.turning) + ' ms' : '') + '.';
+            (now - c.turning) + ' ms' : '') +
+           (own && own.active ? '; WAITING ON THIS PROCESS\'S OWN FLUSH ' +
+            'of "' + String(own.key).slice(0, 80) + '" in realm "' +
+            (own.realm || 'default') + '" for ' + own.waitedMs + ' ms (' +
+            own.count + ' apply(ies) waiting; bounded at ' + own.limitMs +
+            ' ms, workers.readBarrierTimeoutMs, past which STS-STORE-0176)'
+             : '') +
+           (own && !own.active ? '; the latest apply WAITED ON THIS ' +
+            'PROCESS\'S OWN FLUSH of "' + String(own.key).slice(0, 80) +
+            '" in realm "' + (own.realm || 'default') + '" past its bound ' +
+            'of ' + own.limitMs + ' ms (workers.readBarrierTimeoutMs, ' +
+            'STS-STORE-0176), and that flush is still out ' + own.waitedMs +
+            ' ms after the wait began' : '') + '.';
   }
 
   function pull() {
@@ -1083,6 +1106,16 @@ function createReplication(label) {
       // path is swallowed: a database that blinked must not take down a service
       // that is answering perfectly well out of memory. The high-water mark was
       // not advanced, so the next pull retries exactly the same rows.
+      // A PULL THAT WAITED OUT THIS PROCESS'S OWN FLUSH (#1934) was said
+      // by STS-STORE-0176, once for that flush; a line here for each such
+      // pull would be one every workers.readBarrierTimeoutMs while the
+      // flush stays out.
+      if (errorCodes.codeOf(err) === 'STS-STORE-0176') {
+        log.debug('persistence: a pull failed on STS-STORE-0176; the next ' +
+                  'one reads the same rows.');
+        log.debug('Leaving pull(). It waited out its own flush.');
+        return { applied: applied, error: err.message };
+      }
       log.error(errorCodes.tag('STS-STORE-0038') +
                 'persistence: could not apply another process\'s changes: ' +
                 err.message + '. This process is serving its own copy and ' +
@@ -1159,6 +1192,15 @@ function createReplication(label) {
         deferredRows.delete(id);
         chain = chain.then(function () {
           return applyOne(row);
+        }).catch(function (err) {
+          // HELD AGAIN when the apply waited out this process's own flush
+          // (#1934, STS-STORE-0176): the page it came from has moved on, so
+          // this map is the only place the row still is.
+          if (errorCodes.codeOf(err) === 'STS-STORE-0176' &&
+              !deferredRows.has(id)) {
+            deferredRows.set(id, held);
+          }
+          throw err;
         });
         return;
       }
@@ -1324,6 +1366,19 @@ function createReplication(label) {
         // -----------------------------------------------------------------
         function failed(err) {
           log.debug("Entering failed().");
+          // A WAIT ON THIS PROCESS'S OWN FLUSH THAT RAN OUT (#1934) IS THE
+          // PAGE'S FAILURE, NOT THE ROW'S: a row failed here is never applied
+          // again, and this one is a committed row this process has merely
+          // not been able to look at yet. Rethrown, it fails the pull before
+          // `highest` moves, and the next pull reads the same rows.
+          // `persistence.js`, `waitForOwnFlush()`, argues the bound.
+          if (errorCodes.codeOf(err) === 'STS-STORE-0176') {
+            if (cost && cost.kindMs) {
+              cost.current = null;
+            }
+            log.debug("Leaving failed(). The page fails, the row is kept.");
+            throw err;
+          }
           log.error(errorCodes.tag('STS-STORE-0042') +
                     'persistence: a "' + row.kind + '" change for "' +
                     row.key + '" in realm "' + (row.realm || 'default') +

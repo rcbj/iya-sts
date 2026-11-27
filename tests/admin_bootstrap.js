@@ -32,6 +32,8 @@
 //   7. OVER HTTP: the sign-in screen draws the change step before any session,
 //      refuses a mismatch, and a new password resumes the sign-in and clears
 //      the flag — and in product mode the password policy applies.
+//  10. A generated password file survives the start that wrote it and is
+//      removed by a later start. A removal that fails is STS-AUTHN-0567.
 //
 // The console's own sign-in over the authorization code flow needs the
 // service's real port for its back channel; it was driven against an isolated
@@ -223,6 +225,196 @@ function childMain() {
            '9c. and NOT by generating one instead — which would put a ' +
            'working credential in the log of a deployment that asked for it ' +
            'not to be there');
+      require('fs').writeFileSync(OUT, JSON.stringify(findings));
+      process.exit(0);
+    }
+
+    // ======================================================================
+    // 10. THE PASSWORD FILE DOES NOT SURVIVE A LATER START.
+    //
+    // The first start writes it, one file per realm (#1969). The same
+    // process leaves it. A later start — a credential already held, and this
+    // process did not write the file — removes it once the password in it no
+    // longer opens its account, and leaves it while it still does, so a node
+    // starting beside the one that wrote it does not delete the only copy. A
+    // path that is a directory cannot be unlinked (STS-AUTHN-0567) and the
+    // start continues.
+    // ======================================================================
+    if (process.env.AB_PART === 'file-kept' ||
+        process.env.AB_PART === 'file-removed') {
+      const fs = require('fs');
+      const os = require('os');
+      const path = require('path');
+      // persistence.dataDir is restart-only, so setOverride() refuses it.
+      // The directory is what the process was started with; this stands in
+      // for that value, as tests/asvs_product_limits.js does.
+      const realValue = config.value;
+      let bootDir = null;
+      config.value = function (key) {
+        if (bootDir && key === 'persistence.dataDir') {
+          return bootDir;
+        }
+        if (key === 'admin.logBootstrapPassword') {
+          return false;
+        }
+        return realValue.call(this, key);
+      };
+      const freshDir = function () {
+        return fs.mkdtempSync(path.join(os.tmpdir(), 'ab-boot-'));
+      };
+      const passwordFile = function (dir) {
+        return path.join(path.resolve(dir), 'bootstrap-admin-password');
+      };
+      if (process.env.AB_PART === 'file-kept') {
+        config.setOverride('global.mode', 'development');
+        const devDir = freshDir();
+        const devFile = passwordFile(devDir);
+        fs.writeFileSync(devFile, 'admin:not-a-product-password\n',
+                         { mode: 0o600 });
+        const devRan = inDefault(function () {
+          return credentials.bootstrap({ username: 'admin' });
+        });
+        note(devRan.ran === false && fs.existsSync(devFile),
+             '10a. development mode leaves the bootstrap password file',
+             JSON.stringify({ ran: devRan.ran,
+                              exists: fs.existsSync(devFile) }));
+        config.setOverride('global.mode', 'product');
+        config.setOverride('authn.allowOptionalSecondFactor', 'true');
+        bootDir = freshDir();
+        const dir = bootDir;
+        const file = passwordFile(dir);
+        const first = inDefault(function () {
+          return credentials.bootstrap({ username: 'admin' });
+        });
+        let mode = 0;
+        let prefix = false;
+        try {
+          mode = fs.statSync(file).mode & 0o777;
+          prefix = fs.readFileSync(file, 'utf8').indexOf('admin:') === 0;
+        } catch (e) {
+          // The assertion reports mode -1 when the file is not there.
+          mode = -1;
+        }
+        note(first.ran === true && prefix && mode === 0o600,
+             '10b. a generated password is written to ' +
+             'bootstrap-admin-password',
+             JSON.stringify({ ran: first.ran, mode: mode, prefix: prefix }));
+        const second = inDefault(function () {
+          return credentials.bootstrap({ username: 'admin' });
+        });
+        note(second.ran === false && fs.existsSync(file),
+             '10c. the same start does not remove a file it just wrote',
+             JSON.stringify({ ran: second.ran, why: second.why,
+                              exists: fs.existsSync(file) }));
+        // ONE FILE PER REALM (#1969): a trust realm's password goes beside
+        // the default realm's rather than over it.
+        const fileRealm = realms.create({ id: 'abfile', name: 'abfile' });
+        const realmFile = realms.run(fileRealm.realm, function () {
+          return credentials.writeBootstrapPassword('realm-admin',
+                                                    'realm-secret');
+        });
+        let defaultText = '';
+        let realmText = '';
+        try {
+          defaultText = fs.readFileSync(file, 'utf8');
+          realmText = fs.readFileSync(realmFile, 'utf8');
+        } catch (e) {
+          // The assertion reports what was read; '' when a file is absent.
+          defaultText = defaultText || '';
+        }
+        note(realmFile === file + '-abfile' &&
+             defaultText.indexOf('admin:') === 0 &&
+             realmText === 'realm-admin:realm-secret\n',
+             '10g. a trust realm\'s password is written to a file of its own ' +
+             'and leaves the default realm\'s',
+             JSON.stringify({ realmFile: realmFile,
+                              defaultKept: defaultText.indexOf('admin:') === 0,
+                              realmText: realmText === 'realm-admin:' +
+                                         'realm-secret\n' }));
+        require('fs').writeFileSync(OUT, JSON.stringify(findings));
+        process.exit(0);
+      }
+      config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
+      const made = inDefault(function () {
+        ldapServer.createUser('someone-ab', { invent: false, attributes: {
+          cn: 'someone-ab', givenName: 'Some', sn: 'One',
+          mail: 'someone-ab@example.test' } });
+        return credentials.setPassword('someone-ab',
+          'A-long-enough-probe-passphrase-77');
+      });
+      note(made.ok === true, '10-pre. somebody already holds a credential',
+           JSON.stringify(made.errors || made));
+      bootDir = freshDir();
+      const dir = bootDir;
+      const file = passwordFile(dir);
+      fs.writeFileSync(file, 'someone-ab:leftover-secret\n', { mode: 0o600 });
+      let printed = '';
+      const realWrite = process.stdout.write.bind(process.stdout);
+      process.stdout.write = function (chunk) {
+        printed += String(chunk);
+        return true;
+      };
+      let removed;
+      try {
+        removed = inDefault(function () {
+          return credentials.bootstrap({ username: 'admin' });
+        });
+      } finally {
+        process.stdout.write = realWrite;
+      }
+      note(removed.ran === false && !fs.existsSync(file) &&
+           printed.indexOf('leftover-secret') === -1,
+           '10d. a later start removes the bootstrap password file, and ' +
+           'does not log the password',
+           JSON.stringify({ ran: removed.ran, why: removed.why,
+                            exists: fs.existsSync(file),
+                            loggedSecret: printed.indexOf('leftover-secret') !==
+                                          -1 }));
+      // THE FILE STAYS WHILE ITS PASSWORD STILL OPENS THE ACCOUNT (#1969).
+      // It is what a node that won the claim just after another node
+      // bootstrapped finds on a data directory they share: the file that node
+      // has only just written, which nobody has read yet.
+      fs.writeFileSync(file, 'someone-ab:A-long-enough-probe-passphrase-77\n',
+                       { mode: 0o600 });
+      const kept = inDefault(function () {
+        return credentials.bootstrap({ username: 'admin' });
+      });
+      note(kept.ran === false && fs.existsSync(file),
+           '10f. a later start leaves a file whose password still opens its ' +
+           'account',
+           JSON.stringify({ ran: kept.ran, why: kept.why,
+                            exists: fs.existsSync(file) }));
+      try {
+        fs.unlinkSync(file);
+      } catch (e) {
+        // 10f failed and the file is gone already. The directory below is
+        // what the next start cannot unlink.
+        log.debug('Caught removing the 10f file: ' +
+                  ((e && e.message) || e));
+      }
+      // A directory, so unlink fails for every user, including root.
+      fs.mkdirSync(file);
+      printed = '';
+      process.stdout.write = function (chunk) {
+        printed += String(chunk);
+        return true;
+      };
+      let blocked;
+      try {
+        blocked = inDefault(function () {
+          return credentials.bootstrap({ username: 'admin' });
+        });
+      } finally {
+        process.stdout.write = realWrite;
+      }
+      note(blocked.ran === false && fs.existsSync(file) &&
+           printed.indexOf('STS-AUTHN-0567') !== -1,
+           '10e. a file that cannot be removed is logged under ' +
+           'STS-AUTHN-0567 and the start continues',
+           JSON.stringify({ ran: blocked.ran, exists: fs.existsSync(file),
+                            printed: printed.indexOf('STS-AUTHN-0567') !==
+                                     -1 }));
       require('fs').writeFileSync(OUT, JSON.stringify(findings));
       process.exit(0);
     }
@@ -618,6 +810,8 @@ async function run(t) {
   // when they put a placeholder in a secret store.
   inAChild(t, 'refused', { STS_LOG_LEVEL: 'info',
                            STS_ADMIN_BOOTSTRAP_PASSWORD: 'short' });
+  inAChild(t, 'file-kept');
+  inAChild(t, 'file-removed', { LOG_LEVEL: 'info', STS_LOG_LEVEL: 'info' });
   log.debug("Leaving run().");
 }
 

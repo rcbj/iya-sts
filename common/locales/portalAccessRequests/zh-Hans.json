@@ -8,8 +8,14 @@
   "resource": "资源",
   "application": "应用程序",
   "requester": "请求方",
+  "entitlement": "申请的访问",
+  "actor": "代理方",
   "waits": "等待至 {when}。",
   "approve": "批准",
   "deny": "拒绝",
-  "done": "{status, select, approved {访问请求已批准。应用程序现在可以再次询问。} denied {访问请求已拒绝。} other {访问请求状态为 {status}。}}"
+  "done": "{status, select, approved {访问请求已批准。应用程序现在可以再次询问。} denied {访问请求已拒绝。} other {访问请求状态为 {status}。}}",
+  "yours": "您给出且仍然有效的批准。撤销其中一项意味着之后携带它的评估不会被批准。",
+  "until": "此批准持续到 {when}。",
+  "revoke": "撤销",
+  "revoked": "该批准已撤销。之后携带它的评估不会被批准。"
 }

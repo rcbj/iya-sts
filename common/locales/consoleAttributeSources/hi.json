@@ -71,5 +71,8 @@
   "jobOn": "कार्य पर",
   "scheduler": "शेड्यूलर",
   "jobOnEnd": ".",
-  "settings": "सेटिंग्स"
+  "settings": "सेटिंग्स",
+  "newSource.button": "स्रोत जोड़ें",
+  "newSource.yes": "हाँ",
+  "newSource.no": "नहीं"
 }

@@ -43,5 +43,33 @@ fi
 # it into its opposite would be worse than leaving it to be noticed.
 sed -i -E 's/^host[[:space:]]+/hostssl /' "${HBA}"
 
+# A CLIENT CERTIFICATE FOR THE SERVICE ROLE (#2254), when generate-tls.sh made
+# one: the database trusts the client CA, and the service role's TCP rule is
+# put FIRST (pg_hba's first match wins) — `cert` authenticates it by the
+# certificate alone, its CN being the role's name, and `verify-full` asks for
+# the certificate AND the password. Every other role's rules are left as they
+# were. Here, at initdb, for this file's reason; a cluster created without it
+# needs a new volume to gain it.
+CLIENT_MODE="${POSTGRES_CLIENT_CERT:-off}"
+CA_CRT="${POSTGRES_TLS_DIR:-/var/lib/postgresql/tls}/client-ca.crt"
+if [ "${CLIENT_MODE}" = cert ] || [ "${CLIENT_MODE}" = verify-full ]; then
+  if [ ! -s "${CA_CRT}" ]; then
+    echo "postgres-tls: POSTGRES_CLIENT_CERT=${CLIENT_MODE} and there is no" \
+      "${CA_CRT}; run generate-tls.sh first." >&2
+    exit 1
+  fi
+  APP_ROLE="${STS_DB_APP_USER:-sts_app}"
+  if [ "${CLIENT_MODE}" = cert ]; then
+    RULE="hostssl all ${APP_ROLE} all cert"
+  else
+    RULE="hostssl all ${APP_ROLE} all scram-sha-256 clientcert=verify-full"
+  fi
+  printf '%s\n' "${RULE}" | cat - "${HBA}" > "${HBA}.new"
+  mv -f "${HBA}.new" "${HBA}"
+  echo "ssl_ca_file = '${CA_CRT}'" >> "${PGDATA}/postgresql.conf"
+  echo "postgres-tls: ${APP_ROLE} must present a client certificate" \
+    "(${CLIENT_MODE}), trusted through ${CA_CRT}."
+fi
+
 echo "postgres-tls: every host rule in pg_hba.conf now requires TLS:"
 grep -E '^(host|hostssl|hostnossl|local)' "${HBA}" | sed 's/^/  /'

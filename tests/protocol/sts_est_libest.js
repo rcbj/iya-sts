@@ -73,6 +73,7 @@ const fs = require("fs");
 const nodeCrypto = require("crypto");
 const path = require("path");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const K = require("./enroll_clients_kit.js");
@@ -552,16 +553,23 @@ async function labelForm(realm) {
 // it), or thirty seconds — `sts_tlsfuzzer.js`'s twelveIsOn().
 async function twelveIsOn() {
   log.debug("Entering twelveIsOn().");
+  // VERIFIED (tools/service_trust.js): a handshake THIS client refused is
+  // the anchor gone stale, not TLS 1.2 still off, so it ends the wait at
+  // once rather than passing for thirty seconds of refusals.
   const once = function () {
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
       const socket = tls.connect({ host: host, port: Number(port),
-        servername: host, rejectUnauthorized: false,
+        servername: host, ca: serviceTrust.trustedCa(),
         maxVersion: "TLSv1.2" }, function () {
         socket.destroy();
         resolve(true);
       });
       socket.on("error", function (e) {
         log.debug("Caught in twelveIsOn(): " + ((e && e.message) || e));
+        if (serviceTrust.isUntrusted(e)) {
+          reject(e);
+          return;
+        }
         resolve(false);
       });
     });

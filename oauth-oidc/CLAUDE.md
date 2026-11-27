@@ -802,7 +802,7 @@ so must `admin-ui/admin.ts`.
    push, `code`, `private_key_jwt`, DPoP — and, with the ordinary consent
    rules, their seeded global consent counts again.
    `tests/fapi2_units.js` and `tests/protocol/sts_fapi2.js` hold it; the
-   Attacker Model's mapping is in `docs/v1.1.0/oauth-security.md`.
+   Attacker Model's mapping is in `docs/v1.2.0/oauth-security.md`.
 
    **FAPI 2.0 MESSAGE SIGNING (#141, 2026-09-22) IS THE FOURTH VALUE,
    `2-message-signing`: the Security Profile PLUS ALL THREE COMPONENTS** —
@@ -815,7 +815,7 @@ so must `admin-ui/admin.ts`.
    JARM required (`STS-OAUTH-0591`, and discovery lists JARM's modes alone);
    and RFC 9701's signed introspection, which every JWT introspection response
    here already was. Section 5.2's non-repudiation is guidance, answered in
-   `docs/v1.1.0/oauth-security.md` (keep the retired keys and the audit log). **THE
+   `docs/v1.2.0/oauth-security.md` (keep the retired keys and the audit log). **THE
    FINAL SPECIFICATION HAS NO RFC 9421 SECTIONS**, though the #45 review was
    written against a draft that did; rcbj split HTTP signatures on the resource
    servers out to #178. The surfaces ask for JARM under this profile as under
@@ -1285,7 +1285,10 @@ so must `admin-ui/admin.ts`.
    told which KIND of party it is reading rather than trying every attribute
    name it knows, because the store is schemaless and a function that read both
    lists off whatever it was handed would accept an `oauthAssertionJwks`
-   somebody had put on a person.
+   somebody had put on a person. **For an application it also asks the
+   `client-jws` use case which sources count (#2149)**: the registration
+   (`registered-keys`, the default) and any key set bound to that client;
+   `common/CLAUDE.md`, *Named truststores*, argues the binding.
 
    **THE SIGNATURE IS VERIFIED BEFORE ANY CLAIM IS BELIEVED**, which is not the
    order RFC 7521 section 5.2 lists its checks in and is the order they have to
@@ -3144,6 +3147,64 @@ names every claim a request may ask for.
 
 ---
 
+## `/oauth2/groups`, A CLIENT'S RESPONSE MODES, AND THE PKCE COMPARISON (#2247)
+
+Three ASVS 5.0.0 Level 3 items, each small, each argued where it sits.
+
+* **`/oauth2/groups` is the distributed source of a groups claim past
+  `groups.claimMaxBytes` (4.2.5).** `common/CLAUDE.md` 3d-ii argues the cap
+  and why the claim is referenced rather than cut. The endpoint
+  (`groupsResponse()`) checks the access token through
+  `dpop.presentedAccessToken()` as UserInfo does — signature, issuer, sender
+  constraint, then `typ` and revocation (STS-OAUTH-1017, -1018) — with ONE
+  difference: its `audience` option names every audience. The token whose
+  claim pointed here is as often a resource server's as this service's.
+  **That is safe only because the presented token must ITSELF carry the
+  reference** — `_claim_names` mapping a claim to `sts-groups` whose
+  `_claim_sources` endpoint is this realm's `/oauth2/groups` — or it is
+  refused (STS-OAUTH-1021): a token for a client never given the claim (off
+  for it, or released away) has no reference and learns nothing. **The
+  answer is recomputed, not read off the directory**: `stats.jwtClaims(
+  'access_token', …)` over the token's own client, audience and subject,
+  with `groups_uncapped` (which only `overage()` reads) and the token's
+  scope gate, so it is exactly what the token would have carried below the
+  cap, now — a client filtered or turned off since gets what the filter
+  gives. **No `groups_ref` or jti is bound into the reference**: it lives in
+  the signed token presented, and another token for the same person redeems
+  only with a reference of its own and only for what IT would have
+  carried; an RP holding an over-cap ID Token presents its access token,
+  whose view is never wider than its own. No `openid` scope is asked for the same
+  reason. A token with no `username` (client_credentials) has no person and
+  is refused (STS-OAUTH-1019). The answer is `application/jwt`, because
+  Core section 5.6.2 says a distributed source MUST return a JWT: `iss`,
+  `sub` (the client's, `subjectFor()`, as UserInfo's), `aud` (the token's
+  client), `iat`, `exp` five minutes on, and the claim under the client's
+  name and value form, signed with the client's ID Token algorithm or the
+  realm's default (STS-OAUTH-1020 if that fails). The ID Token's Claims
+  Provider references are MERGED with this one (`mergeClaimSources()`), not
+  assigned over it. `customClaimContext()` carries `base_url`, which is where
+  `group_claims.ts` points; a context without one is never capped.
+* **`oauthResponseMode` holds a client to the response modes it needs
+  (10.4.12).** RFC 7591 has no such member and the IANA client-metadata
+  registry holds none (`response_modes_supported` is the server's), so it is
+  this service's attribute, written by an administrator and never by a
+  registration, a closed set of every mode `response_modes_supported`
+  advertises with JARM on (`applications.js`'s `FLOW_RESPONSE_MODES`, held to
+  `jarm.MODES` by `tests/oauth2_response_modes.js`). Checked in
+  `vetAuthorizationRequest()` just after the server-wide check, in every
+  mode: the mode judged is the one asked for or, with none, the response
+  type's default (`query` for `code` and `none`, `fragment` otherwise), so a
+  client listed for `form_post` cannot be answered in a query string by
+  leaving the parameter out. Refused `unauthorized_client` at the redirect
+  (STS-OAUTH-1016), the word the per-client `response_type` check uses.
+  **Empty restricts nothing**, `oauthResponseType`'s rule, so no existing
+  client changes.
+* **The PKCE verifier is compared with `stsCrypto.constantTimeEquals()`
+  (11.2.4).** The challenge is no secret once it has crossed the front
+  channel, but the comparison is the one place a verifier is judged, and
+  `crypto.js` is where every such comparison lives. `plain` is still refused
+  wherever RFC 9700 mode is in force.
+
 ## `/oauth2/autopost.js` IS ONE OF THE SCRIPTED PAGES
 
 `response_mode=form_post` is answered with a self-submitting form whose script
@@ -3242,6 +3303,13 @@ identity and an application: the client performing the exchange is the
 application, always, and the actor named in the `actor_token` is the identity,
 which only a delegation has. An impersonation therefore draws a chain whose
 middle is an application and nobody, which is exactly what happened.
+
+When `authzen.externalPdp` is on, the non-Kerberos branch asks the external
+AuthZEN PDP after that local decision and the local scope narrowing, and
+before `issue()` (`authzen/authzen_external_pdp.ts`, #1200). The PDP may
+only narrow the scope and the access-token lifetime. A Kerberos
+`requested_token_type` is outside the binding and is not sent.
+`authzen/CLAUDE.md` argues it.
 
 **THE TARGET IS RESOLVED THROUGH THE APPLICATIONS REGISTRY, and it is the one
 place in this service that reads `oauthAudience`.** An `audience` names a
@@ -3881,7 +3949,9 @@ request that was wrong rather than at a resource server three calls later.
 `scopeRefusal()` is a function of its own beside `permissionRefusal()` for that
 one's reason — a translation (`audienceScopes()`) must not also be a policy — and
 it adds only this server's DEFAULT SET to the library's: `credentialScopes()`,
-this realm's OpenID4VCI configuration scopes, beside OIDC's six.
+this realm's OpenID4VCI configuration scopes, which the library counts only
+while `oauth2.undeclaredClientScopes` is `legacy` (#1589; `openid` alone is
+the default since 1.2.0 — `common/CLAUDE.md`, 3au).
 
 **`tokenSet()` NARROWS, AS THE BACKSTOP, AND THAT IS WHERE THE TWO POLICIES
 PART.** A grant carrying its scope from earlier — a refresh, an exchange's `body.scope ||
@@ -3891,6 +3961,14 @@ may no longer have is taken off with an audit row (`STS-OAUTH-0579`), the
 permission, removing a protected scope from a client must stop the next refresh
 minting it again; the resource servers' own `declares()` check stops the tokens
 already out. It runs before the debugger narrowing, which keeps its role rule.
+**Its one allowance (#2169, rcbj: "Obey the spec. Allowances must be made to
+achieve that."):** a pre-authorized code redeemed by a wallet that names NO
+client (OpenID4VCI 1.0 section 6.1) keeps `offer_scopes`, the scopes of the
+offer's configurations read off the code's record (`offerScopesOf()`), which
+is also the scope the grant mints. There is no client to have declared
+anything, the offer is the authorization, and without a credential scope
+`vc_issued.ts` files the credential under nobody. Anything else on that
+token is narrowed as before; a wallet that names a client is that client.
 
 **RFC 7591'S `scope` IS THE DECLARATION** (`applyRegistrationFields()` writes it
 to `oauthAllowedScope`; `registrationOf()` returns it), so a registration naming
@@ -3991,7 +4069,11 @@ Every one of those refusals leaves the pending record ALONE. A screen that spent
 itself on a refusal would turn each of them into a denial of service against the
 person it was asked of. The three are `askedOf()`, asked by the shell, the view
 and the answer alike, with the codes the form's refusals were recorded under
-(`STS-OAUTH-0149`, `0150`, `0151`; a malformed id or body `0148`).
+(`STS-OAUTH-0149`, `0150`, `0151`; a malformed id or body `0148`). **Each
+sentence is a `refusals.consent.*` catalog message since #2006**: the view's
+and the act's answers carry `messages` beside `errors` and the page draws them
+in its language; the shell's `invalid_request` and the act's
+`error_description` stay the English.
 
 ### A page of the sign-in surface since #576 (2026-10-12)
 
@@ -4722,7 +4804,7 @@ every action, the API gated by two scopes tied to the client, a DELETE
 revoking the grant's tokens, consent records staying the source of "the
 person agreed", a console page and `/admin-api`, on in every mode;
 FAPI-CIBA FOLLOWS `oauth2.fapi` with no setting of its own; lodging intent
-DOCUMENTED as RAR through PAR (`docs/v1.1.0/oauth-oidc.md`); the conformance suite
+DOCUMENTED as RAR through PAR (`docs/v1.2.0/oauth-oidc.md`); the conformance suite
 a job — which is #176's, where it lives.
 
 * **`grant_management.ts` is the register and every rule** (its header
@@ -5174,11 +5256,14 @@ presented.
   any node. The `oauth2.device-code-sweep` job removes what has expired.
 * **The endpoint** (`deviceAuthorizationRequest()`) authenticates the client
   through `authenticateEndpointCaller()`, as PAR and CIBA do, requires the
-  grant to be registered and asks the scope policy. An optional DPoP proof
-  binds the device code to its key.
+  grant to be registered and asks the scope policy. It accepts RFC 8707
+  `resource` indicators, validates their audiences before minting the code,
+  and carries the authorized resources through approval to the access token.
+  An optional DPoP proof binds the device code to its key.
 * **The portal page's two protections are RFC 8628 section 5's.** A code
-  only ever brings the request up — the client, the scopes and a sentence
-  about phishing — and approving is a second POST (section 5.4). A session
+  only ever brings the request up — the client, scopes, resource indicators
+  and a sentence about phishing — and approving is a second POST (section
+  5.4). A session
   that types five codes that match nothing is refused for ten minutes
   (section 5.1). The count is per process and capped at the insert.
 * **Key Binding** is in `oauth2.ts`, in every mode:
@@ -5869,7 +5954,7 @@ Left for their own tickets:
 
 **A REVOKED GRANT IS A `session-revoked` ABOUT THE GRANT.** The design is in
 `oauth_grant_signals.ts`'s header and the receiver's view is in
-`docs/v1.1.0/caep-events.md`. What reaches outside that file:
+`docs/v1.2.0/caep-events.md`. What reaches outside that file:
 
 * **The grant is named when a token is issued, not when it is revoked.**
   `issuanceContext()` states `grantId` and `grantRefresh` into `signJwt()`'s
@@ -6092,7 +6177,7 @@ other client are untouched, and the API explorer's unbound token still works.
   refusing it would leave such a realm with no console. **The console does
   not conform to the profile there**: the two requirement rows
   (`no-public-clients`, `confidential-only`) say so, and so do
-  `docs/v1.1.0/oauth-security.md` and `docs/v1.1.0/spec-departures.md`. This qualifies 3av's
+  `docs/v1.2.0/oauth-security.md` and `docs/v1.2.0/spec-departures.md`. This qualifies 3av's
   *the hosted surfaces conforming*: the portal still does.
 
 **THE PORTAL JOINED BOTH LISTS ON #568 (2026-10-12)**: rcbj's decision made
@@ -6404,7 +6489,7 @@ token". Tests: `tests/kerberos_tokens.js` X and
 
 ## ASVS 5.0.0 IN THIS FAMILY (#1453-#1565, 2026-11-09)
 
-`docs/v1.1.0/product-security.md` is the user's account and `docs/v1.1.0/oauth-oidc.md` the
+`docs/v1.2.0/product-security.md` is the user's account and `docs/v1.2.0/oauth-oidc.md` the
 behaviour; this is why each is shaped as it is. Every product-only rule is a
 `common/mode.js` predicate, never `isProduct()`.
 

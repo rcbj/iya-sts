@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Les valeurs de response_type que ce client peut demander — les response_types de RFC 7591 section 2, issus d’un enregistrement ou écrits par un administrateur, chaque valeur étant un type de réponse (\"code\", \"code id_token\"). Le point de terminaison d’autorisation refuse tout autre type (unauthorized_client), dans tous les modes ; une liste vide ne restreint rien. Ce que le client a effectivement demandé figure dans oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "Les valeurs de response_mode que ce client peut demander — query, fragment, form_post et les jwt, query.jwt, fragment.jwt et form_post.jwt de JARM — écrites par un administrateur. Le point de terminaison d’autorisation refuse toute autre valeur (unauthorized_client), et une requête qui n’en nomme aucune est tenue au mode par défaut de son type de réponse (query pour code, fragment pour les autres), dans tous les modes ; une liste vide ne restreint rien au-delà de response_modes_supported du serveur. Aucun membre RFC 7591 ne le porte, donc un enregistrement ne l’écrit pas."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "Les types de réponse qui émettent un jeton d’accès depuis le point de terminaison d’autorisation — token, code token, id_token token, code id_token token — que ce client peut utiliser là où le mode RFC 9700 est en vigueur (le mode product l’est toujours). Honorés uniquement tant que le domaine lève la section 2.1.2 de la RFC 9700 (oauth2.allowImplicitTokenResponses, jamais sous OAuth 2.1 ou FAPI) ; un type non listé ici est alors refusé (unauthorized_client). VIDE par défaut, et vide signifie aucun. Écrit par un administrateur ou par le propriétaire de l’application tant que le domaine autorise ces types, ou par un enregistrement dynamique dans les limites de oauth2.dynamicRegistrationTokenResponseTypes. La section 2.1.2 de la RFC 9700 dit que les clients NE DEVRAIENT PAS les utiliser."
@@ -576,8 +580,8 @@
     "text": "Les portées que cette application a DEMANDÉES, cumulées au fil de ses demandes. OBSERVÉES, jamais déclarées : rien n’est autorisé ni refusé en fonction d’elles. Ce qui peut être émis pour l’application figure dans oauthAllowedScope."
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "LES SCOPES QUE CE CLIENT PEUT SE VOIR DÉLIVRER — le `scope` de la section 2 de la RFC 7591, « la liste que le client peut utiliser lors de la demande de jetons d’accès ». Un jeton de scope par valeur. Trois sortes de scope la lisent différemment.\n\n**Les scopes protégés propres à ce service** — admin:read et admin:write (/admin-api), report:use et report:admin (/report-api), les scopes SCIM (scim.scopeRead, scim.scopeWrite), les scopes Shared Signals (ssf.authScopeRead, ssf.authScopeWrite, et toujours ssf.read et ssf.manage) et la permission du débogueur — ne sont délivrés QU’À un client qui les liste, DANS LES DEUX MODES. Pour Shared Signals, l’écriture inclut la lecture : lister un scope d’écriture autorise aussi le scope de lecture, alors que ne lister qu’un scope de lecture n’autorise pas un scope d’écriture. Le serveur de ressources qui se trouve derrière chacun redemande à chaque appel, de sorte que retirer une valeur ici coupe les jetons déjà délivrés. Un enregistrement RFC 7591 ne peut pas les déclarer ; un administrateur le fait, ici.\n\n**Tout autre scope**, en mode produit, n’est délivré que s’il est listé ici — ou, quand rien n’est listé, s’il fait partie de l’ensemble par défaut : openid, profile, email, address, phone, offline_access et les scopes d’identifiants OpenID4VCI de ce domaine. En développement, tout scope est délivré.\n\n**Un scope nommant une application ou une permission déléguée** garde ses propres règles (l’audience, et oauthDelegatedPermission) et n’a pas besoin d’être listé.\n\nUn scope hors de la liste est refusé avec invalid_scope aux points de terminaison d’autorisation et de jeton (RFC 6749 section 3.3), et retiré d’un renouvellement ou d’un échange de jetons. À distinguer de oauthScope, qui n’est que ce que le client a demandé."
+    "en": "00c084c993d99663",
+    "text": "LES SCOPES QUE CE CLIENT PEUT SE VOIR DÉLIVRER — le `scope` de la section 2 de la RFC 7591, « la liste que le client peut utiliser lors de la demande de jetons d’accès ». Un jeton de scope par valeur. Trois sortes de scope la lisent différemment.\n\n**Les scopes protégés propres à ce service** — admin:read et admin:write (/admin-api), report:use et report:admin (/report-api), les scopes SCIM (scim.scopeRead, scim.scopeWrite), les scopes Shared Signals (ssf.authScopeRead, ssf.authScopeWrite, et toujours ssf.read et ssf.manage) et la permission du débogueur — ne sont délivrés QU’À un client qui les liste, DANS LES DEUX MODES. Pour Shared Signals, l’écriture inclut la lecture : lister un scope d’écriture autorise aussi le scope de lecture, alors que ne lister qu’un scope de lecture n’autorise pas un scope d’écriture. Le serveur de ressources qui se trouve derrière chacun redemande à chaque appel, de sorte que retirer une valeur ici coupe les jetons déjà délivrés. Un enregistrement RFC 7591 ne peut pas les déclarer ; un administrateur le fait, ici.\n\n**Tout autre scope**, en mode produit, n’est délivré que s’il est listé ici — ou, quand rien n’est listé, s’il fait partie de l’ensemble par défaut que choisit oauth2.undeclaredClientScopes : openid seul par défaut depuis 1.2.0 (ASVS 5.0.0 10.4.11) ; identity ajoute profile, email, address et phone ; legacy, ce que conserve un magasin mis à niveau, ajoute aussi offline_access et les scopes d’identifiants OpenID4VCI de ce domaine. En développement, tout scope est délivré.\n\n**Un scope nommant une application ou une permission déléguée** garde ses propres règles (l’audience, et oauthDelegatedPermission) et n’a pas besoin d’être listé.\n\nUn scope hors de la liste est refusé avec invalid_scope aux points de terminaison d’autorisation et de jeton (RFC 6749 section 3.3), et retiré d’un renouvellement ou d’un échange de jetons. À distinguer de oauthScope, qui n’est que ce que le client a demandé."
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "RAPPEL (CALLBACK) D’UNE DEMANDE D’ACCÈS AUTHZEN (#1180) : une URL https que ce client, en tant que PEP AuthZEN, peut nommer comme callback.endpoint d’une demande d’accès — une par valeur, comparée exactement. Une demande qui en nomme une autre est refusée ; ce service n’appelle jamais une URL de rappel tirée d’une seule demande. Défini par un administrateur, jamais par l’appelant."
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "RÉESSAI DU RAPPEL AUTHZEN (#1202) : une URL de rappel enregistrée et les tentatives et le délai qui remplacent authzen.callbackAttempts et authzen.callbackBackoffS pour elle. La valeur est l’URL, puis attempts=N (1 à 20) et backoff=S (60 à 86400), l’un, l’autre ou les deux. L’URL doit aussi être une valeur appAuthzenCallbackUri. Absente, cette URL utilise les paramètres du domaine. Défini par un administrateur, jamais par l’appelant."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "UNE EXPRESSION XPATH SÉLECTIONNANT L’ÉLÉMENT DE CERTIFICAT À DESTINATION DUQUEL UNE RÉPONSE WS-TRUST EST CHIFFRÉE : un ds:X509Certificate ou un BinarySecurityToken dont le ValueType se termine par #X509v3. Le même sous-ensemble que les cartes d’éléments. Lorsqu’elle est définie et qu’elle ne sélectionne rien, ou qu’elle sélectionne un élément qui n’est pas l’un de ces deux-là, il n’y a pas de destinataire et la source suivante n’est pas essayée. Un élément de certificat sélectionné dont le texte n’est pas un certificat est une faute de chiffrement achevé, et la source suivante n’est pas essayée. Lorsqu’elle n’est pas définie, le destinataire est le premier élément de certificat du signataire que nomme la signature WS-Security de la requête — le BinarySecurityToken que vise la référence de cette signature, ou un ds:X509Certificate dans le KeyInfo de cette signature. Une empreinte, un Subject Key Identifier ou un émetteur et un numéro de série n’est pas un élément de certificat."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE ou FALSE : exiger qu’une requête dont l’AppliesTo est cette application porte une signature de message WS-Security, en remplaçant wstrust.signRequest. Activé, une requête sans signature acceptée est un FailedCheck, et chaque élément que sélectionne wstrustSignRequestElements doit être couvert par cette signature. Le mode développement croit une signature, comme il l’a toujours fait, et confronte malgré tout la table à ce que cette signature référence."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "LES ÉLÉMENTS D’UNE REQUÊTE WS-TRUST QUI DOIVENT ÊTRE SIGNÉS, une expression XPath 1.0 chacun, dans le sous-ensemble de wstrustEncryptRequestElements. Chaque expression doit sélectionner au moins un élément, et chaque élément qu’elle sélectionne doit être l’un de ceux que référence la signature WS-Security acceptée de la requête, ou se trouver à l’intérieur de l’un d’eux ; sinon la requête est un FailedCheck. Vide, le SOAP Body, qu’une signature couvre toujours. Lu uniquement tant que wstrustSignRequest (ou wstrust.signRequest) est activé."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE ou FALSE : signer une réponse WS-Trust pour cette application avec une signature de message WS-Security, en l’emportant sur wstrust.signResponse. La réponse porte un wsu:Timestamp et une ds:Signature dans son en-tête wsse:Security, faite avec la clé de signature XML de ce domaine et référençant son certificat par un BinarySecurityToken ; la signature couvre le Timestamp et les éléments de wstrustSignResponseElements. Une faute est envoyée sans signature. Activé, et si la signature ne peut pas être faite, la requête est une faute dans les deux modes."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "LES ÉLÉMENTS D’UNE RÉPONSE WS-TRUST QUE COUVRE SA SIGNATURE en plus du wsu:Timestamp, une expression XPath 1.0 chacun, dans le sous-ensemble de wstrustEncryptResponseElements. Vide, le SOAP Body. Un élément sans wsu:Id en reçoit un. Une expression qui ne désigne rien, ou qui sélectionne l’en-tête wsse:Security lui-même, est une faute."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "L’ordre dans lequel une réponse WS-Trust pour cette application est signée et chiffrée lorsque les deux sont activés, en l’emportant sur wstrust.responseProtectionOrder : sign-then-encrypt (les condensés de la signature portent sur le texte en clair, la valeur par défaut de WS-SecurityPolicy) ou encrypt-then-sign (ils portent sur le texte chiffré). L’en-tête wsse:Security est écrit dans l’ordre où un destinataire le traite."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE ou FALSE : chiffrer aussi la ds:Signature d’une réponse WS-Trust pour cette application (sp:EncryptSignature de WS-SecurityPolicy), en l’emportant sur wstrust.encryptSignature. Lu uniquement tant que la réponse est à la fois signée et chiffrée, signée d’abord ; la signature est chiffrée pour le destinataire de la réponse."
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE ou FALSE : chiffrer les réponses WS-Trust de cette application pour leur certificat destinataire quel que soit son keyUsage, en remplaçant wstrust.recipientIgnoresKeyUsage. Les certificats de signature de messages du domaine n'autorisent que digitalSignature : sans ce réglage, une réponse chiffrée pour le certificat de signature de la requête est refusée. Seule la vérification du keyUsage est levée : la validité, le chemin et la révocation du certificat restent vérifiés là où le mode PKI paranoïaque les vérifie."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "LE CERTIFICAT VERS LEQUEL UNE REQUÊTE WS-TRUST POUR CETTE APPLICATION EST CHIFFRÉE, PEM. Tant qu’il est défini, une requête pour cette application est déchiffrée avec sa clé privée et non avec celle du domaine, et une requête pour elle chiffrée vers la clé du domaine est un FailedCheck. Public : la page de l’application et GET /admin-api/applications le donnent."
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE lorsque ce serveur de ressources UMA 2.0 peut enregistrer des ressources DONT IL EST LUI-MÊME PROPRIÉTAIRE, au moyen d’un jeton d’API de protection obtenu par client_credentials. Absent ou FALSE, la valeur par défaut, signifie qu’un PAT doit être celui d’une personne (le flux de code) et que cette personne possède ce qu’il enregistre."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE ou FALSE : des rôles dynamiques sélectionnables sont-ils proposés lors des connexions à cette application (#1072), en remplacement de roles.dynamicSelection. FALSE n’affiche pas la case « Choisir des rôles pour cette connexion », ne propose aucun rôle, et un jeton pour cette application ne porte aucun rôle sélectionné dynamiquement."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, ainsi que les attributs standard owner et description."
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Le PEP distant et la route, sous la forme du nom du PEP, d’une barre oblique et de l’id de la route, pour lesquels cette politique a été GÉNÉRÉE par le choix d’autorisation de la route (simple ou publique) dans les formulaires de routes du proxy inverse ou par l’action generate-pep-route-policy (#1760). Une telle politique est réécrite quand la route est enregistrée, renommée avec la route et retirée avec elle ; elle n’est jamais la racine. Elle peut être modifiée dans l’éditeur de politiques, et le prochain enregistrement du choix simple ou public de la route la réécrit : choisis une politique existante sur la route pour en garder une écrite à la main."
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Le rôle (par son nom dans ou=roles) qui POSSÈDE cette politique comme politique d’éligibilité (#1072) : le PDP la décide seule, pour une personne, afin de dire si ce rôle dynamique sélectionnable peut lui être proposé à la connexion. Une telle politique n’est jamais la racine, n’est jamais atteinte par un PolicyIdReference depuis la racine et n’est jamais envoyée à un PEP distant."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "Un Policy Enforcement Point distant qui s’est enregistré auprès de ce Policy Decision Point. LA LIGNE EST UN ENREGISTREMENT ET NON UNE PERMISSION — un PEP qui ne s’enregistre jamais peut tout de même récupérer le référentiel et appliquer les décisions. Ce qu’une ligne apporte, c’est une place sur la console et une adresse pour la notification de changement."
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, sur chacun de ses écouteurs (#1760), les quatre de son environnement et ceux qui sont définis : un document JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, avec son heure d’arrivée. L’état est l’un de listening, waiting, failed et off et la raison l’une d’un ensemble fermé, jamais le texte du système d’exploitation ; le certificat est le sujet, l’émetteur, le numéro de série, le subjectAltName, la validité et l’empreinte de celui qu’il sert. Tout autre membre est écarté. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime. Absent sur un PEP antérieur aux écouteurs, ce que la console affiche comme non communiqué."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Le type de PEP distant qui s’est enregistré (#2026, partie de #1206) : container, l’image xacml-pep, ou embedded, un PEP intégré dans une bibliothèque d’authentification au moyen d’un paquet iya-pep. Un enregistrement qui n’en indique aucun est container, de sorte qu’un PEP plus ancien est lu comme il l’a toujours été. Un PEP intégré n’a ni proxy inverse, ni écouteurs, ni périphérie AuthZEN."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "L’application dans laquelle un PEP distant intégré a déclaré être intégré lors de son enregistrement (#2026). Acceptée seulement si c’est l’application à laquelle son entrée est liée (stsPepApplication, définie par un administrateur) : elle ne peut donc différer de la liaison que jusqu’au prochain battement de cœur du PEP, refusé dès qu’elles divergent. Vide pour un conteneur."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "Le mode d’un PEP distant intégré (#2026) : central, où chaque décision est demandée au point de terminaison d’évaluation AuthZEN de ce service, ou local, où il récupère les politiques de son application et décide dans le processus. Vide pour un conteneur, qui ne peut pas en envoyer."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "La version du protocole PEP que parle le paquet du PEP distant, telle qu’indiquée lors de son enregistrement ou de son dernier battement de cœur (#2026). Ce service prend en charge la version 1 et refuse toute autre, de sorte qu’une bibliothèque en retard est visible plutôt que silencieusement incorrecte. Vide pour un PEP qui n’en envoie pas (le conteneur)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Si le flux de l’application dans laquelle un PEP distant intégré est intégré peut transporter l’événement pep-policies-changed, tel que le PEP l’a signalé lors de son dernier battement de cœur (#2026) : none (l’hôte n’a pas de flux de signaux, le PEP interroge donc périodiquement), requested, excluded (le ssfEvents de l’application l’exclut) ou down. Vide tant que rien n’a été signalé."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Ce que le PEP distant a récupéré en dernier depuis GET /xacml/pep/policies (#2027) : repository, toutes les politiques activées sauf celles retenues (la récupération du conteneur), ou bound-application, celle d’un PEP intégré en mode local : la politique propre de son application, ou la racine du domaine, et la fermeture de ses références. Conservé lors d’un réenregistrement ; un changement est audité sous xacml.pep.scope. Vide tant qu’il n’a rien récupéré."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

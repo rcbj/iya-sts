@@ -145,5 +145,18 @@
   "announcement.close": "Cerrar",
   "presets": "Consultas predefinidas",
   "presetsNote": "Cada una abre Nueva consulta con su consulta ya rellenada. No se ejecuta nada hasta que pulse Ejecutar, y al guardarla se crea una definición propia.",
-  "presetFrom": "Iniciada a partir de la consulta predefinida {name}."
+  "presetFrom": "Iniciada a partir de la consulta predefinida {name}.",
+  "adminOnlySource": "Solo administradores de informes",
+  "adminOnlyNote": "Solo un administrador de informes (REPORT_ADMIN) puede consultar este origen: contiene quién hizo qué y desde dónde, o quién tiene cada credencial.",
+  "noWebCrypto.title": "Este navegador no puede abrir esta página",
+  "noWebCrypto.text": "Este navegador no puede ejecutar esta página de forma segura: WebCrypto no está disponible, normalmente porque la página no se abrió mediante HTTPS o porque el navegador es demasiado antiguo.",
+  "step.pending": "Obteniendo permiso para hacer este cambio…",
+  "step.blocked": "Este cambio necesita su permiso. Abra la ventana para darlo.",
+  "step.signIn": "Inicie sesión para hacer este cambio.",
+  "step.fresh": "Este cambio requiere que vuelva a iniciar sesión.",
+  "step.open": "Continuar",
+  "step.cancel": "Cancelar",
+  "step.refused": "No se concedió permiso para hacer este cambio: ",
+  "step.other": "Ese inicio de sesión era de otra cuenta, así que no se envió nada.",
+  "step.failed": "No se pudo obtener permiso para hacer este cambio."
 }

@@ -34,8 +34,12 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -208,7 +212,7 @@ function atClient(r, redirect) {
   log.debug("Entering atClient().");
   const target = redirect || REDIRECT;
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(target) !== 0) {
+      !urls.isAt(r.location, target)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -265,12 +269,18 @@ async function setUp() {
   await ok(realmApi + "/config/set", { key: "oauth2.openRegistration",
                                        value: true },
            "opened dynamic registration in the realm");
+  // Temporary, then the person's own (#2160, `own_password.js`).
   await ok(realmApi + "/users/create", {
     username: ALICE, invent: false, credential: "password",
-    password: PASSWORD,
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Front " + ALICE, givenName: "Front", sn: ALICE,
                   mail: ALICE + "@fclogout.test" } },
     "created " + ALICE);
+  await ownPassword.ownPassword(base + R, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   log.debug("Leaving setUp().");
 }
 
@@ -296,7 +306,7 @@ async function signedInThroughNamedServer(client) {
     r = await b.go("GET", posted.location);
   }
   assert.ok((r.status === 302 || r.status === 303) &&
-            r.location.indexOf(REDIRECT) === 0 &&
+            urls.isAt(r.location, REDIRECT) &&
             new URL(r.location).searchParams.get("code"),
     "a code from the named authorization server: " + r.status + " " +
     r.location + " " + String(r.text).slice(0, 300));

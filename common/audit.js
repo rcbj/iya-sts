@@ -433,6 +433,33 @@ const ACTIONS = [
     label: 'Somebody removed the authenticator app from their own account' },
   { action: 'portal.mfa.csrf', category: 'authentication',
     label: 'An authenticator-app change was refused for a bad CSRF token' },
+  // A ONE-TIME CODE TOKEN (#1955 P4), the same acts for an HOTP token, and
+  // its resynchronisation from two consecutive codes.
+  { action: 'portal.hotp.started', category: 'authentication',
+    label: 'Somebody was shown a new one-time code token secret' },
+  { action: 'portal.hotp.enrolled', category: 'authentication',
+    label: 'Somebody set up a one-time code token on their own account' },
+  { action: 'portal.hotp.refused', category: 'authentication',
+    label: 'A one-time code token setup was not confirmed' },
+  { action: 'portal.hotp.removed', category: 'authentication',
+    label: 'Somebody removed the one-time code token from their own account' },
+  { action: 'portal.hotp.resynced', category: 'authentication',
+    label: 'Somebody resynchronised their one-time code token' },
+  { action: 'portal.hotp.resync-refused', category: 'authentication',
+    label: 'A one-time code token was not resynchronised' },
+  // A YUBIKEY OTP (#1955 P5). The programming line is never on the row.
+  { action: 'portal.yubiotp.started', category: 'authentication',
+    label: 'Somebody was shown a YubiKey OTP programming line' },
+  { action: 'portal.yubiotp.enrolled', category: 'authentication',
+    label: 'Somebody set up a YubiKey OTP on their own account' },
+  { action: 'portal.yubiotp.refused', category: 'authentication',
+    label: 'A YubiKey OTP setup was not confirmed' },
+  { action: 'portal.yubiotp.removed', category: 'authentication',
+    label: 'Somebody removed the YubiKey OTP from their own account' },
+  { action: 'portal.yubiotp.claimed', category: 'authentication',
+    label: 'Somebody claimed an imported YubiKey OTP' },
+  { action: 'portal.yubiotp.claim-refused', category: 'authentication',
+    label: 'A YubiKey OTP was not claimed' },
   // The same two acts inside an ACTIVATION, which is a different situation and
   // therefore a different row: nobody is signed in, and what authorises it is a
   // single-use link rather than a session. A reader filtering for "who set up a
@@ -554,6 +581,24 @@ const ACTIONS = [
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
   // DATA ENCRYPTION KEYS (#391 P2): `common/data_key_rotation.ts`.
+  // THE ROTATIONS AND RENEWALS #2220 PUT ON THE SCHEDULER (D1, D2): each is
+  // written by its job, by the scheduler, never by a person.
+  { action: 'pki.ca.renew', category: 'service',
+    label: 'A certificate authority\'s certificate was renewed over its ' +
+           'own key' },
+  { action: 'tls.server-certificate.renew', category: 'service',
+    label: 'The listener certificate was renewed' },
+  { action: 'keys.credential-signer.rotate', category: 'service',
+    label: 'The dedicated credential signer\'s keys were rotated' },
+  { action: 'keys.encryption.rotate', category: 'service',
+    label: 'The request-object, KEM and credential request encryption keys ' +
+           'were rotated' },
+  { action: 'cluster.secret-rotated', category: 'service',
+    label: 'A shared cluster secret was rotated' },
+  { action: 'application.secret-rotated', category: 'service',
+    label: 'An application\'s client secret was rotated automatically' },
+  { action: 'persistence.database-password-changed', category: 'service',
+    label: 'The database password was read again and changed' },
   { action: 'keys.data-key-rotate', category: 'service',
     label: 'Data encryption keys were rotated' },
   { action: 'keys.data-key-reencrypt', category: 'service',
@@ -655,6 +700,103 @@ const ACTIONS = [
   { action: 'webauthn.attestation-revoked', category: 'authentication',
     label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
            'Android attestation status list revokes its chain' },
+  // THE HARDWARE TOKEN REGISTER (#1955): a token recorded from attestation,
+  // a credential added to it, a change of holder, and the lost-key act.
+  // `common/hardware_tokens.ts` writes all four.
+  { action: 'hardware-token.create', category: 'directory',
+    label: 'A hardware token was recorded from attestation' },
+  { action: 'hardware-token.credential-add', category: 'directory',
+    label: 'A credential was added to a hardware token' },
+  { action: 'hardware-token.holder-change', category: 'directory',
+    label: 'A hardware token was registered by another person than the ' +
+           'one who held it' },
+  { action: 'hardware-token.lost', category: 'directory',
+    label: 'A hardware token was reported lost and its credentials retired' },
+  { action: 'hardware-token.entry-removed', category: 'directory',
+    label: 'A hardware token was removed from a person\'s entry, ' +
+           'and their credentials on it left the register' },
+  { action: 'hardware-token.entry-refused', category: 'directory',
+    label: 'A token written onto a person\'s entry was refused and ' +
+           'put back as recorded' },
+  // THE OATH TOKEN INVENTORY (#1955 P4): a PSKC seed file imported (or
+  // refused), a token assigned or claimed, a claim refused, and an
+  // unassigned token removed. `common/oath_tokens.ts` writes all four.
+  { action: 'oath-token.import', category: 'directory',
+    label: 'A vendor\'s PSKC seed file was imported, or refused' },
+  { action: 'oath-token.assign', category: 'directory',
+    label: 'An imported OATH token was assigned to, or claimed by, a person' },
+  { action: 'oath-token.claim', category: 'directory',
+    label: 'A person\'s claim of an imported OATH token was refused' },
+  { action: 'oath-token.remove', category: 'directory',
+    label: 'An unassigned OATH token was removed from the inventory' },
+  { action: 'oath-token.retire', category: 'directory',
+    label: 'An assigned OATH token was retired because it was ' +
+           'removed from its holder\'s entry' },
+  // THE YUBIKEY OTP INVENTORY (#1955 P5). `common/yubiotp_store.ts` writes
+  // each of these.
+  { action: 'yubiotp.import', category: 'directory',
+    label: 'A YubiKey OTP CSV was imported, or refused' },
+  { action: 'yubiotp.assign', category: 'directory',
+    label: 'An imported YubiKey OTP was assigned to a person' },
+  { action: 'yubiotp.claim', category: 'directory',
+    label: 'A person claimed an imported YubiKey OTP, or the claim was ' +
+           'refused' },
+  { action: 'yubiotp.remove', category: 'directory',
+    label: 'An unassigned YubiKey OTP was removed from the inventory' },
+  { action: 'yubiotp.retire', category: 'directory',
+    label: 'An assigned YubiKey OTP was retired because it was ' +
+           'removed from its holder\'s entry' },
+  { action: 'yubiotp.client-add', category: 'directory',
+    label: 'A YK-VAL client was created' },
+  { action: 'yubiotp.client-remove', category: 'directory',
+    label: 'A YK-VAL client was removed' },
+  // EVERY YK-VAL VERIFY (the #1955 review), `authn/ykval.ts`: the client,
+  // the OTP's public identity and the status, with the code of a refusal.
+  { action: 'ykval.verify', category: 'authentication',
+    label: 'A YK-VAL client asked whether a YubiKey OTP is good' },
+  // AN ESCROWED PIV KEY RECOVERED (#1955 P2, D7), by its holder or by an
+  // administrator the access-control policy let; a refusal is the same row
+  // with its code. `common/piv_enrolment.ts` writes it.
+  { action: 'piv-escrow.recover', category: 'directory',
+    label: 'An escrowed PIV key-management key was recovered' },
+  // A PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (#1955 P6), all seven
+  // written by `common/openpgp_keys.ts`.
+  { action: 'openpgp.challenge', category: 'directory',
+    label: 'An OpenPGP key registration challenge was issued' },
+  { action: 'openpgp.key-registered', category: 'directory',
+    label: 'An OpenPGP key was registered on a proof of possession' },
+  { action: 'openpgp.key-refused', category: 'directory',
+    label: 'An OpenPGP key was not registered' },
+  { action: 'openpgp.key-removed', category: 'directory',
+    label: 'An OpenPGP key was removed' },
+  { action: 'openpgp.publication', category: 'directory',
+    label: 'An OpenPGP key was published in, or withdrawn from, the Web Key ' +
+           'Directory' },
+  { action: 'openpgp.mail-encryption', category: 'directory',
+    label: 'How mail to a person is encrypted was changed' },
+  { action: 'openpgp.smime-certificate', category: 'directory',
+    label: 'A person\'s S/MIME certificate was set or removed' },
+  // AN ML-KEM S/MIME CERTIFICATE THIS REALM ISSUES (#2220), on a proof of
+  // possession `common/openpgp_keys.ts` asks for: the challenge, and an
+  // answer that did not match. The issuance itself is the enrollment's row
+  // and `openpgp.smime-certificate`'s.
+  { action: 'openpgp.smime-kem-challenge', category: 'directory',
+    label: 'An ML-KEM S/MIME proof-of-possession challenge was issued' },
+  { action: 'openpgp.smime-kem-refused', category: 'directory',
+    label: 'An ML-KEM S/MIME certificate was not issued' },
+  // THE CLASSICAL OpenPGP KEY KEPT BESIDE A POST-QUANTUM ONE (#2009 P2),
+  // written by `common/openpgp_keys.ts`.
+  { action: 'openpgp.classical-kept', category: 'directory',
+    label: 'A classical OpenPGP key was kept beside the post-quantum key ' +
+           'that replaced it' },
+  { action: 'openpgp.classical-retired', category: 'directory',
+    label: 'A kept classical OpenPGP key was removed' },
+  // THE PIV RE-ISSUE POST-LOGIN ACTIVITY (#2009 P3), written by
+  // `common/post_login_piv.ts`.
+  { action: 'piv.reissued', category: 'directory',
+    label: 'A PIV certificate was re-issued after signing in' },
+  { action: 'piv.superseded', category: 'directory',
+    label: 'A PIV certificate was revoked once its replacement signed in' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',
@@ -819,10 +961,17 @@ const ACTIONS = [
     label: 'A person\'s sign-in names were changed by an administrator' },
   { action: 'admin.mfa.totp.cleared', category: 'admin',
     label: 'An operator cleared somebody\'s authenticator app' },
+  { action: 'admin.mfa.hotp.cleared', category: 'admin',
+    label: 'An operator cleared somebody\'s one-time code token' },
+  { action: 'admin.mfa.yubiotp.cleared', category: 'admin',
+    label: 'An operator cleared somebody\'s YubiKey OTP' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
     label: 'An operator removed somebody\'s security key' },
   { action: 'admin.mfa.key.renamed', category: 'admin',
     label: 'An operator renamed somebody\'s passkey' },
+  // #1955 P7: a legacy U2F credential imported by value.
+  { action: 'admin.mfa.key.imported', category: 'admin',
+    label: 'An operator imported a U2F security key for somebody' },
   // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
   // each one ACT with who performed it. The sessions a reset's sign-out ends
   // write their own `session.end` rows, so these do not count them again.
@@ -944,6 +1093,12 @@ const ACTIONS = [
   // paranoid row decides what it asks of a certificate, so both are recorded.
   { action: 'admin.pki.trust.change', category: 'admin',
     label: 'The signer truststore or a paranoid PKI setting was changed' },
+  // #2118. A named truststore decides whose certificates every use case that
+  // names it believes, and an assignment decides which stores a use case
+  // trusts; the row carries the names and fingerprints, never a certificate.
+  { action: 'admin.pki.truststore.change', category: 'admin',
+    label: 'A named truststore or a use case\'s truststore assignment was ' +
+      'changed' },
 
   // STORED KERBEROS KEYS (2026-09-12). A person's keys DERIVED from a password
   // that was just set or verified is an `authentication` row, for the portal
@@ -1110,6 +1265,35 @@ const ACTIONS = [
            'request' },
   { action: 'authzen.access-request.callback', category: 'authorization',
     label: 'An AuthZEN access request\'s callback was sent or failed' },
+  // A task that could not be completed (#1202): its approval could not be
+  // stored (STS-AUTHZEN-0142), or its approvers resolve to nobody but the
+  // subject (STS-AUTHZEN-0143). Built from the status, like the four above.
+  { action: 'authzen.access-request.failed', category: 'authorization',
+    label: 'An AuthZEN access request failed' },
+  // The requestable-denial store is full (STS-AUTHZEN-0144): written once,
+  // and nothing new is recorded until a sweep makes room.
+  { action: 'authzen.access-request.denials-full', category: 'authorization',
+    label: 'The AuthZEN requestable denial store was full' },
+  // TWO-PERSON APPROVAL (#2166, `admin-core/dual_control.ts`): one row per
+  // transition of a held administrator act, one per refused attempt to
+  // decide one, and one per act that ran because nobody else could decide it.
+  { action: 'admin.dual-control.held', category: 'admin',
+    label: 'An administrator act was held for a second administrator' },
+  { action: 'admin.dual-control.approved', category: 'admin',
+    label: 'A held administrator act was approved and run' },
+  { action: 'admin.dual-control.refused', category: 'admin',
+    label: 'A held administrator act was refused' },
+  { action: 'admin.dual-control.withdrawn', category: 'admin',
+    label: 'A held administrator act was withdrawn by its requester' },
+  { action: 'admin.dual-control.expired', category: 'admin',
+    label: 'A held administrator act expired undecided' },
+  { action: 'admin.dual-control.failed', category: 'admin',
+    label: 'A held administrator act was approved and not run' },
+  { action: 'admin.dual-control.decision-refused', category: 'admin',
+    label: 'Somebody was refused the decision of a held administrator act' },
+  { action: 'admin.dual-control.proceeded', category: 'admin',
+    label: 'A high-risk administrator act ran without a second ' +
+           'administrator' },
   // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
   //
   // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since
@@ -1154,6 +1338,16 @@ const ACTIONS = [
   // the serial and the expiry, and never the certificate or a key.
   { action: 'xacml.pep.credential', category: 'authorization',
     label: 'A remote PEP\'s assertion key was certified from its request' },
+  // An embedded remote PEP bound to the application it is embedded in, or
+  // unbound, by an administrator or because the application was deleted
+  // (#2025). The row names the PEP and the application.
+  { action: 'xacml.pep.binding', category: 'authorization',
+    label: 'An embedded remote PEP was bound to its application, or unbound' },
+  // A remote PEP pulled a policy scope other than the one it pulled before
+  // (#2027): `repository` or `bound-application`. Written on a change only,
+  // so a PEP polling every few seconds is one row, not one a poll.
+  { action: 'xacml.pep.scope', category: 'authorization',
+    label: 'A remote PEP began pulling another policy scope' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 
@@ -1315,6 +1509,9 @@ const ACTIONS = [
   // operator looking for it must be able to name it in `?action=`.
   { action: 'persistence.minted-drop', category: 'service',
     label: 'A minted row that could never commit was dropped' },
+  // THE DATABASE CLIENT CERTIFICATE READ AGAIN (#2254), changed or refused.
+  { action: 'persistence.database-certificate-changed', category: 'service',
+    label: 'The database client certificate was read again and changed' },
   // ---------------------------------------------------------------------
   // ACTIONS RECORDED AND NEVER LISTED (2026-09-26). Each was written by its
   // module and had no row here, so the audit filter could not name it — and
@@ -1573,6 +1770,17 @@ const ACTIONS = [
   // #1290: a person's key pair is removed by REVOKING it, row by row.
   { action: 'portal.signing-key.revoked', category: 'authentication',
     label: 'A person revoked one of their signing key pairs' },
+  // An OpenSSH user certificate from the realm's user CA (#1955 P3):
+  // `common/ssh_user_ca.ts` writes the issue, `account-api/ssh_user_ca.ts`
+  // the holder's revocation.
+  { action: 'ssh-user-ca.issue', category: 'authentication',
+    label: 'A person was issued an SSH user certificate' },
+  { action: 'ssh-user-ca.revoke', category: 'authentication',
+    label: 'A person revoked one of their SSH user certificates' },
+  { action: 'ssh-user-ca.entry-refused', category: 'authentication',
+    label: 'An SSH user certificate written onto a person\'s entry ' +
+           'was refused: the CA did not issue it to them, or it is ' +
+           'revoked or expired' },
   // #1291: a person's own did:web, published from the user portal.
   { action: 'did.person.published', category: 'authentication',
     label: 'A person published a did:web of their own' },
@@ -1663,6 +1871,23 @@ const ACTIONS = [
     label: 'A role was deleted' },
   { action: 'roles.describe', category: 'admin',
     label: 'A role\'s description, display name or member types were set' },
+  // DYNAMIC SELECTABLE ROLES (#1072): how a role is held, how a dynamic one
+  // is chosen, and each eligibility decision (an offer at sign-in, an
+  // administrator's test).
+  { action: 'roles.set-mode', category: 'admin',
+    label: 'A role was made static or dynamic selectable' },
+  { action: 'roles.set-selection', category: 'admin',
+    label: 'How a dynamic role is chosen at sign-in was set' },
+  { action: 'roles.eligibility', category: 'authorization',
+    label: 'A person\'s eligibility for a dynamic role was decided' },
+  { action: 'roles.selection.offered', category: 'authentication',
+    label: 'Dynamic roles were offered at a sign-in' },
+  { action: 'roles.selection.chosen', category: 'authentication',
+    label: 'Dynamic roles were chosen at a sign-in' },
+  { action: 'roles.selection.refused', category: 'authentication',
+    label: 'A sign-in\'s choice of dynamic roles was refused' },
+  { action: 'roles.selection.dropped', category: 'authorization',
+    label: 'A chosen dynamic role was left off a token' },
   // MONITORING → NODE HEALTH'S COLLECT BUTTONS (#611): one row per press,
   // however many isolates it reached. `admin-ui/node_health_admin.ts`.
   { action: 'node-health.collect-garbage', category: 'admin',
@@ -1880,6 +2105,11 @@ const ACTIONS = [
   // common/devices.ts
   { action: 'device.risk', category: 'directory',
     label: 'A registered device\'s risk level was set' },
+  // common/admin_device_requirement.ts (#2179): the realm's administrators
+  // now need a compliant registered device — armed on first proof.
+  { action: 'device.admin-requirement-armed', category: 'admin',
+    label: 'The realm\'s administrators now need a compliant registered ' +
+           'device' },
   // federation/federation.js' recordChange()
   { action: 'federation.create', category: 'admin',
     label: 'A federation relationship was created' },
@@ -2025,8 +2255,27 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // sealed segment every other process read, opened and parsed — about 5,000
 // rows a minute in each of 8081's nine processes under a password load —
 // and the only reader of what they held is the audit page.
-const events = realms.arr({ persist: 'audit.events', merge: 'own',
-                            segment: 32, contributionsOnRead: true });
+// NOT PERSISTED HERE SINCE #1616 (ASVS 5.0.0 16.4.2). This is the ring of
+// the events THIS process recorded, in memory; where minted state persists
+// each event is ALSO one sealed row of `sts_audit`, the append-only table
+// (`persistence/audit_store.js`), and that table — every process's rows —
+// is what `fresh()` reads and `merged()` shows. The segments this ring was
+// written as until then are `legacyEvents` below, read once to be copied.
+const events = realms.arr();
+
+// THE OLD RING, READ ONCE (#1616). Declared under its old handle and its old
+// shape so that the minted restore still finds this process's segments and
+// the fan-in still reads the other processes', for `migrateLegacy()` to copy
+// into `sts_audit` and then remove. Nothing is pushed here any more.
+const legacyEvents = realms.arr({ persist: 'audit.events', merge: 'own',
+                                  segment: 32, contributionsOnRead: true });
+
+// THE STORED ROWS `fresh()` READ (#1616): a realm's newest `audit.maxEvents`
+// rows of `sts_audit`, every process's, opened, newest first as read. Not
+// persisted: it is a copy of the table, refreshed when a page is drawn.
+const stored = realms.obj(function () {
+  return { rows: null };
+});
 
 // ---------------------------------------------------------------------
 // PER TRUST REALM, like the ring above it. A sequence number shared between
@@ -2193,7 +2442,8 @@ let actorSessionResolver = null;
 const sources = new AsyncLocalStorage();
 
 // Run `fn` with `source` ambient: `{ req }` for an HTTP request, or
-// `{ address }` for a raw socket. Returns what `fn` returns.
+// `{ address }` for a raw socket, or `{ actor }` for a scheduler job's body
+// (#2050, `currentActor()`). Returns what `fn` returns.
 /**
  * Runs a function with a source ambient, so every row written inside it carries
  * that source's address.
@@ -2316,6 +2566,51 @@ function actorSessionOfRequest(req) {
     log.debug("Leaving actorSessionOfRequest(). Threw.");
     return '';
   }
+}
+
+// WHO IS DOING THE WORK THIS CODE RUNS INSIDE (#2050), for a row written
+// as a CONSEQUENCE of it — a certificate revoked because a write took it off
+// an entry — where the code that writes the row was handed no request. The
+// same answer `recordHttp()` gives the request's own row: the management
+// and account APIs' token subject (`res.locals.apiCaller`, which the
+// console's calls to `/admin-api` carry too), SCIM's authenticated client
+// (`req.scimAuth.principal`, the actor of SCIM's own rows), and otherwise
+// the resolver's signed-in user. A job's source names the job
+// (`cluster/scheduler.ts`, `job:<id>`). '' outside any source, or for a
+// request nobody authenticated.
+/**
+ * The actor of the ambient source; exported as `currentActor`.
+ *
+ * @returns the actor, or ''
+ */
+function ambientActor() {
+  log.debug("Entering ambientActor().");
+  const source = sources.getStore();
+  if (!source) {
+    log.debug("Leaving ambientActor(). No source.");
+    return '';
+  }
+  if (source.actor) {
+    log.debug("Leaving ambientActor(). The source names one.");
+    return String(source.actor);
+  }
+  const req = source.req;
+  if (!req) {
+    log.debug("Leaving ambientActor(). A socket's source.");
+    return '';
+  }
+  const res = req.res;
+  const caller = res && res.locals && res.locals.apiCaller;
+  if (caller && caller.name) {
+    log.debug("Leaving ambientActor(). The API's caller.");
+    return String(caller.name);
+  }
+  if (req.scimAuth && req.scimAuth.principal) {
+    log.debug("Leaving ambientActor(). The SCIM client.");
+    return String(req.scimAuth.principal);
+  }
+  log.debug("Leaving ambientActor(). The resolver's.");
+  return actorOfRequest(req);
 }
 
 function actorOfRequest(req) {
@@ -2502,6 +2797,15 @@ function record(event) {
   }
   events.push(row);
   trimToCap();
+  // AND TO THE APPEND-ONLY TABLE (#1616), where minted state persists: one
+  // sealed row, written with the rest of this burst. Lazily: the store is a
+  // persistence module, and this file is required by most of the service.
+  try {
+    require('../persistence/audit_store').append(realms.currentId(), row);
+  } catch (e) {
+    log.debug("Caught in record(): " + ((e && e.message) || e));
+    // The row stays in this process's ring; recording never fails an act.
+  }
   // `summarised: true` (2026-09-17, #36 follow-up): the caller logs a
   // PERIODIC SUMMARY of these rows by code instead — the standing rule that a
   // storm of one kind of failure (a relying party that is down, and every
@@ -3337,37 +3641,59 @@ function authenticationEventsForPerson(names, since) {
  */
 function fresh() {
   log.debug("Entering fresh().");
-  if (typeof replication.refreshContributions !== 'function') {
-    log.debug("Leaving fresh(). No fan-in.");
-    return Promise.resolve();
+  const counts = typeof replication.refreshContributions === 'function'
+    ? replication.refreshContributions(['audit.nums']) : Promise.resolve();
+  // THE TABLE, WHERE THERE IS ONE (#1616): this realm's newest rows, every
+  // process's, read once per page. This process's own rows not yet written
+  // are added by `merged()` from its ring.
+  let store = null;
+  try {
+    store = require('../persistence/audit_store');
+  } catch (e) {
+    log.debug("Caught in fresh(): " + ((e && e.message) || e));
+    store = null;
   }
-  log.debug("Leaving fresh().");
-  return replication.refreshContributions(['audit.events', 'audit.nums'])
-    .then(function () {
-      return undefined;
+  const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
+  const read = store && store.active()
+    ? store.newest(realms.currentId(), cap).then(function (rows) {
+      stored.rows = rows;
+    }, function (err) {
+      log.warn(errorCodes.tag('STS-AUDIT-0020') + 'audit: sts_audit could ' +
+               'not be read, so the page shows this process\'s own events: ' +
+               ((err && err.message) || err));
+      stored.rows = null;
+    })
+    : Promise.resolve().then(function () {
+      // No table (or no longer one): nothing read earlier is shown.
+      stored.rows = null;
     });
+  log.debug("Leaving fresh().");
+  return Promise.all([counts, read]).then(function () {
+    return undefined;
+  });
 }
 
 function merged() {
   log.debug("Entering merged().");
   const mine = events.slice(0);
-  // Each other process's events, trimmed to the cap: a segmented store can
-  // hand back up to one segment that process has already dropped.
   const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
-  const others = replication.remoteSegmentedRows('audit.events')
-    .map(function (rows) {
-      return rows.length > cap ? rows.slice(rows.length - cap) : rows;
-    });
-  if (!others.length) {
+  // THE TABLE'S ROWS (#1616), as `fresh()` last read them, with this
+  // process's own events beside them — those not yet written, and those
+  // written since — each event once, by its origin and seq.
+  const fromStore = Array.isArray(stored.rows) ? stored.rows : null;
+  if (!fromStore || !fromStore.length) {
     log.debug("Leaving merged().");
-    // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
-    // copy and a length check rather than a sort of everything.
+    // ONE PROCESS AND NO TABLE — memory, an LDIF store, development — or a
+    // table not read yet: this process's ring, as it always was.
     return mine;
   }
-  let all = mine;
-  others.forEach(function (rows) {
-    if (Array.isArray(rows)) {
-      all = all.concat(rows);
+  const seen = new Set();
+  let all = [];
+  fromStore.concat(mine).forEach(function (row) {
+    const id = String(row.origin || '') + ':' + String(row.seq);
+    if (!seen.has(id)) {
+      seen.add(id);
+      all.push(row);
     }
   });
   // BY TIME, and stably by origin and sequence within one millisecond so that
@@ -3383,8 +3709,122 @@ function merged() {
     }
     return (a.seq || 0) - (b.seq || 0);
   });
+  // THE REALM'S NEWEST `audit.maxEvents` (#1616): retention is per realm
+  // now, and the table keeps at least 1000 between its runs.
+  if (all.length > cap) {
+    all = all.slice(all.length - cap);
+  }
   log.debug("Leaving merged().");
   return all;
+}
+
+// ---------------------------------------------------------------------------
+// AT A START, WITH THE STORE OPEN (#1616): this process's own newest events
+// back into its ring — what the segments restored until then, and what
+// `audit_export.ts`'s cursor walks (`localEvents()`) — and, in the front
+// process, the old segments copied into `sts_audit` once. Never rejects: a
+// failure is said (STS-AUDIT-0021) and the service starts.
+// ---------------------------------------------------------------------------
+/**
+ * Puts this process's own newest stored events back into its ring, and in
+ * the front process copies the old segments into `sts_audit` (#1616).
+ *
+ * @param opts - `{ migrate }`: copy the old segments (the front process)
+ * @returns a promise of `{ restored, copied }`
+ */
+function restoreFromStore(opts) {
+  log.debug("Entering restoreFromStore().");
+  let store = null;
+  try {
+    store = require('../persistence/audit_store');
+  } catch (e) {
+    log.debug("Caught in restoreFromStore(): " + ((e && e.message) || e));
+    store = null;
+  }
+  if (!store || !store.active()) {
+    log.debug("Leaving restoreFromStore(). No table.");
+    return Promise.resolve({ restored: 0, copied: 0 });
+  }
+  const out = { restored: 0, copied: 0 };
+  const origin = processOrigin();
+  const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
+  const copy = opts && opts.migrate ? migrateLegacy(store) : Promise.resolve(0);
+  log.debug("Leaving restoreFromStore().");
+  return copy.then(function (copied) {
+    out.copied = copied;
+    return Promise.all(realms.list().map(function (realm) {
+      return realms.run(realm, function () {
+        return store.newest(realm.id, cap, origin).then(function (rows) {
+          const have = new Set(events.map(function (row) {
+            return String(row.seq);
+          }));
+          const back = (rows || []).slice().reverse().filter(function (row) {
+            return !have.has(String(row.seq));
+          });
+          if (back.length) {
+            const now = events.splice(0, events.length);
+            back.concat(now).forEach(function (row) {
+              events.push(row);
+            });
+            trimToCap();
+            out.restored += back.length;
+          }
+        });
+      });
+    }));
+  }).then(function () {
+    return out;
+  }, function (err) {
+    log.warn(errorCodes.tag('STS-AUDIT-0021') + 'audit: the stored events ' +
+             'could not be read back at the start: ' +
+             ((err && err.message) || err));
+    return out;
+  });
+}
+
+// THE COPY OF THE OLD RING (#1616): every realm's segments — this process's,
+// restored into `legacyEvents`, and every other process's, through the
+// fan-in — written into `sts_audit` with their chain checksums, and only
+// when every realm's copy has been written, the segments removed. Running
+// it again — every start of the front process does — finds nothing, or a
+// straggler's segments (a node still on 1.1 during a rolling upgrade), and
+// copies those: an INSERT meeting its own row does nothing.
+function migrateLegacy(store) {
+  log.debug("Entering migrateLegacy().");
+  const refresh = typeof replication.refreshContributions === 'function'
+    ? replication.refreshContributions(['audit.events']) : Promise.resolve();
+  log.debug("Leaving migrateLegacy().");
+  return refresh.then(function () {
+    let total = 0;
+    return Promise.all(realms.list().map(function (realm) {
+      return realms.run(realm, function () {
+        const rows = legacyEvents.slice(0);
+        replication.remoteSegmentedRows('audit.events', realm.id)
+          .forEach(function (theirs) {
+            if (Array.isArray(theirs)) {
+              Array.prototype.push.apply(rows, theirs);
+            }
+          });
+        total += rows.length;
+        return rows.length ? store.insertRows(realm.id, rows) : 0;
+      });
+    })).then(function () {
+      if (!total) {
+        return 0;
+      }
+      return store.dropLegacy().then(function (gone) {
+        realms.list().forEach(function (realm) {
+          realms.run(realm, function () {
+            legacyEvents.splice(0, legacyEvents.length);
+          });
+        });
+        log.info('audit: ' + total + ' event(s) of the old ring were copied ' +
+                 'into sts_audit, the append-only table, and its ' + gone +
+                 ' segment row(s) removed (#1616).');
+        return total;
+      });
+    });
+  });
 }
 
 // The counts the page's tiles and the API's summary need, taken in one pass
@@ -3510,6 +3950,7 @@ function prose() {
  */
 module.exports = {
   verifyIntegrity: verifyIntegrity,
+  restoreFromStore: restoreFromStore,
   CATEGORIES: CATEGORIES,
   redactedPath: redactedPath,
   redactedQuery: redactedQuery,
@@ -3529,6 +3970,7 @@ module.exports = {
   withSource: withSource,
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
+  currentActor: ambientActor,
   list: list,
   localEvents: localEvents,
   authenticationEventsFor: authenticationEventsFor,

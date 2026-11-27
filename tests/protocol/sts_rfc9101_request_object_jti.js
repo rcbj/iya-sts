@@ -37,6 +37,9 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const K = require("./oauth_wire_kit.js")
   .kit("sts_rfc9101_request_object_jti");
@@ -121,7 +124,7 @@ async function resume(b, back) {
   log.debug("Entering resume().");
   let r = await b.go(back);
   for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
-       (/^\//.test(r.location) || r.location.indexOf(K.base) === 0);
+       (/^\//.test(r.location) || urls.isUnder(r.location, K.base));
        hops++) {
     r = await b.go(r.location);
   }

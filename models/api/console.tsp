@@ -46,10 +46,10 @@ using IyaSts.Api.Common;
       `name`:"Service",
       `description`:"What this API is, its document, and the explorer that calls it."
     },
+    #{`name`:"PKI",`description`:""},
     #{`name`:"Delegation",`description`:""},
     #{`name`:"Federation",`description`:""},
-    #{`name`:"Applications",`description`:""},
-    #{`name`:"PKI",`description`:""}
+    #{`name`:"Applications",`description`:""}
   ],
   `security`:#[
     #{`oauth2`:#["admin:console","admin:read","admin:write"]},
@@ -768,6 +768,81 @@ op `setConsoleLanguage`(@js(#{`$open`:true}) `requestBody/content/application~1j
   },
   `responses/200/content/application~1json/schema`: `WithOkErrorsLocale`,
   `responses/400/content/application~1json/schema`: `WithOkErrorsLocale`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@js(#{`description`:"One certificate of the text handed in, as it reads."})
+@component model `InspectedCertificate` {
+    @js(#{`description`:"The PEM block, as it was found in the text."}) `pem`: string;
+    `subject`: string;
+    `issuer`: string;
+    @js(#{`description`:"The serial number, lower-case hex."}) `serialHex`: string;
+    `notBefore`: string;
+    `notAfter`: string;
+    @js(#{`description`:"Whether basicConstraints says it is a CA."}) `ca`: boolean;
+    `selfIssued`: boolean;
+    @js(#{`description`:"The SHA-256 of the DER in the colon form `openssl x509 -fingerprint -sha256` prints."}) `fingerprint256`: string;
+    @js(#{`description`:"The SHA-256 of the DER, lower-case hex: what `certificate-sha256` binds and `tls.trustedProxyCertificates` pins."}) `sha256`: string;
+    @js(#{`description`:"The SHA-256 of its SubjectPublicKeyInfo, lower-case hex: what a certificate sign-in profile's `issuers` names a CA by, and what `spki-sha256` binds. Empty where the key could not be read."}) `spkiSha256`: string;
+    @js(#{`description`:"Its subjectKeyIdentifier, lower-case hex, or empty."}) `ski`: string;
+    `keyUsage`: (string)[];
+    `extendedKeyUsage`: (string)[];
+    @js(#{`description`:"Its `urn:uuid:` subjectAltNames: a FIPS 201 card UUID."}) `cardUuids`: (string)[]
+  }
+
+@js(#{`description`:"The certificate that issued the first one, or null where none of the others handed in and no client trust anchor verifies its signature."})
+@component model `InspectedIssuer` {
+    `subject`: string;
+    `spkiSha256`: string;
+    @js(#{`description`:"`bundle` (handed in) or `truststore` (a client trust anchor)."}) `from`: "bundle" | "truststore"
+  }
+
+@component model `InspectedCertificates` {
+    `ok`: boolean;
+    `errors`?: (string)[];
+    `certificates`?: (`InspectedCertificate`)[];
+    `issuer`?: `InspectedIssuer` | null;
+    @js(#{`description`:"With `bindings: true`, the values of `stsCertificateBinding` the first certificate is found by: `spki-sha256`, and `issuer-serial` and `issuer-ski` where its issuer was found. Empty otherwise."}) `bindings`?: ({
+      `method`: "spki-sha256" | "issuer-serial" | "issuer-ski";
+      `value`: string
+    })[]
+  }
+
+@endpoint("/admin-api/console/certificates/inspect",
+  "post",
+  #{
+    `operationId`:"inspectCertificates",
+    `summary`:"Read the certificates in a PEM text, for certificate sign-in's editors",
+    `description`:"A form helper that writes and keeps nothing (#2080). Answers, for each PEM certificate in `pem`, its subject, issuer, serial, validity, SHA-256 and the SHA-256 of its SubjectPublicKeyInfo — what a certificate sign-in profile's `issuers` (`certSignIn.profiles`) names a CA by — so the console's editors for that setting, `piv.externalIssuers`, `piv.attestationAnchors` and a person's `stsCertificateBinding` show what a certificate is and never compute a digest in the browser. With `bindings: true` it also answers the `stsCertificateBinding` values the FIRST certificate is found by — `spki-sha256`, and `issuer-serial` and `issuer-ski` from its issuer, the first of the other certificates or the client truststore's anchors whose key verifies its signature — in the grammar the directory stores. What the editors lead to is a management operation: `POST /admin-api/config/set` for a setting, `POST /admin-api/users/add-attribute` for a binding.\n\nAt most 262144 characters and 64 certificates; a text with none, or a block that is not a certificate, is refused (400, STS-ADMIN-0953, STS-ADMIN-0954).\n\n**Mirrors** `GET /admin/piv` on the admin console.",
+    `tags`:#["PKI"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Each certificate as it reads, the first one's issuer and its binding values.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The text was refused; `errors` says why.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
+  })
+op `inspectCertificates`(@js(#{
+    `examples`:#[#{`pem`:"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----",`bindings`:true}]
+  }) `requestBody/content/application~1json/schema`: {
+    @js(#{
+      `maxLength`:262144,
+      `description`:"One or more PEM certificates; text around them is ignored. The first is the one `bindings` asks about, and the others are the candidates for its issuer."
+    }) `pem`: string;
+    @js(#{`description`:"Also answer the first certificate's `stsCertificateBinding` values."}) `bindings`?: boolean
+  },
+  `responses/200/content/application~1json/schema`: `InspectedCertificates`,
+  `responses/400/content/application~1json/schema`: `InspectedCertificates`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
@@ -2188,6 +2263,7 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
     `max`?: NullableNumber;
     `applicationCount`?: integer;
     `realm`?: WithIdName;
+    `createFields`?: (`CreateFormField`)[];
     `kinds`?: (WithKindLabelWhat)[];
     `protocols`?: ({
       `id`?: string;

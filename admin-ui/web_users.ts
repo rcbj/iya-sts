@@ -20,10 +20,16 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import SettingsForms = require('./web_settings');
 import ApplicationsPage = require('./web_applications');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
 import AuditPage = require('./web_audit');
+// A person's token and key sub-tabs (#2052), drawn by the central pages'
+// own functions with the person fixed.
+import HardwareTokensPage = require('./web_hardware_tokens');
+import OpenPgpPage = require('./web_openpgp');
+import CertSignInEditors = require('./web_cert_sign_in');
 
 type Json = any;
 
@@ -289,6 +295,10 @@ class UsersPage {
                                            1000))),
         max: String(json.directoryCountsKeptFor) }))
       : '';
+    // TABS (#2070), the Directory pages' shape (`WebPages.PROTOCOL_TABS`):
+    // the tiles and the notes about them are Metadata, the list is a tab
+    // headed by the page's own name, and the `Profile photos` settings
+    // SETTING_HOMES homes here are the Settings tab.
     const inner = '<div class="tiles">' +
         tiles.filter(function (one) {
           return one[0] !== null && one[0] !== undefined;
@@ -348,6 +358,8 @@ class UsersPage {
       '<a href="/admin/cert-issuance#cert-spiffe-overview">' +
       'SPIFFE</a>.') +
       kit.warn(t.html('consoleUsers.body.oneRow')) +
+
+      '<h2 data-tab="people">' + t.html('console.nav.users') + '</h2>' +
 
       // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list has
       // no heading, so everything below the tiles and their notes — the
@@ -501,7 +513,13 @@ class UsersPage {
           limit: String(json.scanLimit),
           people: String(json.directoryPeople) }))) +
       kit.note(t.html('consoleUsers.body.inMemory',
-                      { keeps: json.registryKeeps })));
+                      { keeps: json.registryKeeps }))) +
+
+      // Its own `<h2 data-tab="settings">`, the Settings tab.
+      (json.settings
+        ? SettingsForms.forms(json.settings, '/admin/users', undefined,
+                              ctx.t)
+        : '');
 
     return inner;
   }
@@ -719,15 +737,22 @@ class UsersPage {
         'type="hidden" name="action" value="create">' +
         // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each `<h2>`
         // of the form is a frame inside it, the buttons in the last.
+        // THE USERNAME IS CALLED OUT AS EVERY REQUIRED FIELD IS (#1132): the
+        // directory create forms' cell (`kit.createFields()`), a red rule,
+        // an asterisk and "required", where it was a bare box whose being
+        // required was said only in the note under it.
         kit.frame('<h2>' +
-        t.html('consoleUsers.newUserBody.whoHeading') + '</h2><div ' +
-        'class="formrow"><label for="new-username">' +
-        t.html('consoleUsers.newUserBody.username') + '</label><input ' +
-        'type="text" id="new-username" name="username" size="28" ' +
-        'maxlength="256" required ' +
-        'value="' + kit.esc(username) + '" placeholder="' +
-        kit.esc(t.text('consoleUsers.newUserBody.usernameHint')) +
-        '"></div>' +
+        t.html('consoleUsers.newUserBody.whoHeading') + '</h2>' +
+        // FROM THE ANSWER'S `createFields` (#1132's follow-ups), as every
+        // create page draws its required fields, rather than a row of its
+        // own that could disagree with the create.
+        kit.createFields(kit.createRows(UsersPage.createFieldsNamed(json,
+          ['username']), {
+          username: { label: t.html('consoleUsers.newUserBody.username'),
+                      placeholder: t.text(
+                        'consoleUsers.newUserBody.usernameHint'),
+                      attrs: { maxlength: 256 } } }),
+          { username: username }, t) +
         // NOT THE ONLY REQUIRED FIELD (#1066): the attribute policy requires
         // cn and sn as well, and the realm may add more, each outlined in
         // the grid below.
@@ -779,23 +804,29 @@ class UsersPage {
         t.html('consoleUsers.newUserBody.saLabel') + '</label></div>' +
         // THE OWNERS (#600), one per line — a create has no person page yet
         // to search from; the person's Service account tab is where owners
-        // are found and added afterwards. The placeholder was drawn
-        // unescaped (its apostrophe as itself), so it is drawn as markup: a
-        // translation holds no quote.
-        '<div class="formrow"><label>' +
-        t.html('consoleUsers.newUserBody.owner') + ' <textarea ' +
-        'name="owners" rows="3" cols="60" placeholder="' +
-        t.html('consoleUsers.newUserBody.ownerHint') + '">' +
-        kit.esc([].concat(given.owners == null ? [] : given.owners)
-          .join('\n')) + '</textarea></label></div>' +
-        '<div class="formrow"><label>' +
-        t.html('consoleUsers.newUserBody.destination') + ' <input ' +
-        'type="text" ' +
-        'name="destination" size="40" value="' +
-        kit.esc(given.destination || '') + '"></label><label>' +
-        t.html('consoleUsers.newUserBody.secretName') + ' ' +
-        '<input type="text" name="secretName" size="28" value="' +
-        kit.esc(given.secretName || '') + '"></label></div>' +
+        // are found and added afterwards — and the push destination with
+        // the secret's name there. CELLS OF THE ANSWER'S `createFields`
+        // (#1132's follow-ups): the owners are required while the box is
+        // ticked (and the realm's policy requires one), and the destination
+        // and the secret's name each once the other holds anything, marked
+        // as the create refuses (STS-SVCACCT-0023, 0026), the mark moving
+        // with the box and the text (`wireConditionalRequirements()`).
+        kit.createFields(kit.createRows(UsersPage.createFieldsNamed(json,
+          ['owners', 'destination', 'secretName']), {
+          owners: { label: t.html('consoleUsers.newUserBody.owner'),
+                    type: 'long',
+                    placeholder: kit.unescapeText(
+                      t.html('consoleUsers.newUserBody.ownerHint')) },
+          destination: { label: t.html('consoleUsers.newUserBody.destination'),
+                         attrs: { size: 40 } },
+          secretName: { label: t.html('consoleUsers.newUserBody.secretName'),
+                        attrs: { size: 28 } } }),
+          { serviceAccount: given.serviceAccount === true ||
+                            given.serviceAccount === 'true' ? 'true' : '',
+            owners: [].concat(given.owners == null ? [] : given.owners)
+              .join('\n'),
+            destination: given.destination || '',
+            secretName: given.secretName || '' }, t) +
         kit.note(t.html('consoleUsers.newUserBody.saBefore') + '<a ' +
         'href="/admin/policies#serviceAccount">' +
         t.html('consoleUsers.newUserBody.saPolicy') + '</a>' +
@@ -1007,6 +1038,25 @@ class UsersPage {
   }
 
   /**
+   * The answer's `createFields` rows for some of New user's fields, in the
+   * order asked (#1132): a field the answer does not carry is drawn as an
+   * optional one, so an older answer still draws its form.
+   *
+   * @param json - the `/admin-api/users/new` answer
+   * @param names - the fields wanted
+   * @returns `[{ name, required, requiredWhen }]`
+   */
+  static createFieldsNamed(json, names) {
+    const served = (json && json.createFields) || [];
+    return names.map(function (name) {
+      const found = served.filter(function (one) {
+        return one && one.name === name;
+      })[0];
+      return found || { name: name, required: false };
+    });
+  }
+
+  /**
    * The fields `/admin/users/new` draws, as field grid rows: every attribute
    * a person's Attributes tab edits, and the credential catalogue's others
    * (the address), each with its group, example and tooltip.
@@ -1163,7 +1213,7 @@ class UsersPage {
                                                            json)) },
         { id: 'utab-activity', label: t.text('consoleUsers.detail.tabActivity'),
           html:
-      kit.perPageForm('/admin/users', 'user', key,
+      kit.perPageForm('/admin/users#utab-activity', 'user', key,
                        json.artifactsPaging.perPage,
                        t.html('consoleUsers.detail.blocksNote',
                               { blocks: page.blocksPerPage,
@@ -1241,7 +1291,7 @@ class UsersPage {
             { id: 'ucred-kerberos', label: 'Kerberos',
               html: UsersPage.userKerberosSection(t, key, json.kerberos,
                                                   gate) }
-          ]) },
+          ].concat(UsersPage.tokenSubTabs(ctx, t, key, json, mfaParts))) },
         // Which partners' subjects sign them in (#109): a link is another way
         // in, so it has a tab of its own beside Credentials.
         { id: 'utab-federation',
@@ -1559,7 +1609,8 @@ class UsersPage {
         // one, or for an act that came over no socket.
         '<td>' + (event.address
           ? '<a href="/admin/audit?address=' +
-            encodeURIComponent(event.address) + '"><code>' +
+            encodeURIComponent(event.address) +
+            '#audit-tab-events"><code>' +
             kit.esc(event.address) + '</code></a>'
           : '<span class="state-none" title="' +
             kit.esc(t.text('consoleUsers.authenticationTable.noAddressTitle')) +
@@ -1856,11 +1907,12 @@ class UsersPage {
    * @param state - the gate state; `write` draws the controls
    * @param back - the list to return to after an action
    * @param data - `page.mfa` from the person's management API answer
-   * @returns the three Credentials pieces. `factors` is this pane.
+   * @returns the Credentials pieces. `factors` is this pane.
    *   `keyCertificates` is stored certificates, message-signing and TLS
    *   client certificates, drawn on Key pairs. `selfIssued` is self-issued
-   *   IDs and published DIDs. With no credential store the note is on
-   *   `factors` and the other two pieces are empty.
+   *   IDs and published DIDs. `hotp` and `yubi` (#2052) are the one-time
+   *   code token and the YubiKey OTP, drawn on their own sub-tabs. With no
+   *   credential store the note is on `factors` and the rest are empty.
    */
   static mfaSection(t, row, key, state, back, data) {
     const heading = '<h2 id="second-factors">' +
@@ -1871,6 +1923,8 @@ class UsersPage {
       return {
         factors: kit.frame(heading +
           kit.note(t.html('consoleUsers.mfaSection.noStore'))),
+        hotp: '',
+        yubi: '',
         keyCertificates: '',
         selfIssued: ''
       };
@@ -2018,6 +2072,72 @@ class UsersPage {
         : (mech.totp
             ? kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite'))
             : ''));
+    // THE ONE-TIME CODE TOKEN (#1955 P4): how it was provisioned, when it
+    // was last used, and Clear, under the same evidence rule as the app.
+    // On the person's OATH tokens sub-tab since #2052, beside the tokens
+    // assigned to them.
+    const hotpBlock =
+      (mech.hotp
+        ? '<h3>' + t.html('consoleUsers.mfaSection.hotpHeading') + '</h3>' +
+          '<table class="kv"><tr><th>' +
+          t.html('consoleUsers.mfaSection.hotpSource') + '</th><td>' +
+          (mech.hotpDetail && mech.hotpDetail.source === 'pskc-import'
+            ? t.html('consoleUsers.mfaSection.hotpImported', {
+                serial: String(mech.hotpDetail.serial || ''),
+                vendor: String(mech.hotpDetail.vendor || '') })
+            : t.html('consoleUsers.mfaSection.hotpEnrolled')) +
+          (mech.hotpUsable ? '' : ' <strong>' +
+            t.html('consoleUsers.mfaSection.hotpUnusable') + '</strong>') +
+          '</td></tr><tr><th>' +
+          t.html('consoleUsers.mfaSection.lastCode') + '</th><td>' +
+          kit.esc(mech.hotpDetail && mech.hotpDetail.lastUsedAt
+            ? kit.whenText(mech.hotpDetail.lastUsedAt)
+            : t.text('consoleUsers.body.never')) + '</td></tr></table>' +
+          (state.write
+            ? '<form method="post" action="/admin/users">' +
+              '<input type="hidden" name="action" value="clear-hotp">' +
+              UsersPage.evidenceField(t) +
+              '<input type="hidden" name="user" value="' + kit.esc(key) +
+              '">' + carryBack +
+              '<div class="formrow"><button class="danger">' +
+              t.html('consoleUsers.mfaSection.clearHotp') +
+              '</button></div></form>'
+            : kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite')))
+        : '');
+    // A YUBIKEY OTP (#1955 P5): the public identity and how it was
+    // provisioned. The AES key is never on this page. Clear is the same
+    // evidence rule as the one-time code token. On the person's YubiKey OTP
+    // sub-tab since #2052.
+    const yubiBlock =
+      (mech.yubi
+        ? '<h3>' + t.html('consoleUsers.mfaSection.yubiHeading') + '</h3>' +
+          '<table class="kv"><tr><th>' +
+          t.html('consoleUsers.mfaSection.yubiSource') + '</th><td>' +
+          (mech.yubiDetail && mech.yubiDetail.source === 'csv-import'
+            ? t.html('consoleUsers.mfaSection.yubiImported', {
+                serial: String(mech.yubiDetail.serial || '') })
+            : t.html('consoleUsers.mfaSection.yubiEnrolled')) +
+          (mech.yubiUsable ? '' : ' <strong>' +
+            t.html('consoleUsers.mfaSection.yubiUnusable') + '</strong>') +
+          '</td></tr><tr><th>' +
+          t.html('consoleUsers.mfaSection.yubiPublicId') + '</th><td>' +
+          kit.esc((mech.yubiDetail && mech.yubiDetail.publicId) || '—') +
+          '</td></tr><tr><th>' +
+          t.html('consoleUsers.mfaSection.lastCode') + '</th><td>' +
+          kit.esc(mech.yubiDetail && mech.yubiDetail.lastUsedAt
+            ? kit.whenText(mech.yubiDetail.lastUsedAt)
+            : t.text('consoleUsers.body.never')) + '</td></tr></table>' +
+          (state.write
+            ? '<form method="post" action="/admin/users">' +
+              '<input type="hidden" name="action" value="clear-yubi">' +
+              UsersPage.evidenceField(t) +
+              '<input type="hidden" name="user" value="' + kit.esc(key) +
+              '">' + carryBack +
+              '<div class="formrow"><button class="danger">' +
+              t.html('consoleUsers.mfaSection.clearYubi') +
+              '</button></div></form>'
+            : kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite')))
+        : '');
 
     // --- passkeys
     // --------------------------------------------------------
@@ -2045,6 +2165,17 @@ class UsersPage {
             t.html('consoleUsers.mfaSection.serial',
                    { serial: one.deviceSerial }) +
             '</div>' : '') +
+        // A LEGACY U2F KEY (#1955 P7): imported, not registered here, and
+        // so a second factor only; and the credProtect level a key
+        // reported at registration.
+        (one.appid
+          ? '<div class="note">' +
+            t.html('consoleUsers.mfaSection.importedU2f',
+                   { appid: one.appid }) + '</div>' : '') +
+        (one.credProtect
+          ? '<div class="note">' +
+            t.html('consoleUsers.mfaSection.credProtectLevel',
+                   { level: String(one.credProtect) }) + '</div>' : '') +
         // A LATER REGISTRATION MAY HAVE REPLACED IT ON ITS AUTHENTICATOR
         // (#1101): Clear key, below, removes the row.
         (one.possiblyReplaced
@@ -2145,6 +2276,39 @@ class UsersPage {
         '">' + t.html('consoleUsers.mfaSection.enrol') +
         '</button><p class="note">' +
         t.html('consoleUsers.mfaSection.enrolTitle') + '</p></form>' : '';
+    // A LEGACY U2F CREDENTIAL IMPORTED BY VALUE (#1955 P7), drawn only where
+    // the realm permits an AppID (`webauthn.u2fAppIds`, empty by default):
+    // the four values a U2F relying party kept, and the AppID chosen from
+    // the permitted ones. `POST /admin-api/users/import-u2f-key` is the door.
+    const legacyAppIds: string[] = ((mech.policy || {}).legacyAppIds || [])
+      .map(String);
+    const u2fImport = state.write && keyLive.enabled && legacyAppIds.length
+      ? '<details><summary>' +
+        t.html('consoleUsers.mfaSection.importU2f') + '</summary>' +
+        '<form method="post" action="/admin/users">' +
+        '<input type="hidden" name="action" value="import-u2f-key">' +
+        '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+        carryBack +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fAppId') +
+        ' <select name="appId">' + legacyAppIds.map(function (one) {
+          return '<option value="' + kit.esc(one) + '">' + kit.esc(one) +
+                 '</option>';
+        }).join('') + '</select></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fKeyHandle') +
+        ' <input type="text" name="keyHandle" required ' +
+        'autocomplete="off"></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fPublicKey') +
+        ' <input type="text" name="publicKey" required ' +
+        'autocomplete="off"></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fCounter') +
+        ' <input type="text" name="counter" inputmode="numeric" ' +
+        'value="0"></label></p>' +
+        '<p><label>' + t.html('consoleUsers.mfaSection.importU2fLabel') +
+        ' <input type="text" name="label" maxlength="60"></label></p>' +
+        '<button>' + t.html('consoleUsers.mfaSection.importU2fButton') +
+        '</button>' +
+        kit.note(t.html('consoleUsers.mfaSection.importU2fNote')) +
+        '</form></details>' : '';
     const keysBlock = '<h3>' + t.html('consoleUsers.mfaSection.keysHeading') +
       '</h3>' +
       (allKeys.length
@@ -2180,7 +2344,8 @@ class UsersPage {
         mfa: keyLive.mfaAllowed ? 'yes' : 'no',
         max: String(keyLive.maxKeysPerPerson) }) +
       '<a href="/admin/webauthn">WebAuthn</a>' +
-      t.html('consoleUsers.mfaSection.realmAllowsAfter')) + adminEnrol;
+      t.html('consoleUsers.mfaSection.realmAllowsAfter')) + adminEnrol +
+      u2fImport;
 
     // --- the recovery codes
     // --------------------------------------------------- **THE COUNTS AND
@@ -2601,6 +2766,56 @@ class UsersPage {
       return '<div class="secframe"><h4>' + heading + '</h4>' + body +
              '</div>';
     };
+    // THE PERSON'S S/MIME AND SSH USER CERTIFICATES (#2050), on the entry
+    // beside the stored ones and listed with them; neither signs anybody
+    // in, so neither has a form here. The S/MIME certificate is the
+    // person's to set on the portal; an SSH certificate is revoked on the
+    // Hardware tokens page, and its register decides what the entry holds.
+    const smimeRows = certView.smimeCertificates || [];
+    const smimeFrame = subFrame(
+      t.html('consoleUsers.mfaSection.smimeHeading'),
+      kit.note(t.html('consoleUsers.mfaSection.smimeLead')) +
+      (smimeRows.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.certThSubject') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.certThIssuer') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.certThValidity') + '</th><th>' +
+          'SHA-256</th></tr>' +
+          smimeRows.map(function (one) {
+            return '<tr><td><code>' + kit.esc(one.subject || '—') +
+              '</code></td><td><code>' + kit.esc(one.issuer || '—') +
+              '</code></td><td>' + kit.esc(one.notBefore || '—') + ' – ' +
+              kit.esc(one.notAfter || '—') +
+              (one.expired
+                ? ' <strong>' +
+                  t.html('consoleUsers.mfaSection.certExpired') +
+                  '</strong>' : '') +
+              '</td><td><code>' + kit.esc(one.sha256 || '—') +
+              '</code></td></tr>';
+          }).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')));
+    const sshRows = certView.sshCertificates || [];
+    const sshFrame = subFrame(
+      t.html('consoleUsers.mfaSection.sshHeading'),
+      kit.note(t.html('consoleUsers.mfaSection.sshLead')) +
+      (sshRows.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.sshThSerial') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThKey') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThPrincipals') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThExpires') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.sshThAuthority') + '</th></tr>' +
+          sshRows.map(function (one) {
+            return '<tr><td><code>' + kit.esc(one.serialHex) +
+              '</code></td><td><code>' + kit.esc(one.keyType) + ' ' +
+              kit.esc(one.keyFingerprint) + '</code></td><td>' +
+              kit.esc((one.principals || []).join(', ')) + '</td><td>' +
+              kit.esc(one.notAfter || '—') + '</td><td>' +
+              kit.esc(one.authority) + '</td></tr>';
+          }).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')));
     const certificatesBlock = '<section class="secframe"><h2>' +
       t.html('consoleUsers.mfaSection.certificatesHeading') + '</h2>' +
       kit.note(t.html('consoleUsers.mfaSection.certificatesLead')) +
@@ -2630,6 +2845,7 @@ class UsersPage {
           t.html('consoleUsers.mfaSection.certAdd') +
           '</button></div></form>')
         : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite'))) +
+      smimeFrame + sshFrame +
       '</section>';
 
     // --- message-signing certificates (#521, 2026-10-28) ---------------------
@@ -2971,10 +3187,84 @@ class UsersPage {
     // Credentials sub-tab.
     return {
       factors: html,
+      hotp: hotpBlock,
+      yubi: yubiBlock,
       keyCertificates: certificatesBlock + signingBlock + tlsBlock,
       selfIssued: selfIssuedBlock + kit.frame(UsersPage.publishedDidsBlock(
         t, key, state, back, data.publishedDids))
     };
+  }
+
+  // A PERSON'S TOKENS AND KEYS (#2052, rcbj 2026-11-23: "I also want it to
+  // be a tab on individual user objects. Reuse the code for these pages.").
+  // Six Credentials sub-tabs, each drawn by its central Directory page's
+  // own functions with the person fixed — `web_hardware_tokens.ts` and
+  // `web_openpgp.ts` — from the answers the drill composes
+  // (`web_pages.ts`: `personTokens`, `personOath`, `personYubi` since
+  // #2071, `personOpenpgp`). Every
+  // form posts to the central page's path and so reaches the same
+  // `/admin-api` operation (rule 7); the runtime returns to the sub-tab it
+  // was sent from. The one-time code token and the YubiKey OTP blocks, with
+  // their Clear, moved here from Second factors. The names and order are
+  // the portal's too (#2053).
+  /**
+   * The person's token and key sub-tabs of Credentials.
+   *
+   * @param ctx - the render context
+   * @param t - the page's translator
+   * @param key - the person
+   * @param json - the drill's answer, with the composed members
+   * @param mfaParts - `mfaSection()`'s pieces (`hotp`, `yubi`)
+   * @returns the sub-tab panels
+   */
+  static tokenSubTabs(ctx, t, key, json, mfaParts) {
+    const c = ctx;
+    const tokens = json.personTokens || null;
+    return [
+      { id: 'ucred-hardware-tokens',
+        label: t.text('console.nav.hardware-tokens'),
+        html: HardwareTokensPage.personTokens(ctx.t, tokens, c, key) },
+      { id: 'ucred-oath-tokens', label: t.text('console.nav.oath-tokens'),
+        html: HardwareTokensPage.personOath(ctx.t, json.personOath || null,
+                                            c, key, mfaParts.hotp || '') },
+      { id: 'ucred-yubiotp', label: t.text('console.nav.yubiotp'),
+        html: HardwareTokensPage.personYubi(ctx.t, json.personYubi || null,
+                                            c, key, mfaParts.yubi || '') },
+      { id: 'ucred-piv', label: t.text('console.nav.piv'),
+        html: HardwareTokensPage.personPiv(ctx.t, tokens, c, key) },
+      // THE CERTIFICATE SIGN-IN BINDINGS (#2080): `stsCertificateBinding`,
+      // the values a realm's certificate sign-in profiles find this person
+      // by, derived from their certificate and written through
+      // users/add-attribute (`web_cert_sign_in.ts`).
+      { id: 'ucred-cert-binding',
+        label: t.text('consoleCertSignIn.person.tab'),
+        html: CertSignInEditors.personBindings(ctx.t, key,
+          UsersPage.attributeValues(json.attributeEditor,
+                                    'stsCertificateBinding'),
+          !!ctx.write) },
+      { id: 'ucred-ssh', label: t.text('console.nav.ssh-user-ca'),
+        html: HardwareTokensPage.personSsh(ctx.t, tokens, c, key) },
+      { id: 'ucred-openpgp',
+        label: t.text('consoleUsers.detail.tabOpenpgp'),
+        html: OpenPgpPage.personPanel(ctx.t, json.personOpenpgp || null,
+                                      !!ctx.write) }
+    ];
+  }
+
+  /**
+   * The values a person's entry holds of one attribute, from the answer's
+   * attribute editor.
+   *
+   * @param editor - `attributeEditor`, or null with no entry
+   * @param name - the attribute
+   * @returns the values, as text
+   */
+  static attributeValues(editor, name: string): string[] {
+    const row = editor && Array.isArray(editor.attributes)
+      ? editor.attributes.filter(function (one) {
+        return one.name === name;
+      })[0] : null;
+    return row && Array.isArray(row.values) ? row.values.map(String) : [];
   }
 
   // The drill-down. Returns null when the identity is not one this service

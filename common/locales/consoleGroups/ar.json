@@ -129,5 +129,10 @@
   "ownerProtection.save": "حفظ",
   "ownerProtection.closedAnyway": "إنها مغلقة أمام مالكيها مهما قال المربع:",
   "ownerProtection.isMarked": "أغلقها مسؤول أمام مالكيها.",
-  "ownerProtection.notMarked": "لم يغلقها أي مسؤول أمام مالكيها."
+  "ownerProtection.notMarked": "لم يغلقها أي مسؤول أمام مالكيها.",
+  "newGroup.button": "مجموعة جديدة",
+  "newGroup.linkNote": "نموذج مجموعة جديدة، وحقله المطلوب محاط بالأحمر.",
+  "newGroup.noDirectory": "لا توجد لهذه العملية دليل لإنشاء مجموعة فيه.",
+  "newGroup.groupHint": "اسم المجموعة، وهو RDN الخاص بها",
+  "newGroup.membersHint": "واحد في كل سطر أو مفصولة بفواصل: اسم مستخدم أو أي DN"
 }

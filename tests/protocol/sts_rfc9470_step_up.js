@@ -52,6 +52,9 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const portalSignin = require("./portal_signin.js");
@@ -120,7 +123,7 @@ async function ask(id, b, extra) {
   let r = await b.go(asked.url);
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
        !K.toSignIn(r) && (/^\//.test(r.location) ||
-                          r.location.indexOf(K.base) === 0); hops++) {
+                          urls.isUnder(r.location, K.base)); hops++) {
     r = await b.go(r.location);
   }
   log.debug("Leaving ask(). " + r.status);
@@ -378,7 +381,7 @@ async function test() {
   });
   let r = await b.go(new URL(coded.location, K.base).toString());
   for (let hops = 0; hops < 6 && (r.status === 302 || r.status === 303) &&
-       (/^\//.test(r.location) || r.location.indexOf(K.base) === 0);
+       (/^\//.test(r.location) || urls.isUnder(r.location, K.base));
        hops++) {
     r = await b.go(r.location);
   }

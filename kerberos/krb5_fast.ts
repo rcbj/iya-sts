@@ -1193,7 +1193,9 @@ class Krb5Fast {
       return this.refuse(24, 'STS-KRB-0148', 'PREAUTH_FAILED');
     }
     // THE CODE, through the sign-in screen's own verifier and its once-only
-    // step (`verifyTotpAsync()`, the cluster counter `authn.totp-step`).
+    // step (`verifyTotpAsync()`, the cluster counter `authn.totp-step`) —
+    // or, since #1955 P4, an HOTP token's code and its counter
+    // (`authn.hotp-counter`), which the same door takes by kind.
     const name = client.name.length === 1 ? String(client.name[0]) : '';
     let verdict: Json;
     try {

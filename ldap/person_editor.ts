@@ -417,6 +417,10 @@ const FIELD_EXAMPLES: Record<string, string> = {
   placeofbirthregion: 'Illinois', placeofbirthlocality: 'Springfield',
   schaccountryofcitizenship: 'US', x500uniqueidentifier: '#\'0101\'B',
   description: 'Joined in 2026',
+  stspivcarduuid: '3f2b7c1e-9d4a-4e6b-8c2f-1a5d7e9b0c34',
+  stscertificatebinding: 'issuer-serial:' +
+    '5b0e8a1f3c9d2e7b4a6f1c8d3e9b2a7f5c1d8e3b9a2f7c4d1e8b3a9f2c7d4e1b:' +
+    '1a2b3c4d',
   seealso: 'cn=staff,ou=groups,dc=example,dc=com',
   internationalisdnnumber: '+1 555 0105', telexnumber: '123456 ACME US',
   teletexterminalidentifier: 'ACME-01', x121address: '31102100000123',
@@ -678,6 +682,24 @@ class PersonEditor {
       consider(row.attribute, 'The ' + row.noun + ' this person names',
                'policy reference (#1235)', {});
     });
+    // AN OUTSIDE PIV OR CAC CARD'S UUID (#1955 P2, D8), an administrator's to
+    // record: it maps a card certificate from one of the realm's
+    // `piv.externalIssuers` to this person. On neither list above (it is
+    // this service's own, and never the portal's: a person naming a card UUID
+    // themselves would sign in as whoever carries that card). The directory
+    // normalises it and refuses a malformed or a second holder's
+    // (`ldap_server.js`'s `pivCardUuidRefusal()`, STS-PIV-0034 and -0035).
+    consider('stsPivCardUuid', 'Outside PIV or CAC card UUIDs',
+             'FIPS 201-3 card UUID (#1955)', {});
+    // A CERTIFICATE SIGN-IN BINDING (#2012), an administrator's to record
+    // for the card UUID's reason: it binds a certificate a realm's
+    // `certSignIn.profiles` covers to this person, so a person writing one
+    // would choose whose certificate signs them in. The directory
+    // canonicalises it and refuses a malformed or a second holder's
+    // (`ldap_server.js`'s `certificateBindingRefusal()`, STS-TLS-0069 and
+    // -0070).
+    consider('stsCertificateBinding', 'Certificate sign-in bindings',
+             'certificate binding (#2012)', {});
     log.debug("Leaving PersonEditor.universe(). " + editable.length +
               " editable, " + withheld.length + " withheld.");
     return { editable: editable, withheld: withheld };
@@ -795,6 +817,42 @@ class PersonEditor {
   }
 
   // -------------------------------------------------------------------------
+  // A VALUE IN THE FORM THE DIRECTORY STORES IT, for the comparisons an
+  // edit makes (#2081). `ldap_server.js` canonicalises a certificate sign-in
+  // binding as it writes it (`certificateBindingRefusal()`), so a binding
+  // added as `openssl` prints it (`issuer-ski:…:35:9A:…`) is held as
+  // `issuer-ski:…:359a…`, and a remove naming it as it was added found
+  // nothing to remove. Canonicalised here the same way, by
+  // `certificate_binding.bindingValueOf()`, it is found; a value outside the
+  // grammar is left as it is, for the directory to refuse (STS-TLS-0069).
+  // An ADD differing from a held value only in spelling is therefore
+  // refused as already held (STS-LDAP-0107), never stored twice. #2080's
+  // binding editor on the console writes through this same door, so it
+  // gets the same canonical form. Required LAZILY: the binding module adds
+  // a settings write rule when it loads, which belongs where
+  // `common/protocol_stack.ts` loads it.
+  private comparable(row: EditableRow, value: string): string {
+    const { log } = this.deps;
+    log.debug("Entering PersonEditor.comparable(). " + row.name);
+    if (row.name.toLowerCase() !== 'stscertificatebinding' || value === '') {
+      log.debug("Leaving PersonEditor.comparable(). As given.");
+      return value;
+    }
+    let canonical = '';
+    try {
+      canonical = String(require('../common/certificate_binding')
+        .bindingValueOf(value) || '');
+    } catch (e) {
+      log.debug("Caught in PersonEditor.comparable(): " +
+                ((e && e.message) || e));
+      // The directory's own check still runs at the write.
+      canonical = '';
+    }
+    log.debug("Leaving PersonEditor.comparable(). " +
+              (canonical ? 'Canonical.' : 'Not a binding.'));
+    return canonical || value;
+  }
+
   // THE ONE CHECK OF A VALUE, and its normal form. Answers `{ value }` or
   // `{ error }` — the words of a refusal, which the caller codes.
   // -------------------------------------------------------------------------
@@ -1044,7 +1102,7 @@ class PersonEditor {
       return this.refused('STS-LDAP-0106', 'The value for ' + row.name + ' ' +
                           checked.error + '.');
     }
-    const value = String(checked.value);
+    const value = this.comparable(row, String(checked.value));
     if (mode !== 'set' && value === '') {
       log.debug("Leaving PersonEditor.update(). No value.");
       return this.refused('STS-LDAP-0106', 'Name the value to ' + mode +
@@ -1124,16 +1182,20 @@ class PersonEditor {
     // would leave this process. Audit the failure before that return, and
     // do not audit it as a success. `false` is still "not a person".
     if (written && typeof written === 'object') {
+      // The directory's own code where it gave one: STS-LDAP-0211 for the
+      // description, STS-PIV-0034 / -0035 for a card UUID (#1955 P2).
+      const refusedCode = errorCodes.codeOf(written) || 'STS-LDAP-0211';
       audit({ category: 'admin', action: 'admin.user.attribute',
               actor: String(ctx.actor || ''), target: person.dn,
-              outcome: 'failure', errorCode: 'STS-LDAP-0211',
+              outcome: 'failure', errorCode: refusedCode,
               // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
               summary: 'could not ' + mode + ' ' + row.name + ' on ' +
                        person.dn,
               detail: { attribute: row.name, mode: mode,
                         values: after.length, via: String(ctx.via || '') } });
       log.debug("Leaving PersonEditor.update(). Not written.");
-      return this.refused('STS-LDAP-0211', (written.errors || [])[0] ||
+      // error-code: none — the directory's code, read off its answer above
+      return this.refused(refusedCode, (written.errors || [])[0] ||
                           'The directory did not store the change.');
     }
     if (!written) {

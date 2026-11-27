@@ -30,6 +30,11 @@
       "text": "Napalitan ang password ng account na {{username}} noong {{when}} ({{how}}).\n\nKung hindi ikaw ito, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
       "html": "<p>Napalitan ang password ng account na <strong>{{username}}</strong> noong {{when}} ({{how}}).</p><p>Kung hindi ikaw ito, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
     },
+    "credential-changed": {
+      "subject": "Nagbago ang mga kredensyal ng inyong {{service}} account",
+      "text": "Binago ang mga kredensyal ng account na {{username}} noong {{when}}, {{by}}: {{what}}.\n\nKung hindi kayo ito at hindi ninyo ito hiniling, mag-sign in ngayon, suriin ang inyong mga setting sa seguridad at i-sign out ang inyong iba pang session, o makipag-ugnayan sa namamahala ng inyong account.\n",
+      "html": "<p>Binago ang mga kredensyal ng account na <strong>{{username}}</strong> noong {{when}}, {{by}}: {{what}}.</p><p>Kung hindi kayo ito at hindi ninyo ito hiniling, mag-sign in ngayon, suriin ang inyong mga setting sa seguridad at i-sign out ang inyong iba pang session, o makipag-ugnayan sa namamahala ng inyong account.</p>"
+    },
     "account-disabled": {
       "subject": "Na-disable ang iyong account sa {{service}}",
       "text": "Na-disable ang account na {{username}} noong {{when}}. {{why}}\n\nWalang makakapag-sign in dito hangga't hindi ito muling ine-enable, at tinapos na ang bawat session nito.\n",
@@ -49,6 +54,16 @@
       "subject": "Sinimulan ang recovery ng iyong account sa {{service}}",
       "text": "Sinimulan ng {{by}} ang recovery ng account na {{username}} noong {{when}}.\n\nKung hindi ikaw ito o isang taong hiningan mo ng tulong, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
       "html": "<p>Sinimulan ng {{by}} ang recovery ng account na <strong>{{username}}</strong> noong {{when}}.</p><p>Kung hindi ikaw ito o isang taong hiningan mo ng tulong, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
+    },
+    "sign-in-alert": {
+      "subject": "Isang kakaibang pag-sign in sa inyong {{service}} account",
+      "text": "May nag-sign in sa account na {{username}} noong {{when}}, at mukha itong kakaiba: {{what}}.\n\nSaan, humigit-kumulang: {{place}}\nGamit ang: {{device}}\nPaano: {{method}}\n\nKung kayo ito, wala kayong kailangang gawin. Kung hindi, buksan ang inyong mga kamakailang pag-sign in at sabihin ito roon, na magsa-sign out sa lahat ng inyong session, saka palitan ang inyong password:\n\n{{link}}\n",
+      "html": "<p>May nag-sign in sa account na <strong>{{username}}</strong> noong {{when}}, at mukha itong kakaiba: {{what}}.</p><p>Saan, humigit-kumulang: {{place}}</p><p>Gamit ang: {{device}}</p><p>Paano: {{method}}</p><p>Kung kayo ito, wala kayong kailangang gawin. Kung hindi, <a href=\"{{link}}\">buksan ang inyong mga kamakailang pag-sign in</a> at sabihin ito roon, na magsa-sign out sa lahat ng inyong session, saka palitan ang inyong password.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Mga tinanggihang pagtatangkang mag-sign in sa inyong {{service}} account",
+      "text": "{{count}} pagtatangkang mag-sign in sa account na {{username}} gamit ang maling password ang tinanggihan sa loob ng {{minutes}} minuto bago ang {{when}}.\n\nKung kayo ito, wala kayong kailangang gawin. Kung hindi, maaaring may sumusubok na hulaan ang inyong password: mag-sign in, suriin ang inyong mga kamakailang pag-sign in, at palitan ang inyong password kung maaaring alam ito ng iba.\n\n{{link}}\n",
+      "html": "<p>{{count}} pagtatangkang mag-sign in sa account na <strong>{{username}}</strong> gamit ang maling password ang tinanggihan sa loob ng {{minutes}} minuto bago ang {{when}}.</p><p>Kung kayo ito, wala kayong kailangang gawin. Kung hindi, maaaring may sumusubok na hulaan ang inyong password: mag-sign in, <a href=\"{{link}}\">suriin ang inyong mga kamakailang pag-sign in</a>, at palitan ang inyong password kung maaaring alam ito ng iba.</p>"
     },
     "address-changed": {
       "subject": "Napalitan ang email address ng iyong account sa {{service}}",
@@ -74,6 +89,11 @@
       "subject": "{{service}}: may ibinigay na emergency access, para sa iyong pagsusuri",
       "text": "Agad na ibinigay ang emergency access, nang walang tagapag-apruba, sa isang kahilingang nagtatalaga sa iyo, {{username}}, bilang isa sa mga tagapag-apruba nito: maaaring {{action}} ni {{subject}} ang {{resource}} sa application na {{application}}, sa pamamagitan ng {{requester}}, sa maikling panahon.\n\nAng ibinigay na katwiran: {{justification}}\n\nPinapayagan ng patakaran ang emergency access dito. Suriin ito, at bawiin kung hindi ito makatwiran:\n\n{{link}}\n",
       "html": "<p>Agad na ibinigay ang emergency access, nang walang tagapag-apruba, sa isang kahilingang nagtatalaga sa iyo, <strong>{{username}}</strong>, bilang isa sa mga tagapag-apruba nito: maaaring <strong>{{action}}</strong> ni <strong>{{subject}}</strong> ang <strong>{{resource}}</strong> sa application na <strong>{{application}}</strong>, sa pamamagitan ng {{requester}}, sa maikling panahon.</p><p>Ang ibinigay na katwiran: {{justification}}</p><p>Pinapayagan ng patakaran ang emergency access dito. <a href=\"{{link}}\">Suriin ito</a>, at bawiin kung hindi ito makatwiran.</p>"
+    },
+    "authzen-access-revoked": {
+      "subject": "{{service}}: binawi ang isang pag-apruba ng kahilingan sa access na isinumite mo",
+      "text": "Binawi ni {{approver}} ang isang pag-apruba ng kahilingan sa access na isinumite mo, {{username}}.\n\nHiniling ni {{subject}} na {{action}} {{resource}} sa application na {{application}}. Hindi na umiiral ang pag-apruba na iyon. Ang susunod na pagsusuri na nagdadala nito ay hindi naaprubahan. Magsumite ng bagong kahilingan sa access kung kailangan pa ang access.\n",
+      "html": "<p>Binawi ni <strong>{{approver}}</strong> ang isang pag-apruba ng kahilingan sa access na isinumite mo, <strong>{{username}}</strong>.</p><p>Hiniling ni <strong>{{subject}}</strong> na <strong>{{action}}</strong> <strong>{{resource}}</strong> sa application na <strong>{{application}}</strong>. Hindi na umiiral ang pag-apruba na iyon. Ang susunod na pagsusuri na nagdadala nito ay hindi naaprubahan. Magsumite ng bagong kahilingan sa access kung kailangan pa ang access.</p>"
     },
     "pki-pin-status": {
       "subject": "{{service}}: may nagbago sa state ng isang certificate na pinagbabatayan ng realm na ito",
@@ -114,6 +134,21 @@
       "subject": "Test message ng {{service}}",
       "text": "Isa itong test message, ipinadala noong {{when}} sa pamamagitan ng {{transport}} transport sa kahilingan ni {{username}}.\n",
       "html": "<p>Isa itong test message, ipinadala noong {{when}} sa pamamagitan ng {{transport}} transport sa kahilingan ni <strong>{{username}}</strong>.</p>"
+    },
+    "post-login-reminder-mail-encryption": {
+      "subject": "Magrehistro ng post-quantum na key para sa pag-encrypt ng email sa {{service}}",
+      "text": "Hinihiling ng {{service}} kay {{username}} na magrehistro ng bagong key para sa pag-encrypt ng email na gumagamit ng post-quantum cryptography (ML-KEM): isang OpenPGP key o isang S/MIME certificate. Ang email na naka-encrypt sa isang classical na key ngayon ay mababasa kapag nabasag na ang key na iyon.\n\nMag-sign in dito, at hihilingin sa iyong irehistro ito pagkatapos mismo ng pag-sign in:\n\n{{signin}}\n\nBinubuksan lang ng link ang pahina ng pag-sign in. Hindi ka nito isina-sign in at wala itong dalang anumang tungkol sa iyong account. Kung hindi mo inaasahan ang mensaheng ito, huwag itong pansinin, o magtanong sa namamahala ng iyong account.\n",
+      "html": "<p>Hinihiling ng {{service}} kay <strong>{{username}}</strong> na magrehistro ng bagong key para sa pag-encrypt ng email na gumagamit ng post-quantum cryptography (ML-KEM): isang OpenPGP key o isang S/MIME certificate. Ang email na naka-encrypt sa isang classical na key ngayon ay mababasa kapag nabasag na ang key na iyon.</p><p><a href=\"{{signin}}\">Mag-sign in</a>, at hihilingin sa iyong irehistro ito pagkatapos mismo ng pag-sign in.</p><p>Binubuksan lang ng link ang pahina ng pag-sign in. Hindi ka nito isina-sign in at wala itong dalang anumang tungkol sa iyong account. Kung hindi mo inaasahan ang mensaheng ito, huwag itong pansinin, o magtanong sa namamahala ng iyong account.</p>"
+    },
+    "post-login-reminder-piv-reissue": {
+      "subject": "I-renew ang iyong PIV certificate para sa {{service}}",
+      "text": "Hinihiling ng {{service}} kay {{username}} na mag-enrol ng bagong certificate para sa PIV smart card o security key na ginagamit sa pag-sign in: ang hawak nito ay pinirmahan gamit ang isang classical na algorithm, o malapit nang mag-expire. Dalhin ang card, at isang tool na gumagawa ng certificate request mula rito, gaya ng ykman.\n\nMag-sign in dito, at hihilingin sa iyong i-enrol ito pagkatapos mismo ng pag-sign in:\n\n{{signin}}\n\nBinubuksan lang ng link ang pahina ng pag-sign in. Hindi ka nito isina-sign in at wala itong dalang anumang tungkol sa iyong account. Kung hindi mo inaasahan ang mensaheng ito, huwag itong pansinin, o magtanong sa namamahala ng iyong account.\n",
+      "html": "<p>Hinihiling ng {{service}} kay <strong>{{username}}</strong> na mag-enrol ng bagong certificate para sa PIV smart card o security key na ginagamit sa pag-sign in: ang hawak nito ay pinirmahan gamit ang isang classical na algorithm, o malapit nang mag-expire. Dalhin ang card, at isang tool na gumagawa ng certificate request mula rito, gaya ng ykman.</p><p><a href=\"{{signin}}\">Mag-sign in</a>, at hihilingin sa iyong i-enrol ito pagkatapos mismo ng pag-sign in.</p><p>Binubuksan lang ng link ang pahina ng pag-sign in. Hindi ka nito isina-sign in at wala itong dalang anumang tungkol sa iyong account. Kung hindi mo inaasahan ang mensaheng ito, huwag itong pansinin, o magtanong sa namamahala ng iyong account.</p>"
+    },
+    "credential-expiring": {
+      "subject": "Malapit nang mag-expire ang isang credential ng iyong {{service}} account",
+      "text": "Malapit nang mag-expire ang mga credential na ito ng account na {{username}}: {{what}}.\n\nI-renew ang bawat isa bago ito mag-expire, o titigil ito sa paggana. Kung ang isang linya ay nagbabanggit ng pahina ng iyong portal, mag-sign in dito:\n\n{{link}}\n\nKung sinasabi nitong magtanong sa iyong administrator, makipag-ugnayan sa namamahala ng iyong account. Kung hindi mo na ginagamit ang isa sa mga ito, maaari mong balewalain ang linya nito.\n",
+      "html": "<p>Malapit nang mag-expire ang mga credential na ito ng account na <strong>{{username}}</strong>: {{what}}.</p><p>I-renew ang bawat isa bago ito mag-expire, o titigil ito sa paggana. Kung ang isang linya ay nagbabanggit ng pahina ng iyong portal, <a href=\"{{link}}\">mag-sign in sa iyong portal</a>.</p><p>Kung sinasabi nitong magtanong sa iyong administrator, makipag-ugnayan sa namamahala ng iyong account. Kung hindi mo na ginagamit ang isa sa mga ito, maaari mong balewalain ang linya nito.</p>"
     }
   },
   "layout": {
@@ -122,8 +157,17 @@
     "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Natanggap mo ito dahil ito ay {{reason}}.</small></p>"
   },
   "categories": {
-    "security": { "reason": "isang security notice tungkol sa iyong account, na hindi puwedeng i-off" },
-    "account": { "reason": "isang bagay na hiniling mo o ng isang administrator" },
-    "notification": { "reason": "isang notification, na puwede mong i-off sa iyong portal" }
+    "security": {
+      "reason": "isang security notice tungkol sa iyong account, na hindi puwedeng i-off",
+      "encryptedSubject": "Isang abiso sa seguridad mula sa {{service}}"
+    },
+    "account": {
+      "reason": "isang bagay na hiniling mo o ng isang administrator",
+      "encryptedSubject": "Isang mensahe mula sa {{service}}"
+    },
+    "notification": {
+      "reason": "isang notification, na puwede mong i-off sa iyong portal",
+      "encryptedSubject": "Isang notipikasyon mula sa {{service}}"
+    }
   }
 }

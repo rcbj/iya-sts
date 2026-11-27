@@ -99,6 +99,7 @@ const {
   VirtualAuthenticatorOptions, Transport, Protocol
 } = require("selenium-webdriver/lib/virtual_authenticator");
 const browserFlags = require("./browser_flags.js");
+const ownPassword = require("./own_password");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
@@ -225,11 +226,17 @@ async function createThePerson() {
     attributes: { cn: "Device Link " + PERSON, givenName: "Device",
                   sn: "Link", displayName: "Device Link Tester",
                   mail: PERSON + "@device-link.test" },
-    credential: "password", password: PASSWORD
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD)
   });
   assert.ok(r.status === 200 && r.body && r.body.ok,
     "creating " + PERSON + " answered " + r.status + " " +
     String(r.text).slice(0, 300));
+  // THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in
+  // product, so they choose PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set).
+  await ownPassword.ownPassword(base, PERSON, PASSWORD, function (who, value) {
+    return apiPost("/users/set-password", { user: who, password: value });
+  });
   log.info("Created " + PERSON + ".");
   log.debug("Leaving createThePerson().");
 }
@@ -901,6 +908,20 @@ async function theBrowserLogIsClean(driver) {
     // #568, where it was `/portal/devices`.
     return !(/\/(portal|account-api)\/devices/.test(message) &&
              /status of 400/.test(message));
+  }).filter(function (message) {
+    // THE STEP-UP'S CHALLENGE (#2168, #2189; #2258). The portal signs in
+    // with read scopes only, so the first write a page sends — the link
+    // begin at `/account-api/devices`, the enrolment at
+    // `/account-api/keys` — is answered 403 with RFC 6750's
+    // `insufficient_scope` challenge naming `account:manage`, and the
+    // runtime gets that scope through a second authorization and sends the
+    // write once more (`common/web_spa_client.ts`, the read scopes and the
+    // second authorization). The browser logs the 403 as a failed load
+    // whatever the page does with it, and each section drives a page of its
+    // own, so each steps up again. That the write then went through is what
+    // the sections above assert, the half this log cannot show.
+    return !(/\/account-api\/(devices|keys)\b/.test(message) &&
+             /status of 403/.test(message));
   }).filter(function (message) {
     // And the autofill's (`signIn()`, THE SCREEN SETTLES FIRST): with
     // usernameless sign-in on, the screen arms a conditional passkey

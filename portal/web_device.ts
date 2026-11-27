@@ -9,8 +9,8 @@
 // `/portal/device`, DRAWN IN THE BROWSER (#568), from `GET
 // /account-api/device` (`portal_device.ts`): RFC 8628's verification URI.
 // The find form always; above it, while a code brought one up, the request
-// — the client and the scopes, and a warning — with Approve and Deny as a
-// second, separate act (section 5.4). A real submit button and no script.
+// — the client, scopes and resource indicators, and a warning — with Approve
+// and Deny as a second, separate act (section 5.4). A real submit button.
 //
 // WHICH ACCOUNT APPROVES, WHERE THE BROWSER HOLDS SEVERAL (#561): the
 // approval is this tab's account's — the access token's subject, on the
@@ -107,6 +107,13 @@ class DevicePages {
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
     const record = view.record;
+    const resources = record && Array.isArray(record.resources)
+      ? record.resources : [];
+    const resourceList = resources.length
+      ? '<p class="sub" id="device-resources">' +
+        t.html('portalDevice.request.resources',
+               { resources: resources.join(', ') }) + '</p>'
+      : '';
     const confirm = record
       ? '<div class="card" id="device-request"><h2>' +
         t.html('portalDevice.request.heading') + '</h2><p>' +
@@ -114,6 +121,7 @@ class DevicePages {
         t.html('portalDevice.request.access', {
           scope: record.scope || t.text('portalDevice.request.noScope'),
           when: t.date(record.expiresAt) }) + '</p>' +
+        resourceList +
         '<p>' + t.html('portalDevice.request.warning') + '</p>' +
         DevicePages.approvingAs(t, ctx) +
         DevicePages.answer(record, 'approve',

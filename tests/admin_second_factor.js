@@ -25,6 +25,8 @@
 //   E. Somebody who is not an administrator is never offered one.
 //   F. AT ELEVATED RISK (#226's console, never locked out): the offer is
 //      made, recorded as STS-RISK-0039, and Ignore reaches the console.
+//   G. A TRUST REALM (#2236): the administrator is found on the roster of
+//      the realm signed in to, not the default realm's.
 //
 // In a child process, because it loads the whole stack and changes settings
 // and policies the rest of the in-process suite must not see.
@@ -45,6 +47,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT = process.env.RD_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.RD_OUT;
   const http = require('http');
   const findings = [];
@@ -264,10 +269,13 @@ function childMain() {
          String(offeredPage.text).slice(0, 160));
     const ignored = await setupAct(b1, offeredPage, 'skip');
     const landed = await followTo(b1, ignored,
+                                  // The whole address: its path ends there.
                                   new RegExp('^' + REDIRECT.replace(
-                                    /[.*+?^${}()|[\]\\/]/g, '\\$&')));
-    note(String(landed.headers.location || '').indexOf(REDIRECT + '?code=') ===
-           0 && auditOf('authn.mfa.enrolment.offered', 'asf-alice').length &&
+                                    /[.*+?^${}()|[\]\\/]/g, '\\$&') +
+                                    '(?:[?#]|$)'));
+    note(urls.isAt(String(landed.headers.location || ''), REDIRECT) &&
+         /^\?code=/.test(new URL(landed.headers.location).search) &&
+         auditOf('authn.mfa.enrolment.offered', 'asf-alice').length &&
          auditOf('authn.mfa.enrolment.declined', 'asf-alice').length,
          'C2. Ignore signs them in on their password, and the offer and ' +
          'the refusal of it are both on the audit log',
@@ -332,6 +340,39 @@ function childMain() {
            atRisk: atRisk.length,
            at: String((riskyDone.headers || {}).location || '').slice(0, 80),
            page: String(riskyPage.text).slice(0, 120) }));
+
+    // --- G. a trust realm's own roster (#2236) ------------------------------
+    // Who is an administrator for the offer is asked of the roster of the
+    // realm signed in to. Until #2236 the default realm's was read, so a
+    // trust realm's own administrators were never offered one and a person
+    // named like a default-realm administrator (asf-alice) was.
+    const realms = require(ROOT + '/common/realms');
+    const G_RUN = require('crypto').randomBytes(3).toString('hex');
+    const trust = realms.create({ id: 'asf' + G_RUN, name: 'asf ' + G_RUN });
+    note(trust.ok, 'precondition: a trust realm',
+         JSON.stringify(trust.errors || []));
+    if (trust.ok) {
+      try {
+        await realms.run(trust.realm, async function () {
+          const RADMIN = 'asf-radmin-' + G_RUN;
+          ['asf-alice', RADMIN].forEach(function (name) {
+            ldap.createUser(name, { invent: false });
+          });
+          adminRbac.grant(RADMIN, 'write', { via: 'test', actor: 'test',
+                                             realm: trust.realm.id });
+          const twin = credentials.mfaRequirementFor('asf-alice');
+          const own = credentials.mfaRequirementFor(RADMIN);
+          note(!twin.offered && !twin.required && own.offered &&
+               !own.required,
+               'G1. in a trust realm, its own roster member is offered a ' +
+               'second factor, and a person named like a default-realm ' +
+               'administrator is not',
+               JSON.stringify({ twin: twin, own: own }));
+        });
+      } finally {
+        realms.remove(trust.realm.id);
+      }
+    }
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

@@ -635,6 +635,32 @@ function requiresTypedLogoutToken() {
     config.value('federation.allowUntypedLogoutToken') !== true;
 }
 
+// Does this service show its exact build — the version, build number, build
+// instant and commit — where someone other than an administrator reads it
+// (#2142, ASVS 5.0.0 13.4.6)? Development answers yes, so a bug report from
+// any page names its build; product answers no, so an anonymous caller or a
+// partner learns nothing that narrows down which defects this build carries.
+// `security.publishBuildInfo` forces either answer. The console and
+// /admin-api never ask: an administrator always sees the build.
+/**
+ * Tells whether the exact build is shown beyond administrators: on the page
+ * footer and shells, in the sign-in, portal and reports APIs and their
+ * documents, and in the outbound User-Agent.
+ *
+ * @returns true in development mode, false in product mode, unless
+ *   `security.publishBuildInfo` is `on` or `off`
+ */
+function publishesBuildDetail() {
+  log.debug("Entering publishesBuildDetail().");
+  const forced = String(config.value('security.publishBuildInfo') || 'auto');
+  if (forced === 'on' || forced === 'off') {
+    log.debug("Leaving publishesBuildDetail(). Forced " + forced + ".");
+    return forced === 'on';
+  }
+  log.debug("Leaving publishesBuildDetail().");
+  return !isProduct();
+}
+
 /**
  * @returns true when request logs leave out credentials and bodies
  */
@@ -652,6 +678,27 @@ function refusesDefaultDatabasePassword() {
   log.debug("Leaving refusesDefaultDatabasePassword().");
   return isProduct() &&
     config.value('persistence.allowDefaultDatabasePassword') !== true;
+}
+
+/**
+ * @returns true when a PSKC seed file carrying its secrets in plaintext is
+ *   refused (#1955 P4), unless pskc.allowPlaintextImport is on
+ */
+function refusesPlaintextSeedFiles() {
+  log.debug("Entering refusesPlaintextSeedFiles().");
+  log.debug("Leaving refusesPlaintextSeedFiles().");
+  return isProduct() && config.value('pskc.allowPlaintextImport') !== true;
+}
+
+/**
+ * @returns true when a YubiKey CSV carrying its AES keys in plaintext is
+ *   refused (#1955 P5), unless yubiotp.allowPlaintextImport is on
+ */
+function refusesPlaintextYubiCsv() {
+  log.debug("Entering refusesPlaintextYubiCsv().");
+  log.debug("Leaving refusesPlaintextYubiCsv().");
+  return isProduct() &&
+    config.value('yubiotp.allowPlaintextImport') !== true;
 }
 
 /**
@@ -822,6 +869,109 @@ function certificateWaivers() {
   return config.value('tls.certificateFile') ? [] : [
     { requirement: 'public-certificate', section: 'ASVS 5.0.0 12.2.2',
       level: 'MUST', setting: 'tls.certificateFile' }];
+}
+
+// A product realm whose client that declares no scopes is given more than
+// `openid` (#1589, ASVS 5.0.0 10.4.11 "only the scopes it requires"), as the
+// data `report()` carries on the `declared-scopes` row: `legacy` is what an
+// upgraded store keeps (postgres/upgrade-1.1.0.sql), and it must show until
+// an operator has declared each client's scopes and moved the setting.
+function undeclaredScopeWaivers() {
+  log.debug("Entering undeclaredScopeWaivers().");
+  const value = String(config.value('oauth2.undeclaredClientScopes') ||
+                       'openid');
+  log.debug("Leaving undeclaredScopeWaivers(). " + value);
+  return value === 'openid' ? [] : [
+    { requirement: 'least-scopes-by-default', section: 'ASVS 5.0.0 10.4.11',
+      level: 'MUST', setting: 'oauth2.undeclaredClientScopes' }];
+}
+
+// S/MIME MAIL WITHOUT INTEGRITY PROTECTION (#2124, ASVS 5.0.0 11.3.3):
+// `mail.smimeContentEncryption` `aes256-cbc` sends the CBC EnvelopedData a
+// reader cannot tell was changed, for a recipient whose mail client cannot
+// read AuthEnvelopedData. Carried on the `smime-authenticated-encryption`
+// row as data, in product, so it shows until an operator moves the setting
+// back. The value is the ambient realm's, as `report()` is.
+function smimeCbcWaivers() {
+  log.debug("Entering smimeCbcWaivers().");
+  const value = String(config.value('mail.smimeContentEncryption') ||
+                       'aes256-gcm');
+  log.debug("Leaving smimeCbcWaivers(). " + value);
+  return value !== 'aes256-cbc' ? [] : [
+    { requirement: 'authenticated-mail-encryption',
+      section: 'ASVS 5.0.0 11.3.3', level: 'MUST',
+      setting: 'mail.smimeContentEncryption' }];
+}
+
+// THE AUDIT LOG NOT APPEND-ONLY HERE (#1616, ASVS 5.0.0 16.4.2): the
+// database role this service connects as can change `sts_audit`, as the
+// last probe of the table found (`persistence/audit_store.js`). Carried on
+// the `audit-append-only` row; nothing where the log is not written there.
+function auditAppendOnlyWaivers() {
+  log.debug("Entering auditAppendOnlyWaivers().");
+  let probe = null;
+  try {
+    const store = require('../persistence/audit_store');
+    probe = store.active() ? store.lastProbe() : null;
+  } catch (e) {
+    log.debug("Caught in auditAppendOnlyWaivers(): " +
+              ((e && e.message) || e));
+    probe = null;
+  }
+  log.debug("Leaving auditAppendOnlyWaivers().");
+  return probe && probe.present && probe.writable ? [
+    { requirement: 'audit-append-only', section: 'ASVS 5.0.0 16.4.2',
+      level: 'MUST', setting: 'persistence.databaseUrl' }] : [];
+}
+
+// AN ACCESS TYPE STORED BEFORE A STRICTER WRITE RULE (#2220, ASVS 5.0.0
+// 1.3.12): a definition whose JSON Schema uses a keyword outside the subset,
+// or a `pattern` of the exponential shape, is still used as stored, and
+// carried on the `access-type-schemas` row as data — one entry per type,
+// naming the application and the attribute — so it shows in either mode
+// until somebody rewrites it. The catalogue is the one requests read
+// (`authorization_details.ts`'s `declaredTypes()`, kept per registry
+// version), so this costs no scan of its own; at most fifty are listed.
+function accessTypeSchemaWaivers() {
+  log.debug("Entering accessTypeSchemaWaivers().");
+  const out = [];
+  try {
+    const applications = require('./applications');
+    const declared = require('../oauth-oidc/authorization_details')
+      .declaredTypes() || {};
+    Object.keys(declared).sort().forEach(function (type) {
+      const one = declared[type] || {};
+      if (out.length >= 50 || !one.source ||
+          !applications.accessTypeWriteProblem(one.source)) {
+        return;
+      }
+      out.push({ requirement: 'access-type-schema-subset',
+                 section: 'ASVS 5.0.0 1.3.12', level: 'MUST',
+                 setting: String(one.identifier) +
+                          ': oauthAuthorizationDetailsType ' + type });
+    });
+  } catch (e) {
+    log.debug("Caught in accessTypeSchemaWaivers(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving accessTypeSchemaWaivers(). " + out.length);
+  return out;
+}
+
+// HSTS PRELOAD ASKED FOR AND WITHHELD (#2165, ASVS 5.0.0 3.7.4):
+// `security.hstsPreload` on with `security.hstsIncludeSubDomains` off, so
+// `common/cookie_wire.ts` sends the header without `preload` — the list
+// accepts a host only when its header covers every subdomain. Carried on the
+// `strict-transport-security` row, in product (which alone sends the header),
+// naming the setting that has to change.
+function hstsPreloadWaivers() {
+  log.debug("Entering hstsPreloadWaivers().");
+  const withheld = !!config.value('security.hstsPreload') &&
+    !config.value('security.hstsIncludeSubDomains');
+  log.debug("Leaving hstsPreloadWaivers(). " + withheld);
+  return withheld ? [
+    { requirement: 'hsts-preload', section: 'ASVS 5.0.0 3.7.4',
+      level: 'SHOULD', setting: 'security.hstsIncludeSubDomains' }] : [];
 }
 
 // The switches that turn access decisions off in this process, as the data
@@ -1531,6 +1681,46 @@ function enforcesParanoidPki() {
   return isProduct();
 }
 
+// Does every TLS listener this process holds STAPLE an OCSP response for its
+// certificate (#2254, ASVS 5.0.0 12.1.4)? This is what `tls.ocspStapling=auto`
+// resolves to: product answers yes, development no. A staple never fails a
+// handshake (`tls/ocsp_stapling.ts`), so the cost of it is a signature per
+// refresh and the bytes in a handshake a client asked for them in; development
+// leaves the handshake as a client author first met it, and `on` staples there.
+/**
+ * Tells whether the listeners staple OCSP: what `tls.ocspStapling=auto`
+ * resolves to (on in product, off in development).
+ *
+ * @returns true in product mode
+ */
+function staplesOcsp() {
+  log.debug("Entering staplesOcsp().");
+  log.debug("Leaving staplesOcsp().");
+  return isProduct();
+}
+
+// Does a PERSON need a compliant registered device to be issued a credential
+// for the administrative surface — a token to the console or one carrying an
+// admin:* scope (#2179, 2026-11-24, ASVS 5.0.0 8.4.2)? This is what
+// `devices.requireCompliantDeviceForAdmin=auto` resolves to: product answers
+// yes, development no. Development keeps the console reachable from whatever
+// browser a client author has open, as it keeps every device rule off; a
+// product deployment's administrators are the people the control is for.
+// The requirement is ARMED per realm on first proof, so turning it on cannot
+// lock a realm out: `common/admin_device_requirement.ts` argues it.
+/**
+ * Tells whether the administrative surface requires a compliant registered
+ * device: what `devices.requireCompliantDeviceForAdmin=auto` resolves to (on
+ * in product, off in development).
+ *
+ * @returns true in product mode
+ */
+function requiresCompliantDeviceForAdmin() {
+  log.debug("Entering requiresCompliantDeviceForAdmin().");
+  log.debug("Leaving requiresCompliantDeviceForAdmin().");
+  return isProduct();
+}
+
 // Does a GNAP key proved by MUTUAL TLS need a certificate a trusted authority
 // issued, rather than one merely registered (#107, 2026-09-23)? This is what
 // `gnap.mtlsTrust=auto` resolves to: product answers yes (`pki`), development
@@ -1710,7 +1900,9 @@ function authorizesDelegation() {
 // 2 names the policy — `scope` is the list "that the client can use when
 // requesting access tokens" — so a client is issued only what its
 // `oauthAllowedScope` lists, or, where it lists nothing, the documented
-// default set (OpenID Connect's six and this realm's OpenID4VCI scopes). A
+// default set `oauth2.undeclaredClientScopes` chooses (#1589: `openid` alone
+// since 1.2.0; `legacy` was OpenID Connect's six and this realm's OpenID4VCI
+// scopes). A
 // scope naming an application or a delegated permission keeps its own rules.
 // **This service's own protected scopes are NOT behind this predicate**:
 // `admin:*`, the SCIM and Shared Signals scopes and the debugger permission
@@ -2852,11 +3044,13 @@ const REQUIREMENTS = [
     product: 'A scope outside the client\'s `oauthAllowedScope` is refused ' +
              'invalid_scope at the authorization, pushed authorization and ' +
              'token endpoints (STS-OAUTH-0578) and taken off a refresh or an ' +
-             'exchange. A client that lists nothing gets the documented ' +
-             'default: openid, profile, email, address, phone, ' +
-             'offline_access and this realm\'s OpenID4VCI scopes. A scope ' +
-             'naming an application or a delegated permission keeps its own ' +
-             'rules.',
+             'exchange. A client that lists nothing gets what ' +
+             'oauth2.undeclaredClientScopes says: openid alone by default ' +
+             '(ASVS 5.0.0 10.4.11); identity adds profile, email, address ' +
+             'and phone; legacy, what an upgraded store keeps, adds ' +
+             'offline_access and this realm\'s OpenID4VCI scopes too. A ' +
+             'scope naming an application or a delegated permission keeps ' +
+             'its own rules.',
     where: 'common/scope_policy.ts, oauth-oidc/oauth2.ts, ' +
            'gnap/gnap_grants.ts' },
   { id: 'declared-protocols',
@@ -2872,6 +3066,20 @@ const REQUIREMENTS = [
              'nothing is not refused.',
     where: 'common/issuance_gate.js, xacml/xacml_role_pep.ts, ' +
            'xacml/xacml_templates.ts' },
+  // #2220 (ASVS 5.0.0 1.3.12): the same in both modes; what a realm still
+  // holds from before the rule is carried as data, accessTypeSchemaWaivers().
+  { id: 'access-type-schemas',
+    what: 'An access type\'s JSON Schema is held to a subset, and each ' +
+          'of its patterns to a bound',
+    development: 'A definition written through the console or the ' +
+                 'management API keeps its schema to the keywords a limits ' +
+                 'schema may use, and every pattern to the bound on a ' +
+                 'regular expression; anything else is refused ' +
+                 '(STS-REG-0374). One stored before that rule is still ' +
+                 'used as stored, and this row reports ASVS 5.0.0 1.3.12 ' +
+                 'as not met for it.',
+    product: 'The same.',
+    where: 'common/applications.js, common/pattern_safety.js' },
   { id: 'uncatalogued-access',
     what: 'A GNAP access right is granted only of a type the access-type ' +
           'catalogue declares',
@@ -3139,7 +3347,9 @@ const REQUIREMENTS = [
              'the family\'s …CaFile with verification on. Plain http is ' +
              'refused for SSF, federation and XACML whatever …AllowHttp ' +
              'says, and allowed for a GNAP push finish only to a loopback ' +
-             'address (RFC 9635 section 2.5.2.1).',
+             'address (RFC 9635 section 2.5.2.1) — which the outbound ' +
+             'address rules refuse, so no plain-http push is delivered ' +
+             '(#1614).',
     where: 'common/outbound_tls.ts, gnap/gnap_http.ts, ssf/ssf_http.ts, ' +
            'federation/federation_http.ts, xacml/xacml_pep_http.ts, ' +
            'spiffe/spiffe_workload_attestor_k8s.ts' },
@@ -3357,6 +3567,25 @@ const REQUIREMENTS = [
              'service unless persistence.allowDefaultDatabasePassword is ' +
              'on.',
     where: 'common/helpers.js, persistence/persistence.js' },
+  // #1955 P4: `refusesPlaintextSeedFiles()`.
+  { id: 'plaintext-seed-files',
+    what: 'A vendor\'s token seed file must be encrypted',
+    development: 'A PSKC seed file whose token secrets are in plaintext is ' +
+                 'imported like an encrypted one.',
+    product: 'A PSKC seed file whose token secrets are in plaintext is ' +
+             'refused unless pskc.allowPlaintextImport is on; an encrypted ' +
+             'one is opened with the key or password given with the upload, ' +
+             'which is never stored.',
+    where: 'common/pskc.ts, common/oath_tokens.ts' },
+  // #1955 P5: `refusesPlaintextYubiCsv()`.
+  { id: 'plaintext-yubiotp-csv',
+    what: 'A YubiKey OTP seed file must not be a list of AES keys',
+    development: 'A CSV of serial, public id, private id and AES key is ' +
+                 'imported like any other inventory file.',
+    product: 'That CSV is refused unless yubiotp.allowPlaintextImport is ' +
+             'on. The keys are sealed once the file is accepted, and the ' +
+             'file itself is not kept.',
+    where: 'common/yubiotp.ts, common/yubiotp_store.ts' },
   // ASVS 5.0.0 13.3.1.
   // ASVS 5.0.0 7.6.2.
   { id: 'sso-consent',
@@ -3369,6 +3598,21 @@ const REQUIREMENTS = [
              'wsfed.ssoConsent turn it off per protocol, and an ' +
              'application\'s own value overrides them.',
     where: 'common/sso_consent.ts' },
+  // #2142 (ASVS 5.0.0 13.4.6).
+  { id: 'build-detail',
+    what: 'The exact build is shown only to administrators',
+    development: 'Every page footer, the sign-in, portal and reports APIs ' +
+                 'and their OpenAPI documents carry the version, build ' +
+                 'number, build time and commit, and the User-Agent of ' +
+                 'every request this service makes names the version.',
+    product: 'None of them carries the build: the footer has no version ' +
+             'line, an OpenAPI document names the API\'s own version, and ' +
+             'the User-Agent is the product name alone. The console and ' +
+             'the management API still show the build. ' +
+             'security.publishBuildInfo set to on shows it again.',
+    where: 'common/page_footer.ts, common/page_locale.ts, ' +
+           'common/version.js, authn/authn_api.ts, ' +
+           'account-api/account_api.ts' },
   { id: 'secrets-from-store',
     what: 'Backend secrets come from a secret store',
     development: 'The key-encryption key may be a file, and the database ' +
@@ -3387,6 +3631,23 @@ const REQUIREMENTS = [
              'is out of reach of a compromise here. Until one exists the ' +
              'service logs a warning for that realm.',
     where: 'common/audit_export.ts' },
+  // #1616 (ASVS 5.0.0 16.4.2).
+  { id: 'audit-append-only',
+    what: 'The audit log cannot be changed through the service\'s own ' +
+          'database credential',
+    development: 'Where minted state persists (request workers or several ' +
+                 'nodes, or keys.source=persisted) the log is written as in ' +
+                 'product. Otherwise it is in memory and goes with the ' +
+                 'process.',
+    product: 'Each event is one sealed row of sts_audit, where the ' +
+             'service\'s database role may add and read rows and nothing ' +
+             'else; old rows leave only through the table owner\'s ' +
+             'retention function, which keeps at least 1000 in each realm. ' +
+             'Where the role can change the table — it owns it, or holds ' +
+             'UPDATE, DELETE or TRUNCATE on it — this is reported as not ' +
+             'met (STS-AUDIT-0019) and the service runs.',
+    where: 'persistence/audit_store.js, postgres/schema.sql, ' +
+           'mariadb/schema.sql' },
   // #1501 (ASVS 5.0.0 12.3.1).
   { id: 'malware-scan-tls',
     what: 'Files reach the malware scanner encrypted',
@@ -3407,7 +3668,10 @@ const REQUIREMENTS = [
     what: 'The bootstrap password stays out of the log',
     development: 'The generated password is written to the service log.',
     product: 'It is written to a file only this service can read, and the ' +
-             'log says where, unless admin.logBootstrapPassword is on.',
+             'log says where, unless admin.logBootstrapPassword is on. A ' +
+             'trust realm\'s file adds a hyphen and the realm id to that ' +
+             'name. A later start deletes a file once the password in it no ' +
+             'longer opens its account.',
     where: 'common/credentials.ts' },
   // #1495 (ASVS 5.0.0 10.4.6).
   { id: 'pkce-every-client',
@@ -3425,6 +3689,18 @@ const REQUIREMENTS = [
     product: 'Only AES-GCM is offered or accepted, and it is used where a ' +
              'client names no enc, unless crypto.allowCbcJwe is on.',
     where: 'common/crypto.js, common/applications.js' },
+  // #2124 (ASVS 5.0.0 11.3.3). The same in both modes; what product adds is
+  // the report, carried on this row by `smimeCbcWaivers()`.
+  { id: 'smime-authenticated-encryption',
+    what: 'S/MIME mail is authenticated encryption',
+    development: 'Mail encrypted to an S/MIME certificate is an ' +
+                 'AuthEnvelopedData under AES-256-GCM, unless ' +
+                 'mail.smimeContentEncryption is aes256-cbc, which sends ' +
+                 'an EnvelopedData under AES-256-CBC with no integrity ' +
+                 'protection. Nothing is reported either way.',
+    product: 'The same, and while mail.smimeContentEncryption is ' +
+             'aes256-cbc this row reports ASVS 5.0.0 11.3.3 as not met.',
+    where: 'common/crypto.js, common/mail_transports.ts' },
   // #1473 (ASVS 5.0.0 8.2.1, 8.2.2).
   { id: 'unscoped-people',
     what: 'A person needs a role at SCIM and Shared Signals',
@@ -4197,6 +4473,42 @@ const REQUIREMENTS = [
              '/admin/pki/trust (STS-PKI-0239).',
     where: 'common/certificate_trust.ts, common/pki.js, common/crypto.js, ' +
            'common/signer_truststore.ts' },
+  // #2179, 2026-11-24. The administrative surface's device requirement.
+  { id: 'admin-compliant-device',
+    what: 'A person\'s credential for the administrative surface (the ' +
+          'console, an admin:* scope) needs a compliant registered device',
+    development: 'OFF (devices.requireCompliantDeviceForAdmin=auto): an ' +
+                 'administrator signs in to the console from any browser, ' +
+                 'as before. Set it to on to exercise the rule here.',
+    product: 'ON (devices.requireCompliantDeviceForAdmin=auto): the ' +
+             'issuance policy\'s device-required-admin rule refuses, at ' +
+             'the token endpoint, every console token and every person\'s ' +
+             'admin:* token that did not come from a compliant registered ' +
+             'device of their own (STS-DEVICE-0054). It is ARMED per realm ' +
+             'the first time a console administrator is issued one from ' +
+             'a compliant device, and until then every administrator is ' +
+             'admitted, so an install with no compliant device is never ' +
+             'locked out; once armed it stays armed, and a program (the ' +
+             'deployment\'s management credential) is the way back in. ' +
+             'Directory > Devices says whether this realm is armed.',
+    where: 'common/admin_device_requirement.ts, common/issuance_gate.js, ' +
+           'xacml/xacml_templates.ts' },
+  // #2254, 2026-11-25. OCSP stapling on this service's own listeners.
+  { id: 'ocsp-stapling',
+    what: 'Every TLS listener staples an OCSP response for the certificate ' +
+          'it presents',
+    development: 'OFF (tls.ocspStapling=auto): a client that asks for the ' +
+                 'certificate status gets none, as before, and checks the ' +
+                 'responder named in the certificate itself if it checks ' +
+                 'at all. Set tls.ocspStapling=on to staple here.',
+    product: 'ON (tls.ocspStapling=auto): the main port, LDAPS, the ' +
+             'debugger and every custom listener staple the answer this ' +
+             'service\'s own OCSP responder gives for their certificate, ' +
+             'made in the process holding the socket and refreshed before ' +
+             'its nextUpdate. A certificate from an outside authority is ' +
+             'not stapled, and a staple that cannot be made leaves the ' +
+             'handshake without one (STS-TLS-0079), never failed.',
+    where: 'tls/ocsp_stapling.ts, common/pki_revocation.js' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -4818,6 +5130,11 @@ function report() {
   const waived = require('../oauth-oidc/oauth2_bcp').waivers();
   const accessOff = product ? accessEnforcementWaivers() : [];
   const certificate = product ? certificateWaivers() : [];
+  const scopes = product ? undeclaredScopeWaivers() : [];
+  const auditLog = auditAppendOnlyWaivers();
+  const smime = product ? smimeCbcWaivers() : [];
+  const preload = product ? hstsPreloadWaivers() : [];
+  const accessTypes = accessTypeSchemaWaivers();
   return {
     mode: current(),
     isProduct: product,
@@ -4827,7 +5144,20 @@ function report() {
         : row.id === 'access-decisions-fail-closed' && accessOff.length
           ? { waived: accessOff }
           : row.id === 'public-certificate' && certificate.length
-            ? { waived: certificate } : {};
+            ? { waived: certificate }
+            : row.id === 'declared-scopes' && scopes.length
+              ? { waived: scopes }
+              : row.id === 'audit-append-only' && auditLog.length
+                ? { waived: auditLog }
+                : row.id === 'smime-authenticated-encryption' &&
+                    smime.length
+                  ? { waived: smime }
+                  : row.id === 'strict-transport-security' &&
+                      preload.length
+                    ? { waived: preload }
+                    : row.id === 'access-type-schemas' &&
+                        accessTypes.length
+                      ? { waived: accessTypes } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row, extra);
@@ -4930,6 +5260,8 @@ module.exports = {
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   refusesUnrevocableCertificates: refusesUnrevocableCertificates,
   enforcesParanoidPki: enforcesParanoidPki,
+  staplesOcsp: staplesOcsp,
+  requiresCompliantDeviceForAdmin: requiresCompliantDeviceForAdmin,
   requiresPkiForGnapMtls: requiresPkiForGnapMtls,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,
@@ -4999,8 +5331,11 @@ module.exports = {
   omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
   refusesPlainSyslog: refusesPlainSyslog,
   refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
+  refusesPlaintextSeedFiles: refusesPlaintextSeedFiles,
+  refusesPlaintextYubiCsv: refusesPlaintextYubiCsv,
   requiresSecretStore: requiresSecretStore,
   redactsRequestLog: redactsRequestLog,
+  publishesBuildDetail: publishesBuildDetail,
   requiresTypedLogoutToken: requiresTypedLogoutToken,
   hidesFailureDetail: hidesFailureDetail,
   requiresTrustedProxyRanges: requiresTrustedProxyRanges,
@@ -5019,6 +5354,8 @@ module.exports = {
   certificateWaivers: certificateWaivers,
   prefixesCookies: prefixesCookies,
   accessEnforcementWaivers: accessEnforcementWaivers,
+  smimeCbcWaivers: smimeCbcWaivers,
+  hstsPreloadWaivers: hstsPreloadWaivers,
   issuesUnsignedAssertions: issuesUnsignedAssertions,
   servesWithoutSecurityHeader: servesWithoutSecurityHeader,
   allowsValue: allowsValue,

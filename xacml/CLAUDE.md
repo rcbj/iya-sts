@@ -42,6 +42,7 @@ and the nudge.
 | `xacml_editor.ts` | The editor's GRAMMAR: what may be added where, and how one edit is applied. **No DOM** — which is what lets the menus be asserted in node. |
 | `xacml_alfa.ts` | ALFA read and written — the third rendering, and the one people want to look at. **No DOM.** |
 | `xacml_pep_credential.ts` | `issue-pep-credential` (#1827's follow-up, phase 3): the key in a remote PEP's OWN PKCS #10 request certified by the realm's Issuing CA as `urn:sts:sa:<name>` and registered as the entry's RFC 7523 key (`person_assertions.certifyRequest()`); the entry must exist, be a service account and hold REMOTE_PEPS. No private key anywhere. A library; `xacml_admin.ts` routes the act. |
+| `xacml_pep_binding.ts` | **An embedded PEP bound to its application (#2025, part of #1206)**: `set-pep-application` and `clear-pep-application`, `stsPepApplication` on the PEP's service account naming the one application it is embedded in. The entry must exist (`STS-XACML-0334`), be a service account holding REMOTE_PEPS (`0335`), the application be in the registry (`0336`); `0337` is the directory. No registered row is asked, as for `issue-pep-credential`, which binds in the same call when given `application` (asked first, written after the key). The directory is a slot `ldap_server.js` fills (`setDirectory()`: `locate`, a write of this attribute only, `holders`), `authzen_admin.ts`'s arrangement and reason; `noteApplicationRemoved()` calls `applicationRemoved()`, so a deleted application takes its bindings with it. `shared()` is the instance. A library; `tests/xacml_pep_binding.js`. |
 | `pep_token.ts` | A remote PEP's DPoP-bound access token from `sts-remote-pep`, read for the PEP door (`/xacml/pep`, `xacml:pep`) and the AuthZEN door (`/access/v1`, `authzen:evaluate`): ours, the PEP's client, this audience and scope, a DPoP proof that holds, one `ou=users` entry. Writes no response (#1827's follow-up). |
 | `xacml_pep_registry.ts` | The register of REMOTE enforcement points. `ou=peps` IS the store, and the sync token is computed here. |
 | `xacml_pep_settings.ts` | **A remote PEP's managed settings (#1760)**: the table, `set-pep-settings`' validation, `GET /xacml/pep/settings`' body and the reading of what the PEP reports in force. A LIBRARY. See *A remote PEP's own page* below. |
@@ -55,6 +56,7 @@ and the nudge.
 | `xacml_access_pep.ts`, `xacml_role_pep.ts` | The two embedded PEPs that decide THIS service's own access and issuance. See *AND SINCE 2026-09-05 IT DECIDES THIS SERVICE'S OWN ISSUANCE* below. |
 | `xacml_risk_pep.ts`, `xacml_signal_pep.ts` | **The two embedded PEPs for REACTIONS (#62, 2026-09-22)**, each asking a built-in policy one question per reaction, where a Permit means do it. `risk-response` covers what a change of a person's risk leads to (`risk/CLAUDE.md`). `signal-response` covers whether this service's own console or portal ends its own sessions on a CAEP or RISC event it RECEIVED and verified, and what a federation partner's verified event does — since #432 including `signal-revoke-grants`, a person's GNAP and OAuth grants and tokens, behind `ssf.signalsRevokeGrants` (`ssf/CLAUDE.md`). Both are libraries, reached lazily and built at 23c. |
 | `conformance/` | The vendored OASIS suite. `PROVENANCE.md` is the argument, `MANIFEST.js` the drift check. **Not edited here, ever.** |
+| `pep-corpus/` | **The embedded PEP corpus (#2024)**: the cases every `iya-pep-<lang>` package's engine is held to (#1206), as JSON — the conformance suite's mandatory cases with the request as attributes and the answer `rust/crates/sts-xacml` gives at a fixed instant, checked against the suite's own `Response.xml`, plus `xacml-pep/enforcement_cases.json`. WRITTEN by `rust/crates/sts-xacml/tests/pep_corpus.rs` (`STS_PEP_CORPUS_WRITE=1`), which in CI's `rust` job fails on any drift; `MANIFEST.json`'s `version` moves with the digest. **Never edited by hand.** Its `README.md` is the format, the comparison rules and the licences (the cases Apache-2.0, the rest MIT). |
 
 Five tests, all in-process, no port, no container:
 `tests/xacml_conformance.js` (the engine, against 455 cases somebody else
@@ -224,7 +226,7 @@ every call, unchanged.
   certificate, and the new default refuses them. A value an operator stored
   (console, `/admin-api/config/set`, a realm's overrides) or set in an
   appconfig file wins as every value does; with neither, the operator sets
-  `either` before upgrading (`docs/v1.1.0/release-notes.md`, `docs/v1.1.0/remote-pep.md`
+  `either` before upgrading (`docs/v1.2.0/release-notes.md`, `docs/v1.2.0/remote-pep.md`
   *Upgrading a deployment whose PEPs use a certificate*), and the upgrade
   script does that for a SQL store (below). So the refusal is
   never silent: where the refused request presented a certificate that
@@ -624,6 +626,25 @@ this service's thread. `GET /xacml` is guarded because it describes the other
 three, and its refusal names the group and the setting so that the page's job
 survives being refused.
 
+### Who may recover another person's escrowed PIV key (#1955 P2, D7)
+
+**A policy decision, not Admin Write** (the *authorization is XACML policy*
+rule). Recovering an escrowed piv-key-management key reads that person's
+mail, so `common/piv_enrolment.ts`'s `recover()` asks the access gate with
+resource `piv-key-escrow`, action `recover-key` and `requiredRoles`
+`['PIV_KEY_RECOVERY']`, and the built-in access-control document's first rule
+(holds a required role) decides it. PIV_KEY_RECOVERY is a built-in role held
+through the group `roles.pivKeyRecoveryGroup` names (default
+`piv-key-recovery`, nobody in it), argued in `common/roles.js` beside
+XACML_USER: it exists in every realm nobody configured, and it is not the
+console's write role. **Only a Permit recovers**: the gate answers "allowed"
+with no decision where no decider is installed or `xacml.enabled` is off, which
+is right for a surface and wrong for somebody's mail, so `recover()` asks for
+`decision === 'Permit'`. An operator narrows it (a second role, a department)
+by editing the document, never the code. The holder's own recovery on the
+portal is the account API's `person` access and a fresh sign-in, and does not
+ask this.
+
 ### Two roles, two groups, and they must not become one
 
 | Endpoints | Role | Group |
@@ -665,6 +686,23 @@ derived at write time — so where the two disagree, the document wins. A write
 goes through static validation, so a policy that does not typecheck is refused
 while somebody is still looking at it rather than going Indeterminate on every
 request for ever.
+
+**A regexp-match pattern is bounded at the save, not in `validate()` (#2220).**
+`validate()` also runs when a stored policy is READ, so a rule added there
+refuses a policy stored before it, which then decides nothing. The bound —
+`common/pattern_safety.js`: at most 1024 characters, no backreference, no
+quantified group that is itself quantified or an alternation — is a
+`patternCheck` on the six functions, walked by `xacml_validate.js`'s
+`patternProblemsIn()` over the whole model, and refused by the store's
+`write()` only for a document that CHANGED (`STS-XACML-0338`), so enable,
+disable and the root demotion still work on an old policy. The Policies page
+lists it among the problems. At evaluation `boundedMatch()` makes the same
+shapes, and a value over 4096 characters, a processing error
+(`STS-XACML-0339`, once per pattern) — the backstop for a stored policy, an
+`ldapmodify` and a pattern fetched from an attribute. **The Rust engine
+(`xsd_regex.rs`'s `bounded_match()`) holds the same two evaluation rules for
+PARITY ONLY**: its `regex` crate is linear-time and needs neither, but a PDP
+and a remote PEP must give one answer for one stored policy.
 
 **One policy is seeded**, role-based, and the seeded directory was given
 `employeeType` to match it — alice and bob are staff, carol is admin. The two
@@ -1372,6 +1410,172 @@ Three decisions on the row that each prevent a specific wrong reading:
   different fact from a proxy with no streams. Backwards compatibility both
   ways: an older PEP sends no member, and an older service's heartbeat reads
   the members it names and ignores this one.
+* **A heartbeat value the service cannot hold (fuzz run #595).** The fuzz
+  gate's pep-control-plane profile sent a stream `lastSuccessAgeMs` of
+  2^53 - 1, a safe integer and no safe AGE: its instant fell before the
+  earliest a Date holds, `signalsOf()`'s `toISOString()` threw a RangeError,
+  and the answer was express's HTML 500 in all three fuzz realms. **Within
+  `signals` and `listeners` a value is still held to its member**, the rule
+  above: `timeOf()` answers null (no time) for an age older than the epoch,
+  as for a negative one, so neither a report nor a stored value can throw.
+  **The members the ENTRY stores are refused instead**, because beside the
+  throw a `refused` of -5e22 had been stored as -5 (`parseInt()` of the
+  exponent form) and `version` went into its attribute with a control
+  character: `PepRegistry.reportProblem()` holds the counters
+  (`policyCount`, `decisions`, `allowed`, `refused`, `undischargeable`) to
+  non-negative safe integers, the text members (`syncToken`, `bias`,
+  `resource`, `version`, `notifyUrl`) to strings with no C0, DEL or C1
+  control character (or null), and `signals`, `settings` and `listeners` to
+  an object or null, before `heartbeat()` reads or writes anything, and
+  refuses with 400 `STS-XACML-0331` naming the member — `hostname`'s rule.
+  `HeartbeatRequest` in `models/pep/pep_control_plane.tsp` says the same
+  (`minimum`/`maximum`/`pattern`). The Rust PEP sends u64 counters and
+  Strings and never meets the refusal. `tests/xacml_pep_heartbeat_values.js`
+  holds both halves.
+
+## An embedded PEP registers as one, and only for its bound application (#2026)
+
+**Part of #1206 (work item 3; rcbj's D1-D3).** A PEP embedded in an
+application through an authentication library (the `iya-pep-<lang>`
+packages) registers and sends heartbeats on the 1.1.0 path, its own
+service account's DPoP-bound token from `sts-remote-pep`, and says what it
+is: `kind` (`container` | `embedded`), `application`, `mode` (`central` |
+`local`), `protocolVersion`, and on a heartbeat `policyEvents` (`none` |
+`requested` | `excluded` | `down`, D4: whether its application's stream can
+carry `pep-policies-changed`).
+
+* **ABSENT `kind` IS `container`**, so every PEP built before this keeps
+  registering exactly as it did, and its entry is written exactly as it
+  was: the five attributes (`xacmlPepKind`, `xacmlPepApplication`,
+  `xacmlPepMode`, `xacmlPepProtocolVersion`, `xacmlPepPolicyEvents`, OIDs
+  1100-1104) are written only when they say something.
+* **ONE READING, `PepRegistry.identityOf()`**, asked by `xacml.ts`'s
+  `pepIdentity()` on both doors before anything is written: an unknown kind,
+  an embedded mode that is neither, or a `policyEvents` outside the four
+  (`STS-XACML-0344`); `mode` with a container (`0343`); a `protocolVersion`
+  outside `PROTOCOL_VERSIONS` (`{1}`), or none from an embedded PEP
+  (`0342`); all 400. **And the binding** (`xacml_pep_binding.ts`'s `of()`,
+  read only for a PEP that says or was embedded): bound to nothing (`0340`)
+  or to another application than it names (`0341`), 403 `access_denied`.
+  That is what stops a PEP key copied into another application posing as
+  its PEP.
+* **A HEARTBEAT ASKS THE SAME**, an absent member taking the row's value, so
+  a binding an administrator moves or clears refuses the PEP's next
+  heartbeat (the row keeps what it held). A pull's own `heartbeat(name, {})`
+  is not asked: it says nothing about the identity.
+* **`application` ON THE CONSOLE'S ROW STAYS THE BINDING** (`pepsJson()`,
+  #2025); what the PEP registered for is `registeredApplication`, beside
+  `kind`, `mode`, `protocolVersion` and `policyEvents`. The list draws an
+  embedded PEP's application and mode under its name and "not for an
+  embedded PEP" in the listener and proxy columns; its page is the Overview
+  (kind, mode, protocol version, policy-change events, the binding) and
+  Decisions only, with no cluster part: it pulls no settings (the AuthZEN
+  edge is a setting group), binds no listener and runs no reverse proxy or
+  receivers.
+* **AUTHZEN.** A bound embedded PEP on its own `authzen:evaluate` token is
+  admitted to `/access/v1/evaluation` and `/evaluations` as an AUTHZEN_PEPS
+  holder scoped to its binding alone (`authzen/CLAUDE.md`, *Who is asking*;
+  `authzen_caller.ts`). The registration is not consulted there: the
+  binding is the administrator's fact.
+
+`tests/xacml_pep_embedded.js` holds it in process;
+`tests/protocol/sts_xacml_pep_embedded.js` over the wire.
+
+## A local embedded PEP pulls only its application's policies (#2027)
+
+**Part of #1206 (work item 4; rcbj's D3 (b)).** `GET
+/xacml/pep/policies?scope=bound-application` is a `local` embedded PEP's
+pull; no scope, or `repository`, is the pull as it always was, and any
+other scope is 400 `STS-XACML-0346`.
+
+* **ANSWERED ONLY TO A REGISTERED, BOUND, EMBEDDED PEP IN `local` MODE**
+  (`xacml.ts`'s `scopedPull()`): the caller's own row (`pepNameOf()`, the
+  token's or the certificate's name) says `embedded` and `local`, and the
+  application it registered for is the one its entry is bound to now.
+  Anybody else is 403 `STS-XACML-0345`: a container, a `central` PEP (which
+  holds no policy), a PEP never registered, one whose binding moved since it
+  registered. The answer carries an application's own policy, which every
+  other pull withholds.
+* **WHAT IS SENT is `PepRegistry.boundPull()`**: the application's own
+  policy, as the one row marked `isRoot`, when the application ENFORCES
+  fine-grained authorization and its policy is enabled; otherwise the realm
+  root. **Enforcement, not ownership, decides**, because every application
+  created owns a policy and AuthZEN decides a non-enforcing one by the root
+  (`decideAccess()`, #564 P4): a local PEP holding the policy the service
+  does not use would decide differently from a central one. Then the
+  REFERENCE CLOSURE, transitively, among the enabled policies nobody owns:
+  never another application's or a role's policy, never the access or
+  issuance policy (by name, the repository pull's rule). A reference to
+  anything else is left unresolved, which is Indeterminate at the PEP as
+  here. **`decideAccess()` resolves a reference against the same set**
+  (every enabled policy nobody owns, less the access and issuance policies;
+  `XacmlStore.repository(withhold)`, `FgaPep`'s `pepRepository`), so a
+  reference inside an application's own policy decides the same at the
+  service and at a local PEP holding the closure (#1206; until then it was
+  unresolved here, `STS-AUTHZEN-0028`, and decided there). `source` says
+  which entry was sent (`application`, `root`, `none`).
+* **ITS OWN TOKEN**, a digest of exactly what it sends (the scope, the
+  application, the source, each row's name, document and root mark), with
+  the same ETag, `?since=` and `If-None-Match` 304. A change outside the
+  closure, or to another application's policy, does not move it. **A local
+  embedded PEP's row is CURRENT against this token**, not the repository's
+  (`expectedToken()`, one digest per scope per read), and its heartbeat
+  answers this token.
+* **WHAT IT PULLS IS ON THE ROW**: `xacmlPepPullScope` (OID 1105),
+  `repository` or `bound-application`, written by the pull's own
+  `heartbeat()` when it CHANGES and kept across a registration, with one
+  `xacml.pep.scope` audit row per change, so a PEP polling every few seconds
+  is one row. `pullScope` on `/admin-api/xacml/peps` and the PEP page's
+  *Pulls* line.
+
+`tests/xacml_pep_scope.js` holds `boundPull()` in process;
+`tests/protocol/sts_xacml_pep_scope.js` the door over the wire.
+
+## An embedded PEP hears of a change over Shared Signals (#2028)
+
+**Part of #1206 (work item 5; rcbj's D4).** An embedded PEP has no listener
+for the nudge, so `pep-policies-changed` (this service's own type, a row in
+`models/ssf/ssf_events.tsp` and its payload in `ssf/ssf_events.js`) goes to
+the streams its APPLICATION owns, subject the application.
+
+* **WHEN.** `notePepPolicies()` runs after a change that can move what a
+  bound PEP pulls has committed (`afterCommit()`): the store's change
+  observer (beside the nudge, every door), a catalogue row set or removed
+  (`authzen_admin.ts`) and fine-grained enforcement switched
+  (`fga_policies.ts`). `checkPepPolicies()` then works out, for every binding
+  in the realm (`PepBinding.all()`), the token of the PEP's
+  bound-application scope (`boundPull()`) and the catalogue's, and tells the
+  PEPs for which either MOVED, naming which (`changed`).
+* **MOVED AGAINST WHAT.** `pepTokens`, per realm and PERSISTED
+  (`xacml.pepTokens`), records what each bound PEP was last sent (its
+  scoped and catalogue pulls) or last checked against, written only when a
+  token moves and pruned to the bound PEPs at each check. **It was per
+  process until GitHub run 45732176952 (2026-11-26)**: `/xacml` and
+  `/admin-api` are fanned out across request workers, so the pull primed
+  one worker and the change was decided in another that knew nothing of
+  the PEP, and the event was lost — `sts_pep_policies_changed` failed in
+  `mariadb` and `cluster` and passed where one process answers. With nothing recorded yet, a `local` PEP's scope is
+  compared with the token its row says it holds; the catalogue is not, so a
+  restart does not send every PEP an event. A `central` PEP is told too (D4:
+  it clears its cached Permits). The worker or node that made the change
+  decides, against the shared row; the event is a hint, and a PEP that
+  misses it converges on its fallback poll.
+* **HOW.** `ssf/service_signals.ts`'s `pepPoliciesChanged()` finds `ssf.ts`
+  in the cache, and `ssf.pepPoliciesChanged()` sends one SET to each stream
+  whose owner (`ssf_streams.ts`'s `ownerApplication()`) is the application
+  and which delivers the type. Nothing throws into the change: a failure is
+  `STS-XACML-0348` or `STS-SSF-0166` in the log.
+* **`ssfAllowedEvents` IS RESPECTED.** This service's own events were always
+  allowed past an entry's list because each named nobody; the rule is now
+  the catalogue row's `subject` (`allowedEventsFor()`): one that names a
+  subject, which this is, is withheld unless the list names it.
+* **THE WARNING.** The application's view carries `pepEventsExcluded`: its
+  bound PEPs in `local` mode that will not hear of a change, because the
+  entry's list leaves the type out or the PEP reported `policyEvents:
+  excluded`; the console draws it on the Embedded PEPs tab.
+
+`tests/pep_policies_changed.js` in process;
+`tests/protocol/sts_pep_policies_changed.js` over the wire.
 
 ## A heartbeat writes the entry only when something durable changed (#1882)
 
@@ -2713,6 +2917,15 @@ two assertion doors for the attestation rules).
   refused by the `post-quantum` rule above, as under `narrow`; the fact is
   there for a realm's own rule to tell a key picked from a full list from
   one never offered.
+* **#1955 P7 ADDED THE `cred-protect` GROUP AND ONE RULE**, at
+  `register-passkey` only and last there: the resource fact
+  `urn:sts:xacml:passkey:cred-protect` (the level the key reported, 1 where
+  it reported none — `question()` decides that, so silence never satisfies a
+  higher level) with `...:cred-protect-reported` beside it, and the policy
+  facts `urn:sts:xacml:passkey-policy:credProtectLevel` (0 for none) and
+  `...:enforceCredProtect`. The rule refuses (0559) a reported level below the
+  asked one while enforcement holds; `passkey_rules.js` mirrors it. No
+  `use-passkey` half: the authenticator enforces the level at every assertion.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where
@@ -2959,7 +3172,7 @@ something stricter (`tests/delegation_policy.js` section I).
 minutes). A rule changed here changes the oracle in the same commit, or both
 files fail.
 
-### The registered device, and two rules that settings switch (#164 phase 6, 2026-09-26)
+### The registered device, and three rules that settings switch (#164 phase 6, 2026-09-26; #2179)
 
 rcbj's decision 3 is that enforcement is XACML. So the device register's
 facts go into the issuance request, and the built-in `role-issuance` policy
@@ -2978,7 +3191,7 @@ decides on them. There is no `if` at an issuance site.
 * **Ownership is decided in the PEP** against the subject the gate names: a
   person's own device, or an application's own device for a
   `client_credentials` subject. The policy reads a boolean.
-* **The two rules come FIRST in the document**, so that under
+* **The device rules come FIRST in the document**, so that under
   ordered-deny-overrides their obligation is the one the PEP reads. A risk
   Deny may only ask for a step-up; a device refused after a step-up would
   be one refusal made in two steps.
@@ -2987,6 +3200,14 @@ decides on them. There is no `if` at an issuance site.
   * `device-required`: applies while `compliant` is required
     (`devices.requireCompliantDevice`, OFF by default in both modes), and
     `attested` beside it.
+  * `device-required-admin` (#2179): applies while `compliant-admin` is
+    required (`devices.requireCompliantDeviceForAdmin` in force, on in
+    product, AND the realm armed on first proof:
+    `../common/admin_device_requirement.ts`) to a request whose
+    `device-admin-surface` is true: a person's console or `admin:*` token
+    at the token endpoint. It asks the same compliant-device test, is not
+    subject to `deviceExempt`, and its refusal `admin-not-compliant` is
+    STS-DEVICE-0054 with its own sentence.
   An application's device satisfies `device-required` for a person, and
   another person's device does not. `deviceExempt` (by default the console
   and the portal) is never refused by it: the console for #226's reason,
@@ -3600,6 +3821,32 @@ is the action an operator's rule targets to refuse creation (by category, an
 unverified address, a level) while existing people still sign in.
 `STS-FED-0179` is its refusal.
 
+## The hardware token an authentication used (#1955 P1, 2026-11-20)
+
+`xacml_templates.ts`'s `HARDWARE_TOKEN_ATTRIBUTE`, sent by
+`xacml_role_pep.ts`'s `hardwareTokenAttributes()` as ENVIRONMENT attributes
+on every browser issuance the gate describes: `hardware-token-attested`
+(always, false with no token), and for a token in hand its `key`, `vendor`,
+`model`, `evidence` source, `smart-card`, `holder-matches` (the subject is
+the register's holder) and `status`. The facts are
+`common/issuance_gate.js`'s `hardwareTokenFactsOf()`: the authentication
+event's snapshot (`authn.ts`'s `hardwareTokenOf()`) brought up to date
+against the register, so a token reported lost since the sign-in reads not
+attested. **No built-in rule reads them**: "administrators sign in with an
+attested key" is a realm's own rule over these, or the authentication
+policy's `attested-hardware` mechanism, which the built-in `authn-mechanism`
+rule already enforces. They ride along and never make the policy asked.
+
+**#1955 P2 adds five, for the attested key itself**: `hardware-token-pin-policy`
+and `hardware-token-touch-policy` (a PIV slot key's, kept on the CREDENTIAL's
+evidence at enrolment, since each slot has its own), `hardware-token-firmware`,
+`hardware-token-form-factor` and `hardware-token-fips` (a boolean sent only when
+true; the token's). The gate sends them ONLY for a token still attested whose
+evidence said them, so a rule over them is inapplicable rather than matching an
+empty string, and a lost token's policies prove nothing. "Administrators sign in
+only with touch `always`" is a realm's rule over `hardware-token-touch-policy`;
+the realm settings `piv.pinPolicy` / `piv.touchPolicy` stay the ENROLMENT gate.
+
 ## A device-bound session an application requires (#740, 2026-10-25)
 
 Two environment attributes, sent only while `authn.deviceBoundSessions`
@@ -3661,6 +3908,18 @@ arrangement is the owner rule's, read the other way round:
   back would hand a `report:use` token REPORT_ADMIN for a subject who also
   holds it. `label` names the subject in the refusal and the audit row
   where `name` is an identifier.
+* **A source for report administrators (#2126, ASVS 5.0.0 8.2.3)** is a
+  CONJUNCT of the first rule and of the third: a question carrying
+  `urn:sts:xacml:report-admin-source` (the sources the report catalog marks
+  `adminOnly`) or a `urn:sts:xacml:report-source` the parameter
+  `reportAdminSources` lists (empty by default) is permitted only to a
+  subject holding REPORT_ADMIN — so it narrows the owner and a share alike.
+  `report/rights.ts` sends the two only on the question asked before a
+  report is defined, run or downloaded, never on a plain read of a row, so
+  every other question is decided as before. A conjunct of the first rule
+  is vacuous for every other surface, which never sends either attribute.
+  `report/CLAUDE.md` has the rest, including why the catalog is checked in
+  code as well.
 * **The vocabulary is this service's own**, as the owner rule's is; the
   remote PEP carries none of it, as it carries no passkey vocabulary.
 
@@ -3918,3 +4177,37 @@ its editor link, `usable` with the resolve's `code` and `why`, each type's
   switch, `xacml.policy.delete` naming the orphan's application).
 
 `tests/fga_console.js` holds it.
+
+## A dynamic role's eligibility policy (#1072, 2026-11-20; rule 3dg)
+
+**rcbj's decision: XACML is the policy language and the PDP the decider.** A
+dynamic selectable role (`common/roles.js`, `common/CLAUDE.md` 3dg) is
+offered at sign-in to each person its OWN policy permits, and
+`role_eligibility.ts` is that question. It is `fga_pep.ts`'s arrangement:
+
+* **The policy is OWNED**: an entry in `ou=policies` carrying `xacmlRole`
+  (the role's name), named on the role as `roleEligibilityPolicy`, written
+  only by `setPolicy()` (XACML XML or ALFA, compiled to XML as the editor's
+  import does) and removed with the role. `xacml_store.ts`'s `owned()` —
+  application OR role — is the one test the root, the reference map, the
+  remote PEP's pull, the sync token, the route policies and the Policies tab
+  read, so a role's Permit can never become an issuance Permit. A policy that
+  merely carries the name is never adopted (STS-XACML-0315).
+* **Decided alone**, `decidePolicy()` with no PolicyIdReference map, and read
+  deny-biased: **only Permit is eligible**. Deny, NotApplicable, an
+  Indeterminate over a missing attribute, an undischargeable obligation, a
+  missing (0313, 0314), disabled (0316) or unparseable (0317) policy and a
+  fault (0318) all answer NOT eligible, each under its code.
+* **The request** is the builder's `roleEligibility()`: the person (PIP
+  resolved), `action-id` `select-role`, the role as `resource-id`, the role's
+  application, the stage (`offer`, `issue`, `test`), the sign-in's
+  application, acr and amr. An application's role is refused for another
+  application BEFORE the policy is asked (0320).
+* **Audited per offer and per test** (`roles.eligibility`), never with the
+  policy or the attributes; the `issue` stage only where it drops a role
+  (`authn/role_selection.ts`).
+* **The administrator's test** is `GET /admin-api/roles/eligibility`
+  (`answered: false` with no question, the role preview's rule) and the
+  role page's Eligibility section, composed in by `web_pages.ts`.
+
+`tests/role_eligibility.js` holds the definition and the decision.

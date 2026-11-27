@@ -8,8 +8,14 @@
   "resource": "Sa",
   "application": "Application",
   "requester": "Hiniling ng",
+  "entitlement": "Hiniling na access",
+  "actor": "Kumilos para dito",
   "waits": "Naghihintay ito hanggang {when}.",
   "approve": "Aprubahan",
   "deny": "Tanggihan",
-  "done": "{status, select, approved {Naaprubahan ang kahilingan sa access. Maaari nang muling magtanong ang application.} denied {Tinanggihan ang kahilingan sa access.} other {Ang kahilingan sa access ay {status}.}}"
+  "done": "{status, select, approved {Naaprubahan ang kahilingan sa access. Maaari nang muling magtanong ang application.} denied {Tinanggihan ang kahilingan sa access.} other {Ang kahilingan sa access ay {status}.}}",
+  "yours": "Mga pag-apruba na ibinigay mo na may bisa pa. Ang pagbawi sa isa ay nangangahulugan na ang susunod na pagsusuri na nagdadala nito ay hindi naaprubahan.",
+  "until": "Tumatagal ang pag-apruba na ito hanggang {when}.",
+  "revoke": "Bawiin",
+  "revoked": "Nabawi ang pag-apruba. Ang susunod na pagsusuri na nagdadala nito ay hindi naaprubahan."
 }

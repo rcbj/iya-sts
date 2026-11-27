@@ -1,0 +1,97 @@
+{
+  "name": "IIF310_FIXED_NO_XPATH",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIG006:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" \n\t\txmlns:md=\"http://www.medico.com/schemas/record\" \n\t\txmlns:xacml-context=\"urn:oasis:names:tc:xacml:3.0:context:schema:os\" \n\t\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \n\t\tPolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIG006:policy\" \n\t\tRuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" \n\t\tVersion=\"1.0\" \n\t\t\n\t\tMaxDelegationDepth=\"4\">\n    <Description>\n        Policy for Conformance Test IIF310.\n        Purpose: new 3.0 feature: MaxDelegationDepth on Policy\n        There is nothing the Core functions can do with this attribute and no way to extract it to include in a Response,\n        so all this test does is verify that it is accepted an attribute on the Policy.\n        (The inclusion of the attribute is optional, but it is not clear whether the feature of being able to receive that value is mandatory or optional.)\n    </Description>\n    <PolicyDefaults>\n    <!-- Original using invalid PolicyDefaults/XPathVersion: \"http://www.w3.org/TR/1999/Rec-xpath-19991116\". Fixed -->\n        <XPathVersion>http://www.w3.org/TR/1999/REC-xpath-19991116</XPathVersion>\n    </PolicyDefaults>\n    <Target/>\n\n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIF310:rule\">\n     <!-- XPath support is optional in XACML 3.0 therefore removed here. The original has been moved to 'optional' test folder. -->\n<!--         <Condition> -->\n<!--  \t\t\t<Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-equal\"> -->\n\n\n<!--                 <Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:xpath-node-count\"> -->\n\n<!--                 \t<AttributeValue DataType=\"urn:oasis:names:tc:xacml:3.0:data-type:xpathExpression\"  -->\n<!--                 \t \tXPathCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\" > -->\n<!--                 \t \t\t//md:location -->\n<!--                 \t </AttributeValue> -->\n<!--                 </Apply> -->\n<!--                 <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#integer\">1</AttributeValue> -->\n<!--             </Apply> -->\n<!--         </Condition> -->\n    </Rule>\n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "   This  is IT!  "
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "   This  is IT!  "
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": true,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": true,
+        "attributes": []
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [],
+    "advice": []
+  }
+}

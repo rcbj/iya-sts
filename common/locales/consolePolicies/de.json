@@ -1,6 +1,7 @@
 {
   "yes": "ja",
   "no": "nein",
+  "follows": "wie {row}",
   "configuration": "Konfiguration",
   "schema": "Schema",
   "saveProfile": "Das Profil speichern",
@@ -230,5 +231,7 @@
   "transfer.view.trustedHeading": "Andere Bereiche, denen dieser Bereich vertraut",
   "transfer.view.noneTrusted": "Dieser Bereich vertraut den Richtlinienexporten keines anderen Bereichs.",
   "transfer.view.kind": "Art",
-  "transfer.view.addedBy": "Hinzugefügt von"
+  "transfer.view.addedBy": "Hinzugefügt von",
+  "newPolicy.button": "Neue Richtlinie",
+  "newPolicy.choose": "Wählen Sie die Art der Richtlinie, die angelegt werden soll."
 }

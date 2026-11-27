@@ -36,11 +36,15 @@
 // OWNED HERE (local: true): the response is this repository's own.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -195,7 +199,7 @@ async function exchanges() {
     assert.ok(!r.json.id_token, "no id_token: " + r.text.slice(0, 400));
     const claims = claimsOf(r.json.access_token);
     assert.ok(!("scope" in claims), JSON.stringify(claims));
-    assert.ok([].concat(claims.aud).indexOf(API_URL) >= 0,
+    assert.ok(urls.holds(claims.aud, API_URL),
               JSON.stringify(claims.aud));
   });
 
@@ -233,13 +237,21 @@ async function test() {
              name: "Token exchange responses" }, "created the realm");
   // The realm's attribute policy (#396) requires givenName, sn and mail of
   // every person in product mode.
+  // THE PASSWORD IS ALICE'S OWN (#2160): a typed one is temporary in
+  // product, so she is made with a temporary one and chooses PASSWORD at
+  // the sign-in screen (`own_password.js`; in development it is set).
   await ok(realmApi + "/users/create",
            { username: ALICE, invent: false, credential: "password",
-             password: PASSWORD,
+             password: ownPassword.temporaryFor(PASSWORD),
              attributes: { cn: "Exchange " + ALICE, givenName: "Exchange",
                            sn: "Alice",
                            mail: ALICE + "@" + REALM + ".example.net" } },
            "created " + ALICE);
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return call("POST", realmApi + "/users/set-password",
+                  { user: who, password: value });
+    });
   await ok(realmApi + "/applications/create", { identifier: API,
     protocols: ["oauth2"],
     fields: { oauthClientId: [API], oauthClientSecret: SECRET,

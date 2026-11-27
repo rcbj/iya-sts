@@ -83,6 +83,7 @@ const { log, parseBody } = helpers;
 const SCEP_PATH = /^(?:\/[^/]+){0,2}\/enroll\/scep(?:\/|$)/;
 import config = require('../common/config');
 import pki = require('../common/pki');
+import realms = require('../common/realms');
 import revocation = require('../common/pki_revocation');
 // Which JOSE certificate an `x5u` names, and its chain. A library.
 import certificateHeader = require('../common/jose_certificate_header');
@@ -105,6 +106,7 @@ interface PkiServiceDeps {
   log: typeof log;
   config: typeof config;
   pki: typeof pki;
+  realms: typeof realms;
   revocation: typeof revocation;
   certificateHeader: typeof certificateHeader;
   errorCodes: typeof errorCodes;
@@ -149,6 +151,7 @@ class PkiService {
       log: log,
       config: config,
       pki: pki,
+      realms: realms,
       revocation: revocation,
       certificateHeader: certificateHeader,
       errorCodes: errorCodes,
@@ -227,6 +230,117 @@ class PkiService {
   }
 
   /**
+   * Answers a realm's OpenSSH user CA public key: the classical authority's
+   * line, or with `algorithm` `ssh-mldsa-65` the ML-DSA authority's.
+   *
+   * @param res - the express response
+   * @param scopeSegment - the scope as the path spells it
+   * @param algorithm - the `algorithm` query parameter, or ''
+   */
+  async sshUserCaFor(res, scopeSegment, algorithm = '') {
+    const { log, pki, realms, errorCodes, revocation } = this.deps;
+    log.debug("Entering PkiService.sshUserCaFor(). scope=" + scopeSegment);
+    const wanted = String(algorithm || '');
+    if (wanted && wanted !== 'ssh-mldsa-65') {
+      errorCodes.mark(res, 'STS-PKI-0298');
+      this.refuse(res, 400, 'The algorithm parameter names no SSH user CA ' +
+                  'this service publishes; it is ssh-mldsa-65 or absent.');
+      log.debug("Leaving PkiService.sshUserCaFor(). Unknown algorithm.");
+      return;
+    }
+    const scope = revocation.scopeFromSegment(scopeSegment);
+    if (scope === pki.SERVICE_SCOPE || scope === pki.PROCESS_SCOPE ||
+        !realms.get(scope)) {
+      errorCodes.mark(res, 'STS-PKI-0292');
+      this.refuse(res, 404, 'There is no realm SSH user CA in the "' +
+                  scopeSegment + '" scope.');
+      log.debug("Leaving PkiService.sshUserCaFor(). Not a realm.");
+      return;
+    }
+    try {
+      const answer = await pki.sshUserCaPublicKeyAsync(scope);
+      if (!answer || !answer.ok) {
+        errorCodes.mark(res, 'STS-PKI-0290');
+        this.refuse(res, 503,
+                    'The SSH user CA public key could not be answered.');
+        log.debug("Leaving PkiService.sshUserCaFor(). Unavailable.");
+        return;
+      }
+      // ONE LINE PER ANSWER. Without the parameter it is the classical
+      // authority, the line a stock OpenSSH TrustedUserCAKeys file can
+      // parse. With `algorithm=ssh-mldsa-65` it is the ML-DSA authority
+      // that signs a certificate under pki.sshUserCaPqcOnly or beside the
+      // classical one, published so a server that verifies ML-DSA has a
+      // key to trust. The two are never concatenated: OpenSSH has no
+      // post-quantum algorithm to parse, and a file it half reads is worse
+      // than one it reads whole.
+      if (wanted && !answer.pqcPublicLine) {
+        errorCodes.mark(res, 'STS-PKI-0298');
+        this.refuse(res, 404, 'This realm has no ML-DSA SSH user CA.');
+        log.debug("Leaving PkiService.sshUserCaFor(). No ML-DSA CA.");
+        return;
+      }
+      const body = (wanted ? answer.pqcPublicLine : answer.publicLine) + '\n';
+      res.status(200).type('text/plain')
+         .set('Cache-Control', 'no-store')
+         .set('Content-Length', String(Buffer.byteLength(body)))
+         .send(body);
+      log.debug("Leaving PkiService.sshUserCaFor().");
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PKI-0290') + 'pki_service: the SSH ' +
+                'user CA public key could not be answered: ' +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-PKI-0290');
+      this.refuse(res, 503,
+                  'The SSH user CA public key could not be answered.');
+      log.debug("Leaving PkiService.sshUserCaFor(). Failed.");
+    }
+  }
+
+  /**
+   * Answers a realm's OpenSSH key revocation list.
+   *
+   * @param res - the express response
+   * @param scopeSegment - the scope as the path spells it
+   */
+  async sshUserKrlFor(res, scopeSegment) {
+    const { log, pki, realms, errorCodes, revocation } = this.deps;
+    log.debug("Entering PkiService.sshUserKrlFor(). scope=" + scopeSegment);
+    const scope = revocation.scopeFromSegment(scopeSegment);
+    if (scope === pki.SERVICE_SCOPE || scope === pki.PROCESS_SCOPE ||
+        !realms.get(scope)) {
+      errorCodes.mark(res, 'STS-PKI-0292');
+      this.refuse(res, 404, 'There is no realm SSH user KRL in the "' +
+                  scopeSegment + '" scope.');
+      log.debug("Leaving PkiService.sshUserKrlFor(). Not a realm.");
+      return;
+    }
+    try {
+      const authority = await pki.sshUserCaPublicKeyAsync(scope);
+      const answer = authority && authority.ok
+        ? await pki.buildSshUserKrlAsync(scope) : authority;
+      if (!answer || !answer.ok || !answer.bytes) {
+        errorCodes.mark(res, 'STS-PKI-0290');
+        this.refuse(res, 503, 'The SSH user KRL could not be answered.');
+        log.debug("Leaving PkiService.sshUserKrlFor(). Unavailable.");
+        return;
+      }
+      res.status(200).type('application/octet-stream')
+         .set('Cache-Control', 'no-store')
+         .set('Content-Length', String(answer.bytes.length))
+         .send(answer.bytes);
+      log.debug("Leaving PkiService.sshUserKrlFor().");
+    } catch (e) {
+      log.error(errorCodes.tag('STS-PKI-0290') + 'pki_service: the SSH ' +
+                'user KRL could not be answered: ' +
+                ((e && e.message) || e));
+      errorCodes.mark(res, 'STS-PKI-0290');
+      this.refuse(res, 503, 'The SSH user KRL could not be answered.');
+      log.debug("Leaving PkiService.sshUserKrlFor(). Failed.");
+    }
+  }
+
+  /**
    * Answers a CA's signed CRL, DER; 404 for an authority this scope does not
    * hold.
    *
@@ -286,7 +400,15 @@ class PkiService {
     const { log, revocation, errorCodes, stsCrypto } = this.deps;
     log.debug("Entering PkiService.caCertificateFor().");
     const scope = revocation.scopeFromSegment(scopeSegment);
-    const authority = revocation.authorityFor(scope, caId);
+    // THE ROOT A RENEWAL REPLACED (#2220): published beside the renewed one
+    // until it expires, so a Root renewal is never a silent swap. Same key,
+    // same subject: every chain validates against either.
+    const previous = scope === this.deps.pki.SERVICE_SCOPE &&
+                     caId === 'root-previous'
+      ? this.deps.pki.previousRootCertificates()[0] : null;
+    const authority = previous
+      ? { tier: { certificatePem: previous.certificatePem } }
+      : revocation.authorityFor(scope, caId);
     if (!authority) {
       errorCodes.mark(res, 'STS-PKI-0070');
       this.refuse(res, 404,
@@ -431,6 +553,29 @@ class PkiService {
     const { log, app, errorCodes } = this.deps;
     log.debug("Entering PkiService.revocationOnly().");
     const path = String(req.url || '').split('?')[0];
+    // THE SSH USER CA'S KEY AND ITS KRL ARE NEVER SERVED HERE (the #1955
+    // review). Unlike a CRL or an OCSP response, neither is signed by
+    // anything a reader already trusts: the TrustedUserCAKeys line IS the
+    // trust anchor, and the KRL is not signed at all. Over plain HTTP a
+    // network attacker substitutes their own CA key, or a KRL that revokes
+    // nothing. Both are on the main port, over TLS, only.
+    if (/^\/pki\/ssh-/.test(path)) {
+      errorCodes.mark(res, 'STS-SSHCA-0001');
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; " +
+                    "frame-ancestors 'none'; base-uri 'none'; " +
+                    "object-src 'none'");
+      res.end('The SSH user CA\'s public key and its KRL are served over ' +
+              'HTTPS on this service\'s main port only: neither is signed ' +
+              'by anything you already trust, so plain HTTP would let ' +
+              'anybody on the path replace them.\n');
+      log.debug("Leaving PkiService.revocationOnly(). An SSH document.");
+      return;
+    }
     // `/healthcheck` too (2026-09-21): the load balancer's HTTP health
     // check on this port (deploy/aws/environment/nlb.tf) — the same route
     // `common/app.js` answers on the main port.
@@ -816,6 +961,14 @@ class PkiService {
          .send(JSON.stringify(out, null, 2));
       log.debug('Leaving the revocation index. ' + out.authorities.length +
                 ' authority(ies).');
+    });
+    app.get('/pki/ssh-user-ca/:scope', function (req, res) {
+      const algorithm = req.query && typeof req.query.algorithm === 'string'
+        ? req.query.algorithm : '';
+      self.sshUserCaFor(res, String(req.params.scope), algorithm);
+    });
+    app.get('/pki/ssh-user-krl/:scope', function (req, res) {
+      self.sshUserKrlFor(res, String(req.params.scope));
     });
     log.debug("Leaving PkiService.registerRoutes().");
   }

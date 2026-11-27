@@ -5,6 +5,7 @@
   "reauth.here": "Logga in på den här sidan",
   "reauth.hereInstead": "Logga in på den här sidan i stället",
   "reauth.noPopup": "Den här webbläsaren kan inte lämna tillbaka en inloggning från ett annat fönster, så logga in på den här sidan.",
+  "reauth.popupBlocked": "Inloggningsfönstret blockerades. Tillåt popup-fönster för den här webbplatsen, eller logga in på den här sidan.",
   "reauth.finish": "Slutför inloggningen i fönstret som öppnades.",
   "otherPerson.waiting": "En annan person loggade in, så det som väntade på den här sidan skickades inte.",
   "otherPerson.typed": "En annan person loggade in, så det som tidigare skrevs på den här sidan lades inte tillbaka.",
@@ -17,5 +18,17 @@
   "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade.",
   "accounts.otherAccount": "Den inloggningen gällde ett annat konto, så den här fliken tog inte emot den. Logga in igen som {user}, eller byt konto från kontomenyn.",
   "accounts.refused.title": "Konsolen öppnas inte för det här kontot",
-  "accounts.refused.text": "Hanterings-API:t svarade {status} för kontot som den här fliken är inloggad som."
+  "accounts.refused.text": "Hanterings-API:t svarade {status} för kontot som den här fliken är inloggad som.",
+  "policyName.required": "Ett namn krävs.",
+  "noWebCrypto.title": "Den här webbläsaren kan inte öppna sidan",
+  "noWebCrypto.text": "Den här webbläsaren kan inte köra sidan säkert: WebCrypto är inte tillgängligt, oftast för att sidan inte öppnades över HTTPS eller för att webbläsaren är för gammal.",
+  "step.pending": "Hämtar behörighet att göra den här ändringen…",
+  "step.blocked": "Den här ändringen kräver ditt tillstånd. Öppna fönstret för att ge det.",
+  "step.signIn": "Logga in för att göra den här ändringen.",
+  "step.fresh": "Den här ändringen kräver att du loggar in igen.",
+  "step.open": "Fortsätt",
+  "step.cancel": "Avbryt",
+  "step.refused": "Behörighet att göra den här ändringen gavs inte: ",
+  "step.other": "Den inloggningen gällde ett annat konto, så inget skickades.",
+  "step.failed": "Behörighet att göra den här ändringen kunde inte fås."
 }

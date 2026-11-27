@@ -221,14 +221,16 @@ function contentOf(table, row) {
  * Builds the store of one database over Knex (`knex_store.js`, #326).
  *
  * @param options - `url` (the connection string, password included),
- *   `verifyTls`, `tlsCa` (the database's PEM trust anchors, or ''), and
- *   `name` ('cell' or 'global', for the log)
+ *   `verifyTls`, `tlsCa` (the database's PEM trust anchors, or ''),
+ *   `tlsClient` (the client certificate and key it presents, or null,
+ *   #2254), and `name` ('cell' or 'global', for the log)
  * @returns the store
  */
 function sqlStore(options) {
   log.debug("Entering sqlStore().");
   const dial = require('./persistence_postgres')
-    .dialOptions(options.url, options.verifyTls, options.tlsCa);
+    .dialOptions(options.url, options.verifyTls, options.tlsCa, undefined,
+                 options.tlsClient);
   if (dial.refused) {
     throw new Error(errorCodes.tag('STS-STORE-0078') + 'cell_convert: the ' +
                     options.name + ' connection string is not dialled: ' +
@@ -1140,10 +1142,12 @@ async function main(argv) {
     }
     cellStore = sqlStore({ url: cellConnection.url, name: 'cell',
                            verifyTls: cellConnection.verifyTls,
-                           tlsCa: cellConnection.tlsCa });
+                           tlsCa: cellConnection.tlsCa,
+                           tlsClient: cellConnection.tlsClient });
     globalStore = sqlStore({ url: globalConnection.url, name: 'global',
                              verifyTls: globalConnection.verifyTls,
-                             tlsCa: globalConnection.tlsCa });
+                             tlsCa: globalConnection.tlsCa,
+                             tlsClient: globalConnection.tlsClient });
     try {
       await holdKek(cellStore, globalStore);
     } catch (e) {

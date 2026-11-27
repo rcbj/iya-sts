@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "वे response_type मान जो यह क्लाइंट माँग सकता है — RFC 7591 अनुभाग 2 के response_types, पंजीकरण से या व्यवस्थापक द्वारा लिखे, प्रत्येक मान एक प्रतिक्रिया प्रकार (\"code\", \"code id_token\")। प्राधिकरण एंडपॉइंट किसी अन्य को अस्वीकार करता है (unauthorized_client), प्रत्येक मोड में; खाली सूची कुछ प्रतिबंधित नहीं करती। क्लाइंट ने वास्तव में क्या माँगा है वह oauthResponseTypeObserved है।"
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "वे response_mode मान जिन्हें यह client माँग सकता है — query, fragment, form_post और JARM के jwt, query.jwt, fragment.jwt और form_post.jwt — किसी administrator द्वारा लिखे गए। authorization endpoint किसी अन्य को अस्वीकार करता है (unauthorized_client), और जो अनुरोध किसी का नाम नहीं लेता उसे उसके response type के डिफ़ॉल्ट mode पर परखा जाता है (code के लिए query, बाकी के लिए fragment), हर mode में; खाली सूची सर्वर के response_modes_supported से आगे कुछ सीमित नहीं करती। कोई RFC 7591 member इसे नहीं रखता, इसलिए registration इसे नहीं लिखता।"
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "वे प्रतिक्रिया प्रकार जो प्राधिकरण एंडपॉइंट से एक्सेस टोकन जारी करते हैं — token, code token, id_token token, code id_token token — जिनका यह क्लाइंट उपयोग कर सकता है जहाँ RFC 9700 मोड लागू है (product मोड हमेशा लागू है)। सम्मान तभी जब क्षेत्र RFC 9700 अनुभाग 2.1.2 से छूट देता है (oauth2.allowImplicitTokenResponses, OAuth 2.1 या FAPI के अंतर्गत कभी नहीं); तब यहाँ सूचीबद्ध न प्रकार अस्वीकार होता है (unauthorized_client)। डिफ़ॉल्ट रूप से खाली, और खाली का अर्थ कोई नहीं। व्यवस्थापक या अनुप्रयोग के स्वामी द्वारा तब लिखा जाता है जब क्षेत्र इन प्रकारों की अनुमति देता है, या oauth2.dynamicRegistrationTokenResponseTypes के भीतर गतिशील पंजीकरण द्वारा। RFC 9700 अनुभाग 2.1.2 कहता है कि क्लाइंट SHOULD NOT इनका उपयोग करें।"
@@ -576,8 +580,8 @@
     "text": "वे स्कोप जो इस अनुप्रयोग ने माँगे हैं, माँगने के साथ संचित। देखे गए, कभी घोषित नहीं: इससे कुछ अनुमत या अस्वीकृत नहीं होता। अनुप्रयोग को जो जारी किया जा सकता है वह oauthAllowedScope है।"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "वे स्कोप जो इस क्लाइंट को जारी किए जा सकते हैं — RFC 7591 अनुभाग 2 का `scope`, \"वह सूची जिसका उपयोग क्लाइंट एक्सेस टोकन माँगते समय कर सकता है\"। प्रति मान एक स्कोप टोकन। तीन प्रकार के स्कोप इसे भिन्न तरह पढ़ते हैं।\n\n**इस सेवा के अपने संरक्षित स्कोप** — admin:read और admin:write (/admin-api), report:use और report:admin (/report-api), SCIM स्कोप (scim.scopeRead, scim.scopeWrite), Shared Signals स्कोप (ssf.authScopeRead, ssf.authScopeWrite, और हमेशा ssf.read और ssf.manage) तथा डीबगर अनुमति — केवल उस क्लाइंट को जारी होते हैं जो उन्हें सूचीबद्ध करता है, दोनों मोड में। Shared Signals के लिए write में read शामिल है: write स्कोप सूचीबद्ध करना read स्कोप को भी अधिकृत करता है, और केवल read स्कोप सूचीबद्ध करना write स्कोप को अधिकृत नहीं करता। प्रत्येक के पीछे का संसाधन सर्वर हर कॉल पर फिर पूछता है, इसलिए यहाँ मान हटाने से पहले जारी टोकन कट जाते हैं। RFC 7591 पंजीकरण इन्हें घोषित नहीं कर सकता; व्यवस्थापक करता है, यहाँ।\n\n**प्रत्येक अन्य स्कोप**, product मोड में, केवल तभी जारी होता है जब यहाँ सूचीबद्ध हो — या, जब कुछ सूचीबद्ध न हो, जब वह डिफ़ॉल्ट समुच्चय में हो: openid, profile, email, address, phone, offline_access और इस क्षेत्र के OpenID4VCI क्रेडेंशियल स्कोप। विकास में कोई भी स्कोप जारी होता है।\n\n**अनुप्रयोग या प्रत्यायोजित अनुमति का नाम लेने वाला स्कोप** अपने नियम रखता है (ऑडियंस, और oauthDelegatedPermission) और सूचीबद्ध होना आवश्यक नहीं।\n\nसूची के बाहर का स्कोप प्राधिकरण और टोकन एंडपॉइंट पर invalid_scope से अस्वीकार होता है (RFC 6749 अनुभाग 3.3), और रिफ़्रेश या टोकन आदान-प्रदान से हटा लिया जाता है। oauthScope से भिन्न, जो केवल वह है जो क्लाइंट ने माँगा है।"
+    "en": "00c084c993d99663",
+    "text": "वे स्कोप जो इस क्लाइंट को जारी किए जा सकते हैं — RFC 7591 अनुभाग 2 का `scope`, \"वह सूची जिसका उपयोग क्लाइंट एक्सेस टोकन माँगते समय कर सकता है\"। प्रति मान एक स्कोप टोकन। तीन प्रकार के स्कोप इसे भिन्न तरह पढ़ते हैं।\n\n**इस सेवा के अपने संरक्षित स्कोप** — admin:read और admin:write (/admin-api), report:use और report:admin (/report-api), SCIM स्कोप (scim.scopeRead, scim.scopeWrite), Shared Signals स्कोप (ssf.authScopeRead, ssf.authScopeWrite, और हमेशा ssf.read और ssf.manage) तथा डीबगर अनुमति — केवल उस क्लाइंट को जारी होते हैं जो उन्हें सूचीबद्ध करता है, दोनों मोड में। Shared Signals के लिए write में read शामिल है: write स्कोप सूचीबद्ध करना read स्कोप को भी अधिकृत करता है, और केवल read स्कोप सूचीबद्ध करना write स्कोप को अधिकृत नहीं करता। प्रत्येक के पीछे का संसाधन सर्वर हर कॉल पर फिर पूछता है, इसलिए यहाँ मान हटाने से पहले जारी टोकन कट जाते हैं। RFC 7591 पंजीकरण इन्हें घोषित नहीं कर सकता; व्यवस्थापक करता है, यहाँ।\n\n**प्रत्येक अन्य स्कोप**, product मोड में, केवल तभी जारी होता है जब यहाँ सूचीबद्ध हो — या, जब कुछ सूचीबद्ध न हो, जब वह उस डिफ़ॉल्ट समुच्चय में हो जिसे oauth2.undeclaredClientScopes चुनता है: 1.2.0 से डिफ़ॉल्ट रूप से केवल openid (ASVS 5.0.0 10.4.11); identity में profile, email, address और phone जुड़ते हैं; legacy, जो अपग्रेड किया गया स्टोर बनाए रखता है, offline_access और इस क्षेत्र के OpenID4VCI क्रेडेंशियल स्कोप भी जोड़ता है। विकास में कोई भी स्कोप जारी होता है।\n\n**अनुप्रयोग या प्रत्यायोजित अनुमति का नाम लेने वाला स्कोप** अपने नियम रखता है (ऑडियंस, और oauthDelegatedPermission) और सूचीबद्ध होना आवश्यक नहीं।\n\nसूची के बाहर का स्कोप प्राधिकरण और टोकन एंडपॉइंट पर invalid_scope से अस्वीकार होता है (RFC 6749 अनुभाग 3.3), और रिफ़्रेश या टोकन आदान-प्रदान से हटा लिया जाता है। oauthScope से भिन्न, जो केवल वह है जो क्लाइंट ने माँगा है।"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "AuthZEN पहुँच-अनुरोध कॉलबैक (#1180): एक https URL जिसका यह क्लाइंट, AuthZEN PEP के रूप में, किसी पहुँच अनुरोध के callback.endpoint के रूप में नाम ले सकता है — प्रति मान एक, ठीक-ठीक मिलान। किसी अन्य का नाम लेने वाला अनुरोध अस्वीकार होता है; यह सेवा केवल अनुरोध से लिया गया कॉलबैक URL कभी डायल नहीं करती। व्यवस्थापक द्वारा सेट, कभी कॉल करने वाले द्वारा नहीं।"
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "AUTHZEN कॉलबैक पुनःप्रयास (#1202): एक पंजीकृत कॉलबैक URL और वे प्रयास तथा बैकऑफ़ जो उसके लिए authzen.callbackAttempts और authzen.callbackBackoffS को ओवरराइड करते हैं। मान URL है, फिर attempts=N (1 से 20) और backoff=S (60 से 86400), एक या दोनों। URL को appAuthzenCallbackUri का मान भी होना चाहिए। अनुपस्थित होने पर वह URL क्षेत्र की सेटिंग का उपयोग करता है। व्यवस्थापक द्वारा सेट, कभी कॉल करने वाले द्वारा नहीं।"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "एक XPATH व्यंजक जो उस प्रमाणपत्र तत्व को चुनता है जिस पर WS-TRUST प्रतिक्रिया एन्क्रिप्ट होती है: एक ds:X509Certificate या एक BinarySecurityToken जिसका ValueType #X509v3 पर समाप्त होता है। वही उपसमुच्चय जो तत्व मानचित्रों का है। सेट होने पर और कुछ न चुनने पर, या इन दोनों में से नहीं होने वाला तत्व चुनने पर, कोई प्राप्तकर्ता नहीं है और अगला स्रोत आज़माया नहीं जाता। चुना हुआ प्रमाणपत्र तत्व जिसका पाठ प्रमाणपत्र नहीं है वह पूर्ण एन्क्रिप्शन का दोष है, और अगला स्रोत आज़माया नहीं जाता। अनसेट होने पर प्राप्तकर्ता अनुरोध के WS-Security हस्ताक्षर द्वारा नामित पहला हस्ताक्षरकर्ता प्रमाणपत्र तत्व है — वह BinarySecurityToken जिस पर उस हस्ताक्षर का संदर्भ इंगित करता है, या उस हस्ताक्षर के KeyInfo में एक ds:X509Certificate। थंबप्रिंट, Subject Key Identifier, या जारीकर्ता और क्रमांक कोई प्रमाणपत्र तत्व नहीं है।"
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE या FALSE: आवश्यक करें कि जिस अनुरोध का AppliesTo यह अनुप्रयोग है, वह WS-Security संदेश हस्ताक्षर लेकर आए, wstrust.signRequest को ओवरराइड करते हुए। चालू होने पर, बिना स्वीकृत हस्ताक्षर वाला अनुरोध FailedCheck है, और wstrustSignRequestElements द्वारा चुना गया हर तत्व उस हस्ताक्षर से आच्छादित होना चाहिए। विकास मोड हस्ताक्षर पर विश्वास करता है, जैसा वह हमेशा करता आया है, और फिर भी मानचित्र को उसी से परखता है जिसे वह हस्ताक्षर संदर्भित करता है।"
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "WS-TRUST अनुरोध के वे तत्व जिन पर हस्ताक्षर होना ही चाहिए, हर एक के लिए एक XPath 1.0 अभिव्यक्ति, wstrustEncryptRequestElements के उपसमुच्चय में। हर अभिव्यक्ति को कम से कम एक तत्व चुनना चाहिए, और उसके द्वारा चुना गया हर तत्व ऐसा होना चाहिए जिसे अनुरोध का स्वीकृत WS-Security हस्ताक्षर संदर्भित करता है, या ऐसे किसी तत्व के भीतर हो; अन्यथा अनुरोध FailedCheck है। खाली होने पर, SOAP Body, जिसे हस्ताक्षर हमेशा आच्छादित करता है। केवल तभी पढ़ा जाता है जब wstrustSignRequest (या wstrust.signRequest) चालू हो।"
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE या FALSE: इस अनुप्रयोग के लिए WS-Trust प्रतिक्रिया पर WS-Security संदेश हस्ताक्षर करें, wstrust.signResponse को ओवरराइड करते हुए। प्रतिक्रिया अपने wsse:Security हेडर में एक wsu:Timestamp और एक ds:Signature रखती है, जो इस विश्वास क्षेत्र की XML हस्ताक्षर कुंजी से बना है और एक BinarySecurityToken के माध्यम से उसके प्रमाणपत्र को संदर्भित करता है; हस्ताक्षर Timestamp और wstrustSignResponseElements के तत्वों को आच्छादित करता है। दोष बिना हस्ताक्षर के भेजा जाता है। चालू होने पर, और हस्ताक्षर न बन सके, तो अनुरोध दोनों मोड में दोष है।"
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "WS-TRUST प्रतिक्रिया के वे तत्व जिन्हें उसका हस्ताक्षर wsu:Timestamp के अलावा आच्छादित करता है, हर एक के लिए एक XPath 1.0 अभिव्यक्ति, wstrustEncryptResponseElements के उपसमुच्चय में। खाली होने पर, SOAP Body। बिना wsu:Id वाले तत्व को एक दिया जाता है। कोई अभिव्यक्ति जो किसी से मेल न खाए, या जो स्वयं wsse:Security हेडर को चुने, दोष है।"
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "वह क्रम जिसमें इस अनुप्रयोग के लिए WS-Trust प्रतिक्रिया पर हस्ताक्षर और एन्क्रिप्शन होता है जब दोनों चालू हों, wstrust.responseProtectionOrder को ओवरराइड करते हुए: sign-then-encrypt (हस्ताक्षर के डाइजेस्ट साफ़ पाठ के होते हैं, WS-SecurityPolicy का डिफ़ॉल्ट) या encrypt-then-sign (वे सिफरटेक्स्ट के होते हैं)। wsse:Security हेडर उसी क्रम में लिखा जाता है जिसमें प्राप्तकर्ता उसे संसाधित करता है।"
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE या FALSE: इस अनुप्रयोग के लिए WS-Trust प्रतिक्रिया का ds:Signature भी एन्क्रिप्ट करें (WS-SecurityPolicy का sp:EncryptSignature), wstrust.encryptSignature को ओवरराइड करते हुए। केवल तभी पढ़ा जाता है जब प्रतिक्रिया पर हस्ताक्षर और एन्क्रिप्शन दोनों हों, पहले हस्ताक्षर; हस्ताक्षर प्रतिक्रिया के प्राप्तकर्ता के लिए एन्क्रिप्ट किया जाता है।"
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE या FALSE: इस एप्लिकेशन की WS-Trust प्रतिक्रियाओं को उनके प्राप्तकर्ता प्रमाणपत्र के लिए एन्क्रिप्ट करें, उसका keyUsage जो भी हो, wstrust.recipientIgnoresKeyUsage को ओवरराइड करते हुए। realm के संदेश-हस्ताक्षर प्रमाणपत्र केवल digitalSignature की अनुमति देते हैं, इसलिए इसके बिना अनुरोध के हस्ताक्षर प्रमाणपत्र के लिए एन्क्रिप्ट की गई प्रतिक्रिया अस्वीकार होती है। केवल keyUsage जाँच छोड़ी जाती है: प्रमाणपत्र की वैधता, पथ और निरसन अब भी वहाँ जाँचे जाते हैं जहाँ paranoid PKI मोड उन्हें जाँचता है।"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "वह प्रमाणपत्र जिस पर इस एप्लिकेशन के लिए WS-TRUST अनुरोध एन्क्रिप्ट किया जाता है, PEM। जब तक यह सेट है, इस एप्लिकेशन के लिए अनुरोध इसकी निजी कुंजी से डिक्रिप्ट होता है, रियल्म की कुंजी से नहीं, और रियल्म की कुंजी पर एन्क्रिप्ट किया गया उसके लिए अनुरोध FailedCheck है। सार्वजनिक: एप्लिकेशन पृष्ठ और GET /admin-api/applications इसे देते हैं।"
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE जब यह UMA 2.0 संसाधन सर्वर स्वयं के स्वामित्व वाले संसाधन पंजीकृत कर सकता है, client_credentials से प्राप्त प्रोटेक्शन API टोकन के माध्यम से। अनुपस्थित या FALSE, डिफ़ॉल्ट, का अर्थ है कि PAT किसी व्यक्ति का होना चाहिए (कोड प्रवाह) और वह व्यक्ति उसके द्वारा पंजीकृत का स्वामी है।"
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE या FALSE: क्या इस एप्लिकेशन में साइन-इन पर गतिशील रूप से चयन-योग्य भूमिकाएँ पेश की जाती हैं (#1072), roles.dynamicSelection के स्थान पर। FALSE \"इस साइन-इन के लिए भूमिकाएँ चुनें\" बॉक्स नहीं दिखाता, कोई भूमिका पेश नहीं करता, और इस एप्लिकेशन के टोकन में कोई गतिशील रूप से चुनी गई भूमिका नहीं होती।"
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, तथा मानक owner और description।"
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "दूरस्थ PEP और मार्ग, PEP के नाम, एक स्लैश और मार्ग की id के रूप में, जिसके लिए यह नीति रिवर्स-प्रॉक्सी मार्ग प्रपत्रों पर मार्ग के Authorization विकल्प (simple या public) द्वारा या generate-pep-route-policy क्रिया द्वारा उत्पन्न की गई (#1760)। ऐसी नीति मार्ग सहेजे जाने पर फिर लिखी जाती है, मार्ग के साथ पुनर्नामित होती है और उसके साथ हटती है; यह कभी रूट नहीं होती। इसे नीति संपादक में संपादित किया जा सकता है, और मार्ग के simple या public विकल्प का अगला सहेजना इसे फिर लिख देता है — हस्तलिखित नीति रखने के लिए मार्ग पर कोई मौजूदा नीति चुनें।"
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "वह भूमिका (ou=roles में अपने नाम से) जो इस नीति को अपनी पात्रता नीति के रूप में धारण करती है (#1072): PDP इसे किसी एक व्यक्ति के लिए अकेले तय करता है, यह बताने के लिए कि क्या उसे साइन-इन पर वह गतिशील रूप से चयन-योग्य भूमिका पेश की जा सकती है। ऐसी नीति कभी रूट नहीं होती, रूट से कभी PolicyIdReference द्वारा नहीं पहुँची जाती, और कभी किसी दूरस्थ PEP को नहीं भेजी जाती।"
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "एक दूरस्थ नीति प्रवर्तन बिंदु जिसने इस नीति निर्णय बिंदु के साथ पंजीकरण किया है। पंक्ति एक अभिलेख है, अनुमति नहीं — जो PEP कभी पंजीकरण नहीं करता वह फिर भी रिपॉज़िटरी खींच सकता है और लागू कर सकता है। पंक्ति जो दिलाती है वह कंसोल पर एक स्थान और परिवर्तन संकेत का पता है।"
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "दूरस्थ PEP ने हार्टबीट पर, अपने प्रत्येक श्रोता के बारे में अंतिम रिपोर्ट क्या की (#1760), उसके पर्यावरण के चार और परिभाषित वाले: { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] } का एक JSON दस्तावेज़, इसके साथ कि वह कब आया। state listening, waiting, failed और off में से एक है और reason एक बंद समुच्चय में से एक, कभी ऑपरेटिंग सिस्टम का पाठ नहीं; certificate वह subject, issuer, serial, subjectAltName, validity और fingerprint है जिसकी वह सेवा करता है। प्रत्येक अन्य सदस्य छोड़ दिया जाता है। इसके बिना हार्टबीट इसे रखता है, null वाला इसे साफ़ करता है, और पंजीकरण इसे छोड़ देता है। श्रोताओं से पुराने PEP पर अनुपस्थित, जिसे कंसोल रिपोर्ट नहीं किया गया के रूप में बनाता है।"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "किस प्रकार के रिमोट PEP ने पंजीकरण किया (#2026, #1206 का भाग): container, यानी xacml-pep इमेज, या embedded, यानी iya-pep पैकेज के माध्यम से किसी प्रमाणीकरण लाइब्रेरी के भीतर का PEP। जिस पंजीकरण में कोई प्रकार नहीं बताया गया वह container है, इसलिए पुराना PEP पहले की तरह ही पढ़ा जाता है। एम्बेडेड PEP में कोई रिवर्स प्रॉक्सी, लिसनर या AuthZEN एज नहीं होता।"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "वह एप्लिकेशन जिसमें एम्बेडेड रिमोट PEP ने पंजीकरण के समय स्वयं को एम्बेडेड बताया (#2026)। केवल तभी स्वीकार किया जाता है जब यह वही एप्लिकेशन हो जिससे इसकी प्रविष्टि बंधी है (stsPepApplication, किसी प्रशासक द्वारा सेट), इसलिए यह बाइंडिंग से केवल PEP की अगली हार्टबीट तक भिन्न हो सकता है, जो दोनों के मेल न खाने पर अस्वीकार कर दी जाती है। कंटेनर के लिए खाली।"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "एम्बेडेड रिमोट PEP का मोड (#2026): central, जिसमें हर निर्णय इस सेवा के AuthZEN मूल्यांकन एंडपॉइंट से पूछा जाता है, या local, जिसमें वह अपने एप्लिकेशन की नीतियाँ खींचकर प्रोसेस के भीतर निर्णय करता है। कंटेनर के लिए खाली, जो इसे भेज नहीं सकता।"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "रिमोट PEP का पैकेज जो PEP प्रोटोकॉल संस्करण बोलता है, जैसा उसने अपने पंजीकरण या अंतिम हार्टबीट में बताया (#2026)। यह सेवा संस्करण 1 का समर्थन करती है और किसी अन्य को अस्वीकार करती है, ताकि पीछे छूटी लाइब्रेरी चुपचाप ग़लत होने के बजाय दिखाई दे। जो PEP कोई संस्करण नहीं भेजता (कंटेनर) उसके लिए खाली।"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "क्या उस एप्लिकेशन की स्ट्रीम, जिसमें एम्बेडेड रिमोट PEP एम्बेडेड है, pep-policies-changed इवेंट ले जा सकती है, जैसा PEP ने अपनी अंतिम हार्टबीट में बताया (#2026): none (होस्ट की कोई सिग्नल स्ट्रीम नहीं है, इसलिए PEP समय-समय पर पूछता है), requested, excluded (एप्लिकेशन का ssfEvents इसे बाहर रखता है) या down। रिपोर्ट होने तक खाली।"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "रिमोट PEP ने GET /xacml/pep/policies से आख़िरी बार क्या खींचा (#2027): repository, रोकी गई नीतियों को छोड़कर हर सक्षम नीति (कंटेनर का खींचना), या bound-application, local मोड के एम्बेडेड PEP का: उसके एप्लिकेशन की अपनी नीति, या रियल्म की रूट नीति, और उसके संदर्भों का समापन। पुनः पंजीकरण पर रखा जाता है; परिवर्तन xacml.pep.scope के रूप में ऑडिट होता है। खींचने तक खाली।"
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

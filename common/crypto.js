@@ -339,8 +339,8 @@ function signXml(xml, opts) {
   //     `signer` for exactly these and holds the identifiers but not the
   //     lattice — `pq_jose.js` signs, as it does every post-quantum JWS.
   //   * ECDSA: the vendored GENERAL engine (`xmldsig.signXml()`), because
-  //     `signEnveloped()`'s classical branch is RSA through forge and the
-  //     vendored file is not edited here (rcbj's D8). The signature is the
+  //     `signEnveloped()`'s classical branch is RSA only (on node's OpenSSL
+  //     since #1615) and the vendored file is not edited here (rcbj's D8). The signature is the
   //     raw r||s XML Signature 1.1 section 6.4.3 specifies, which node's
   //     `ieee-p1363` encoding produces.
   // -------------------------------------------------------------------
@@ -355,6 +355,43 @@ function signXml(xml, opts) {
   const chainKeyInfo = options.includeKeyInfo === false ? ''
     : String(options.keyInfoXml || '');
   const method = XML_SIGNATURE_METHODS[options.sigAlg] || null;
+  // A SIGNING KEY IN THE HSM (#1955 P8): the general engine, as ECDSA below,
+  // with the signature made by C_Sign — RSA too, since `signEnveloped()`'s
+  // RSA branch needs the PEM the HSM will not give.
+  const hsmCandidate = options.privateKey || options.privateKeyPem;
+  if (isHsmKey(hsmCandidate)) {
+    const hsmKey = hsmKeyOf(hsmCandidate);
+    const hsmMethod = method ||
+      XML_SIGNATURE_METHODS[xmldsig.SIG_ALG_RSA_SHA256];
+    const hsmAlg = hsmXmlAlg(hsmMethod);
+    const hsmSigned = xmldsig.signXml(xml, {
+      mode: 'enveloped',
+      sigAlg: options.sigAlg || xmldsig.SIG_ALG_RSA_SHA256,
+      c14nAlg: options.c14nAlg || xmldsig.C14N_EXCLUSIVE,
+      keyInfo: options.includeKeyInfo === false ? 'none' : 'x509',
+      keyInfoXml: chainKeyInfo
+        ? '<ds:KeyInfo>' + chainKeyInfo + '</ds:KeyInfo>' : undefined,
+      certPem: options.certPem,
+      refUri: refUri,
+      placement: options.placement || PLACEMENT.AFTER_ISSUER,
+      // OFF THE EVENT LOOP (#1955 P8 follow-up, 2026-11-23): handed a
+      // `hsmDeferred` by `signXmlOffLoop()`, the signer records SignedInfo's
+      // canonical octets and answers a placeholder, and that door makes the
+      // signature with C_SignAsync and writes it where the placeholder is.
+      // SignatureValue is outside SignedInfo, so nothing signed changes.
+      signer: function (octets) {
+        const input = Buffer.from(octets, 'binary');
+        if (options.hsmDeferred) {
+          return options.hsmDeferred.hold(hsmKey, hsmAlg, input);
+        }
+        return hsmKey.signSync(hsmAlg, input);
+      }
+    });
+    const hsmXml = typeof hsmSigned === 'string' ? hsmSigned : hsmSigned.xml;
+    log.debug('Leaving signXml(). ' + hsmAlg + ' in the HSM, ' +
+              hsmXml.length + ' characters.');
+    return hsmXml;
+  }
   const pqMethod = xmldsig.SIG_METHODS[options.sigAlg] &&
     xmldsig.SIG_METHODS[options.sigAlg].postQuantum
     ? xmldsig.SIG_METHODS[options.sigAlg] : null;
@@ -1160,44 +1197,50 @@ function verifyXmlSignature(xml, opts) {
              signerCertB64: keyInfoCert }, 'STS-KEYS-0014');
   }
 
-  // INCLUSIVE CANONICALIZATION OF THE SIGNEDINFO (#37 follow-up). The
-  // SignedInfo is always nested — inside the Signature, inside the signed
-  // element — and inclusive c14n renders every namespace declaration IN
-  // SCOPE there, including the ancestors'. The engine canonicalizes it from
-  // the Signature serialized on its own, which drops those, so an inclusive
-  // signature on even a ROOT element never verified. The in-scope
-  // declarations are therefore copied onto the Signature before it is
-  // serialized: inclusive c14n puts all of them on the SignedInfo either way,
-  // so the octets are the signer's. (Exclusive c14n ignores them, and is left
-  // alone.)
-  if (c14nAlg && c14nAlg.indexOf('xml-exc-c14n') === -1) {
-    const declared = {};
-    for (let node = sigEl.parentNode; node && node.nodeType === 1;
-         node = node.parentNode) {
-      for (let i = 0; i < node.attributes.length; i++) {
-        const attr = node.attributes[i];
-        const name = String(attr.name || '');
-        if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
-            !Object.prototype.hasOwnProperty.call(declared, name)) {
-          declared[name] = attr.value;
-        }
-      }
-    }
-    Object.keys(declared).forEach(function (name) {
-      if (!sigEl.hasAttribute(name)) {
-        sigEl.setAttribute(name, declared[name]);
-      }
-    });
-  }
+  // THE NAMESPACES IN SCOPE, COPIED ONTO THE SIGNATURE (#37 follow-up;
+  // exclusive c14n too since #2020). The SignedInfo is always nested —
+  // inside the Signature, inside the signed element — and the engine
+  // canonicalizes it from the Signature serialized on its own, which drops
+  // the ancestors' declarations. Inclusive c14n renders every declaration in
+  // scope, so an inclusive signature on even a ROOT element never verified.
+  // EXCLUSIVE c14n renders a prefix an InclusiveNamespaces PrefixList names
+  // whenever it is in scope (Shibboleth's and SimpleSAMLphp's `xs`), so a
+  // signature listing one declared on an ancestor was refused too: this was
+  // "left alone" on the claim that exclusive c14n ignores them, which is
+  // true only without a PrefixList (#1917's WSS4J round trip found the
+  // same in the WS-Security verifiers). Copying all of them changes the
+  // exclusive octets only where a PrefixList asks, which is the point.
+  //
+  // THE COPY IS A NAMESPACE DECLARATION, NOT AN ATTRIBUTE NAMED `xmlns:…`
+  // (run 45298800947, 2026-11-23). #2020 wrote the copies with
+  // `setAttribute()`, which xmldom's serializer does not take for a
+  // declaration: a Signature whose own prefix is declared on an ancestor —
+  // pysaml2 declares `ns2` (XML Signature) on the AuthnRequest or the
+  // ArtifactResolve, Signature and all — got the serializer's own
+  // `xmlns:ns2` as well as the copied one, and "Attribute xmlns:ns2
+  // redefined" refused every pysaml2 request as malformed. Until #2020 the
+  // exclusive case copied nothing, so only an inclusive signature could
+  // meet it. `withInScopeNamespaces()` makes each copy with
+  // `setAttributeNS()` in the xmlns namespace, on a clone, which is what
+  // the WS-Security verifiers already did. Under exclusive c14n the copies
+  // still render nothing but a prefix SignedInfo visibly uses or a
+  // PrefixList names (Exclusive XML Canonicalization 1.0 section 3), so no
+  // octet is added that the signer did not sign.
+  const sigCopy = withInScopeNamespaces(sigEl);
 
   const serializer = new xmldom.XMLSerializer();
   // With a key from here, the engine is not shown the certificate text: it
   // would try to read it with forge, which reads RSA only.
   const signatureXml = found
-    ? withoutCertificateText(serializer.serializeToString(sigEl))
-    : serializer.serializeToString(sigEl);
+    ? withoutCertificateText(serializer.serializeToString(sigCopy))
+    : serializer.serializeToString(sigCopy);
   sigEl.parentNode.removeChild(sigEl);
-  const referencedXml = serializer.serializeToString(target);
+  // The signed element too, for the same reason: a Reference's exclusive
+  // transform may carry a PrefixList, and the element is serialized on its
+  // own (#2020).
+  const referencedXml = serializer.serializeToString(
+    target.parentNode && target.parentNode.nodeType === 1
+      ? withInScopeNamespaces(target) : target);
 
   let result;
   try {
@@ -1342,6 +1385,43 @@ const XML_ACCEPTED_TRANSFORMS = Object.freeze([
   'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
   'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
 ]);
+
+// THE SIGNATURE, SERIALIZED ALONE, WITH THE NAMESPACES IN SCOPE WHERE IT
+// STOOD (#1917's WSS4J round trip, 2026-11-23). Each WS-Security verifier
+// hands the engine the ds:Signature by itself, and serialized alone it lost
+// the declarations its ancestors made — the Envelope's soap and the security
+// header's wsse and wsu. Apache WSS4J, by default, writes an
+// InclusiveNamespaces PrefixList on SignedInfo's CanonicalizationMethod
+// naming exactly those, and exclusive c14n renders a listed prefix that is
+// IN SCOPE, so SignedInfo's octets here differed from the signer's and
+// every default WSS4J or CXF signature was refused as one that does not
+// verify (STS-KEYS-0012). The copy carries every declaration in scope; the
+// exclusive canonicalization renders only the listed and the visibly used,
+// so it canonicalizes as the signature did in place.
+function withInScopeNamespaces(element) {
+  log.debug("Entering withInScopeNamespaces().");
+  const copy = element.cloneNode(true);
+  const declared = {};
+  for (let cur = element; cur && cur.nodeType === 1; cur = cur.parentNode) {
+    const attrs = cur.attributes || [];
+    for (let i = 0; i < attrs.length; i++) {
+      const name = String(attrs[i].name || attrs[i].nodeName || '');
+      if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
+          !Object.prototype.hasOwnProperty.call(declared, name)) {
+        declared[name] = String(attrs[i].value || '');
+      }
+    }
+  }
+  Object.keys(declared).forEach(function (name) {
+    if (!copy.hasAttribute(name)) {
+      copy.setAttributeNS('http://www.w3.org/2000/xmlns/', name,
+                          declared[name]);
+    }
+  });
+  log.debug("Leaving withInScopeNamespaces(). " +
+            Object.keys(declared).length);
+  return copy;
+}
 
 // The id of an element, in every spelling this document could give one —
 // `wsu:Id` first, which is the WS-Security spelling.
@@ -1717,7 +1797,7 @@ function verifyWsSecuritySignature(xml, opts) {
   // refused otherwise), so each Reference resolves to the element the
   // reading checked by position.
   const signatureXml = withoutCertificateText(
-    serializer.serializeToString(sigEl));
+    serializer.serializeToString(withInScopeNamespaces(sigEl)));
   let result;
   try {
     result = xmldsig.verifyXml(signatureXml, {
@@ -1819,8 +1899,9 @@ function verifyWsSecurityHmac(xml, opts) {
   const key = Buffer.from(options.key);
   let result;
   try {
+    // In scope as it stood, for verifyWsSecuritySignature()'s reason.
     result = xmldsig.verifyXml(new xmldom.XMLSerializer()
-      .serializeToString(sigEl), {
+      .serializeToString(withInScopeNamespaces(sigEl)), {
       referencedXml: String(xml),
       allowedTransforms: XML_ACCEPTED_TRANSFORMS,
       verifier: function (octets, signatureBytes) {
@@ -1860,6 +1941,236 @@ function verifyWsSecurityHmac(xml, opts) {
                                       referencesValid: true });
 }
 
+// ===========================================================================
+// SIGNING A WS-SECURITY MESSAGE (#1917, with #1918): the sender's half of
+// what `readWsSecuritySignature()` reads. A ds:Signature in the security
+// header, one Reference per part by its wsu:Id, exclusive canonicalization
+// for SignedInfo and for every Reference (Basic Security Profile R5404 and
+// R5412), and a KeyInfo that is a SecurityTokenReference to the
+// BinarySecurityToken carrying the signer's certificate (X.509 Token Profile
+// 1.1 section 3.3.2) — the shape WSS4J, WCF and Metro check.
+//
+// **IT SIGNS WITH NODE'S OPENSSL, NOT WITH THE VENDORED ENGINE'S FORGE**
+// (ASVS 5.0.0 11.2.1, #1615): RSA PKCS#1 v1.5, RSASSA-PSS (the salt the
+// digest's length, RFC 9231 section 2.3.10), ECDSA as XML Signature 1.1's
+// raw r||s, and EdDSA; a key in the HSM through C_Sign, or C_SignAsync off
+// the event loop. The post-quantum methods are refused: they have no
+// certificate profile, so there is no BinarySecurityToken to reference.
+//
+// The caller lays the header out (`ws-trust/ws_integrity.ts`): the parts
+// carry their ids and the token is in the header already. This function
+// adds the signature where it is told, and nothing else.
+// ===========================================================================
+
+// The DigestMethod each signature method's hash is written with.
+const WSS_DIGEST_URIS = Object.freeze({
+  sha1: 'http://www.w3.org/2000/09/xmldsig#sha1',
+  sha224: 'http://www.w3.org/2001/04/xmldsig-more#sha224',
+  sha256: 'http://www.w3.org/2001/04/xmlenc#sha256',
+  sha384: 'http://www.w3.org/2001/04/xmldsig-more#sha384',
+  sha512: 'http://www.w3.org/2001/04/xmlenc#sha512',
+  'sha3-224': 'http://www.w3.org/2007/05/xmldsig-more#sha3-224',
+  'sha3-256': 'http://www.w3.org/2007/05/xmldsig-more#sha3-256',
+  'sha3-384': 'http://www.w3.org/2007/05/xmldsig-more#sha3-384',
+  'sha3-512': 'http://www.w3.org/2007/05/xmldsig-more#sha3-512'
+});
+
+const X509V3_VALUE_TYPE = 'http://docs.oasis-open.org/wss/2004/01/' +
+  'oasis-200401-wss-x509-token-profile-1.0#X509v3';
+
+// The document laid out for signing, and SignedInfo's canonical octets.
+// `finish(signature)` writes the SignatureValue and answers the document.
+function prepareWsSecurityMessageSignature(xml, opts) {
+  log.debug("Entering prepareWsSecurityMessageSignature().");
+  const options = opts || {};
+  const sigAlg = String(options.sigAlg || xmldsig.SIG_ALG_RSA_SHA256);
+  // THE XML SIGN CHOKEPOINT (#1368), as signXml() holds it.
+  const unsignable = signaturePolicy.signCause('xml', sigAlg);
+  if (unsignable) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). Not signed " +
+              "here.");
+    throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+  }
+  const method = XML_SIGNATURE_METHODS[sigAlg];
+  if (!method || ['rsa', 'rsa-pss', 'ecdsa', 'eddsa']
+    .indexOf(String(method.family)) < 0) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). The method.");
+    // error-code: none — the caller records its own (STS-WSTRUST-0086).
+    throw new Error('a WS-Security message is signed with RSA, RSA-PSS, ' +
+                    'ECDSA or EdDSA, whose keys carry an X.509 ' +
+                    'certificate to reference; ' +
+                    ((method && method.label) || sigAlg) + ' is not one');
+  }
+  const digestUri = WSS_DIGEST_URIS[String(method.hash || 'sha256')];
+  if (!digestUri) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). The digest.");
+    // error-code: none — the caller records its own (STS-WSTRUST-0086).
+    throw new Error('no DigestMethod for ' + String(method.hash));
+  }
+  const nodeHash = String(method.hash || 'sha256');
+  const doc = new xmldom.DOMParser().parseFromString(String(xml),
+                                                       'text/xml');
+  const envelope = doc.documentElement;
+  const header = envelope ? directChildByLocal(envelope, 'Header') : null;
+  const security = header
+    ? directChildByLocal(header, 'Security', WSSE_NS) : null;
+  if (!security) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). No header.");
+    // error-code: none — the caller lays the header out first.
+    throw new Error('the message has no wsse:Security header to hold the ' +
+                    'signature');
+  }
+  if (duplicateIdsOf(doc).length) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). Repeated ids.");
+    // error-code: none — the caller records its own (STS-WSTRUST-0086).
+    throw new Error('an id is carried by more than one element');
+  }
+  const byId = {};
+  const all = doc.getElementsByTagName('*');
+  for (let i = 0; i < all.length; i++) {
+    const id = wsuIdOf(all[i]);
+    if (id) {
+      byId[id] = all[i];
+    }
+  }
+  const ids = [].concat(options.ids || []).map(String);
+  const references = ids.map(function (id) {
+    const target = byId[id];
+    if (!target) {
+      // error-code: none — the caller records its own (STS-WSTRUST-0086).
+      throw new Error('no element carries the id "' + id + '"');
+    }
+    const digest = nodeCrypto.createHash(nodeHash)
+      .update(Buffer.from(xmldsig.canonicalize(target), 'utf8'))
+      .digest('base64');
+    return '<ds:Reference URI="#' + id + '"><ds:Transforms>' +
+      '<ds:Transform Algorithm="' + EXC_C14N + '"/></ds:Transforms>' +
+      '<ds:DigestMethod Algorithm="' + digestUri + '"/>' +
+      '<ds:DigestValue>' + digest + '</ds:DigestValue></ds:Reference>';
+  }).join('');
+  if (!byId[String(options.tokenId || '')]) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). No token.");
+    // error-code: none — the caller lays the token out first.
+    throw new Error('no BinarySecurityToken carries the id "' +
+                    String(options.tokenId || '') + '"');
+  }
+  const signedInfo = '<ds:SignedInfo xmlns:ds="' + xmldsig.DS_NS + '">' +
+    '<ds:CanonicalizationMethod Algorithm="' + EXC_C14N + '"/>' +
+    '<ds:SignatureMethod Algorithm="' + sigAlg + '"/>' + references +
+    '</ds:SignedInfo>';
+  const placeholder = 'IYA-WSS-SIGNATURE-VALUE';
+  const signature = '<ds:Signature xmlns:ds="' + xmldsig.DS_NS + '"' +
+    (options.signatureId ? ' Id="' + String(options.signatureId) + '"'
+                         : '') + '>' +
+    signedInfo + '<ds:SignatureValue>' + placeholder +
+    '</ds:SignatureValue><ds:KeyInfo><wsse:SecurityTokenReference ' +
+    'xmlns:wsse="' + WSSE_NS + '"><wsse:Reference URI="#' +
+    String(options.tokenId) + '" ValueType="' + X509V3_VALUE_TYPE + '"/>' +
+    '</wsse:SecurityTokenReference></ds:KeyInfo></ds:Signature>';
+  const sigNode = doc.importNode(new xmldom.DOMParser()
+    .parseFromString(signature, 'text/xml').documentElement, true);
+  // Right after the header child `after` names (the token, so a receiver
+  // reading the header top-down meets the token before the signature that
+  // uses it), else last.
+  const after = options.after ? byId[String(options.after)] : null;
+  if (after && after.parentNode === security) {
+    security.insertBefore(sigNode, after.nextSibling);
+  } else {
+    security.appendChild(sigNode);
+  }
+  // SignedInfo as it now stands in the document: exclusive c14n renders
+  // only the prefixes it uses, so its place does not change its octets.
+  const placed = directChildByLocal(sigNode, 'SignedInfo');
+  const octets = Buffer.from(xmldsig.canonicalize(placed), 'utf8');
+  log.debug("Leaving prepareWsSecurityMessageSignature(). " + ids.length +
+            " reference(s).");
+  return {
+    method: method,
+    octets: octets,
+    finish: function (value) {
+      const valueEl = directChildByLocal(sigNode, 'SignatureValue');
+      valueEl.textContent = Buffer.from(value).toString('base64');
+      return new xmldom.XMLSerializer().serializeToString(doc);
+    }
+  };
+}
+
+// A SignatureValue over SignedInfo's octets with a software key.
+function wsSecuritySignatureValue(method, key, octets) {
+  log.debug("Entering wsSecuritySignatureValue(). " + method.family);
+  let out;
+  if (method.family === 'rsa') {
+    out = nodeCrypto.sign(method.hash, octets, {
+      key: key, padding: nodeCrypto.constants.RSA_PKCS1_PADDING });
+  } else if (method.family === 'rsa-pss') {
+    out = nodeCrypto.sign(method.hash, octets, {
+      key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: nodeCrypto.createHash(method.hash).digest().length });
+  } else if (method.family === 'ecdsa') {
+    out = nodeCrypto.sign(method.hash, octets,
+                          { key: key, dsaEncoding: 'ieee-p1363' });
+  } else {
+    out = nodeCrypto.sign(null, octets, key);
+  }
+  log.debug("Leaving wsSecuritySignatureValue().");
+  return out;
+}
+
+/**
+ * Signs a SOAP envelope with a WS-Security message signature: a
+ * ds:Signature in its wsse:Security header, a Reference per id, exclusive
+ * canonicalization, and a SecurityTokenReference to the
+ * BinarySecurityToken the caller has put in that header.
+ *
+ * @param xml - the envelope, its wsse:Security header and token laid out
+ * @param opts - `privateKey` or `privateKeyPem`, `sigAlg` (a URI),
+ *   `ids` (the wsu:Id of each part to sign), `tokenId` (the
+ *   BinarySecurityToken's), `after` (the id of a header child to insert
+ *   the signature after, else it goes last) and `signatureId`
+ * @returns the signed envelope
+ */
+function signWsSecurityMessage(xml, opts) {
+  log.debug("Entering signWsSecurityMessage().");
+  const options = opts || {};
+  const prepared = prepareWsSecurityMessageSignature(xml, options);
+  const keyRef = options.privateKey || options.privateKeyPem;
+  let value;
+  if (isHsmKey(keyRef)) {
+    value = hsmKeyOf(keyRef).signSync(hsmXmlAlg(prepared.method),
+                                      prepared.octets);
+  } else {
+    const key = options.privateKey && typeof options.privateKey === 'object'
+      ? options.privateKey
+      : nodeCrypto.createPrivateKey(String(options.privateKeyPem || ''));
+    value = wsSecuritySignatureValue(prepared.method, key, prepared.octets);
+  }
+  log.debug("Leaving signWsSecurityMessage().");
+  return prepared.finish(value);
+}
+
+/**
+ * `signWsSecurityMessage()`, with a key in the HSM signing off the event
+ * loop (C_SignAsync). Any other key is `signWsSecurityMessage()`, resolved.
+ *
+ * @param xml - as for `signWsSecurityMessage()`
+ * @param opts - as for `signWsSecurityMessage()`
+ * @returns a promise of the signed envelope
+ */
+async function signWsSecurityMessageOffLoop(xml, opts) {
+  log.debug("Entering signWsSecurityMessageOffLoop().");
+  const options = opts || {};
+  const keyRef = options.privateKey || options.privateKeyPem;
+  if (!isHsmKey(keyRef)) {
+    log.debug("Leaving signWsSecurityMessageOffLoop(). In place.");
+    return signWsSecurityMessage(xml, options);
+  }
+  const prepared = prepareWsSecurityMessageSignature(xml, options);
+  const value = await hsmKeyOf(keyRef).sign(hsmXmlAlg(prepared.method),
+                                            prepared.octets);
+  log.debug("Leaving signWsSecurityMessageOffLoop(). In the HSM.");
+  return prepared.finish(value);
+}
+
 // ---------------------------------------------------------------------------
 // THE SAML HTTP REDIRECT BINDING'S DETACHED SIGNATURE (saml-bindings-2.0-os
 // section 3.4.4.1). It is a signature over the QUERY STRING and not over any
@@ -1875,7 +2186,7 @@ function verifyWsSecurityHmac(xml, opts) {
 // ---------------------------------------------------------------------------
 // `privateKey` (#68 phase 4b) is a signer-group key for an ECDSA or
 // post-quantum `sigAlg` — a KeyObject, or the raw bytes `pq_jose.js` signs
-// with — for which the vendored signer, RSA through forge, has no path. The
+// with — for which the vendored signer, RSA only, has no path. The
 // ECDSA signature is the raw r||s XML Signature 1.1 specifies, which is what
 // the binding's SigAlg names; RSA takes the vendored path as it always has.
 /**
@@ -1900,6 +2211,13 @@ function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
     xmldsig.SIG_METHODS[sigAlg].postQuantum
     ? xmldsig.SIG_METHODS[sigAlg] : null;
   const method = XML_SIGNATURE_METHODS[sigAlg] || null;
+  if (isHsmKey(privateKey || privateKeyPem)) {
+    const hsmKey = hsmKeyOf(privateKey || privateKeyPem);
+    const hsmSignature = hsmKey.signSync(hsmXmlAlg(method),
+      Buffer.from(String(queryString), 'utf8')).toString('base64');
+    log.debug('Leaving signQueryString(). In the HSM.');
+    return hsmSignature;
+  }
   if (pqMethod && privateKey) {
     const pqSignature = Buffer.from(pqJose.sign(String(pqMethod.alg),
       privateKey, Buffer.from(String(queryString), 'utf8')))
@@ -2380,19 +2698,28 @@ function encryptElement(xml, certPem, opts) {
   // second DRBG, and fifty times slower (#65, section 13).
   const key = randomBytes(cipher.keyBytes).toString('binary');
   const iv = randomBytes(cipher.ivBytes).toString('binary');
-  const c = forge.cipher.createCipher(cipher.mode, key);
-  // The tag length matters only to GCM; forge ignores it for CBC, and passing
-  // it unconditionally keeps this one call rather than two.
-  c.start({ iv: iv, tagLength: cipher.tagBytes * 8 });
-  c.update(forge.util.createBuffer(forge.util.encodeUtf8(xml)));
-  if (!c.finish()) {
+  // NODE'S CIPHER (#1615, ASVS 5.0.0 11.2.1), where it was forge's
+  // JavaScript AES: the IV, the ciphertext and, for GCM, the tag, the octets
+  // forge wrote. CBC pads as PKCS#7, as forge did. `openXmlContent()` is
+  // the decryption's twin, node's already.
+  let sealed;
+  try {
+    const engine = nodeCrypto.createCipheriv(
+      'aes-' + (cipher.keyBytes * 8) + (cipher.tagBytes ? '-gcm' : '-cbc'),
+      Buffer.from(key, 'binary'), Buffer.from(iv, 'binary'),
+      /** @type {any} */ (cipher.tagBytes
+        ? { authTagLength: cipher.tagBytes } : undefined));
+    const out = Buffer.concat([
+      engine.update(Buffer.from(xml, 'utf8')), engine.final()]);
+    sealed = cipher.tagBytes
+      ? Buffer.concat([out, /** @type {any} */ (engine).getAuthTag()]) : out;
+  } catch (e) {
+    log.debug("Caught in encryptElement(): " + ((e && e.message) || e));
     log.debug("Leaving encryptElement(). The cipher refused.");
     throw new Error((opts.bare ? 'XML Encryption' : 'SAML encryption') +
                     ' failed in ' + cipher.mode);
   }
-  const body = cipher.tagBytes
-    ? iv + c.output.getBytes() + c.mode.tag.getBytes()
-    : iv + c.output.getBytes();
+  const body = iv + sealed.toString('binary');
   const certB64 = certPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   const contentKey = Buffer.from(key, 'binary');
   const recipientInfo = '<ds:X509Data><ds:X509Certificate>' + certB64 +
@@ -2640,6 +2967,10 @@ function refusedAlgorithm(opts, list, name, what) {
 // The private key, as node's KeyObject, from a PEM or a KeyObject.
 function privateKeyObject(key) {
   log.debug("Entering privateKeyObject().");
+  if (typeof key === 'string' && isHsmKey(key)) {
+    log.debug("Leaving privateKeyObject(). An HSM key.");
+    return hsmKeyOf(key);
+  }
   if (key && typeof key === 'object' && key.type === 'private') {
     log.debug("Leaving privateKeyObject(). A KeyObject.");
     return key;
@@ -2718,8 +3049,7 @@ function agreedKey(agreement, privateKey, keyBytes) {
     kty: 'EC', crv: curve.crv,
     x: point.subarray(1, 1 + curve.bytes).toString('base64url'),
     y: point.subarray(1 + curve.bytes).toString('base64url') } });
-  const z = nodeCrypto.diffieHellman({ privateKey: privateKey,
-                                       publicKey: originatorKey });
+  const z = ecdhSecret(privateKey, originatorKey);
   log.debug("Leaving agreedKey().");
   return xmlConcatKdf(z, keyBytes, hash, otherInfo);
 }
@@ -3125,8 +3455,7 @@ function decryptElement(xml, privateKeyPem, opts) {
       key = wrap ? aesKeyUnwrap(agreed, wrappedBytes).toString('binary')
                  : agreed.toString('binary');
     } else if (transport.node) {
-      key = nodeCrypto.privateDecrypt({
-        key: privateKeyObject(privateKeyPem),
+      key = rsaPrivateDecrypt(privateKeyPem, {
         padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
         oaepHash: oaepHash,
         oaepLabel: oaepLabel
@@ -3139,8 +3468,7 @@ function decryptElement(xml, privateKeyPem, opts) {
       // does not check unwraps to a deterministic random value instead of
       // throwing, so the length check below is still what names a wrong
       // key, and the timing no longer tells a caller which it was.
-      key = nodeCrypto.privateDecrypt({
-        key: privateKeyObject(privateKeyPem),
+      key = rsaPrivateDecrypt(privateKeyPem, {
         padding: transport.scheme === 'RSA-OAEP'
           ? nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING
           : nodeCrypto.constants.RSA_PKCS1_PADDING,
@@ -3232,6 +3560,16 @@ function decryptElement(xml, privateKeyPem, opts) {
     // NamespaceError from a perfectly good NameID was reported as a wrong
     // certificate — which sends somebody to re-fetch metadata over a bug in the
     // parser three lines away.
+    // A KEY IN THE HSM THAT MAY NOT DO IT (#1955 P8 follow-up) is said as
+    // itself: a key made before it could decrypt (STS-KEYS-0208), or a
+    // scheme never asked of one (0206) — not "a different certificate".
+    const hsmCode = errorCodes.codeOf(e);
+    if (hsmCode === 'STS-KEYS-0208' || hsmCode === 'STS-KEYS-0206' ||
+        hsmCode === 'STS-KEYS-0207' || hsmCode === 'STS-KEYS-0201') {
+      log.debug("Leaving decryptElement(). The HSM: " + hsmCode);
+      return errorCodes.mark({ ok: false, why: 'the HSM key could not ' +
+        'unwrap it: ' + e.message }, hsmCode);
+    }
     const aboutTheKey = /oaep|padding|rsa|decrypt|key|wrap|agree|ecdh|kdf/i
       .test(e.message || '');
     log.debug("Leaving decryptElement(). " + e.message);
@@ -3520,6 +3858,12 @@ function signJws(payload, key, opts) {
   }
   const algorithm = options.algorithm || 'RS256';
   const spec = jwsSpec(algorithm);
+  // A SIGNING KEY IN THE HSM (#1955 P8): the same framing, C_Sign.
+  if (isHsmKey(key)) {
+    const hsmOut = hsmSignJws(payload, key, options, false);
+    log.debug('Leaving signJws(). ' + algorithm + ', in the HSM.');
+    return hsmOut;
+  }
   if (spec.family === 'pq') {
     const pqInput = pqSigningInput(payload, algorithm, options);
     const pqSig = jwsSignatureOver(algorithm, key,
@@ -3614,6 +3958,18 @@ function signJwsAsync(payload, key, opts) {
   } catch (e) {
     log.debug('Leaving signJwsAsync(). Refused.');
     return Promise.reject(e);
+  }
+  // A SIGNING KEY IN THE HSM (#1955 P8): C_SignAsync, off the loop.
+  if (isHsmKey(key)) {
+    let hsmOut;
+    try {
+      hsmOut = hsmSignJws(payload, key, options, true);
+    } catch (e) {
+      log.debug('Leaving signJwsAsync(). Refused for the HSM.');
+      return Promise.reject(e);
+    }
+    log.debug('Leaving signJwsAsync(). ' + algorithm + ', in the HSM.');
+    return hsmOut;
   }
   const plan = spec.family === 'pq' ? null
     : classicalSigningInput(payload, key, algorithm, spec, options);
@@ -4137,6 +4493,63 @@ function pqPrivateBytes(key) {
     : Buffer.from(key);
 }
 
+// ---------------------------------------------------------------------------
+// A POST-QUANTUM SIGNATURE OVER RAW BYTES, IN SOFTWARE OR IN THE HSM (#2220).
+// The realm's published ML-DSA and SLH-DSA keys are made in the token where
+// it offers CKM_ML_DSA or CKM_SLH_DSA (`helpers.js`'s `pqKeysFor`), so the
+// doors that sign raw bytes with a post-quantum key — Data Integrity's
+// `signRawSignature()`, COSE's `coseSign1Sign()` — ask here, and an HSM
+// key's reference goes to C_Sign rather than being read as the 32 bytes of
+// a seed. The JWS doors already ask `isHsmKey()` first (`hsmSignJws()`).
+// ---------------------------------------------------------------------------
+/**
+ * Signs bytes with a post-quantum key: the token's for an HSM key,
+ * `pq_jose.js`'s otherwise.
+ *
+ * @param alg - the JOSE name (`ML-DSA-65`, `SLH-DSA-SHA2-128s`, a composite)
+ * @param key - the raw private key, `{ priv }`, an HSM key or its reference
+ * @param data - the bytes to sign
+ * @returns the signature
+ */
+function pqSignBytes(alg, key, data) {
+  log.debug('Entering pqSignBytes(). ' + alg);
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const out = hsmKey.signSync(hsmSigningAlg(hsmKey, alg),
+                                Buffer.from(data || []));
+    log.debug('Leaving pqSignBytes(). In the HSM.');
+    return out;
+  }
+  const out = Buffer.from(pqJose.sign(alg, pqPrivateBytes(key),
+                                      Buffer.from(data || [])));
+  log.debug('Leaving pqSignBytes().');
+  return out;
+}
+
+/**
+ * `pqSignBytes()`, off the event loop: C_SignAsync for an HSM key, libuv
+ * for a software one.
+ *
+ * @param alg - the JOSE name
+ * @param key - as for `pqSignBytes()`
+ * @param data - the bytes to sign
+ * @returns a promise of the signature
+ */
+async function pqSignBytesAsync(alg, key, data) {
+  log.debug('Entering pqSignBytesAsync(). ' + alg);
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const signed = Buffer.from(await hsmKey.sign(hsmSigningAlg(hsmKey, alg),
+                                                 Buffer.from(data || [])));
+    log.debug('Leaving pqSignBytesAsync(). In the HSM.');
+    return signed;
+  }
+  const out = Buffer.from(await pqJose.signAsync(alg, pqPrivateBytes(key),
+                                                 Buffer.from(data || [])));
+  log.debug('Leaving pqSignBytesAsync().');
+  return out;
+}
+
 function pqPublicBytes(key) {
   log.debug('Entering pqPublicBytes().');
   log.debug('Leaving pqPublicBytes().');
@@ -4221,6 +4634,12 @@ function jwsSignatureOver(alg, key, signingInput) {
   log.debug('Entering jwsSignatureOver(). alg=' + alg);
   const spec = jwsSpec(alg);
   const input = Buffer.from(signingInput);
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const hsmSig = hsmKey.signSync(hsmSigningAlg(hsmKey, alg), input);
+    log.debug('Leaving jwsSignatureOver(). In the HSM.');
+    return hsmSig;
+  }
   if (spec.family === 'pq') {
     const pqSig = Buffer.from(pqJose.sign(alg, key, input));
     log.debug('Leaving jwsSignatureOver(). Post-quantum.');
@@ -7088,11 +7507,14 @@ function unwrapCek(header, encryptedKey, options, spec) {
     // SHA-1 — an unwrap under the wrong digest fails, and it fails in the way
     // an unwrap under the wrong KEY fails, so the two are indistinguishable
     // from the message. See wrapCek().
-    const out = nodeCrypto.privateDecrypt({
-      key: options.privateKey,
-      padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
-      oaepHash: alg === 'RSA-OAEP' ? 'sha1' : 'sha256'
-    }, encryptedKey);
+    // An HSM key's decryption made off the loop by the async door
+    // (`decryptJweCompactAsync()`), handed in; made here otherwise.
+    const out = options.hsmPrecomputed && options.hsmPrecomputed.rsa
+      ? options.hsmPrecomputed.rsa
+      : rsaPrivateDecrypt(options.privateKey, {
+        padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: alg === 'RSA-OAEP' ? 'sha1' : 'sha256'
+      }, encryptedKey);
     log.debug('Leaving unwrapCek(). RSA.');
     return out;
   }
@@ -7111,8 +7533,9 @@ function unwrapCek(header, encryptedKey, options, spec) {
   }
   const senderKey = nodeCrypto.createPublicKey({ key: header.epk,
                                                  format: 'jwk' });
-  const z = nodeCrypto.diffieHellman({ privateKey: options.privateKey,
-                                       publicKey: senderKey });
+  const z = options.hsmPrecomputed && options.hsmPrecomputed.z
+    ? options.hsmPrecomputed.z
+    : ecdhSecret(options.privateKey, senderKey);
   if (alg === 'ECDH-ES') {
     // The AlgorithmID is the content encryption `enc` and the length is the
     // WHOLE CEK — both halves for a CBC-HMAC enc, which is why this needs the
@@ -7403,6 +7826,39 @@ async function decryptJweCompactAsync(compact, opts) {
               ((e && e.message) || e));
   }
   const alg = header && typeof header === 'object' ? String(header.alg) : '';
+  // A REALM KEY IN THE HSM (#1955 P8 follow-up): its RSA-OAEP decryption or
+  // ECDH agreement is made here, off the event loop, and handed to the
+  // synchronous door, which does everything else exactly as it would. Only
+  // for a JWE that door would get as far as the key with: anything it is
+  // going to refuse costs the HSM nothing.
+  if (parts.length === 5 && isHsmKey(options.privateKey) &&
+      (!options.allowedAlg || options.allowedAlg.indexOf(alg) >= 0)) {
+    const hsmKey = hsmKeyOf(options.privateKey);
+    let pre = null;
+    if (JWE_RSA_ALGS.indexOf(alg) >= 0 &&
+        (alg !== 'RSA-OAEP' || mode.allowsLegacyHashes())) {
+      pre = { rsa: await hsmKey.decryptOaep(
+        alg === 'RSA-OAEP' ? 'sha1' : 'sha256', undefined,
+        Buffer.from(parts[1], 'base64url'), true)
+        .catch(function (e) {
+          throw hsmDecryptRefusal(e);
+        }) };
+    } else if (JWE_ECDH_ALGS.indexOf(alg) >= 0 && header.epk &&
+               EC_CURVES[header.epk.crv]) {
+      const sender = nodeCrypto.createPublicKey({ key: header.epk,
+                                                 format: 'jwk' });
+      pre = { z: await hsmKey.deriveEcdh(ecPointOf(sender),
+        EC_FIELD_BYTES[(hsmKey.asymmetricKeyDetails || {}).namedCurve] ||
+        32, true).catch(function (e) {
+          throw hsmDecryptRefusal(e);
+        }) };
+    }
+    if (pre) {
+      log.debug('Leaving decryptJweCompactAsync(). The HSM, off the loop.');
+      return decryptJweCompact(compact, Object.assign({}, options,
+                                                      { hsmPrecomputed: pre }));
+    }
+  }
   // Only a PBES2 JWE this caller would open is derived for: one it is going to
   // refuse anyway costs nothing, and the refusal is decryptJweCompact()'s.
   if (parts.length !== 5 || JWE_PBES2_ALGS.indexOf(alg) === -1 ||
@@ -7736,7 +8192,7 @@ function rsaPairFromPem(pem) {
 // step (the same algorithm OID on both members, the same TBSCertificate)
 // with only the signature itself made by OpenSSL, so the certificate is the
 // one forge would have made, byte for byte under a deterministic padding.
-function signCertificateNatively(cert, privateKeyPem) {
+function signCertificateNatively(cert, privateKeyPem, hsmDeferred) {
   log.debug("Entering signCertificateNatively().");
   cert.md = forge.md.sha256.create();
   cert.signatureOid = cert.siginfo.algorithmOid =
@@ -7744,8 +8200,13 @@ function signCertificateNatively(cert, privateKeyPem) {
   cert.tbsCertificate = forge.pki.getTBSCertificate(cert);
   const tbs = Buffer.from(forge.asn1.toDer(cert.tbsCertificate).getBytes(),
                           'binary');
-  cert.signature = nodeCrypto.sign('sha256', tbs, privateKeyPem)
-                             .toString('binary');
+  // `hsmDeferred` (#1955 P8 follow-up): `selfSignedRsaCertificateOffLoop()`
+  // signs the TBSCertificate with C_SignAsync and writes the signature in.
+  cert.signature = (isHsmKey(privateKeyPem)
+    ? (hsmDeferred
+      ? hsmDeferred.hold(hsmKeyOf(privateKeyPem), 'RS256', tbs, cert)
+      : hsmKeyOf(privateKeyPem).signSync('RS256', tbs))
+    : nodeCrypto.sign('sha256', tbs, privateKeyPem)).toString('binary');
   log.debug("Leaving signCertificateNatively().");
 }
 
@@ -7768,7 +8229,15 @@ function selfSignedRsaCertificate(opts) {
   // burst of realms does not stop this process for a tenth of a second each.
   // forge's generation is node's synchronous one underneath; the certificate
   // built over a given key is the same certificate in every other respect.
-  const pair = options.rsaPrivateKeyPem
+  // A KEY IN THE HSM (#1955 P8): its public half is the certificate's, and
+  // the TBSCertificate is signed by C_Sign (RS256 is sha256WithRSAEncryption
+  // over the same octets `signCertificateNatively()` hands OpenSSL).
+  const hsmKey = isHsmKey(options.rsaPrivateKeyPem)
+    ? hsmKeyOf(options.rsaPrivateKeyPem) : null;
+  const pair = hsmKey
+    ? { publicKey: forge.pki.publicKeyFromPem(hsmKey.publicKey.export({
+          type: 'spki', format: 'pem' })), privateKey: null }
+    : options.rsaPrivateKeyPem
     ? rsaPairFromPem(options.rsaPrivateKeyPem)
     : forge.pki.rsa.generateKeyPair({ bits: options.bits || 2048,
                                       e: 0x10001 });
@@ -7795,8 +8264,10 @@ function selfSignedRsaCertificate(opts) {
   if (options.extensions && options.extensions.length) {
     cert.setExtensions(options.extensions);
   }
-  const privateKeyPem = forge.pki.privateKeyToPem(pair.privateKey);
-  signCertificateNatively(cert, privateKeyPem);
+  const privateKeyPem = hsmKey ? hsmKey.ref
+    : forge.pki.privateKeyToPem(pair.privateKey);
+  signCertificateNatively(cert, hsmKey || privateKeyPem,
+                          options.hsmDeferred);
   const certPem = forge.pki.certificateToPem(cert);
   log.debug('Leaving selfSignedRsaCertificate().');
   return {
@@ -8269,6 +8740,28 @@ function jwkThumbprintUri(jwk) {
 const SIGNING_JWK_PAIR_ALGS = ['ES256', 'ES384', 'EdDSA'];
 
 /**
+ * Generates a post-quantum signing key through `pq_jose.js`.
+ *
+ * An ML-DSA private key is the 32-octet seed (RFC 9964 section 3.2). This
+ * runtime's OpenSSL has to offer the algorithm; `mlDsaAvailable()` is the
+ * question, and a caller that skipped it meets the same refusal here.
+ * @param alg - a JOSE name `pq_jose.generate()` accepts, such as ML-DSA-65
+ * @returns `{ pub, priv }`, both Buffers
+ * @throws Error when the algorithm is unknown or ML-DSA cannot be generated
+ */
+function generatePqKeyPair(alg) {
+  log.debug("Entering generatePqKeyPair(). " + alg);
+  const name = String(alg || '');
+  if (name.indexOf('ML-DSA') === 0 && !mlDsaAvailable()) {
+    log.debug("Leaving generatePqKeyPair(). Unavailable.");
+    throw new Error('this runtime cannot generate an ' + name + ' key');
+  }
+  const pair = pqJose.generate(name);
+  log.debug("Leaving generatePqKeyPair().");
+  return { pub: Buffer.from(pair.pub), priv: Buffer.from(pair.priv) };
+}
+
+/**
  * Generates a signing key pair and returns both halves as JWKs, with the
  * private half also as PKCS#8 PEM.
  *
@@ -8618,6 +9111,87 @@ function decryptionKeyPairProblem(certificatePem, privateKeyPem) {
 }
 
 // ---------------------------------------------------------------------------
+// A TLS CLIENT CERTIFICATE AND ITS KEY, CHECKED AS ONE PAIR (#2254, ASVS
+// 5.0.0 12.3.5). The database connection may present a client certificate
+// (`persistence.databaseTlsClientCertFile` and `…KeyFile`), and a pair that
+// does not hold together is refused at start rather than at a handshake,
+// where the database would answer "certificate authentication failed" and
+// point at itself. What is checked is what node needs to present the pair:
+// one or more PEM certificates (the leaf first, then any intermediates the
+// database does not hold), an unencrypted PEM private key, and that key
+// being the leaf's private half. No algorithm or key size is refused here:
+// the database's TLS library decides what it accepts, and this service drops
+// no algorithm it can present. Never throws.
+// ---------------------------------------------------------------------------
+/**
+ * Checks that a PEM certificate chain and a PEM private key are a pair a TLS
+ * client can present.
+ *
+ * @param certificatePem - the leaf first, then any intermediates
+ * @param privateKeyPem - the leaf's private key, unencrypted
+ * @returns `{ ok: true, keyType, notAfter, subject, certificatePem }`, or
+ *   `{ ok: false, problem, why }` where `problem` is `certificate`, `key` or
+ *   `mismatch`
+ */
+function tlsClientKeyPairProblem(certificatePem, privateKeyPem) {
+  log.debug("Entering tlsClientKeyPairProblem().");
+  const refuse = function (problem, why) {
+    log.debug("Entering refuse().");
+    log.debug("Leaving refuse().");
+    log.debug("Leaving tlsClientKeyPairProblem(). " + problem);
+    return { ok: false, problem: problem, why: why };
+  };
+  const blocks = String(certificatePem || '').match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  if (!blocks.length) {
+    return refuse('certificate', 'it holds no PEM CERTIFICATE block');
+  }
+  const parsed = [];
+  for (let i = 0; i < blocks.length; i++) {
+    try {
+      parsed.push(parseCertificate(blocks[i]));
+    } catch (e) {
+      log.debug("Caught in tlsClientKeyPairProblem(): " +
+                ((e && e.message) || e));
+      return refuse('certificate', 'certificate ' + (i + 1) + ' of ' +
+        blocks.length + ' does not parse as X.509');
+    }
+  }
+  const keyText = String(privateKeyPem || '');
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(keyText) ||
+      /Proc-Type:\s*4,ENCRYPTED/.test(keyText)) {
+    return refuse('key', 'the private key is encrypted; give it as an ' +
+      'unencrypted PEM private key, readable only by this service');
+  }
+  let key;
+  try {
+    key = privateKeyFrom(keyText);
+  } catch (e) {
+    log.debug("Caught in tlsClientKeyPairProblem(): " +
+              ((e && e.message) || e));
+    return refuse('key', 'it does not parse as a PEM private key');
+  }
+  let matches = false;
+  try {
+    matches = parsed[0].checkPrivateKey(key);
+  } catch (e) {
+    log.debug("Caught in tlsClientKeyPairProblem(): " +
+              ((e && e.message) || e));
+    matches = false;
+  }
+  if (!matches) {
+    return refuse('mismatch', 'the private key is not the private half of ' +
+      'the first certificate in the file');
+  }
+  const notAfter = Date.parse(parsed[0].validTo);
+  log.debug("Leaving tlsClientKeyPairProblem().");
+  return { ok: true, keyType: String(key.asymmetricKeyType || ''),
+           notAfter: Number.isFinite(notAfter) ? notAfter : 0,
+           subject: String(parsed[0].subject || ''),
+           certificatePem: blocks.join('\n') + '\n' };
+}
+
+// ---------------------------------------------------------------------------
 // A CERTIFICATE'S KEY, NOT THE CERTIFICATE: SHA-256 over the DER of its
 // SubjectPublicKeyInfo, base64url (#164, 2026-09-26).
 //
@@ -8914,6 +9488,456 @@ function hotpCode(key, counter, opts) {
   const code = String(binary % Math.pow(10, digits)).padStart(digits, '0');
   log.debug('Leaving hotpCode(). ' + digits + ' digits, ' + spec.name + '.');
   return code;
+}
+
+// ---------------------------------------------------------------------------
+// YUBICO OTP (#1955 P5, design S4 and D4).
+//
+// A YubiKey's OTP slot types a string in Yubico's modhex alphabet
+// (`cbdefghijklnrtuv`, one nibble each). The last 32 characters are
+// AES-128-ECB ciphertext of one 16-byte block, with no padding; everything
+// before them is the public identity. The block is the private identity (6),
+// the use counter (uint16 little-endian), the timestamp's low 16 bits, the
+// timestamp's high 8 bits, the session-use counter, 2 random bytes and a
+// CRC-16 (polynomial 0x8408, initialised to 0xffff) whose residual over the
+// whole block is 0xf0b8.
+//
+// **THIS FUNCTION DECRYPTS AND CHECKS THAT CRC. NOTHING ELSE.** Whether the
+// public identity is this person's, whether the counter has been seen, and
+// whether the mechanism is offered are `common/yubiotp.ts` and
+// `common/credentials.ts`. There is no call to YubiCloud: the key never
+// leaves this process, and a validation server is a relationship this
+// service was not configured to have.
+// ---------------------------------------------------------------------------
+
+/** Yubico's modhex alphabet, one character per nibble. */
+const YUBIOTP_MODHEX = 'cbdefghijklnrtuv';
+
+/**
+ * Decodes a modhex string into bytes.
+ *
+ * @param text - the modhex text
+ * @returns the bytes, or null when it is not even modhex
+ */
+function yubiotpModhexDecode(text) {
+  log.debug("Entering yubiotpModhexDecode().");
+  const s = String(text == null ? '' : text);
+  if (!s.length || (s.length % 2) !== 0) {
+    log.debug("Leaving yubiotpModhexDecode(). Not even.");
+    return null;
+  }
+  const out = Buffer.alloc(s.length / 2);
+  for (let i = 0; i < s.length; i += 2) {
+    const hi = YUBIOTP_MODHEX.indexOf(s.charAt(i));
+    const lo = YUBIOTP_MODHEX.indexOf(s.charAt(i + 1));
+    if (hi < 0 || lo < 0) {
+      log.debug("Leaving yubiotpModhexDecode(). Not modhex.");
+      return null;
+    }
+    out[i / 2] = (hi << 4) | lo;
+  }
+  log.debug("Leaving yubiotpModhexDecode(). " + out.length + " byte(s).");
+  return out;
+}
+
+/**
+ * Encodes bytes as modhex.
+ *
+ * @param bytes - the bytes
+ * @returns the modhex text
+ */
+function yubiotpModhexEncode(bytes) {
+  log.debug("Entering yubiotpModhexEncode().");
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+  let out = '';
+  for (let i = 0; i < buf.length; i++) {
+    out += YUBIOTP_MODHEX.charAt((buf[i] >> 4) & 0x0f);
+    out += YUBIOTP_MODHEX.charAt(buf[i] & 0x0f);
+  }
+  log.debug("Leaving yubiotpModhexEncode(). " + out.length +
+            " character(s).");
+  return out;
+}
+
+/**
+ * CRC-16 of a YubiKey OTP block: polynomial 0x8408, initialised to 0xffff.
+ *
+ * @param bytes - the bytes
+ * @returns the residual
+ */
+function yubiotpCrc16(bytes) {
+  log.debug("Entering yubiotpCrc16().");
+  const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes || []);
+  let crc = 0xffff;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let b = 0; b < 8; b++) {
+      const lsb = crc & 1;
+      crc >>>= 1;
+      if (lsb) {
+        crc ^= 0x8408;
+      }
+    }
+  }
+  log.debug("Leaving yubiotpCrc16().");
+  return crc & 0xffff;
+}
+
+// A 16-byte AES key, from a buffer or from hex. Null otherwise. No log of
+// the key.
+function yubiotpKey(key) {
+  log.debug("Entering yubiotpKey().");
+  let buf = null;
+  if (Buffer.isBuffer(key)) {
+    buf = key;
+  } else {
+    const hex = String(key || '').replace(/\s+/g, '');
+    if (/^[0-9a-fA-F]{32}$/.test(hex)) {
+      buf = Buffer.from(hex, 'hex');
+    }
+  }
+  log.debug("Leaving yubiotpKey(). " + (buf && buf.length === 16 ? '16.'
+                                                                 : 'No.'));
+  return buf && buf.length === 16 ? buf : null;
+}
+
+// One AES-128-ECB block, no padding. ECB takes no IV.
+function yubiotpAes(key, block, encrypt) {
+  log.debug("Entering yubiotpAes().");
+  const cipher = encrypt
+    ? nodeCrypto.createCipheriv('aes-128-ecb', key, null)
+    : nodeCrypto.createDecipheriv('aes-128-ecb', key, null);
+  cipher.setAutoPadding(false);
+  const out = Buffer.concat([cipher.update(block), cipher.final()]);
+  log.debug("Leaving yubiotpAes().");
+  return out;
+}
+
+// The 16-byte plaintext's fields. The CRC residual of a genuine block is
+// 0xf0b8; this does not refuse, so a caller can say which check failed.
+function yubiotpFields(plain) {
+  log.debug("Entering yubiotpFields().");
+  if (!plain || plain.length !== 16) {
+    log.debug("Leaving yubiotpFields(). Not a block.");
+    return null;
+  }
+  const fields = {
+    privateId: plain.subarray(0, 6).toString('hex'),
+    use: plain.readUInt16LE(6),
+    timestampLow: plain.readUInt16LE(8),
+    timestampHigh: plain[10],
+    session: plain[11],
+    random: plain.readUInt16LE(12),
+    crc: plain.readUInt16LE(14),
+    crcOk: yubiotpCrc16(plain) === 0xf0b8
+  };
+  log.debug("Leaving yubiotpFields(). crcOk=" + fields.crcOk + ".");
+  return fields;
+}
+
+/**
+ * Decrypts one YubiKey OTP block.
+ *
+ * @param key - the AES-128 key, 16 bytes or 32 hex characters
+ * @param ciphertext - 16 bytes, 32 hex characters, or 32 modhex characters
+ * @returns `{ ok: true, fields }` or `{ ok: false, reason }`
+ */
+function yubiotpDecrypt(key, ciphertext) {
+  log.debug("Entering yubiotpDecrypt().");
+  const aes = yubiotpKey(key);
+  let block = null;
+  if (Buffer.isBuffer(ciphertext) && ciphertext.length === 16) {
+    block = ciphertext;
+  } else if (typeof ciphertext === 'string' &&
+             /^[0-9a-fA-F]{32}$/.test(ciphertext)) {
+    block = Buffer.from(ciphertext, 'hex');
+  } else {
+    block = yubiotpModhexDecode(ciphertext);
+  }
+  if (!aes || !block || block.length !== 16) {
+    log.debug("Leaving yubiotpDecrypt(). Unusable.");
+    return { ok: false, reason: 'shape' };
+  }
+  let plain;
+  try {
+    plain = yubiotpAes(aes, block, false);
+  } catch (e) {
+    log.debug("Caught in yubiotpDecrypt(): " + ((e && e.message) || e));
+    log.debug("Leaving yubiotpDecrypt(). It threw.");
+    return { ok: false, reason: 'unusable' };
+  }
+  const fields = yubiotpFields(plain);
+  log.debug("Leaving yubiotpDecrypt().");
+  return fields ? { ok: true, fields: fields }
+                : { ok: false, reason: 'unusable' };
+}
+
+/**
+ * Encrypts one 16-byte YubiKey OTP block.
+ *
+ * @param key - the AES-128 key
+ * @param plain - 16 bytes, or 32 hex characters
+ * @returns the ciphertext, or null
+ */
+function yubiotpEncrypt(key, plain) {
+  log.debug("Entering yubiotpEncrypt().");
+  const aes = yubiotpKey(key);
+  let block = null;
+  if (Buffer.isBuffer(plain) && plain.length === 16) {
+    block = plain;
+  } else if (typeof plain === 'string' && /^[0-9a-fA-F]{32}$/.test(plain)) {
+    block = Buffer.from(plain, 'hex');
+  }
+  if (!aes || !block) {
+    log.debug("Leaving yubiotpEncrypt(). Unusable.");
+    return null;
+  }
+  let out = null;
+  try {
+    out = yubiotpAes(aes, block, true);
+  } catch (e) {
+    log.debug("Caught in yubiotpEncrypt(): " + ((e && e.message) || e));
+    log.debug("Leaving yubiotpEncrypt(). It threw.");
+    return null;
+  }
+  log.debug("Leaving yubiotpEncrypt().");
+  return out;
+}
+
+/**
+ * HMAC-SHA1 as YK-VAL 2.0 signs a parameter list, base64 with padding.
+ *
+ * @param secret - the client key, base64
+ * @param message - the sorted parameter string
+ * @returns the signature
+ */
+function yubiotpHmacSha1(secret, message) {
+  log.debug("Entering yubiotpHmacSha1().");
+  let key;
+  try {
+    key = Buffer.from(String(secret || ''), 'base64');
+  } catch (e) {
+    log.debug("Caught in yubiotpHmacSha1(): " + ((e && e.message) || e));
+    key = Buffer.alloc(0);
+  }
+  const digest = nodeCrypto.createHmac('sha1', key)
+    .update(String(message == null ? '' : message), 'utf8')
+    .digest('base64');
+  log.debug("Leaving yubiotpHmacSha1().");
+  return digest;
+}
+
+// ---------------------------------------------------------------------------
+// PSKC (RFC 6030) — THE CRYPTOGRAPHY OF A VENDOR'S SEED FILE (#1955 P4).
+//
+// A hardware OATH token's vendor ships its secrets in a Portable Symmetric
+// Key Container, encrypted under a key the buyer is given (section 6.1) or a
+// key derived from a password with PBKDF2 (section 6.2), and — because
+// AES-CBC carries no integrity — MACed under a key that travels inside the
+// file, encrypted under the same key (section 6.1.1). `common/pskc.ts` reads
+// the XML and decides; the three operations it needs on key material are
+// here, for the reason everything cryptographic is: one module chooses the
+// algorithms and does the comparison.
+//
+// **THE ALGORITHMS ARE A CLOSED LIST OF THE RFC'S URIS.** Section 6.1's
+// RECOMMENDED pair (AES-128-CBC, KW-AES128) and its optional AES-192/256 in
+// both modes; HMAC-SHA1 (RECOMMENDED, section 6.1.1) and the SHA-2 MACs.
+// Triple DES and Camellia are refused by name: neither is offered by every
+// OpenSSL build this service runs on, and a seed file made today uses AES.
+//
+// **CBC PADDING IS XML ENCRYPTION'S** (section 5.2 of XML Encryption 1.1:
+// the last octet counts the padding, the rest arbitrary), checked as
+// `openXmlContent()` checks it — the RFC's own Figure 6 is padded that way.
+// A bad count is a refusal here rather than a flag, because what is being
+// opened is a secret checked by its MAC FIRST: the MAC covers the
+// ciphertext, so a wrong key or an altered value is refused before any
+// padding is looked at, and there is no oracle left to protect.
+// ---------------------------------------------------------------------------
+const PSKC_CIPHERS = {
+  'http://www.w3.org/2001/04/xmlenc#aes128-cbc':
+    { mode: 'cbc', keyBytes: 16, name: 'AES-128-CBC' },
+  'http://www.w3.org/2001/04/xmlenc#aes192-cbc':
+    { mode: 'cbc', keyBytes: 24, name: 'AES-192-CBC' },
+  'http://www.w3.org/2001/04/xmlenc#aes256-cbc':
+    { mode: 'cbc', keyBytes: 32, name: 'AES-256-CBC' },
+  'http://www.w3.org/2001/04/xmlenc#kw-aes128':
+    { mode: 'kw', keyBytes: 16, name: 'KW-AES128' },
+  'http://www.w3.org/2001/04/xmlenc#kw-aes192':
+    { mode: 'kw', keyBytes: 24, name: 'KW-AES192' },
+  'http://www.w3.org/2001/04/xmlenc#kw-aes256':
+    { mode: 'kw', keyBytes: 32, name: 'KW-AES256' }
+};
+
+const PSKC_MACS = {
+  'http://www.w3.org/2000/09/xmldsig#hmac-sha1':
+    { hash: 'sha1', name: 'HMAC-SHA1' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha224':
+    { hash: 'sha224', name: 'HMAC-SHA224' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha256':
+    { hash: 'sha256', name: 'HMAC-SHA256' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha384':
+    { hash: 'sha384', name: 'HMAC-SHA384' },
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha512':
+    { hash: 'sha512', name: 'HMAC-SHA512' }
+};
+
+// PKCS #5's PRF URIs as XML Encryption 1.1 names them; an empty <PRF/> is
+// PBKDF2's default, HMAC-SHA1 (RFC 8018 appendix A.2), which is Figure 7's.
+const PSKC_PRFS = {
+  '': 'sha1',
+  'http://www.w3.org/2000/09/xmldsig#hmac-sha1': 'sha1',
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha256': 'sha256',
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha384': 'sha384',
+  'http://www.w3.org/2001/04/xmldsig-more#hmac-sha512': 'sha512'
+};
+
+// A sender's iteration count is bounded before anything is derived, for
+// PBES2's reason above: the file chooses it, and above this bound it is the
+// file choosing how much of libuv's pool an import spends.
+const PSKC_MAX_ITERATIONS = 2000000;
+
+/**
+ * Says what a PSKC algorithm URI is, or that it is not one this service
+ * opens.
+ *
+ * @param uri - an EncryptionMethod, MACMethod or PRF Algorithm
+ * @returns `{ kind: 'cipher' | 'mac' | 'prf', name }`, or null
+ */
+function pskcAlgorithm(uri) {
+  log.debug("Entering pskcAlgorithm().");
+  const u = String(uri || '');
+  let out = null;
+  if (PSKC_CIPHERS[u]) {
+    out = { kind: 'cipher', name: PSKC_CIPHERS[u].name,
+            keyBytes: PSKC_CIPHERS[u].keyBytes };
+  } else if (PSKC_MACS[u]) {
+    out = { kind: 'mac', name: PSKC_MACS[u].name };
+  }
+  log.debug("Leaving pskcAlgorithm().");
+  return out;
+}
+
+/**
+ * Decrypts one PSKC encrypted value (RFC 6030 section 6.1): IV-prefixed
+ * AES-CBC with XML Encryption's padding, or AES Key Wrap.
+ *
+ * @param algorithmUri - the EncryptionMethod's Algorithm
+ * @param key - the decryption key
+ * @param cipherValue - the CipherValue's bytes
+ * @returns the plaintext
+ * @throws Error naming what was wrong (never the key)
+ */
+function pskcDecrypt(algorithmUri, key, cipherValue) {
+  log.debug("Entering pskcDecrypt().");
+  const spec = PSKC_CIPHERS[String(algorithmUri || '')];
+  if (!spec) {
+    log.debug("Leaving pskcDecrypt(). Not an algorithm here.");
+    throw new Error('the encryption algorithm ' + String(algorithmUri) +
+                    ' is not one this service opens');
+  }
+  const k = Buffer.from(key || []);
+  if (k.length !== spec.keyBytes) {
+    log.debug("Leaving pskcDecrypt(). Wrong key length.");
+    throw new Error(spec.name + ' needs a ' + spec.keyBytes + '-octet key; ' +
+                    'the key given is ' + k.length + ' octets');
+  }
+  const raw = Buffer.from(cipherValue || []);
+  if (spec.mode === 'kw') {
+    const out = aesKeyUnwrap(k, raw);
+    log.debug("Leaving pskcDecrypt(). Unwrapped.");
+    return out;
+  }
+  const body = raw.subarray(16);
+  if (raw.length < 32 || body.length % 16) {
+    log.debug("Leaving pskcDecrypt(). Not whole blocks.");
+    throw new Error('the ' + spec.name + ' value is not an IV and whole ' +
+                    'blocks');
+  }
+  const cbc = nodeCrypto.createDecipheriv('aes-' + (k.length * 8) + '-cbc', k,
+                                          raw.subarray(0, 16));
+  cbc.setAutoPadding(false);
+  const padded = Buffer.concat([cbc.update(body), cbc.final()]);
+  const count = padded[padded.length - 1];
+  if (count < 1 || count > 16) {
+    log.debug("Leaving pskcDecrypt(). Bad padding.");
+    throw new Error('the ' + spec.name + ' value did not decrypt: the key ' +
+                    'is wrong or the value was altered');
+  }
+  log.debug("Leaving pskcDecrypt(). CBC.");
+  return padded.subarray(0, padded.length - count);
+}
+
+/**
+ * Checks a PSKC ValueMAC (RFC 6030 section 6.1.1): the keyed MAC over the
+ * encrypted value's bytes, compared in constant time.
+ *
+ * @param algorithmUri - the MACMethod's Algorithm
+ * @param macKey - the MAC key, already decrypted
+ * @param cipherValue - the encrypted value's bytes (IV included)
+ * @param presented - the ValueMAC's bytes
+ * @returns true when it verifies
+ * @throws Error for a MAC algorithm this service does not compute
+ */
+function pskcMacVerifies(algorithmUri, macKey, cipherValue, presented) {
+  log.debug("Entering pskcMacVerifies().");
+  const spec = PSKC_MACS[String(algorithmUri || '')];
+  if (!spec) {
+    log.debug("Leaving pskcMacVerifies(). Not an algorithm here.");
+    throw new Error('the MAC algorithm ' + String(algorithmUri) +
+                    ' is not one this service computes');
+  }
+  const mac = nodeCrypto.createHmac(spec.hash, Buffer.from(macKey || []))
+    .update(Buffer.from(cipherValue || [])).digest();
+  // As base64: constantTimeEquals() compares TEXT, and raw octets turned
+  // into a string would not survive the round trip.
+  const ok = constantTimeEquals(mac.toString('base64'),
+                                Buffer.from(presented || []).toString('base64'));
+  log.debug("Leaving pskcMacVerifies(). " + ok);
+  return ok;
+}
+
+/**
+ * Derives a PSKC passphrase key with PBKDF2 (RFC 6030 section 6.2, RFC
+ * 8018) on libuv's thread pool, the iteration count bounded first.
+ *
+ * @param password - the passphrase, as its UTF-8 octets
+ * @param salt - the salt's bytes
+ * @param iterations - the IterationCount
+ * @param keyLength - the KeyLength in octets
+ * @param prfUri - the PRF's Algorithm ('' for PBKDF2's default HMAC-SHA1)
+ * @returns a promise of the key
+ */
+function pskcDeriveKeyAsync(password, salt, iterations, keyLength, prfUri) {
+  log.debug("Entering pskcDeriveKeyAsync().");
+  const hash = PSKC_PRFS[String(prfUri || '')];
+  const n = Math.floor(Number(iterations));
+  const length = Math.floor(Number(keyLength));
+  if (!hash) {
+    log.debug("Leaving pskcDeriveKeyAsync(). Unknown PRF.");
+    return Promise.reject(new Error('the PBKDF2 PRF ' + String(prfUri) +
+                                    ' is not one this service computes'));
+  }
+  if (!(n >= 1 && n <= PSKC_MAX_ITERATIONS) ||
+      [16, 24, 32].indexOf(length) < 0) {
+    log.debug("Leaving pskcDeriveKeyAsync(). Out of bounds.");
+    return Promise.reject(new Error('PBKDF2 needs an iteration count from ' +
+      '1 to ' + PSKC_MAX_ITERATIONS + ' and a key length of 16, 24 or 32 ' +
+      'octets'));
+  }
+  log.debug("Leaving pskcDeriveKeyAsync(). Deriving.");
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.pbkdf2(Buffer.from(String(password || ''), 'utf8'),
+                      Buffer.from(salt || []), n, length, hash,
+                      function (err, key) {
+                        if (err) {
+                          log.debug('Caught in pskcDeriveKeyAsync(): ' +
+                                    ((err && err.message) || err));
+                          reject(err);
+                          return;
+                        }
+                        resolve(key);
+                      });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -10498,6 +11522,55 @@ function verifySecretAsync(plaintext, stored) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A PASSWORD HASH NOBODY HOLDS (#2136, ASVS 5.0.0 6.3.8 and 11.2.4).
+//
+// A refusal that needs no comparison — nobody by that name, a stored value
+// this service cannot read, a disabled account — used to come back at once,
+// while a wrong password for a real person cost a whole derivation (about
+// 68 ms at scrypt's N=2^15). The difference was the answer to "does this
+// account exist", whatever the response said. `credentials.ts` now verifies
+// the presented password against THIS hash on those paths and discards the
+// result, so both cost one derivation at the policy's parameters.
+//
+// MADE ONCE PER PROCESS PER SPEC, from a random value nobody knows, so it
+// matches no password; a policy whose parameters change gets a new one at
+// the first refusal after the change (the spec is the key). Bounded, because
+// a spec comes from the realms' password policies and an administrator can
+// make as many of those as they like: past the bound the memo starts again,
+// which costs one more hash and nothing else.
+// ---------------------------------------------------------------------------
+const DECOY_HASH_LIMIT = 32;
+const decoyHashes = new Map();
+
+/**
+ * Answers a password hash at this spec's parameters that no password
+ * matches, made once per process per spec. What a refusal that needed no
+ * comparison verifies against, so it costs what a wrong password does
+ * (#2136).
+ *
+ * @param spec - the policy's hash spec (`passwordHashSpec()`'s input)
+ * @returns the stored form
+ */
+function decoyPasswordHash(spec) {
+  log.debug('Entering decoyPasswordHash().');
+  const use = passwordHashSpec(spec);
+  const key = JSON.stringify(use);
+  const held = decoyHashes.get(key);
+  if (held) {
+    log.debug('Leaving decoyPasswordHash(). Made already.');
+    return held;
+  }
+  if (decoyHashes.size >= DECOY_HASH_LIMIT) {
+    decoyHashes.clear();
+  }
+  const made = hashPassword(nodeCrypto.randomBytes(32).toString('base64url'),
+                            use);
+  decoyHashes.set(key, made);
+  log.debug('Leaving decoyPasswordHash(). Made for ' + use.algorithm + '.');
+  return made;
+}
+
 // ===========================================================================
 // SECTION 8 — SIGNATURES OVER RAW BYTES, AND THE TPM 2.0 KEY DERIVATION
 // (#40, 2026-09-21).
@@ -10686,13 +11759,16 @@ async function verifyRawSignature(scheme, key, data, signature) {
 // THE SIGNING HALF OF THE PRIMITIVE ABOVE (#194-#196, 2026-09-26), for the
 // Data Integrity cryptosuites that sign bytes rather than a JWS: the RDFC
 // suites, and ecdsa-sd-2023's base and per-statement signatures. Same
-// `scheme` (families 'ecdsa' and 'eddsa' only — nothing here signs raw bytes
-// with RSA, and a post-quantum signature goes through `pq_jose`);
-// `privateKey` is a node KeyObject or a private JWK. Throws for a key of the
-// wrong kind, because a signer handed the wrong key is a bug, not an input.
+// `scheme` (families 'ecdsa' and 'eddsa', and since #1955 P3 'rsa-pkcs1'
+// over SHA-256 or SHA-512 only — the SSH user certificate authority's
+// rsa-sha2-256 and rsa-sha2-512, RFC 8332; SHA-1, OpenSSH's `ssh-rsa`
+// signature, is never made here); a post-quantum signature goes through
+// `pq_jose`. `privateKey` is a node KeyObject or a private JWK. Throws for a
+// key of the wrong kind, because a signer handed the wrong key is a bug, not
+// an input.
 /**
- * Signs raw bytes with ECDSA or EdDSA, for the Data Integrity
- * cryptosuites.
+ * Signs raw bytes with ECDSA, EdDSA or RSA PKCS#1 v1.5 (SHA-256 or
+ * SHA-512), for the Data Integrity cryptosuites and the SSH user CA.
  *
  * @param scheme - as for `verifyRawSignature()`
  * @param privateKey - a KeyObject or a private JWK
@@ -10705,8 +11781,7 @@ function signRawSignature(scheme, privateKey, data) {
   log.debug("Entering signRawSignature(). " + s.family + "/" +
             (s.hash || ''));
   if (s.family === 'pq') {
-    const pq = Buffer.from(pqJose.sign(s.alg, pqPrivateBytes(privateKey),
-                                       Buffer.from(data || [])));
+    const pq = pqSignBytes(s.alg, privateKey, data);
     log.debug("Leaving signRawSignature(). " + s.alg);
     return pq;
   }
@@ -10724,6 +11799,14 @@ function signRawSignature(scheme, privateKey, data) {
   if (s.family === 'eddsa' && (type === 'ed25519' || type === 'ed448')) {
     const out = nodeCrypto.sign(null, message, key);
     log.debug("Leaving signRawSignature(). EdDSA.");
+    return out;
+  }
+  // RFC 8332 (#1955 P3): rsa-sha2-256 and rsa-sha2-512 and nothing weaker.
+  if (s.family === 'rsa-pkcs1' && type === 'rsa' &&
+      (s.hash === 'sha256' || s.hash === 'sha512')) {
+    const out = nodeCrypto.sign(s.hash, message, { key: key,
+      padding: nodeCrypto.constants.RSA_PKCS1_PADDING });
+    log.debug("Leaving signRawSignature(). RSA PKCS#1 v1.5.");
     return out;
   }
   log.debug("Leaving signRawSignature(). Refused.");
@@ -10747,8 +11830,7 @@ async function signRawSignatureAsync(scheme, privateKey, data) {
     log.debug("Leaving signRawSignatureAsync(). In process.");
     return signRawSignature(s, privateKey, data);
   }
-  const out = Buffer.from(await pqJose.signAsync(s.alg,
-    pqPrivateBytes(privateKey), Buffer.from(data || [])));
+  const out = await pqSignBytesAsync(s.alg, privateKey, data);
   log.debug("Leaving signRawSignatureAsync(). " + s.alg);
   return out;
 }
@@ -11484,7 +12566,7 @@ function coseSign1Sign(coseAlg, key, protectedBytes, payload, options) {
   const toBeSigned = coseSigStructure(protectedBytes,
                                       options && options.external, payload);
   const signature = spec.family === 'pq'
-    ? Buffer.from(pqJose.sign(spec.name, pqPrivateBytes(key), toBeSigned))
+    ? pqSignBytes(spec.name, key, toBeSigned)
     : signBytes(spec.hash, toBeSigned, coseSignParams(spec, key));
   log.debug("Leaving coseSign1Sign().");
   return signature;
@@ -11508,8 +12590,8 @@ async function coseSign1SignAsync(coseAlg, key, protectedBytes, payload,
     log.debug("Leaving coseSign1SignAsync(). In process.");
     return coseSign1Sign(coseAlg, key, protectedBytes, payload, options);
   }
-  const out = Buffer.from(await pqJose.signAsync(spec.name, pqPrivateBytes(key),
-    coseSigStructure(protectedBytes, options && options.external, payload)));
+  const out = await pqSignBytesAsync(spec.name, key,
+    coseSigStructure(protectedBytes, options && options.external, payload));
   log.debug("Leaving coseSign1SignAsync().");
   return out;
 }
@@ -12376,6 +13458,171 @@ function csrAttestationBundle(der) {
   return { attestations: attestations, certs: certs, otherCerts: otherCerts };
 }
 
+// ----- YubiKey PIV key attestation (#1955 P2) -------------------------------
+//
+// `ykman piv keys attest` (YKPIV's ATTEST instruction) answers a certificate
+// for a slot's key, signed by the key's factory "f9" attestation key, and
+// `common/piv_attestation.ts` verifies it. What it reads off that certificate
+// is Yubico's extensions under 1.3.6.1.4.1.41482.3, decoded here as every
+// other vendor's extension is (section 10 above). Yubico's PIV attestation
+// page (developers.yubico.com/PIV/Introduction/PIV_attestation.html) and its
+// OID page (.../Yubico_Attestation_OID.html) define them:
+//
+//   .3.3  firmware: "encoded as 3 bytes, like: 040300 for 4.3.0" — raw
+//         octets (major, minor, patch), not DER-wrapped;
+//   .3.7  serial: "encoded as an integer" — the DER of an INTEGER on every
+//         key we know of; the page does not say DER, so a value that is
+//         not one is read as a raw big-endian integer of 1 to 8 octets;
+//   .3.8  two octets: the PIN policy, then the touch policy. PIN: 01 never,
+//         02 once per session, 03 always; YubiKit's PinPolicy adds 04
+//         match-once and 05 match-always for the Bio series, read here and
+//         drawn as such. Touch: 01 never, 02 always, 03 cached (15 s);
+//   .3.9  one octet: the form factor, 01 USB-A keychain, 02 USB-A nano,
+//         03 USB-C keychain, 04 USB-C nano, 05 USB-C and Lightning (YubiKit
+//         adds 06 USB-A Bio and 07 USB-C Bio); the page gives 81-85 for FIPS
+//         keys, read as the 0x80 bit, and YubiKit's 0x40 is CSPN;
+//   .3.10 and .3.11: present only on the factory f9 certificate, of a FIPS
+//         and of a CSPN certified key; PRESENCE is their whole meaning.
+//
+// A value that cannot be read is answered as '' rather than guessed, and the
+// caller's policy then sees "not stated", which refuses wherever the policy
+// asks for that fact.
+/** The statement type this service reads a YubiKey PIV attestation under. */
+const YUBICO_PIV_STATEMENT = '1.3.6.1.4.1.41482.3.2';
+/** Yubico's PIV attestation extension OIDs, by what they carry. */
+const YUBICO_PIV_EXTENSIONS = Object.freeze({
+  firmware: '1.3.6.1.4.1.41482.3.3',
+  serial: '1.3.6.1.4.1.41482.3.7',
+  policy: '1.3.6.1.4.1.41482.3.8',
+  formFactor: '1.3.6.1.4.1.41482.3.9',
+  fips: '1.3.6.1.4.1.41482.3.10',
+  cspn: '1.3.6.1.4.1.41482.3.11'
+});
+const YUBICO_PIN_POLICIES = { 1: 'never', 2: 'once', 3: 'always',
+                              4: 'match-once', 5: 'match-always' };
+const YUBICO_TOUCH_POLICIES = { 1: 'never', 2: 'always', 3: 'cached' };
+const YUBICO_FORM_FACTORS = {
+  1: { name: 'USB-A Keychain', shape: 'usb-a' },
+  2: { name: 'USB-A Nano', shape: 'usb-a' },
+  3: { name: 'USB-C Keychain', shape: 'usb-c' },
+  4: { name: 'USB-C Nano', shape: 'usb-c' },
+  5: { name: 'USB-C and Lightning', shape: 'lightning' },
+  6: { name: 'USB-A Bio', shape: 'usb-a' },
+  7: { name: 'USB-C Bio', shape: 'usb-c' }
+};
+
+// The serial's integer, from a DER INTEGER or from raw octets.
+function yubicoSerialOf(bytes) {
+  log.debug("Entering yubicoSerialOf().");
+  let raw = Buffer.from(bytes || []);
+  if (raw.length >= 3 && raw[0] === 0x02 && raw[1] === raw.length - 2) {
+    raw = raw.subarray(2);
+  }
+  if (!raw.length || raw.length > 8) {
+    log.debug("Leaving yubicoSerialOf(). Unreadable.");
+    return '';
+  }
+  let n = BigInt(0);
+  for (const octet of raw) {
+    n = (n << BigInt(8)) | BigInt(octet);
+  }
+  log.debug("Leaving yubicoSerialOf().");
+  return n.toString(10);
+}
+
+/**
+ * Reads Yubico's PIV attestation extensions off an attestation
+ * certificate's extensions, as `pki.attestationCertificateFacts()` answers
+ * them.
+ *
+ * @param extensions - `{ oid: { critical, value } }`
+ * @returns `{ firmware, serial, pinPolicy, touchPolicy, formFactor,
+ *   formFactorName, shape, fips, cspn }`, each '' (or false) where the
+ *   certificate does not state it readably
+ */
+function yubicoPivAttestationFacts(extensions) {
+  log.debug("Entering yubicoPivAttestationFacts().");
+  const ext = extensions || {};
+  const valueOf = function (oid) {
+    return ext[oid] && ext[oid].value ? Buffer.from(ext[oid].value) : null;
+  };
+  const out = { firmware: '', serial: '', pinPolicy: '', touchPolicy: '',
+                formFactor: 0, formFactorName: '', shape: '', fips: false,
+                cspn: false };
+  let fw = valueOf(YUBICO_PIV_EXTENSIONS.firmware);
+  if (fw && fw.length === 5 && fw[0] === 0x04 && fw[1] === 3) {
+    fw = fw.subarray(2);
+  }
+  if (fw && fw.length === 3) {
+    out.firmware = fw[0] + '.' + fw[1] + '.' + fw[2];
+  }
+  const serial = valueOf(YUBICO_PIV_EXTENSIONS.serial);
+  out.serial = serial ? yubicoSerialOf(serial) : '';
+  const policy = valueOf(YUBICO_PIV_EXTENSIONS.policy);
+  if (policy && policy.length === 2) {
+    out.pinPolicy = YUBICO_PIN_POLICIES[policy[0]] || '';
+    out.touchPolicy = YUBICO_TOUCH_POLICIES[policy[1]] || '';
+  }
+  const shape = valueOf(YUBICO_PIV_EXTENSIONS.formFactor);
+  if (shape && shape.length === 1) {
+    const known = YUBICO_FORM_FACTORS[shape[0] & 0x0f];
+    out.formFactor = shape[0];
+    out.formFactorName = known ? known.name : '';
+    out.shape = known ? known.shape : 'other';
+    out.fips = (shape[0] & 0x80) !== 0;
+    out.cspn = (shape[0] & 0x40) !== 0;
+  }
+  if (valueOf(YUBICO_PIV_EXTENSIONS.fips)) {
+    out.fips = true;
+  }
+  if (valueOf(YUBICO_PIV_EXTENSIONS.cspn)) {
+    out.cspn = true;
+  }
+  log.debug("Leaving yubicoPivAttestationFacts(). serial " +
+            (out.serial ? 'read' : 'absent') + ".");
+  return out;
+}
+
+// A certificate's certificatePolicies (RFC 5280 section 4.2.1.4): the
+// policy identifiers, in order, or [] when it carries none. Read for the
+// FIPS 201 PIV Authentication policy an outside PIV or CAC card's
+// certificate asserts (#1955 P2, D8).
+/**
+ * Lists a certificate's certificatePolicies identifiers.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns the policy OIDs, dotted
+ */
+function certificatePolicyOids(cert) {
+  log.debug("Entering certificatePolicyOids().");
+  const out = [];
+  try {
+    const parsed = parseCertificate(cert);
+    const pkijs = require('pkijs');
+    const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+    (pk.extensions || []).forEach(function (ext) {
+      if (ext.extnID !== '2.5.29.32') {
+        return;
+      }
+      const node = berOf(Buffer.from(ext.extnValue.valueBlock.valueHexView));
+      ((node && node.valueBlock && node.valueBlock.value) || [])
+        .forEach(function (info) {
+          const first = info && info.valueBlock && info.valueBlock.value &&
+            info.valueBlock.value[0];
+          if (first instanceof asn1js.ObjectIdentifier) {
+            out.push(first.valueBlock.toString());
+          }
+        });
+    });
+  } catch (e) {
+    log.debug("Caught in certificatePolicyOids(): " +
+              ((e && e.message) || e));
+    // Unreadable policies assert nothing; the caller refuses on absence.
+  }
+  log.debug("Leaving certificatePolicyOids(). " + out.length);
+  return out;
+}
+
 // A TPM2B's contents when `bytes` is exactly one TPM2B (a big-endian size
 // then that many bytes), else `bytes` unchanged. Revision 20's appendix said
 // the attester sends "TPM2B_ATTEST in binary format" and "TPM2B_PUBLIC"
@@ -12965,6 +14212,45 @@ function dkimSign(raw, opts) {
   log.debug('Leaving dkimSign(). ' + algorithm + ', d=' + domain + ', s=' +
             selector + ', ' + signed.length + ' header(s).');
   return 'DKIM-Signature: ' + tags + signature.toString('base64');
+}
+
+// ---------------------------------------------------------------------------
+// THE DNS RECORD A SELECTOR PUBLISHES (#2220): what the operator puts in the
+// TXT record `<selector>._domainkey.<domain>` before mail is signed with the
+// key, and what the selector switch compares DNS's answer with. RFC 6376
+// section 3.6.1: `p=` is the base64 of the public key — for RSA its
+// SubjectPublicKeyInfo DER, for Ed25519 (RFC 8463 section 4.2) the bare 32
+// bytes.
+// ---------------------------------------------------------------------------
+/**
+ * Builds the DKIM key record (RFC 6376 section 3.6.1, RFC 8463) a private
+ * key's selector publishes in DNS.
+ *
+ * @param privateKeyPem - the selector's private key
+ * @returns `{ record, p }`: the TXT record's text, and its `p=` value alone
+ * @throws Error when the key is neither RSA nor Ed25519
+ */
+function dkimDnsRecord(privateKeyPem) {
+  log.debug('Entering dkimDnsRecord().');
+  const key = nodeCrypto.createPublicKey(nodeCrypto.createPrivateKey(
+    privateKeyPem));
+  let p;
+  let k;
+  if (key.asymmetricKeyType === 'rsa') {
+    k = 'rsa';
+    p = key.export({ type: 'spki', format: 'der' }).toString('base64');
+  } else if (key.asymmetricKeyType === 'ed25519') {
+    k = 'ed25519';
+    // The last 32 bytes of the 44-byte SubjectPublicKeyInfo are the key.
+    p = key.export({ type: 'spki', format: 'der' }).subarray(-32)
+      .toString('base64');
+  } else {
+    log.debug('Leaving dkimDnsRecord(). Not RSA or Ed25519.');
+    throw new Error('a DKIM key is RSA or Ed25519; this key is ' +
+                    (key.asymmetricKeyType || 'unknown'));
+  }
+  log.debug('Leaving dkimDnsRecord(). ' + k + '.');
+  return { record: 'v=DKIM1; k=' + k + '; p=' + p, p: p };
 }
 
 // ---------------------------------------------------------------------------
@@ -14462,7 +15748,12 @@ function httpsigCheckKey(name, entry, key, purpose) {
     log.debug("Leaving httpsigCheckKey(). Secret.");
     return null;
   }
-  if (!(key instanceof nodeCrypto.KeyObject) || key.type === 'secret' ||
+  // A realm key in the HSM (#1955 P8 follow-up) answers `type`,
+  // `asymmetricKeyType` and `asymmetricKeyDetails` as a KeyObject does, and
+  // is checked by them; it signs and never verifies.
+  const hsmSigner = purpose === 'sign' && isHsmKey(key);
+  if ((!(key instanceof nodeCrypto.KeyObject) && !hsmSigner) ||
+      key.type === 'secret' ||
       (purpose === 'sign' && key.type !== 'private')) {
     log.debug("Leaving httpsigCheckKey(). Not an asymmetric key.");
     return httpsigRefuse('STS-KEYS-0131',
@@ -14516,8 +15807,20 @@ function httpsigCheckKey(name, entry, key, purpose) {
 // HTTP_SIGN, section 3.3. Throws whatever the primitive throws; callers map
 // it. A post-quantum or composite JWS algorithm is signed by
 // `jwsSignatureOver()`, the function that signs it inside a JWS.
-function httpsigRawSign(entry, key, data) {
+function httpsigRawSign(entry, key, data, hsmDeferred) {
   log.debug("Entering httpsigRawSign(). " + entry.kind);
+  // A REALM KEY IN THE HSM (#1955 P8 follow-up): C_Sign under the JWS name
+  // the entry's algorithm is in the engine — or, handed a `hsmDeferred` by
+  // `signHttpMessageOffLoop()`, the signature deferred to C_SignAsync.
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const hsmAlg = hsmSigningAlg(hsmKey, httpsigJwsName(entry));
+    const hsmOut = hsmDeferred
+      ? hsmDeferred.hold(hsmKey, hsmAlg, data)
+      : hsmKey.signSync(hsmAlg, data);
+    log.debug("Leaving httpsigRawSign(). In the HSM, " + hsmAlg + ".");
+    return hsmOut;
+  }
   let out;
   switch (entry.kind) {
     case 'jws-pq':
@@ -14544,6 +15847,26 @@ function httpsigRawSign(entry, key, data) {
   }
   log.debug("Leaving httpsigRawSign().");
   return out;
+}
+
+// The JWS name of an HTTP signature algorithm's entry, which is what the
+// PKCS#11 engine signs by: RFC 9421 section 3.3's rows map onto RS256,
+// PS512, ES256, ES384 and EdDSA, with the same hash, salt and curve.
+function httpsigJwsName(entry) {
+  log.debug("Entering httpsigJwsName(). " + entry.kind);
+  if (entry.jws) {
+    log.debug("Leaving httpsigJwsName(). " + entry.jws);
+    return entry.jws;
+  }
+  const bits = String(entry.hash || '').replace(/^sha/, '');
+  const named = entry.kind === 'rsa-v1_5' ? 'RS' + bits
+    : entry.kind === 'rsa-pss' ? 'PS' + bits
+    : entry.kind === 'ecdsa'
+      ? ({ prime256v1: 'ES256', secp384r1: 'ES384',
+           secp521r1: 'ES512' }[String(entry.curve)] || '')
+    : entry.kind === 'eddsa' ? 'EdDSA' : '';
+  log.debug("Leaving httpsigJwsName(). " + named);
+  return named;
 }
 
 // HTTP_VERIFY, section 3.3. The HMAC comparison is constant-time, and a
@@ -14669,7 +15992,9 @@ function signHttpMessage(message, options) {
   }
   let signingKey;
   try {
-    signingKey = httpsigKeyOf(entry, opts.key, 'sign');
+    // An HSM key's reference is its key object (#1955 P8 follow-up).
+    signingKey = isHsmKey(opts.key) ? hsmKeyOf(opts.key)
+                                    : httpsigKeyOf(entry, opts.key, 'sign');
   } catch (e) {
     log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
     log.debug("Leaving signHttpMessage(). The key cannot be read.");
@@ -14692,7 +16017,7 @@ function signHttpMessage(message, options) {
   let signatureBytes;
   try {
     signatureBytes = httpsigRawSign(entry, signingKey, Buffer.from(built.base,
-                                  'ascii'));
+                                  'ascii'), opts.hsmDeferred);
   } catch (e) {
     log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
     log.debug("Leaving signHttpMessage(). Primitive threw.");
@@ -14714,6 +16039,51 @@ function signHttpMessage(message, options) {
     base: built.base,
     signatureBytes: signatureBytes
   };
+}
+
+/**
+ * `signHttpMessage()`, with a realm key in the HSM signing off the event
+ * loop (#1955 P8 follow-up): the signature base is built here, C_SignAsync
+ * signs it, and the signature is written into the answer. Any other key is
+ * `signHttpMessage()` itself, resolved.
+ *
+ * @param message - the HTTP message
+ * @param options - as for `signHttpMessage()`
+ * @returns a promise of `signHttpMessage()`'s answer
+ */
+async function signHttpMessageOffLoop(message, options) {
+  log.debug("Entering signHttpMessageOffLoop().");
+  const opts = options || {};
+  if (!isHsmKey(opts.key)) {
+    log.debug("Leaving signHttpMessageOffLoop(). signHttpMessage().");
+    return signHttpMessage(message, opts);
+  }
+  const deferral = hsmSignDeferral();
+  const pending = signHttpMessage(message,
+    Object.assign({}, opts, { hsmDeferred: deferral }));
+  if (!pending || !pending.ok) {
+    log.debug("Leaving signHttpMessageOffLoop(). Refused.");
+    return pending;
+  }
+  let made;
+  try {
+    made = await hsmDeferredSignature(deferral);
+  } catch (e) {
+    log.debug("Caught in signHttpMessageOffLoop(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving signHttpMessageOffLoop(). The HSM refused.");
+    return httpsigRefuse('STS-KEYS-0136',
+                         'Signing with ' + pending.algorithm +
+                         ' failed inside the cryptographic library: ' +
+                         ((e && e.message) || e));
+  }
+  log.debug("Leaving signHttpMessageOffLoop(). In the HSM.");
+  return Object.assign({}, pending, {
+    signature: opts.label + '=' +
+               sf.serializeItem({ type: 'bytes', value: made.signature,
+                                  params: [] }),
+    signatureBytes: made.signature
+  });
 }
 
 function httpsigHeaderKeyFor(headers, name) {
@@ -15431,6 +16801,10 @@ function publicKeyFromJwk(jwk) {
  */
 function publicKeyOf(key) {
   log.debug("Entering publicKeyOf().");
+  if (isHsmKey(key)) {
+    log.debug("Leaving publicKeyOf(). An HSM key's.");
+    return hsmKeyOf(key).publicKey;
+  }
   const out = key && key.type === 'public' ? key
                                            : nodeCrypto.createPublicKey(key);
   log.debug("Leaving publicKeyOf().");
@@ -15487,8 +16861,14 @@ const SHA1_PURPOSES = Object.freeze({
   'ocsp-cert-id': 'RFC 6960 section 4.1.1',
   // RFC 4556 section 3.2.1 item 6: PKINIT's paChecksum MUST be present and is
   // SHA-1, and RFC 8636 section 9 leaves it so. `kerberos/krb5_pkinit.ts` says
-  // what the request's security rests on instead.
+  // what the request's security rests on instead, and checks MS-PKCA's
+  // paChecksum2 over SHA-2 beside it when a client sends one (#2125).
   'pkinit-pachecksum': 'RFC 4556 section 3.2.1, RFC 8636 section 9',
+  // MS-PKCA section 2.2.3: PAChecksum2 MAY name SHA-1 (#2125). Verified only
+  // where `kerberos/krb5_pkinit.ts` lets it be — never in product unless
+  // crypto.allowLegacyHashes is on — because MS-PKCA says a PAChecksum2
+  // that is present "will always be validated even if it is SHA-1".
+  'pkinit-pachecksum2': 'MS-PKCA section 2.2.3',
   // RFC 5019 section 6.2 RECOMMENDS an OCSP response's ETag be the hex
   // SHA-1 of the response. Opaque to the client, which only compares it.
   'ocsp-etag': 'RFC 5019 section 6.2',
@@ -15605,6 +16985,13 @@ function isParsedCertificate(value) {
  */
 function privateKeyFrom(input) {
   log.debug("Entering privateKeyFrom().");
+  // A signing key in the HSM (#1955 P8): its reference is its PEM, and this
+  // is where every structure that re-parses a PEM gets the key back.
+  if (isHsmKey(input)) {
+    const hsm = hsmKeyOf(input);
+    log.debug("Leaving privateKeyFrom(). In the HSM.");
+    return hsm;
+  }
   const key = input && input.type === 'private' &&
               input instanceof nodeCrypto.KeyObject
     ? input
@@ -18008,6 +19395,67 @@ function pkinitPaChecksumMatches(reqBodyBytes, claimed) {
          nodeCrypto.timingSafeEqual(given, computed);
 }
 
+// MS-PKCA SECTION 2.2.3's PAChecksum2 (#2125, ASVS 5.0.0 11.4.3): Microsoft's
+// answer to the SHA-1 above, the same KDC-REQ-BODY's digest under an
+// algorithm the client names. The four the section lists, by OID; anything
+// else is not a PAChecksum2 this KDC can check. `legacy` marks the one a
+// product KDC refuses (`kerberos/krb5_pkinit.ts` decides, through
+// `mode.allowsLegacyHashes()`): MS-PKCA admits SHA-1 here, and a client that
+// sends it buys nothing over the paChecksum it already carries.
+/** PAChecksum2's digests, by OID (MS-PKCA section 2.2.3, RFC 5754). */
+const PKINIT_PACHECKSUM2_DIGESTS = Object.freeze({
+  '1.3.14.3.2.26': { id: 'sha1', label: 'SHA-1', legacy: true },
+  '2.16.840.1.101.3.4.2.1': { id: 'sha256', label: 'SHA-256', legacy: false },
+  '2.16.840.1.101.3.4.2.2': { id: 'sha384', label: 'SHA-384', legacy: false },
+  '2.16.840.1.101.3.4.2.3': { id: 'sha512', label: 'SHA-512', legacy: false }
+});
+
+/**
+ * Describes the digest a PAChecksum2 names.
+ *
+ * @param oid - the AlgorithmIdentifier's OID, dotted
+ * @returns `{ id, label, legacy }`, or null for an OID MS-PKCA does not list
+ */
+function pkinitPaChecksum2Algorithm(oid) {
+  log.debug("Entering pkinitPaChecksum2Algorithm().");
+  const known = Object.prototype.hasOwnProperty.call(
+    PKINIT_PACHECKSUM2_DIGESTS, String(oid))
+    ? PKINIT_PACHECKSUM2_DIGESTS[String(oid)] : null;
+  log.debug("Leaving pkinitPaChecksum2Algorithm().");
+  return known ? Object.assign({}, known) : null;
+}
+
+/**
+ * Computes MS-PKCA's PAChecksum2 — the KDC-REQ-BODY's digest under the
+ * algorithm it names — and compares it with the one a request carries in
+ * constant time. The caller has already decided the algorithm is acceptable.
+ *
+ * @param reqBodyBytes - the KDC-REQ-BODY as it arrived
+ * @param oid - the PAChecksum2's algorithm OID, dotted
+ * @param claimed - the PAChecksum2's checksum
+ * @returns true when they agree
+ * @throws Error for an OID not in PKINIT_PACHECKSUM2_DIGESTS
+ */
+function pkinitPaChecksum2Matches(reqBodyBytes, oid, claimed) {
+  log.debug("Entering pkinitPaChecksum2Matches().");
+  const algorithm = pkinitPaChecksum2Algorithm(oid);
+  if (!algorithm) {
+    log.debug("Leaving pkinitPaChecksum2Matches(). Unknown algorithm.");
+    // error-code: none — the caller asks pkinitPaChecksum2Algorithm() first
+    // and refuses an unknown OID under its own code
+    throw new Error('crypto: PAChecksum2 names ' + oid + ', which MS-PKCA ' +
+                    'section 2.2.3 does not list');
+  }
+  const body = Buffer.from(reqBodyBytes || []);
+  const computed = algorithm.legacy
+    ? sha1Digest('pkinit-pachecksum2', body)
+    : digest(algorithm.id, body);
+  const given = Buffer.from(claimed || []);
+  log.debug("Leaving pkinitPaChecksum2Matches().");
+  return given.length === computed.length &&
+         nodeCrypto.timingSafeEqual(given, computed);
+}
+
 // The key-generation seed length of an AS reply key's enctype, which is its
 // key length for every enctype this KDC uses: random-to-key is the identity
 // for the AES enctypes (RFC 3962, RFC 8009) and for rc4-hmac (RFC 4757).
@@ -18106,9 +19554,12 @@ function pkinitKdf(kdfOid, z, otherInfo, etype) {
 // so the size and the curve are asked here outright. What `rsaKeyProblem()`
 // still answers (the exponent, ROCA) it answers in every mode.
 //
-// **A DN IS NOT COMPARED HERE.** `common/certificate_subject.js` holds the one
-// comparison and it requires this module, so `certificateNameMatches()` is
-// about the subjectAltName forms RFC 9525 names and the door compares a DN.
+// **A DN STRING IS NOT COMPARED HERE.** `common/certificate_subject.js` holds
+// the one comparison of an RFC 4514 string and it requires this module, so
+// `certificateNameMatches()` is about the subjectAltName forms RFC 9525 names
+// and the door compares a DN. An ENCODED Name is read here, as RFC 5280
+// section 7.1 compares it (`certificateNameRdns()`, #1242): `pki.js`'s path
+// rules and the client truststore's issuer-lookup question share it.
 //
 // **PARSED SYNCHRONOUSLY, WITH pkijs ONLY FOR THE EXTENSIONS.** The vendored
 // `describeCertificate()` is asynchronous because of its key import and its
@@ -18172,6 +19623,30 @@ function certificateExtensionNode(ext) {
   return /** @type {any} */ (parsed.result);
 }
 
+// The UPN an otherName GeneralName carries, or '' where it is another kind
+// of otherName or cannot be read (#2012). `name` is the asn1js block of the
+// [0] IMPLICIT SEQUENCE { type-id OBJECT IDENTIFIER, value [0] EXPLICIT ANY }.
+function certificateUpnOf(name) {
+  log.debug("Entering certificateUpnOf().");
+  const parts = (name && name.valueBlock && name.valueBlock.value) || [];
+  const typeId = parts[0];
+  if (!(typeId instanceof asn1js.ObjectIdentifier) ||
+      typeId.valueBlock.toString() !== '1.3.6.1.4.1.311.20.2.3') {
+    log.debug("Leaving certificateUpnOf(). Not a UPN.");
+    return '';
+  }
+  const wrapped = parts[1] && parts[1].valueBlock &&
+    parts[1].valueBlock.value && parts[1].valueBlock.value[0];
+  let text = '';
+  if (wrapped && typeof wrapped.getValue === 'function') {
+    text = String(wrapped.getValue() || '');
+  } else if (wrapped && wrapped.valueBlock && wrapped.valueBlock.valueHexView) {
+    text = Buffer.from(wrapped.valueBlock.valueHexView).toString('utf8');
+  }
+  log.debug("Leaving certificateUpnOf(). " + (text ? 'Read.' : 'Empty.'));
+  return text;
+}
+
 // What an IP address in a subjectAltName's OCTET STRING reads as.
 function certificateIpText(bytes) {
   log.debug("Entering certificateIpText().");
@@ -18224,7 +19699,7 @@ function certificateWeakSignature(signatureAlgorithm) {
  * @param cert - PEM text, DER bytes or a parsed certificate
  * @returns `{ subject, issuer, serialHex, notBefore, notAfter, selfIssued,
  *   ca, hasBasicConstraints, pathLen, keyUsage, eku, san, critical,
- *   fingerprint256, spkiSha256, sigAlg, weakSignature, keyAlg, keyBits,
+ *   fingerprint256, spkiSha256, ski, sigAlg, weakSignature, keyAlg, keyBits,
  *   curve, spkiOid }`; `keyUsage` and `eku` are null where the extension is
  *   absent, which is not the same as empty
  * @throws Error when the input is not a certificate
@@ -18243,10 +19718,14 @@ function certificateFacts(cert) {
     selfIssued: parsed.subject === parsed.issuer,
     ca: false, hasBasicConstraints: false, pathLen: null,
     keyUsage: null, eku: null,
-    san: { dns: [], email: [], uri: [], ip: [] },
+    san: { dns: [], email: [], uri: [], ip: [], upn: [] },
     critical: [],
     fingerprint256: String(parsed.fingerprint256 || ''),
     spkiSha256: '',
+    // The subjectKeyIdentifier, lower-case hex, or '' where the certificate
+    // carries none (#2012: a certificate sign-in binding by issuer and SKI
+    // cannot match an absent one).
+    ski: '',
     sigAlg: pk.signatureAlgorithm.algorithmId,
     weakSignature: certificateWeakSignature(pk.signatureAlgorithm),
     keyAlg: '', keyBits: 0, curve: '',
@@ -18291,8 +19770,20 @@ function certificateFacts(cert) {
             facts.san.uri.push(raw.toString('latin1'));
           } else if (tag === 7) {
             facts.san.ip.push(certificateIpText(raw));
+          } else if (tag === 0) {
+            // AN otherName (#2012): the Microsoft UPN (1.3.6.1.4.1.311.20.2.3)
+            // is the one read, a UTF8String inside its [0] EXPLICIT value —
+            // what a smart-card logon certificate names its holder by.
+            const upn = certificateUpnOf(name);
+            if (upn) {
+              facts.san.upn.push(upn);
+            }
           }
         });
+    } else if (ext.extnID === '2.5.29.14') {
+      facts.ski = Buffer.from(
+        certificateExtensionNode(ext).valueBlock.valueHexView || [])
+        .toString('hex');
     }
   });
   try {
@@ -18499,6 +19990,2854 @@ function certificateNameMatches(cert, expected) {
   return members.length > 0 && matched;
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE'S NAMES AND KEY IDENTIFIERS AS AN ISSUER LOOKUP READS THEM
+// (#1242, moved here from `tls/tls_server.js` and `pki.js`).
+//
+// OpenSSL finds the issuer of a certificate by its issuer NAME, compared as
+// a canonical encoding (case, leading, trailing and repeated spaces, and the
+// string type do not count), and narrows the candidates by the authority key
+// identifier only when the certificate being verified carries one. The
+// client truststore asks exactly that question of its anchors, and
+// `pki.js`'s path rules ask the name half of it, so both read it here.
+// `certificateNameRdns()` is `pki.js`'s `rdnsOfName()` as it was, moved
+// verbatim; `pki.js` now asks this one.
+// ---------------------------------------------------------------------------
+
+/**
+ * A Name as a list of RDNs, each the sorted `oid=value` of its attributes,
+ * with a string value compared as RFC 5280 section 7.1 asks (case folded,
+ * leading and trailing space removed, internal space collapsed, whatever its
+ * string type) and any other value by its DER. Two names are the same name
+ * when these lists are equal; a directoryName constraint is a PREFIX of it.
+ *
+ * @param node - the Name, as asn1js decoded it
+ * @returns the RDNs
+ * @throws Error when it is not a Name
+ */
+function certificateNameRdns(node) {
+  log.debug("Entering certificateNameRdns().");
+  if (!(node instanceof asn1js.Sequence)) {
+    log.debug("Leaving certificateNameRdns(). Not a Name.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('a Name is not a SEQUENCE');
+  }
+  // An EMPTY RDN (a SET with no attribute) is read as no RDN at all: the
+  // ASN.1 says SIZE (1..MAX), and pkijs writes one for an empty name — the
+  // Fulcio-shaped certificates the SPIFFE sigstore tests make, and a TPM
+  // attestation key's — so what it means is not in doubt.
+  const sets = node.valueBlock.value.filter(function (set) {
+    return !(set instanceof asn1js.Set) || set.valueBlock.value.length > 0;
+  });
+  const out = sets.map(function (set) {
+    if (!(set instanceof asn1js.Set)) {
+      // error-code: none — a reader; the caller refuses what does not decode
+      throw new Error('a RelativeDistinguishedName is not a SET');
+    }
+    return set.valueBlock.value.map(function (atv) {
+      // asn1js declares a generic ValueBlock; a constructed one has `value`.
+      const block = /** @type {any} */ (atv.valueBlock);
+      const parts = block && block.value;
+      if (!parts || parts.length !== 2 ||
+          !(parts[0] instanceof asn1js.ObjectIdentifier)) {
+        // error-code: none — a reader; the caller refuses what does not
+        // decode
+        throw new Error('an attribute is not a type and a value');
+      }
+      const value = parts[1];
+      const text = value instanceof asn1js.BaseStringBlock
+        ? String(value.getValue()).trim().replace(/\s+/g, ' ').toLowerCase()
+        : '#' + Buffer.from(value.toBER(false)).toString('hex');
+      return parts[0].getValue() + '=' + text;
+    }).sort().join('+');
+  });
+  log.debug("Leaving certificateNameRdns(). " + out.length + " RDN(s).");
+  return out;
+}
+
+// One Name of a pkijs certificate as it was ENCODED: pkijs re-encodes an
+// empty subject as a SEQUENCE holding an empty SET, which is not what was
+// signed. `pki.js`'s `nameBytesOf()` has the same reason.
+function certificateEncodedName(name) {
+  log.debug("Entering certificateEncodedName().");
+  const kept = name && name.valueBeforeDecode;
+  const bytes = kept && kept.byteLength ? new Uint8Array(kept)
+    : new Uint8Array(name.toSchema().toBER(false));
+  const parsed = asn1js.fromBER(bytes);
+  if (parsed.offset === -1 || parsed.offset !== bytes.byteLength) {
+    log.debug("Leaving certificateEncodedName(). Not one DER value.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('a Name is not one DER value');
+  }
+  log.debug("Leaving certificateEncodedName().");
+  return parsed.result;
+}
+
+/**
+ * Reads what an issuer lookup compares: the subject and issuer as canonical
+ * RDN lists, the subjectKeyIdentifier, and the keyIdentifier of the
+ * authorityKeyIdentifier, each as lower-case hex or '' where absent.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns `{ subject, issuer, subjectKeyIdentifier, authorityKeyIdentifier,
+ *   selfIssued }`; `selfIssued` is the RFC 5280 section 3.3 sense, the two
+ *   names equal, and says nothing about the signature
+ * @throws Error when the input is not a certificate
+ */
+function certificateLookupNames(cert) {
+  log.debug("Entering certificateLookupNames().");
+  const parsed = parseCertificate(cert);
+  const pkijs = require('pkijs');
+  const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+  const out = {
+    subject: certificateNameRdns(certificateEncodedName(pk.subject)),
+    issuer: certificateNameRdns(certificateEncodedName(pk.issuer)),
+    subjectKeyIdentifier: '',
+    authorityKeyIdentifier: '',
+    selfIssued: false
+  };
+  out.selfIssued = out.subject.join(',') === out.issuer.join(',');
+  (pk.extensions || []).forEach(function (ext) {
+    if (ext.extnID === '2.5.29.14') {
+      const node = certificateExtensionNode(ext);
+      const view = node && node.valueBlock && node.valueBlock.valueHexView;
+      out.subjectKeyIdentifier = node instanceof asn1js.OctetString && view
+        ? Buffer.from(view).toString('hex') : '';
+    } else if (ext.extnID === '2.5.29.35') {
+      const node = certificateExtensionNode(ext);
+      const id = node instanceof asn1js.Sequence
+        ? node.valueBlock.value.filter(function (field) {
+          return field.idBlock.tagClass === 3 &&
+                 field.idBlock.tagNumber === 0;
+        })[0] : null;
+      out.authorityKeyIdentifier = id
+        ? Buffer.from(/** @type {any} */ (id.valueBlock).valueHexView ||
+                      []).toString('hex') : '';
+    }
+  });
+  log.debug("Leaving certificateLookupNames().");
+  return out;
+}
+
+/**
+ * Whether a certificate is self-issued (its two names equal, as RFC 5280
+ * section 7.1 compares them) and its signature verifies under its own key.
+ *
+ * Not node's `checkIssued(self)`: that is OpenSSL's `X509_check_issued()`,
+ * which also refuses an issuer whose keyUsage lacks keyCertSign, so a
+ * self-signed client certificate with `keyUsage = digitalSignature` — the
+ * usual shape — answers false there while OpenSSL's chain builder still
+ * takes it as its own issuer.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns true when both hold; false for anything that cannot be read
+ */
+function certificateSelfSigned(cert) {
+  log.debug("Entering certificateSelfSigned().");
+  let signed = false;
+  try {
+    const parsed = parseCertificate(cert);
+    signed = certificateLookupNames(parsed).selfIssued &&
+             parsed.verify(parsed.publicKey) === true;
+  } catch (e) {
+    log.debug("Caught in certificateSelfSigned(): " +
+              ((e && e.message) || e));
+    // A key or a name node cannot read is not a self-signature anybody here
+    // could rely on.
+    signed = false;
+  }
+  log.debug("Leaving certificateSelfSigned(). " + signed);
+  return signed;
+}
+
+/**
+ * Whether a certificate presented by a TLS peer, and matched to an installed
+ * trust anchor by its fingerprint, may be taken as verified although OpenSSL
+ * refused it (#1242). node reports ONE error of a chain OpenSSL continued
+ * through, so another — the purpose, the key usage, a critical extension
+ * nobody reads, the validity — is asked again here rather than trusted to
+ * be the one reported.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param purpose - `{ keyUsage, eku, now }`: the keyUsage bits any one of
+ *   which permits the use (RFC 5280 section 4.2.1.3; absent permits all),
+ *   and the extendedKeyUsage OID that must be named when the extension is
+ *   present. anyExtendedKeyUsage does not stand in for it, as it does not in
+ *   OpenSSL's purpose checks.
+ * @returns '' when it may, or the sentence saying why not
+ */
+function presentedAnchorProblem(cert, purpose) {
+  log.debug("Entering presentedAnchorProblem().");
+  const want = purpose || {};
+  let problem = '';
+  try {
+    const parsed = parseCertificate(cert);
+    if (!certificateSelfSigned(parsed)) {
+      problem = 'it is not self-issued with a signature its own key ' +
+                'verifies';
+    } else {
+      const facts = certificateFacts(parsed);
+      const found = certificateFieldProblems(parsed, {
+        role: 'leaf', mayBeCa: true, keyUsage: want.keyUsage || [],
+        eku: null, now: want.now
+      });
+      if (found.length) {
+        problem = found[0].why;
+      } else if (want.eku && facts.eku &&
+                 facts.eku.indexOf(want.eku) === -1) {
+        problem = 'its extendedKeyUsage does not name ' + want.eku;
+      }
+    }
+  } catch (e) {
+    log.debug("Caught in presentedAnchorProblem(): " +
+              ((e && e.message) || e));
+    // A certificate this cannot read is not one to vouch for.
+    problem = 'it could not be read (' + ((e && e.message) || e) + ')';
+  }
+  log.debug("Leaving presentedAnchorProblem(). " + (problem || 'ok'));
+  return problem;
+}
+
+// ===========================================================================
+// SECTION 19 — KEYS IN A HARDWARE SECURITY MODULE, THROUGH PKCS#11 (#1955 P8,
+// 2026-11-20).
+//
+// The mechanism is `crypto_impl/pkcs11.js`, the engine: sessions, the
+// wrapping mechanisms, key generation, C_Sign. This is the door the rest of
+// the service goes through, for the reason every other section is here: one
+// place where this service's keys are used. Two callers:
+//
+//   * `secrets.js`'s `pkcs11` key-encryption-key provider, which opens a
+//     token here and wraps and unwraps data keys through it; and
+//   * a realm's classical signing keys in the HSM (`keys.signingKeyStore`),
+//     which `helpers.js` makes through `pkcs11SigningKey()` and every signing
+//     choke point in this file recognises by `isHsmKey()`.
+//
+// STILL A LEAF. The binding (`pkcs11js`) is loaded by `secrets.js`, which
+// owns the missing-package sentence, and handed in; the engine requires node,
+// bunyan and `error_codes.js`.
+// ===========================================================================
+const pkcs11Engine = require('./crypto_impl/pkcs11');
+
+/**
+ * Opens a PKCS#11 token: loads the module once per path and thread, finds
+ * the slot, logs in a session.
+ *
+ * @param binding - the loaded `pkcs11js` (or a test's fake)
+ * @param options - `{ modulePath, tokenLabel, serial, slotId, pin,
+ *   maxSessions }`
+ * @returns the token (`crypto_impl/pkcs11.js`'s `Pkcs11Token`)
+ */
+function openPkcs11Token(binding, options) {
+  log.debug('Entering openPkcs11Token().');
+  const token = pkcs11Engine.openToken(binding, options);
+  log.debug('Leaving openPkcs11Token().');
+  return token;
+}
+
+/**
+ * Forgets this thread's loaded PKCS#11 modules, for a test.
+ */
+function forgetPkcs11Libraries() {
+  log.debug('Entering forgetPkcs11Libraries().');
+  pkcs11Engine.forgetLibraries();
+  log.debug('Leaving forgetPkcs11Libraries().');
+}
+
+// ---------------------------------------------------------------------------
+// A SIGNING KEY IN THE HSM, AS THE REST OF THE SERVICE HOLDS IT.
+//
+// A realm whose `keys.signingKeyStore` is `pkcs11` has its classical signing
+// keys made in the token — RSA for RS256 and the XML key, P-256, P-384,
+// P-521, secp256k1 and Ed25519 where the module can make them — sensitive and
+// non-extractable. The rest of the service never had a private key it did
+// not hold as a PEM or a KeyObject, and it passes them around in a dozen
+// structures (`helpers.js`'s key set, its generations, the sealed blob
+// `keystore.js` writes, the pool's key channel). So an HSM key is made to
+// travel EXACTLY where a PEM travels:
+//
+//   * its PEM is a REFERENCE, `pkcs11-key:v1:<b64url JSON>` — the token it is
+//     on (a PKCS#11 URI without an object), its CKA_ID, its kind — which is
+//     what `export()` answers and what `keystore.js` seals; it names the key
+//     and opens nothing;
+//   * `privateKeyFrom()` turns that reference back into the key object,
+//     through the token this thread already holds (`secrets.js` fills the
+//     resolver, below), so every structure that re-parses a PEM gets the HSM
+//     key back without being told;
+//   * the key object answers `type: 'private'`, `asymmetricKeyType` and
+//     `asymmetricKeyDetails` like a KeyObject, so the checks that decide HOW
+//     to sign (`classicalSigningInput()`) still decide; and every signing
+//     door here — `signJws()`, `signJwsAsync()`, `jwsSignatureOver()`,
+//     `signXml()`, `signQueryString()`, a self-signed certificate — asks
+//     `isHsmKey()` first and signs with C_Sign.
+//
+// AND ANYTHING ELSE FAILS CLOSED. A caller that hands an HSM key to node
+// itself (a decryption, `createPrivateKey()` on the reference) gets node's
+// refusal or STS-KEYS-0206, never a software copy: there is none.
+// ---------------------------------------------------------------------------
+const HSM_KEY_PREFIX = 'pkcs11-key:v1:';
+
+// THE ONE INVERTED HOOK HERE (rule 3e): a reference names a token, and the
+// tokens are `secrets.js`'s (it reads their PIN). This file may not require
+// `secrets.js` — that file requires this one — so `secrets.js` hands in the
+// function that finds a reference's key on a token it holds.
+let pkcs11KeyResolver = null;
+
+// The key objects this thread has resolved, by reference: a find on the
+// token is a round trip, and a reference names one key for ever.
+const hsmKeys = new Map();
+
+/**
+ * Hands in how a reference is resolved: `(ref, how) => { token, key,
+ * publicKey }` on a token this thread holds, or — `how.async` true — a
+ * promise of it, found off the event loop (`resolveHsmKeysAsync()`, #1955
+ * P8 follow-up; the same slot, asked a second way). Filled by `secrets.js`
+ * when it loads.
+ *
+ * @param fn - the resolver, or null
+ */
+function setPkcs11KeyResolver(fn) {
+  log.debug('Entering setPkcs11KeyResolver().');
+  pkcs11KeyResolver = typeof fn === 'function' ? fn : null;
+  log.debug('Leaving setPkcs11KeyResolver().');
+}
+
+// ---------------------------------------------------------------------------
+// A KEY'S FIRST RESOLUTION IN A THREAD, OFF THE EVENT LOOP (#1955 P8
+// follow-up). `hsmKeyOf()` is synchronous — a key set is a property read —
+// and resolving a reference it has not seen is two searches and an attribute
+// read on the token. So the references a thread will be asked for are
+// resolved AHEAD, through the control thread, before it serves: the
+// keystore's start (every realm it holds, in every process and request
+// worker) and `helpers.prepareKeySet()` (a realm first seen later, before a
+// handler reads its set). What is resolved here is held exactly as
+// `hsmKeyOf()` holds what it resolves, so the read that follows finds it.
+// A reference that reaches this thread by no road that passes here — a
+// rotation another node made, adopted between two requests of a realm —
+// is still resolved in place at its first use, once.
+// ---------------------------------------------------------------------------
+/**
+ * The HSM key references in a value — a stored or shared key set, walked to
+ * a bounded depth.
+ *
+ * @param value - anything
+ * @returns the distinct reference texts
+ */
+function hsmRefsIn(value) {
+  log.debug('Entering hsmRefsIn().');
+  const out = new Set();
+  const seen = new Set();
+  const walk = function (v, depth) {
+    if (typeof v === 'string') {
+      if (v.indexOf(HSM_KEY_PREFIX) === 0) {
+        out.add(v);
+      }
+      return;
+    }
+    if (!v || typeof v !== 'object' || depth > 8 || seen.has(v) ||
+        Buffer.isBuffer(v)) {
+      return;
+    }
+    seen.add(v);
+    if (v instanceof Map) {
+      v.forEach(function (one) {
+        walk(one, depth + 1);
+      });
+      return;
+    }
+    for (const k of Object.keys(v)) {
+      walk(v[k], depth + 1);
+    }
+  };
+  walk(value, 0);
+  log.debug('Leaving hsmRefsIn(). ' + out.size + '.');
+  return Array.from(out);
+}
+
+/**
+ * Resolves HSM key references off the event loop, so a later synchronous
+ * `hsmKeyOf()` finds them held. Never rejects: a reference that cannot be
+ * resolved here is resolved (and refused, with its code) at its first use.
+ *
+ * @param refs - reference texts (`hsmRefsIn()`)
+ * @returns a promise of how many were resolved
+ */
+async function resolveHsmKeysAsync(refs) {
+  log.debug('Entering resolveHsmKeysAsync(). ' + (refs || []).length);
+  let made = 0;
+  for (const text of refs || []) {
+    if (hsmKeys.has(text) || !pkcs11KeyResolver) {
+      continue;
+    }
+    const ref = hsmRefOf(text);
+    if (!ref) {
+      continue;
+    }
+    try {
+      const found = await pkcs11KeyResolver(ref, { async: true });
+      if (!hsmKeys.has(text)) {
+        hsmKeys.set(text, makeHsmKey(found.token, found.key, found.publicKey,
+                                     ref));
+        made++;
+      }
+    } catch (e) {
+      log.debug('Caught in resolveHsmKeysAsync(): ' + ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving resolveHsmKeysAsync(). ' + made + ' resolved.');
+  return made;
+}
+
+/**
+ * Forgets the HSM keys this thread resolved, for a test that plays a new
+ * thread's first use. Nothing in the service calls it.
+ */
+function forgetHsmKeys() {
+  log.debug('Entering forgetHsmKeys().');
+  hsmKeys.clear();
+  log.debug('Leaving forgetHsmKeys().');
+}
+
+function hsmRefText(ref) {
+  log.debug('Entering hsmRefText().');
+  log.debug('Leaving hsmRefText().');
+  return HSM_KEY_PREFIX + Buffer.from(JSON.stringify(ref), 'utf8')
+    .toString('base64url');
+}
+
+/**
+ * Reads an HSM key reference back: `{ token, id, kty, crv, bits }`, or null
+ * when the text is not one.
+ *
+ * @param text - the reference
+ * @returns the reference's members, or null
+ */
+function hsmRefOf(text) {
+  log.debug('Entering hsmRefOf().');
+  const s = typeof text === 'string' ? text : '';
+  if (s.indexOf(HSM_KEY_PREFIX) !== 0) {
+    log.debug('Leaving hsmRefOf(). Not one.');
+    return null;
+  }
+  try {
+    const ref = JSON.parse(Buffer.from(s.slice(HSM_KEY_PREFIX.length),
+                                       'base64url').toString('utf8'));
+    log.debug('Leaving hsmRefOf().');
+    return ref && typeof ref === 'object' ? ref : null;
+  } catch (e) {
+    log.debug('Caught in hsmRefOf(): ' + ((e && e.message) || e));
+    log.debug('Leaving hsmRefOf(). Malformed.');
+    return null;
+  }
+}
+
+// ===========================================================================
+// SECTION 19 — OpenPGP AND S/MIME, FOR A PERSON'S KEYS AND ENCRYPTED MAIL
+// (#1955 P6, 2026-11-20).
+//
+// **THE MECHANISM IS openpgp.js, WRAPPED** (rcbj's decision D3 on #1955):
+// `crypto_impl/openpgp_engine.js` reads, describes and verifies RFC 9580
+// (v6) and RFC 4880 (v4) keys and encrypts to them, and this section is the
+// policy — which algorithms a key may use, what a proof of possession must
+// say and how fresh it must be, and which recipient certificate an S/MIME
+// envelope may be made to. Nothing outside this file requires either the
+// engine or `openpgp` (`tests/crypto_centralised.js`), so this is where the
+// algorithm rule is, once.
+//
+// **THE ALGORITHM RULE IS A DOCUMENTED ALLOW LIST, NOT THE SIGNATURE
+// POLICY.** #1368's registry and a realm's per-surface sign/accept lists
+// have no OpenPGP surface: an OpenPGP key's algorithm is not one of the JWS,
+// COSE, XML, X.509, CMS, Data Integrity or HTTP Signature identifiers they
+// are lists of, and nothing here signs with it. What a key may use, when
+// `openpgp.algorithms` names it (the default names every one):
+//
+//   signing     RFC 9980's ML-DSA-65+Ed25519 (MUST) and ML-DSA-87+Ed448
+//               (SHOULD), its standalone SLH-DSA-SHAKE-128s, -128f and
+//               -256s (MAY, v6 keys only; #2220), then Ed25519 and Ed448
+//               (v6 `ed25519`/`ed448`,
+//               v4 `eddsaLegacy` on `ed25519Legacy`), ECDSA on P-256, P-384
+//               and P-521, RSA of at least `minRsaBits` (3072 at least)
+//   encryption  RFC 9980's ML-KEM-768+X25519 (MUST) and ML-KEM-1024+X448
+//               (SHOULD), then X25519 and X448 (v6), ECDH on Curve25519
+//               (v4) and on P-256, P-384 and P-521, RSA of `minRsaBits`
+//
+// DSA and ElGamal are refused outright (RFC 9580 section 9.1 deprecates
+// both), and so are the Brainpool curves. SLH-DSA (RFC 9980 ids 32–34)
+// was refused until #2220; `openpgp_pqc.js` reads it now, and it counts as
+// post-quantum for `openpgp.pqcOnly` — a pure post-quantum signature, not
+// a composite.
+//
+// **openpgp.js DOES NOT READ AN RFC 9980 KEY.** Those algorithm ids fail
+// inside it, so `crypto_impl/openpgp_pqc.js` reads them, checks BOTH halves
+// of a composite signature over the same data digest, and combines the KEM
+// shares. `openpgp.pqcOnly` and `openpgp.pqcAlongsideClassical` narrow
+// REGISTRATION only: a classical key already stored still verifies. A
+// composite name counts as post-quantum, so alongside requires a separate
+// classical key. When this runtime cannot check ML-DSA, the key is refused
+// (STS-OPENPGP-0026) rather than stored on the EdDSA half alone.
+//
+// **S/MIME IS AuthEnvelopedData UNDER AES-256-GCM (#2124, rcbj's decision
+// of 2026-11-24, ASVS 5.0.0 11.3.3)**: RFC 5083's content type
+// (id-ct-authEnvelopedData, `smime-type=authEnveloped-data`) with RFC
+// 5084's id-aes256-GCM, a 12-octet nonce and a 16-octet ICV, which RFC 8551
+// section 2.7 makes S/MIME 4.0's MUST. There are no authAttrs (the content
+// is id-data, so RFC 5083 asks for none), and the GCM AAD is therefore
+// empty. The key goes under RSAES-OAEP with SHA-256 (RFC 8017, RFC 4055)
+// for an RSA certificate and under dhSinglePass-stdDH-sha256kdf with
+// AES-256 key wrap (RFC 5753) for an EC one; an ML-KEM certificate takes a
+// KEMRecipientInfo (RFC 9629, which names AuthEnvelopedData as one of its
+// three homes; the AuthEnvelopedData version stays 0 whatever the
+// recipients are).
+//
+// **pkijs HAS NO AuthEnvelopedData**, and its EnvelopedData writes GCM into
+// an EnvelopedData, which a conforming reader may refuse. So the content
+// is sealed here with node's `aes-256-gcm` and the AuthEnvelopedData is
+// written with asn1js; pkijs is asked only for the RSA and EC
+// RecipientInfos, through `EnvelopedData.encrypt()` handed an engine whose
+// `generateKey()` answers OUR content key and whose AES-GCM `encrypt()`
+// writes nothing (`smimeClassicalRecipients()`). Reusing pkijs's recipient
+// code keeps the RSA-OAEP and the RFC 5753 KDF the very code the CBC path
+// has always run, rather than a second copy of them.
+//
+// **`mail.smimeContentEncryption` `aes256-cbc` is the way back**: pkijs's
+// EnvelopedData under AES-256-CBC (RFC 3565), `smime-type=enveloped-data`,
+// exactly what was sent before 1.2.0, for a recipient whose mail client
+// cannot read AuthEnvelopedData. It has no integrity protection, and
+// `/admin/mode` says so in product (`mode.js` `smimeCbcWaivers()`).
+// ===========================================================================
+
+/** @type {typeof import('./crypto_impl/openpgp_engine.js')} */
+const openpgpEngine = LazyModule.of('common/crypto_impl/openpgp_engine.js',
+  function () {
+    return require('./crypto_impl/openpgp_engine.js');
+  }, log);
+
+// RFC 9980 keys, read here rather than by openpgp.js (the header). A leaf
+// of this file, the same way the engine is: nothing else requires it.
+/** @type {typeof import('./crypto_impl/openpgp_pqc.js')} */
+const openpgpPqc = LazyModule.of('common/crypto_impl/openpgp_pqc.js',
+  function () {
+    return require('./crypto_impl/openpgp_pqc.js');
+  }, log);
+
+/** The OpenPGP signing algorithms a key may use (the header). */
+const OPENPGP_SIGNING_ALGORITHMS = Object.freeze([
+  'ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+  'SLH-DSA-SHAKE-128s', 'SLH-DSA-SHAKE-128f', 'SLH-DSA-SHAKE-256s',
+  'ed25519', 'ed448', 'eddsaLegacy/ed25519Legacy', 'ecdsa/nistP256',
+  'ecdsa/nistP384', 'ecdsa/nistP521', 'rsaSign', 'rsaEncryptSign']);
+
+/** The OpenPGP encryption algorithms a key may use (the header). */
+const OPENPGP_ENCRYPTION_ALGORITHMS = Object.freeze([
+  'ML-KEM-768+X25519', 'ML-KEM-1024+X448',
+  'x25519', 'x448', 'ecdh/curve25519Legacy', 'ecdh/nistP256',
+  'ecdh/nistP384', 'ecdh/nistP521', 'rsaEncrypt', 'rsaEncryptSign']);
+
+/**
+ * The RFC 9980 post-quantum names: the composites, and SLH-DSA (#2220). A
+ * composite counts as post-quantum for `openpgp.pqcOnly` and
+ * `openpgp.pqcAlongsideClassical`: the classical half is bound to the
+ * post-quantum half and is not a separate key.
+ */
+const OPENPGP_PQ_NAMES = Object.freeze([
+  'ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+  'SLH-DSA-SHAKE-128s', 'SLH-DSA-SHAKE-128f', 'SLH-DSA-SHAKE-256s',
+  'ML-KEM-768+X25519', 'ML-KEM-1024+X448']);
+
+/** The smallest RSA key the allow list ever accepts, whatever is asked. */
+const OPENPGP_MIN_RSA_BITS = 3072;
+
+// The largest armored key and signed message this section reads: a key with
+// every third-party certification a keyserver ever attached can be large,
+// and a challenge is a few lines.
+const OPENPGP_MAX_KEY_BYTES = 65536;
+const OPENPGP_MAX_SIGNED_BYTES = 16384;
+
+/**
+ * The name the allow list is written in: `algorithm` or `algorithm/curve`.
+ *
+ * @param alg - `{ algorithm, curve }`
+ * @returns the name
+ */
+function openpgpNamed(alg) {
+  log.debug("Entering openpgpNamed().");
+  const a = alg || {};
+  const name = String(a.algorithm || '');
+  log.debug("Leaving openpgpNamed().");
+  return a.curve ? name + '/' + a.curve : name;
+}
+
+/**
+ * The caller's accept list, or null when the caller passed none — none
+ * means the whole universe, so a reader that only passes `minRsaBits`
+ * still accepts every name the lists hold.
+ *
+ * @param accept - a csv string, an array, or omitted
+ * @returns the names, or null
+ */
+function openpgpAcceptNames(accept) {
+  log.debug("Entering openpgpAcceptNames().");
+  if (accept == null || accept === '') {
+    log.debug("Leaving openpgpAcceptNames(). The universe.");
+    return null;
+  }
+  const raw = Array.isArray(accept) ? accept : String(accept).split(',');
+  const names = [];
+  raw.forEach(function (item) {
+    const text = String(item || '').trim();
+    if (text) {
+      names.push(text);
+    }
+  });
+  log.debug("Leaving openpgpAcceptNames(). " + names.length);
+  return names;
+}
+
+/**
+ * Whether a name is one of the RFC 9980 post-quantum algorithms.
+ *
+ * @param name - the allow-list name
+ * @returns true when it is
+ */
+function openpgpIsPq(name) {
+  log.debug("Entering openpgpIsPq().");
+  log.debug("Leaving openpgpIsPq().");
+  return OPENPGP_PQ_NAMES.indexOf(String(name || '')) >= 0;
+}
+
+/**
+ * Says what is wrong with one OpenPGP key's algorithm for a use, or ''.
+ *
+ * @param alg - `{ algorithm, curve, bits }` as the engine describes it
+ * @param use - `sign` or `encrypt`
+ * @param minRsaBits - the realm's minimum RSA size
+ * @param accept - the realm's `openpgp.algorithms`, or omitted for the
+ *   whole universe
+ * @returns '' when allowed, else the reason
+ */
+function openpgpAlgorithmProblem(alg, use, minRsaBits, accept) {
+  log.debug("Entering openpgpAlgorithmProblem(). " + use);
+  const a = alg || { algorithm: '', curve: '', bits: 0 };
+  const universe = use === 'sign' ? OPENPGP_SIGNING_ALGORITHMS
+    : OPENPGP_ENCRYPTION_ALGORITHMS;
+  const name = String(a.algorithm || '');
+  const named = a.curve ? name + '/' + a.curve : name;
+  const floor = Math.max(OPENPGP_MIN_RSA_BITS, Number(minRsaBits) || 0);
+  const asked = openpgpAcceptNames(accept);
+  const list = asked ? universe.filter(function (n) {
+    return asked.indexOf(n) >= 0;
+  }) : universe;
+  let out = '';
+  if (list.indexOf(named) < 0 && list.indexOf(name) < 0) {
+    out = (named || 'an unknown algorithm') + ' is not an OpenPGP ' +
+      (use === 'sign' ? 'signing' : 'encryption') + ' algorithm this ' +
+      'service accepts (' + list.join(', ') + ')';
+  } else if (/^rsa/.test(name) && Number(a.bits || 0) < floor) {
+    out = 'an RSA key of ' + Number(a.bits || 0) + ' bits is shorter than ' +
+      'the ' + floor + ' this realm requires';
+  }
+  log.debug("Leaving openpgpAlgorithmProblem(). " + (out ? 'Refused.'
+                                                       : 'Allowed.'));
+  return out;
+}
+
+/**
+ * What `openpgp.pqcOnly` or `openpgp.pqcAlongsideClassical` refuses at
+ * REGISTRATION, or ''. Verification of a stored key does not call this:
+ * those switches do not retire a key already held. When both are set
+ * (the environment, before a write rule can refuse the pair), `pqcOnly`
+ * wins, the same way a passkey request does.
+ *
+ * @param description - the key's description
+ * @param opts - `{ registration, pqcOnly, pqcAlongsideClassical }`
+ * @returns '' when the key may be registered, else the reason
+ */
+function openpgpRegistrationProblem(description, opts) {
+  log.debug("Entering openpgpRegistrationProblem().");
+  const options = opts || {};
+  if (!options.registration) {
+    log.debug("Leaving openpgpRegistrationProblem(). Not registration.");
+    return '';
+  }
+  const pqcOnly = !!options.pqcOnly;
+  const alongside = !!options.pqcAlongsideClassical && !pqcOnly;
+  if (!pqcOnly && !alongside) {
+    log.debug("Leaving openpgpRegistrationProblem(). No lane.");
+    return '';
+  }
+  const d = description || {};
+  let out = '';
+  if (pqcOnly) {
+    const signName = openpgpNamed(d.signing || d.primary);
+    const encName = d.encryption ? openpgpNamed(d.encryption) : '';
+    if (!openpgpIsPq(signName) || (encName && !openpgpIsPq(encName))) {
+      out = 'openpgp.pqcOnly is on, so a new key must use a ' +
+        'post-quantum algorithm (' + OPENPGP_PQ_NAMES.join(', ') + '); ' +
+        (signName || 'the signing key') +
+        (encName ? ' and ' + encName + ' are not' : ' is not') +
+        ' one';
+    }
+  } else {
+    const parts = [d.primary].concat(d.subkeys || []);
+    let pq = false;
+    let classical = false;
+    parts.forEach(function (alg) {
+      const named = openpgpNamed(alg);
+      if (!named) {
+        return;
+      }
+      if (openpgpIsPq(named)) {
+        pq = true;
+      } else {
+        classical = true;
+      }
+    });
+    if (!pq || !classical) {
+      out = 'openpgp.pqcAlongsideClassical is on, so a new key must ' +
+        'carry a post-quantum algorithm and a separate classical one; ' +
+        'a composite name such as ML-DSA-65+Ed25519 counts as ' +
+        'post-quantum only';
+    }
+  }
+  log.debug("Leaving openpgpRegistrationProblem(). " +
+            (out ? 'Refused.' : 'Allowed.'));
+  return out;
+}
+
+/**
+ * A refusal of this section, carrying its code.
+ *
+ * @param code - the error code
+ * @param why - the sentence
+ * @param extra - members to add
+ * @returns `{ ok: false, error, ... }`, marked with the code
+ */
+function openpgpRefusal(code, why, extra) {
+  log.debug("Entering openpgpRefusal(). " + code);
+  log.debug("Leaving openpgpRefusal().");
+  return errorCodes.mark(Object.assign({ ok: false, error: why }, extra || {}),
+                         code);
+}
+
+/**
+ * Reads a person's OpenPGP public key and holds it to the allow list as of
+ * an instant: one public key (never a secret one), not revoked, not expired,
+ * a signing key and — when it has one — an encryption key the list accepts.
+ *
+ * @param input - the armored key, or its binary packets
+ * @param options - `{ at: Date, minRsaBits, accept, registration, pqcOnly,
+ *   pqcAlongsideClassical }`. `accept` is `openpgp.algorithms`; omitted,
+ *   the whole universe applies. The two post-quantum switches are read
+ *   only when `registration` is true.
+ * @returns `{ ok: true, key, description, armored, binary }`, or a coded
+ *   refusal (STS-OPENPGP-0001 to -0006, or -0026 when ML-DSA cannot be
+ *   checked)
+ */
+async function openpgpReadKey(input, options) {
+  log.debug("Entering openpgpReadKey().");
+  const opts = options || {};
+  const at = opts.at instanceof Date ? opts.at : new Date();
+  const size = typeof input === 'string' ? Buffer.byteLength(input)
+    : Buffer.from(input || []).length;
+  if (!size || size > OPENPGP_MAX_KEY_BYTES) {
+    log.debug("Leaving openpgpReadKey(). Size " + size + ".");
+    return openpgpRefusal('STS-OPENPGP-0001', size
+      ? 'the key is ' + size + ' bytes, more than the ' +
+        OPENPGP_MAX_KEY_BYTES + ' this service reads'
+      : 'no key was given');
+  }
+  const read = await openpgpEngine.readPublicKey(input);
+  let source = null;
+  if (read.ok) {
+    source = {
+      key: read.key,
+      description: await openpgpEngine.describeKey(read.key, at),
+      armored: openpgpEngine.armor(read.key),
+      binary: openpgpEngine.binaryOf(read.key)
+    };
+  } else if (read.reason === 'secret') {
+    log.debug("Leaving openpgpReadKey(). Secret.");
+    return openpgpRefusal('STS-OPENPGP-0002', 'that is a SECRET key; paste ' +
+      'the public key (gpg --armor --export), never the secret one');
+  } else if (read.reason === 'several') {
+    log.debug("Leaving openpgpReadKey(). Several.");
+    return openpgpRefusal('STS-OPENPGP-0001', 'the block holds more than ' +
+                          'one key; export exactly one');
+  } else {
+    // openpgp.js cannot read an RFC 9980 key. The leaf says whether this
+    // block is one, and refuses it when the ML-DSA half cannot be checked.
+    const pq = openpgpPqc.readPublicKey(input, at);
+    if (pq.reason === 'secret') {
+      log.debug("Leaving openpgpReadKey(). Secret.");
+      return openpgpRefusal('STS-OPENPGP-0002', 'that is a SECRET key; ' +
+        'paste the public key (gpg --armor --export), never the secret one');
+    }
+    if (pq.reason === 'unchecked') {
+      log.debug("Leaving openpgpReadKey(). Unchecked.");
+      return openpgpRefusal('STS-OPENPGP-0026',
+        'the key\'s post-quantum self-signature could not be checked on ' +
+        'this runtime (' + pq.why + '), so it was not stored',
+        { description: pq.description });
+    }
+    if (pq.ok) {
+      source = {
+        key: pq.key,
+        description: pq.description,
+        armored: pq.armored || openpgpPqc.armorPublic(pq.binary),
+        binary: pq.binary
+      };
+    } else if (pq.reason === 'bad-signature') {
+      log.debug("Leaving openpgpReadKey(). Bad self-signature.");
+      return openpgpRefusal('STS-OPENPGP-0008',
+        'the signature does not verify: ' + pq.why,
+        { description: pq.description });
+    } else {
+      log.debug("Leaving openpgpReadKey(). " + (pq.reason || read.reason));
+      return openpgpRefusal('STS-OPENPGP-0001', pq.reason === 'several'
+        ? 'the block holds more than one key; export exactly one'
+        : 'the block is not an OpenPGP public key: ' +
+          (pq.reason === 'not-pqc' ? read.why : (pq.why || read.why)));
+    }
+  }
+  const d = source.description;
+  if (d.revoked) {
+    log.debug("Leaving openpgpReadKey(). Revoked.");
+    return openpgpRefusal('STS-OPENPGP-0003', 'the key ' + d.fingerprint +
+                          ' is revoked', { description: d });
+  }
+  if (d.expired) {
+    log.debug("Leaving openpgpReadKey(). Expired.");
+    return openpgpRefusal('STS-OPENPGP-0003', 'the key ' + d.fingerprint +
+                          ' expired at ' + d.expiresAt, { description: d });
+  }
+  const primary = openpgpAlgorithmProblem(d.primary, 'sign', opts.minRsaBits,
+                                          opts.accept);
+  const signing = d.signing
+    ? openpgpAlgorithmProblem(d.signing, 'sign', opts.minRsaBits, opts.accept)
+    : 'the key has no valid signing key, so it cannot prove possession';
+  const encryption = d.encryption
+    ? openpgpAlgorithmProblem(d.encryption, 'encrypt', opts.minRsaBits,
+                             opts.accept) : '';
+  // EVERY KEY OF IT THAT WOULD SIGN OR BE ENCRYPTED TO, not only the two the
+  // engine prefers now: a cleartext may be signed by any valid signing
+  // subkey, and the preferred encryption subkey changes as subkeys expire.
+  // A weak one beside a strong one would otherwise be used later unjudged.
+  let others = '';
+  [].concat(d.signingKeys || []).forEach(function (one) {
+    others = others || openpgpAlgorithmProblem(one, 'sign', opts.minRsaBits,
+                                               opts.accept);
+  });
+  [].concat(d.encryptionKeys || []).forEach(function (one) {
+    others = others || openpgpAlgorithmProblem(one, 'encrypt',
+                                               opts.minRsaBits, opts.accept);
+  });
+  const lane = openpgpRegistrationProblem(d, opts);
+  const problem = primary || signing || encryption || others || lane;
+  if (problem) {
+    log.debug("Leaving openpgpReadKey(). Weak or unusable.");
+    return openpgpRefusal('STS-OPENPGP-0004', problem, { description: d });
+  }
+  log.debug("Leaving openpgpReadKey(). " + d.fingerprint);
+  return { ok: true, key: source.key, description: d,
+           armored: source.armored, binary: source.binary };
+}
+
+/**
+ * Normalises a challenge's text as a cleartext signature carries it: line
+ * ends as LF, trailing white space on each line and at the end removed
+ * (RFC 9580 section 7.1 strips it before signing).
+ *
+ * @param text - the text
+ * @returns the normalised text
+ */
+function openpgpNormaliseText(text) {
+  log.debug("Entering openpgpNormaliseText().");
+  log.debug("Leaving openpgpNormaliseText().");
+  return String(text || '').replace(/\r\n?/g, '\n').split('\n')
+    .map(function (line) {
+      return line.replace(/[ \t]+$/, '');
+    }).join('\n').replace(/\n+$/, '');
+}
+
+/**
+ * Verifies a proof of possession: a cleartext signature (`gpg --clearsign`)
+ * over exactly the challenge's text, by a signing key of the registered key,
+ * made no earlier than the challenge was issued (less the skew) and no
+ * later than now (plus the skew).
+ *
+ * @param signedText - the armored cleartext message
+ * @param key - the key `openpgpReadKey()` answered
+ * @param options - `{ expectedText, issuedAt (ms), at: Date, skewS }`
+ * @returns `{ ok: true, signer, created }`, or a coded refusal
+ *   (STS-OPENPGP-0007 to -0010)
+ */
+async function openpgpVerifyChallenge(signedText, key, options) {
+  log.debug("Entering openpgpVerifyChallenge().");
+  const opts = options || {};
+  const at = opts.at instanceof Date ? opts.at : new Date();
+  const skewMs = Math.max(0, Number(opts.skewS) || 0) * 1000;
+  const text = String(signedText || '');
+  if (!text || Buffer.byteLength(text) > OPENPGP_MAX_SIGNED_BYTES ||
+      text.indexOf('-----BEGIN PGP SIGNED MESSAGE-----') < 0) {
+    log.debug("Leaving openpgpVerifyChallenge(). Not a cleartext message.");
+    return openpgpRefusal('STS-OPENPGP-0007', 'that is not a cleartext ' +
+      'signed message: sign the challenge with gpg --clearsign and paste ' +
+      'everything from -----BEGIN PGP SIGNED MESSAGE----- to the end');
+  }
+  // A stored post-quantum key is verified by the leaf. pqcOnly is not
+  // passed: it narrowed registration, and this proof is of a key already
+  // held. An unchecked ML-DSA half is a refusal, not a pass on EdDSA alone.
+  const verified = key && key.pqc
+    ? openpgpPqc.verifyCleartext(text, key)
+    : await openpgpEngine.verifyCleartext(text, key, at);
+  if (!verified.ok) {
+    log.debug("Leaving openpgpVerifyChallenge(). " + verified.reason);
+    if (verified.reason === 'several') {
+      return openpgpRefusal('STS-OPENPGP-0029', 'the challenge must be ' +
+        'signed once, by one key: ' + verified.why);
+    }
+    if (verified.reason === 'unchecked') {
+      return openpgpRefusal('STS-OPENPGP-0026',
+        'the post-quantum half of the signature could not be checked on ' +
+        'this runtime (' + verified.why + ')');
+    }
+    return verified.reason === 'unreadable' || verified.reason === 'unsigned'
+      ? openpgpRefusal('STS-OPENPGP-0007', 'the signed message could not ' +
+                       'be read: ' + verified.why)
+      : openpgpRefusal('STS-OPENPGP-0008', verified.reason === 'other-key'
+          ? 'the challenge was ' + verified.why
+          : 'the signature does not verify: ' + verified.why);
+  }
+  const expected = openpgpNormaliseText(opts.expectedText);
+  if (!expected || openpgpNormaliseText(verified.text) !== expected) {
+    log.debug("Leaving openpgpVerifyChallenge(). Other text.");
+    return openpgpRefusal('STS-OPENPGP-0009', 'the signed text is not the ' +
+      'challenge this service issued: sign the challenge exactly as shown');
+  }
+  const created = Date.parse(verified.created || '');
+  const issued = Number(opts.issuedAt) || 0;
+  if (!(created > 0) || created < issued - skewMs ||
+      created > at.getTime() + skewMs) {
+    log.debug("Leaving openpgpVerifyChallenge(). Not fresh.");
+    return openpgpRefusal('STS-OPENPGP-0010', 'the signature was made at ' +
+      (verified.created || 'no stated time') + ', outside the challenge\'s ' +
+      'lifetime (check the clock of the computer that signed it)');
+  }
+  const problem = openpgpAlgorithmProblem(verified.signer, 'sign',
+                                          opts.minRsaBits, opts.accept);
+  if (problem) {
+    log.debug("Leaving openpgpVerifyChallenge(). The signer is weak.");
+    return openpgpRefusal('STS-OPENPGP-0004', problem);
+  }
+  log.debug("Leaving openpgpVerifyChallenge(). Verified.");
+  return { ok: true, signer: verified.signer, created: verified.created };
+}
+
+/**
+ * Encrypts bytes to a stored OpenPGP key's encryption key, armored (RFC
+ * 3156's encrypted part). Throws when the key no longer reads or has no
+ * encryption key valid now; the caller records its own code.
+ *
+ * @param bytes - the content
+ * @param armoredKey - the stored key
+ * @param at - the instant the key is judged at (a Date)
+ * @returns the armored OpenPGP message
+ */
+async function openpgpEncrypt(bytes, armoredKey, at) {
+  log.debug("Entering openpgpEncrypt().");
+  const text = String(armoredKey || '');
+  const when = at instanceof Date ? at : new Date();
+  const read = await openpgpEngine.readPublicKey(text);
+  if (read.ok) {
+    const out = await openpgpEngine.encryptTo(Buffer.from(bytes || []),
+                                              read.key, when);
+    log.debug("Leaving openpgpEncrypt().");
+    return out;
+  }
+  const pq = openpgpPqc.readPublicKey(text, when);
+  if (!pq.ok) {
+    log.debug("Leaving openpgpEncrypt(). Unreadable.");
+    // error-code: none — the caller tags the failure with its own code.
+    // An unchecked key was stored only after a runtime that could check
+    // it; this process must not encrypt to a key it cannot re-verify.
+    const why = pq.reason === 'unchecked'
+      ? 'its post-quantum signature could not be checked (' + pq.why + ')'
+      : (pq.reason === 'not-pqc' ? read.why : (pq.why || read.why));
+    throw new Error('the stored OpenPGP key does not read: ' + why);
+  }
+  const out = openpgpPqc.encryptTo(Buffer.from(bytes || []), pq.key);
+  log.debug("Leaving openpgpEncrypt().");
+  return out;
+}
+
+/**
+ * The binary transferable public key a stored armored key is: what the Web
+ * Key Directory answers.
+ *
+ * @param armoredKey - the stored key
+ * @returns the bytes, or null when it does not read
+ */
+async function openpgpBinaryKey(armoredKey) {
+  log.debug("Entering openpgpBinaryKey().");
+  const text = String(armoredKey || '');
+  const read = await openpgpEngine.readPublicKey(text);
+  if (read.ok) {
+    log.debug("Leaving openpgpBinaryKey(). Read.");
+    return openpgpEngine.binaryOf(read.key);
+  }
+  // The armor was checked when it was stored. Publishing it again on a
+  // runtime that cannot re-check ML-DSA still returns the bytes; it does
+  // not accept a new key (that refusal is openpgpReadKey's).
+  const pq = openpgpPqc.readPublicKey(text);
+  const binary = pq.binary && (pq.ok || pq.reason === 'unchecked')
+    ? pq.binary : null;
+  log.debug("Leaving openpgpBinaryKey(). " + (binary ? 'Read.' : 'No.'));
+  return binary;
+}
+
+/**
+ * The version of openpgp.js the engine runs on.
+ *
+ * @returns the version
+ */
+function openpgpLibraryVersion() {
+  log.debug("Entering openpgpLibraryVersion().");
+  log.debug("Leaving openpgpLibraryVersion().");
+  return openpgpEngine.libraryVersion();
+}
+
+// z-base-32 (Zooko's human-oriented base-32, the alphabet the Web Key
+// Directory's hashed local part is written in).
+const ZBASE32 = 'ybndrfg8ejkmcpqxot1uwisza345h769';
+
+/**
+ * Encodes bytes as z-base-32, most significant bit first, unpadded.
+ *
+ * @param bytes - the bytes
+ * @returns the text
+ */
+function zBase32(bytes) {
+  log.debug("Entering zBase32().");
+  const data = Buffer.from(bytes || []);
+  let out = '';
+  let buffer = 0;
+  let bits = 0;
+  for (let i = 0; i < data.length; i++) {
+    buffer = (buffer << 8) | data[i];
+    bits += 8;
+    while (bits >= 5) {
+      out += ZBASE32[(buffer >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) {
+    out += ZBASE32[(buffer << (5 - bits)) & 31];
+  }
+  log.debug("Leaving zBase32().");
+  return out;
+}
+
+// THE WEB KEY DIRECTORY'S HASHED LOCAL PART (draft-koch-openpgp-webkey-
+// service section 3.1): the local part mapped to lower case, its SHA-1, in
+// z-base-32 — 32 characters. SHA-1 is the draft's, fixed and compared as a
+// NAME rather than trusted for anything (the key it finds is the key the
+// person registered), so `digest()`'s list, which refuses SHA-1 to anything
+// new, is not widened — `kerberosTokenKeyIdentifier()`'s arrangement. The
+// draft maps only ASCII A-Z; anything else is left as given.
+/**
+ * The Web Key Directory's hashed local part of an address.
+ *
+ * @param localPart - the part before the `@`
+ * @returns the 32-character z-base-32 hash
+ */
+function wkdHash(localPart) {
+  log.debug("Entering wkdHash().");
+  const lowered = String(localPart || '').replace(/[A-Z]/g, function (c) {
+    return c.toLowerCase();
+  });
+  const out = zBase32(nodeCrypto.createHash('sha1')
+    .update(Buffer.from(lowered, 'utf8')).digest());
+  log.debug("Leaving wkdHash().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// S/MIME (RFC 8551): the recipient certificate, and the envelope.
+// ---------------------------------------------------------------------------
+const SMIME_EMAIL_PROTECTION = '1.3.6.1.5.5.7.3.4';
+const SMIME_ANY_EKU = '2.5.29.37.0';
+const SMIME_MIN_RSA_BITS = 2048;
+const SMIME_CURVES = { '1.2.840.10045.3.1.7': 'P-256',
+                       '1.3.132.0.34': 'P-384', '1.3.132.0.35': 'P-521' };
+// RFC 9935: an ML-KEM key in a certificate, parameters absent, and
+// keyEncipherment when key usage is present. RFC 9629 carries it in CMS
+// as KEMRecipientInfo inside OtherRecipientInfo (id-ori-kem is .13.3, not
+// the .13.1 other-recipient arc). ML-KEM-512 wraps with AES-128; 768 and
+// 1024 wrap with AES-256. The content cipher is the classical recipients'
+// (#2124): AES-256-GCM in AuthEnvelopedData unless the setting says CBC.
+const SMIME_KEM = {
+  '2.16.840.1.101.3.4.4.1': {
+    name: 'ML-KEM-512', publicBytes: 800, cipherBytes: 768,
+    kekBytes: 16, wrap: 'id-aes128-wrap',
+    wrapOid: '2.16.840.1.101.3.4.1.5', kem: 'ml_kem512'
+  },
+  '2.16.840.1.101.3.4.4.2': {
+    name: 'ML-KEM-768', publicBytes: 1184, cipherBytes: 1088,
+    kekBytes: 32, wrap: 'id-aes256-wrap',
+    wrapOid: '2.16.840.1.101.3.4.1.45', kem: 'ml_kem768'
+  },
+  '2.16.840.1.101.3.4.4.3': {
+    name: 'ML-KEM-1024', publicBytes: 1568, cipherBytes: 1568,
+    kekBytes: 32, wrap: 'id-aes256-wrap',
+    wrapOid: '2.16.840.1.101.3.4.1.45', kem: 'ml_kem1024'
+  }
+};
+const SMIME_ORI_KEM = '1.2.840.113549.1.9.16.13.3';
+const SMIME_HKDF_SHA256 = '1.2.840.113549.1.9.16.3.28';
+const SMIME_AES256_CBC = '2.16.840.1.101.3.4.1.42';
+const SMIME_ID_DATA = '1.2.840.113549.1.7.1';
+const SMIME_ID_ENVELOPED = '1.2.840.113549.1.7.3';
+// RFC 5083 id-ct-authEnvelopedData, RFC 5084 id-aes256-GCM (#2124).
+const SMIME_ID_AUTH_ENVELOPED = '1.2.840.113549.1.9.16.1.23';
+const SMIME_AES256_GCM = '2.16.840.1.101.3.4.1.46';
+// RFC 5084 section 3.2 recommends a 12-octet nonce; the ICV is the full 16
+// octets, which GCMParameters must then name (its DEFAULT is 12).
+const SMIME_GCM_NONCE_BYTES = 12;
+const SMIME_GCM_ICV_BYTES = 16;
+/**
+ * The content encryptions `mail.smimeContentEncryption` may name, the
+ * default first (#2124).
+ */
+const SMIME_CONTENT_ENCRYPTIONS = Object.freeze(['aes256-gcm',
+                                                 'aes256-cbc']);
+
+/**
+ * The certificates a `userSMIMECertificate` value holds: RFC 2798 section
+ * 2.8 makes it a PKCS#7 SignedData carrying the certificates, and a DER
+ * certificate on its own is what many directories hold instead.
+ *
+ * @param value - the attribute's value (a Buffer or the base64 of one)
+ * @returns pkijs certificates, possibly none
+ */
+function smimeCertificatesOf(value) {
+  log.debug("Entering smimeCertificatesOf().");
+  const pkijs = require('pkijs');
+  const der = Buffer.isBuffer(value) ? value
+    : Buffer.from(String(value || '').replace(/-----[^-]+-----|\s/g, ''),
+                  'base64');
+  const parsed = asn1js.fromBER(new Uint8Array(der).buffer);
+  if (parsed.offset === -1) {
+    log.debug("Leaving smimeCertificatesOf(). Not BER.");
+    return [];
+  }
+  try {
+    const certificate = new pkijs.Certificate({ schema: parsed.result });
+    log.debug("Leaving smimeCertificatesOf(). A certificate.");
+    return [certificate];
+  } catch (e) {
+    log.debug("Caught in smimeCertificatesOf(): " + ((e && e.message) || e));
+    // Not a certificate on its own: a SignedData carrying some.
+  }
+  try {
+    const info = new pkijs.ContentInfo({ schema: parsed.result });
+    const signed = new pkijs.SignedData({ schema: info.content });
+    const out = (signed.certificates || []).filter(function (one) {
+      return one instanceof pkijs.Certificate;
+    });
+    log.debug("Leaving smimeCertificatesOf(). " + out.length + " in a " +
+              "SignedData.");
+    return out;
+  } catch (e) {
+    log.debug("Caught in smimeCertificatesOf(): " + ((e && e.message) || e));
+    log.debug("Leaving smimeCertificatesOf(). Neither.");
+    return [];
+  }
+}
+
+/**
+ * Answers whether a key is a signing key in the HSM: its key object, or its
+ * reference.
+ *
+ * @param key - anything a signer is handed
+ * @returns true for an HSM key
+ */
+function isHsmKey(key) {
+  log.debug('Entering isHsmKey().');
+  const out = !!(key && typeof key === 'object' && key.hsm === true) ||
+              (typeof key === 'string' && key.indexOf(HSM_KEY_PREFIX) === 0);
+  log.debug('Leaving isHsmKey(). ' + out);
+  return out;
+}
+
+// The key object an HSM key's reference or object names; STS-KEYS-0206 when
+// this thread cannot reach it.
+function hsmKeyOf(key) {
+  log.debug('Entering hsmKeyOf().');
+  if (key && typeof key === 'object' && key.hsm === true) {
+    log.debug('Leaving hsmKeyOf(). An object.');
+    return key;
+  }
+  const text = String(key);
+  const held = hsmKeys.get(text);
+  if (held) {
+    log.debug('Leaving hsmKeyOf(). Held.');
+    return held;
+  }
+  const ref = hsmRefOf(text);
+  if (!ref || !pkcs11KeyResolver) {
+    throw errorCodes.mark(new Error('a signing key in the HSM was named ' +
+      'and this process holds no PKCS#11 token to find it on (is ' +
+      'keys.signingKeyToken set, and the keystore persisting?)'),
+      'STS-KEYS-0206');
+  }
+  const found = pkcs11KeyResolver(ref);
+  const made = makeHsmKey(found.token, found.key, found.publicKey, ref);
+  hsmKeys.set(text, made);
+  log.debug('Leaving hsmKeyOf(). Resolved.');
+  return made;
+}
+
+// The key object: a KeyObject's shape where a check reads one, and the
+// token's C_Sign behind it.
+function makeHsmKey(token, engineKey, publicKey, ref) {
+  log.debug('Entering makeHsmKey().');
+  const text = hsmRefText(ref);
+  const kind = publicKey.asymmetricKeyType;
+  const out = Object.freeze({
+    hsm: true,
+    type: 'private',
+    asymmetricKeyType: kind,
+    asymmetricKeyDetails: publicKey.asymmetricKeyDetails,
+    publicKey: publicKey,
+    ref: text,
+    token: token.describe(),
+    // Its "PEM" is its reference: what a set serialises and seals.
+    export: function (opts) {
+      log.debug('Entering hsmKey.export().');
+      if (opts && opts.format === 'jwk') {
+        throw errorCodes.mark(new Error('a signing key in the HSM has no ' +
+          'private JWK; it does not leave the HSM'), 'STS-KEYS-0206');
+      }
+      log.debug('Leaving hsmKey.export(). The reference.');
+      return text;
+    },
+    signSync: function (alg, data) {
+      return token.signSync(engineKey, alg, data);
+    },
+    sign: function (alg, data) {
+      return token.sign(engineKey, alg, data);
+    },
+    // RSA-OAEP and ECDH in the token (#1955 P8 follow-up), for the doors
+    // below: `hsmRsaDecrypt()` and `hsmEcdh()`.
+    decryptOaep: function (hash, label, data, async) {
+      return token.decryptOaep(engineKey, hash, label, data, async);
+    },
+    deriveEcdh: function (point, bytes, async) {
+      return token.deriveEcdh(engineKey, point, bytes, async);
+    }
+  });
+  hsmKeys.set(text, out);
+  log.debug('Leaving makeHsmKey(). ' + kind);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// DECRYPTING WITH A REALM KEY IN THE HSM (#1955 P8 follow-up). The realm's
+// signing keys are also what opens a document a partner encrypted to them
+// (XML Encryption's key transport and key agreement, a JWE assertion's
+// RSA-OAEP and ECDH-ES), so every private-key decryption here goes through
+// these two: node's own for a software key, the token's for an HSM key.
+// RSA PKCS#1 v1.5 is refused for an HSM key (STS-KEYS-0206) — OpenSSL's
+// implicit rejection is what makes it safe here, and a module has none.
+// ---------------------------------------------------------------------------
+/**
+ * Decrypts with an RSA private key: node's OAEP or PKCS#1 v1.5, or RSA-OAEP
+ * in the HSM.
+ *
+ * @param key - a KeyObject, a PEM, an HSM key or its reference
+ * @param params - `{ padding, oaepHash, oaepLabel }`, node's
+ * @param data - the ciphertext
+ * @returns the plaintext
+ */
+function rsaPrivateDecrypt(key, params, data) {
+  log.debug('Entering rsaPrivateDecrypt().');
+  if (isHsmKey(key)) {
+    if (params.padding !== nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING) {
+      throw errorCodes.mark(new Error('RSA PKCS#1 v1.5 decryption is never ' +
+        'asked of a key in the HSM (a module has no implicit rejection, so ' +
+        'its refusal would be a padding oracle); use RSA-OAEP'),
+        'STS-KEYS-0206');
+    }
+    const hsmKey = hsmKeyOf(key);
+    const hash = params.oaepHash || 'sha1';
+    if (hsmPass || hsmKnownHas(['oaep', hsmKey.ref, hash,
+        params.oaepLabel ? Buffer.from(params.oaepLabel).toString('base64')
+                         : '', Buffer.from(data).toString('base64')])) {
+      // A PASS OF AN OFF-THE-LOOP DOOR (`decryptElementOffLoop()`), or an
+      // answer fetched off the loop before (`withHsmAnswers()`): the answer
+      // it already has, or the request for one.
+      log.debug('Leaving rsaPrivateDecrypt(). Asked of the pass.');
+      return hsmPassAnswer(['oaep', hsmKey.ref, hash,
+        params.oaepLabel ? Buffer.from(params.oaepLabel).toString('base64')
+                         : '', Buffer.from(data).toString('base64')],
+        function () {
+          return hsmKey.decryptOaep(hash, params.oaepLabel, data, true)
+            .catch(function (e) {
+              throw hsmDecryptRefusal(e);
+            });
+        });
+    }
+    let out;
+    try {
+      out = hsmKey.decryptOaep(hash, params.oaepLabel, data, false);
+    } catch (e) {
+      log.debug('Caught in rsaPrivateDecrypt(): ' + ((e && e.message) || e));
+      throw hsmDecryptRefusal(e);
+    }
+    log.debug('Leaving rsaPrivateDecrypt(). In the HSM.');
+    return out;
+  }
+  const out = nodeCrypto.privateDecrypt(Object.assign({},
+    params, { key: privateKeyObject(key) }), data);
+  log.debug('Leaving rsaPrivateDecrypt().');
+  return out;
+}
+
+// A KEY MADE BEFORE IT COULD DECRYPT (STS-KEYS-0208): the HSM keys the first
+// cut of #1955 P8 made carried CKA_SIGN alone, and an object's usage cannot
+// be widened from here (CKA_DECRYPT is not modifiable on most modules and
+// this service will not try). The remedy is a new key, so the refusal says
+// which rotation makes one. Any other HSM failure passes through unchanged.
+function hsmDecryptRefusal(e) {
+  log.debug('Entering hsmDecryptRefusal().');
+  if (errorCodes.codeOf(e) !== 'STS-KEYS-0208') {
+    log.debug('Leaving hsmDecryptRefusal(). Not that.');
+    return e;
+  }
+  log.debug('Leaving hsmDecryptRefusal().');
+  return errorCodes.mark(new Error('this HSM key was made without ' +
+    'decryption (CKA_DECRYPT, or CKA_DERIVE for ECDH), by a build before ' +
+    'the realm\'s keys in the HSM could decrypt: rotate the realm\'s ' +
+    'signing keys (POST /admin-api/keys/rotate, or signing.rotate-now) and ' +
+    'the new keys are made with it. ' + ((e && e.message) || e)),
+    'STS-KEYS-0208');
+}
+
+// The field size of a NIST curve, by node's name, for Z's length.
+const EC_FIELD_BYTES = { prime256v1: 32, secp384r1: 48, secp521r1: 66 };
+
+/**
+ * ECDH's shared secret Z with an EC private key: node's, or the HSM's.
+ *
+ * @param privateKey - a KeyObject, an HSM key or its reference
+ * @param publicKey - the other party's public KeyObject
+ * @returns Z
+ */
+function ecdhSecret(privateKey, publicKey) {
+  log.debug('Entering ecdhSecret().');
+  if (isHsmKey(privateKey)) {
+    const hsmKey = hsmKeyOf(privateKey);
+    const point = ecPointOf(publicKey);
+    const bytes =
+      EC_FIELD_BYTES[(hsmKey.asymmetricKeyDetails || {}).namedCurve] || 32;
+    if (hsmPass || hsmKnownHas(['ecdh', hsmKey.ref, String(bytes),
+                                point.toString('base64')])) {
+      // As in rsaPrivateDecrypt(): a pass of an off-the-loop door.
+      log.debug('Leaving ecdhSecret(). Asked of the pass.');
+      return hsmPassAnswer(['ecdh', hsmKey.ref, String(bytes),
+                            point.toString('base64')], function () {
+        return hsmKey.deriveEcdh(point, bytes, true).catch(function (e) {
+          throw hsmDecryptRefusal(e);
+        });
+      });
+    }
+    let out;
+    try {
+      out = hsmKey.deriveEcdh(point, bytes, false);
+    } catch (e) {
+      log.debug('Caught in ecdhSecret(): ' + ((e && e.message) || e));
+      throw hsmDecryptRefusal(e);
+    }
+    log.debug('Leaving ecdhSecret(). In the HSM.');
+    return out;
+  }
+  const out = nodeCrypto.diffieHellman({ privateKey: privateKey,
+                                         publicKey: publicKey });
+  log.debug('Leaving ecdhSecret().');
+  return out;
+}
+
+// The uncompressed point of an EC public KeyObject.
+function ecPointOf(publicKey) {
+  log.debug('Entering ecPointOf().');
+  const jwk = publicKey.export({ format: 'jwk' });
+  log.debug('Leaving ecPointOf().');
+  return Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, 'base64url'),
+                        Buffer.from(jwk.y, 'base64url')]);
+}
+
+// The kind of key a JWS or XML algorithm signs with in the HSM, and what it
+// is called in the engine (`crypto_impl/pkcs11.js`'s SIGNING).
+function hsmSigningAlg(key, jwsAlg) {
+  log.debug('Entering hsmSigningAlg(). ' + jwsAlg);
+  const spec = JWS_ALGS[jwsAlg];
+  const kind = key.asymmetricKeyType;
+  const details = key.asymmetricKeyDetails || {};
+  const signing = pkcs11Engine.SIGNING[jwsAlg];
+  const parameter = String(details.parameterSet || '');
+  // An ML-DSA key signs only its own parameter set, and only when SIGNING
+  // names that algorithm. An RSA key asked for ML-DSA still fails here
+  // (STS-KEYS-0206). The token must also offer CKM_ML_DSA; that check is
+  // `Pkcs11Token.sign()`, because this function does not hold the token.
+  // The kind is node's: `ml-dsa-65`, `slh-dsa-sha2-128s` on a runtime that
+  // imports the key (node 24), `ml-dsa` or `slh-dsa` with the parameter set
+  // beside it on one that cannot (#2220: node 24's spelling was refused).
+  const mldsa = !!(signing && signing.kty === 'AKP' && spec &&
+    spec.family === 'pq' &&
+    (/^(ml-dsa|slh-dsa)(-|$)/.test(String(kind)) || kind === 'akp') &&
+    parameter === jwsAlg);
+  const fits = spec && ((spec.family === 'rsa' && kind === 'rsa') ||
+    (spec.family === 'ec' && kind === 'ec' &&
+     details.namedCurve === spec.namedCurve) ||
+    (jwsAlg === 'EdDSA' && (kind === 'ed25519' || kind === 'ed448')) ||
+    mldsa);
+  if (!fits || signing === undefined) {
+    throw errorCodes.mark(new Error('the HSM key (' + kind + ') does not ' +
+      'sign ' + jwsAlg + '; ML-DSA and SLH-DSA are asked of the HSM only ' +
+      'for a key of that parameter set, and the composites, HMAC and ' +
+      'Ed448 stay in software'), 'STS-KEYS-0206');
+  }
+  log.debug('Leaving hsmSigningAlg().');
+  return jwsAlg;
+}
+
+// jsonwebtoken's framing for a call `classicalSigningInput()` cannot
+// reproduce (a claim convenience): the library is asked to sign with a
+// THROWAWAY key of the same kind, and only its header and payload are kept —
+// the signature is the HSM's. One throwaway per kind, per process.
+const framingKeys = new Map();
+function jsonwebtokenFraming(payload, algorithm, options) {
+  log.debug('Entering jsonwebtokenFraming(). ' + algorithm);
+  const spec = JWS_ALGS[algorithm];
+  const want = spec.family === 'rsa' ? 'rsa' :
+    { ES256: 'prime256v1', ES384: 'secp384r1', ES512: 'secp521r1' }[algorithm];
+  let throwaway = framingKeys.get(want);
+  if (!throwaway) {
+    throwaway = want === 'rsa'
+      ? nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
+        .privateKey
+      : nodeCrypto.generateKeyPairSync('ec', { namedCurve: want }).privateKey;
+    framingKeys.set(want, throwaway);
+  }
+  const signOptions = { algorithm: algorithm };
+  for (let i = 0; i < SIGN_OPTIONS.length; i++) {
+    const name = SIGN_OPTIONS[i];
+    if (options[name] !== undefined) {
+      signOptions[name] = options[name];
+    }
+  }
+  const parts = jwt.sign(payload, throwaway, signOptions).split('.');
+  log.debug('Leaving jsonwebtokenFraming().');
+  return parts[0] + '.' + parts[1];
+}
+
+// The signing input an HSM key signs for one JWS: the same framing the
+// software door would have made, so a token signed in the HSM is the token
+// this service always issued.
+function hsmSigningInput(payload, key, algorithm, spec, options) {
+  log.debug('Entering hsmSigningInput(). ' + algorithm);
+  const asked = options || {};
+  // A POST-QUANTUM KEY IN THE HSM (#2220): the framing every post-quantum
+  // JWS here has (`pqSigningInput()`), which neither branch below makes —
+  // jsonwebtoken knows no ML-DSA or SLH-DSA.
+  if (spec.family === 'pq') {
+    log.debug('Leaving hsmSigningInput(). pqSigningInput().');
+    return pqSigningInput(payload, algorithm, asked);
+  }
+  if (spec.ownSigner) {
+    const header = protectedHeaderFor(algorithm, asked);
+    const body = Object.assign({}, payload);
+    if (body.iat === undefined) {
+      body.iat = Math.floor(Date.now() / 1000);
+    }
+    log.debug('Leaving hsmSigningInput(). signJws()\'s own framing.');
+    return b64u(Buffer.from(JSON.stringify(header), 'utf8')) + '.' +
+           b64u(Buffer.from(JSON.stringify(body), 'utf8'));
+  }
+  const plan = classicalSigningInput(payload, key, algorithm, spec, asked);
+  if (plan) {
+    log.debug('Leaving hsmSigningInput(). classicalSigningInput().');
+    return plan.input;
+  }
+  log.debug('Leaving hsmSigningInput(). jsonwebtoken\'s, by a throwaway.');
+  return jsonwebtokenFraming(payload, algorithm, asked);
+}
+
+/**
+ * Signs a JWT payload with a signing key in the HSM, synchronously (the
+ * event loop waits for the HSM) or not.
+ *
+ * @param payload - the claims
+ * @param key - the HSM key or its reference
+ * @param opts - as for `signJws()`
+ * @param async - true for a promise, the signature computed off the loop
+ * @returns the compact JWS, or a promise of it
+ */
+function hsmSignJws(payload, key, opts, async) {
+  log.debug('Entering hsmSignJws().');
+  const options = opts || {};
+  const algorithm = options.algorithm || 'RS256';
+  const hsmKey = hsmKeyOf(key);
+  const spec = jwsSpec(algorithm);
+  hsmSigningAlg(hsmKey, algorithm);
+  const input = hsmSigningInput(payload, hsmKey, algorithm, spec, options);
+  if (async) {
+    log.debug('Leaving hsmSignJws(). Off the loop.');
+    return hsmKey.sign(algorithm, Buffer.from(input, 'ascii'))
+      .then(function (sig) {
+        return input + '.' + b64u(sig);
+      });
+  }
+  const sig = hsmKey.signSync(algorithm, Buffer.from(input, 'ascii'));
+  log.debug('Leaving hsmSignJws(). In place.');
+  return input + '.' + b64u(sig);
+}
+
+// ---------------------------------------------------------------------------
+// EVERY DOOR OFF THE EVENT LOOP FOR A KEY IN THE HSM (#1955 P8 follow-up,
+// 2026-11-23). rcbj: "I do not want this activity to block the main event
+// loop." Until this, the synchronous doors (`signJws()`, `signXml()`,
+// `signQueryString()`, `decryptElement()`, a self-signed certificate) either
+// waited on the token there — `keys.pkcs11SynchronousSign` on — or refused
+// (STS-KEYS-0209), so a realm whose keys are in the HSM issued no access
+// token, SAML assertion or WS-Federation response with the setting off.
+//
+// Each has a twin here, named `…OffLoop()`, that every service caller of the
+// door with a REALM key awaits:
+//
+//   * FOR A SOFTWARE KEY IT IS THE SYNCHRONOUS DOOR, called as it was and its
+//     answer resolved — the same bytes, in the same order, and nothing but
+//     an await added. (`signJwsAsync()` is not that: it signs RSA and curve
+//     JWSs on libuv, which is a different road, chosen by its own callers.)
+//   * FOR AN HSM KEY THE TOKEN'S PART IS ASYNCHRONOUS — C_SignAsync,
+//     C_DecryptAsync, C_DeriveKeyAsync, on libuv's thread pool — and
+//     everything around it is the synchronous door's own code, so a document
+//     signed off the loop is the document signed in place:
+//       - a signature is DEFERRED: the door runs with a `hsmDeferred` that
+//         records what C_Sign would have been given and answers a unique
+//         placeholder, and the real signature is written where the
+//         placeholder is (an XML SignatureValue, which SignedInfo does not
+//         cover; a certificate's signature, re-encoded);
+//       - a decryption is a PASS: the door runs with `hsmPass` set; the first
+//         time it asks the token for something it has no answer to, the ask
+//         is recorded and the pass abandoned; the answer is fetched off the
+//         loop and the door runs again with it. Answers are keyed by what was
+//         asked (the key, the parameters, the bytes), not by position, so a
+//         door that takes a different branch once it has an answer cannot be
+//         handed the wrong one. The door is pure but for its logging, so a
+//         second pass is the first with the answer in it.
+//
+// `hsmPass` is a module variable because a pass is ONE SYNCHRONOUS CALL:
+// nothing else runs on this thread between its set and its clear.
+// ---------------------------------------------------------------------------
+let hsmPass = null;
+const HSM_PASS_PENDING = new Error('an HSM operation is asked of this pass');
+
+// The answer a pass already holds for one ask, or the ask recorded and the
+// pass abandoned (`HSM_PASS_PENDING`, which the door may catch as a failure;
+// its answer is discarded either way).
+function hsmPassAnswer(parts, run) {
+  log.debug('Entering hsmPassAnswer(). ' + parts[0]);
+  const pass = hsmPass || { answers: hsmKnown, asks: new Map() };
+  const id = parts.join('|');
+  if (pass.answers.has(id)) {
+    const held = pass.answers.get(id);
+    if (held.error) {
+      log.debug('Leaving hsmPassAnswer(). Its refusal.');
+      throw held.error;
+    }
+    log.debug('Leaving hsmPassAnswer(). Answered.');
+    return held.value;
+  }
+  if (!pass.asks.has(id)) {
+    pass.asks.set(id, run);
+  }
+  log.debug('Leaving hsmPassAnswer(). Asked.');
+  throw HSM_PASS_PENDING;
+}
+
+// ANSWERS FETCHED AHEAD (`hsmAnswersFor()` / `withHsmAnswers()`): for a door
+// whose caller cannot be run twice — a WS-Trust request records and consumes
+// things on its way to its decryption — the decryption alone is run in passes
+// first, over a copy, and the caller then runs ONCE with those answers in
+// hand. An ask it has no answer for takes the synchronous road.
+let hsmKnown = null;
+
+// Whether an answer fetched ahead is held for this ask.
+function hsmKnownHas(parts) {
+  log.debug('Entering hsmKnownHas().');
+  const out = !!(hsmKnown && hsmKnown.has(parts.join('|')));
+  log.debug('Leaving hsmKnownHas(). ' + out);
+  return out;
+}
+
+/**
+ * Runs a pure door that decrypts with realm keys in passes, off the event
+ * loop, and answers what the HSM said — for `withHsmAnswers()`.
+ *
+ * @param door - a synchronous function with no effect but its answer
+ * @returns a promise of the answers, by ask
+ */
+async function hsmAnswersFor(door) {
+  log.debug('Entering hsmAnswersFor().');
+  const held = { answers: null };
+  try {
+    await inHsmPasses(door, held);
+  } catch (e) {
+    // The door's own refusal is the caller's to meet again; only the
+    // answers are wanted here.
+    log.debug('Caught in hsmAnswersFor(): ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving hsmAnswersFor(). ' + held.answers.size + ' answer(s).');
+  return held.answers;
+}
+
+/**
+ * Runs a synchronous function with answers fetched off the event loop in
+ * hand: a decryption with a realm key in the HSM that asks one of them is
+ * answered, and any other takes its usual road.
+ *
+ * @param answers - `hsmAnswersFor()`'s
+ * @param fn - the function
+ * @returns what `fn` answers
+ */
+function withHsmAnswers(answers, fn) {
+  log.debug('Entering withHsmAnswers().');
+  const before = hsmKnown;
+  hsmKnown = answers && answers.size ? answers : before;
+  try {
+    const out = fn();
+    log.debug('Leaving withHsmAnswers().');
+    return out;
+  } finally {
+    hsmKnown = before;
+  }
+}
+
+// Runs a synchronous door in passes until it asks the HSM nothing it has no
+// answer to, fetching each answer off the event loop between passes. A
+// door's own refusal (a throw) is its answer, as it would have been.
+async function inHsmPasses(door, held) {
+  log.debug('Entering inHsmPasses().');
+  const answers = new Map();
+  if (held) {
+    held.answers = answers;
+  }
+  for (let round = 0; round < 8; round++) {
+    const pass = { answers: answers, asks: new Map() };
+    let out;
+    let failed = null;
+    hsmPass = pass;
+    try {
+      out = door();
+    } catch (e) {
+      log.debug('Caught in inHsmPasses(): ' + ((e && e.message) || e));
+      failed = e;
+    } finally {
+      hsmPass = null;
+    }
+    if (!pass.asks.size) {
+      if (failed) {
+        log.debug('Leaving inHsmPasses(). Refused, after ' + round +
+                  ' answer(s).');
+        throw failed;
+      }
+      log.debug('Leaving inHsmPasses(). After ' + round + ' answer(s).');
+      return out;
+    }
+    const asked = Array.from(pass.asks.entries());
+    for (let i = 0; i < asked.length; i++) {
+      try {
+        answers.set(asked[i][0], { value: await asked[i][1]() });
+      } catch (e) {
+        log.debug('Caught in inHsmPasses(): ' + ((e && e.message) || e));
+        answers.set(asked[i][0], { error: e });
+      }
+    }
+  }
+  log.debug('Leaving inHsmPasses(). Too many passes.');
+  // error-code: none — a programming error: no door here asks the HSM more
+  // than twice (a key transport or an agreement, once each).
+  throw new Error('crypto: an off-the-loop HSM door asked the token for a ' +
+                  'new answer on eight passes running');
+}
+
+// A deferral for one signature: what C_Sign would have been given, and the
+// placeholder the door was answered with.
+function hsmSignDeferral() {
+  log.debug('Entering hsmSignDeferral().');
+  const held = [];
+  log.debug('Leaving hsmSignDeferral().');
+  return {
+    held: held,
+    hold: function (hsmKey, alg, input, cert) {
+      log.debug('Entering hsmSignDeferral.hold(). ' + alg);
+      // 33 random bytes: base64 without padding, and found nowhere else.
+      const placeholder = nodeCrypto.randomBytes(33);
+      held.push({ hsmKey: hsmKey, alg: alg, input: Buffer.from(input),
+                  placeholder: placeholder, cert: cert || null });
+      log.debug('Leaving hsmSignDeferral.hold().');
+      return placeholder;
+    }
+  };
+}
+
+// The one signature a deferred door held, made with C_SignAsync.
+function hsmDeferredSignature(deferral) {
+  log.debug('Entering hsmDeferredSignature().');
+  if (deferral.held.length !== 1) {
+    log.debug('Leaving hsmDeferredSignature(). ' + deferral.held.length +
+              ' held.');
+    // error-code: none — a programming error: each deferred door signs once.
+    return Promise.reject(new Error('crypto: an off-the-loop HSM signature ' +
+      'held ' + deferral.held.length + ' signatures, not one'));
+  }
+  const one = deferral.held[0];
+  log.debug('Leaving hsmDeferredSignature().');
+  return one.hsmKey.sign(one.alg, one.input).then(function (sig) {
+    return { held: one, signature: Buffer.from(sig) };
+  });
+}
+
+/**
+ * `signJws()`, with an HSM key's signature made off the event loop
+ * (C_SignAsync). Any other key is `signJws()` itself, resolved.
+ *
+ * @param payload - the claims
+ * @param key - the signing key
+ * @param opts - as for `signJws()`
+ * @returns a promise of the compact JWS
+ */
+function signJwsOffLoop(payload, key, opts) {
+  log.debug('Entering signJwsOffLoop().');
+  try {
+    if (isHsmKey(key)) {
+      log.debug('Leaving signJwsOffLoop(). The HSM.');
+      return hsmSignJws(payload, key, opts || {}, true);
+    }
+    const out = signJws(payload, key, opts);
+    log.debug('Leaving signJwsOffLoop(). signJws().');
+    return Promise.resolve(out);
+  } catch (e) {
+    log.debug('Caught in signJwsOffLoop(): ' + ((e && e.message) || e));
+    log.debug('Leaving signJwsOffLoop(). Refused.');
+    return Promise.reject(e);
+  }
+}
+
+/**
+ * `signXml()`, with an HSM key's SignatureValue made off the event loop:
+ * SignedInfo is canonicalised here, C_SignAsync signs it, and the signature
+ * is written into the document. Any other key is `signXml()`, resolved.
+ *
+ * @param xml - the document
+ * @param opts - as for `signXml()`
+ * @returns a promise of the signed document
+ */
+async function signXmlOffLoop(xml, opts) {
+  log.debug('Entering signXmlOffLoop().');
+  const options = opts || {};
+  if (!isHsmKey(options.privateKey || options.privateKeyPem)) {
+    log.debug('Leaving signXmlOffLoop(). signXml().');
+    return signXml(xml, options);
+  }
+  const deferral = hsmSignDeferral();
+  const pending = signXml(xml, Object.assign({}, options,
+                                             { hsmDeferred: deferral }));
+  const made = await hsmDeferredSignature(deferral);
+  const marker = '>' + made.held.placeholder.toString('base64') + '<';
+  const at = pending.indexOf(marker);
+  if (at < 0 || pending.indexOf(marker, at + 1) >= 0) {
+    log.debug('Leaving signXmlOffLoop(). The placeholder is not once.');
+    // error-code: none — a programming error: the engine writes the
+    // SignatureValue it was answered once, unwrapped.
+    throw new Error('crypto: the signed document does not hold its ' +
+                    'SignatureValue placeholder exactly once');
+  }
+  log.debug('Leaving signXmlOffLoop(). ' + made.held.alg + ' in the HSM.');
+  return pending.slice(0, at) + '>' + made.signature.toString('base64') +
+         '<' + pending.slice(at + marker.length);
+}
+
+/**
+ * `signQueryString()`, with an HSM key's signature made off the event loop.
+ * Any other key is `signQueryString()`, resolved.
+ *
+ * @param queryString - the query string to sign
+ * @param privateKeyPem - the RSA private key
+ * @param sigAlg - the signature algorithm URI
+ * @param privateKey - as for `signQueryString()`
+ * @returns a promise of the base64 signature
+ */
+async function signQueryStringOffLoop(queryString, privateKeyPem, sigAlg,
+                                      privateKey) {
+  log.debug('Entering signQueryStringOffLoop().');
+  if (!isHsmKey(privateKey || privateKeyPem)) {
+    log.debug('Leaving signQueryStringOffLoop(). signQueryString().');
+    return signQueryString(queryString, privateKeyPem, sigAlg, privateKey);
+  }
+  // signQueryString()'s refusal first, as it makes it.
+  const unsignable = signaturePolicy.signCause('xml', sigAlg);
+  if (unsignable) {
+    log.debug('Leaving signQueryStringOffLoop(). Not signed here.');
+    throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+  }
+  const hsmKey = hsmKeyOf(privateKey || privateKeyPem);
+  const sig = await hsmKey.sign(
+    hsmXmlAlg(XML_SIGNATURE_METHODS[sigAlg] || null),
+    Buffer.from(String(queryString), 'utf8'));
+  log.debug('Leaving signQueryStringOffLoop(). In the HSM.');
+  return Buffer.from(sig).toString('base64');
+}
+
+/**
+ * `decryptElement()`, with an HSM key's RSA-OAEP decryption or ECDH
+ * agreement made off the event loop. Any other key is `decryptElement()`,
+ * resolved.
+ *
+ * @param xml - the document holding the encrypted element
+ * @param privateKeyPem - the recipient's key: a PEM, a KeyObject, an HSM key
+ *   or its reference
+ * @param opts - as for `decryptElement()`
+ * @returns a promise of `decryptElement()`'s answer
+ */
+async function decryptElementOffLoop(xml, privateKeyPem, opts) {
+  log.debug('Entering decryptElementOffLoop().');
+  if (!isHsmKey(privateKeyPem)) {
+    log.debug('Leaving decryptElementOffLoop(). decryptElement().');
+    return decryptElement(xml, privateKeyPem, opts);
+  }
+  const out = await inHsmPasses(function () {
+    return decryptElement(xml, privateKeyPem, opts);
+  });
+  log.debug('Leaving decryptElementOffLoop(). The HSM, off the loop.');
+  return out;
+}
+
+/**
+ * `selfSignedRsaCertificate()`, with an HSM key's signature over the
+ * TBSCertificate made off the event loop. Any other key is
+ * `selfSignedRsaCertificate()`, resolved.
+ *
+ * @param opts - as for `selfSignedRsaCertificate()`
+ * @returns a promise of its answer
+ */
+async function selfSignedRsaCertificateOffLoop(opts) {
+  log.debug('Entering selfSignedRsaCertificateOffLoop().');
+  const options = opts || {};
+  if (!isHsmKey(options.rsaPrivateKeyPem)) {
+    log.debug('Leaving selfSignedRsaCertificateOffLoop(). In place.');
+    return selfSignedRsaCertificate(options);
+  }
+  const deferral = hsmSignDeferral();
+  const pending = selfSignedRsaCertificate(Object.assign({}, options,
+    { hsmDeferred: deferral }));
+  const made = await hsmDeferredSignature(deferral);
+  made.held.cert.signature = made.signature.toString('binary');
+  const certPem = forge.pki.certificateToPem(made.held.cert);
+  log.debug('Leaving selfSignedRsaCertificateOffLoop(). In the HSM.');
+  return Object.assign({}, pending, { certPem: certPem,
+                                      certB64: stripPem(certPem) });
+}
+
+// The engine's name for an XML SignatureMethod an HSM key signs: RSA and
+// RSA-PSS over SHA-2, ECDSA over SHA-2. SHA-1, SHA-224 and the rest are
+// refused rather than made in software.
+function hsmXmlAlg(method) {
+  log.debug('Entering hsmXmlAlg().');
+  const bits = { sha256: '256', sha384: '384', sha512: '512' }[
+    String(method && method.hash)];
+  const prefix = { rsa: 'RS', 'rsa-pss': 'PS', ecdsa: 'ES' }[
+    String(method && method.family)];
+  if (!bits || !prefix) {
+    throw errorCodes.mark(new Error('a signing key in the HSM signs XML ' +
+      'with RSA, RSA-PSS or ECDSA over SHA-256, SHA-384 or SHA-512 only (' +
+      ((method && method.label) || 'this method') + ' is not one)'),
+      'STS-KEYS-0206');
+  }
+  log.debug('Leaving hsmXmlAlg().');
+  return prefix + bits;
+}
+
+/**
+ * Generates a signing key pair in an HSM token: sensitive, non-extractable,
+ * a token object under a random CKA_ID. Synchronous: the event loop waits
+ * for the module (an RSA key in a YubiHSM 2 takes seconds), which is why
+ * `helpers.js` generates off a request where it can.
+ *
+ * @param token - the token (`secrets.openHsmToken()`)
+ * @param tokenUri - the token's PKCS#11 URI, recorded in the reference
+ * @param spec - `{ kty: 'RSA', bits }` or `{ kty: 'EC'|'OKP', crv }`
+ * @param label - CKA_LABEL, for an operator listing the token
+ * @returns `{ privateKey, publicKey }`: the HSM key object and a KeyObject
+ */
+function generatePkcs11KeyPair(token, tokenUri, spec, label) {
+  log.debug('Entering generatePkcs11KeyPair(). ' + spec.kty);
+  const id = nodeCrypto.randomBytes(16);
+  const made = token.generateKeyPair(spec, label, id);
+  const ref = hsmRefFor(tokenUri, id, spec);
+  const key = makeHsmKey(token, made.key, made.publicKey, ref);
+  log.debug('Leaving generatePkcs11KeyPair().');
+  return { privateKey: key, publicKey: made.publicKey };
+}
+
+/**
+ * The same as `generatePkcs11KeyPair()`, with the generation off the event
+ * loop where the binding can.
+ *
+ * @param token - the token
+ * @param tokenUri - the token's PKCS#11 URI
+ * @param spec - `{ kty: 'RSA', bits }` or `{ kty: 'EC'|'OKP', crv }`
+ * @param label - CKA_LABEL
+ * @returns a promise of `{ privateKey, publicKey }`
+ */
+// The reference a generated key is stored under. A post-quantum key's
+// carries its algorithm too (#2220): the parameter set is what finding it
+// again needs, and a reference made before has no `alg` and is classical.
+function hsmRefFor(tokenUri, id, spec) {
+  log.debug('Entering hsmRefFor().');
+  const ref = { token: String(tokenUri), id: id.toString('hex'),
+                kty: spec.kty, crv: spec.crv || '',
+                bits: spec.bits || 0 };
+  if (spec.kty === 'AKP') {
+    ref.alg = String(spec.alg || '');
+  }
+  log.debug('Leaving hsmRefFor().');
+  return ref;
+}
+
+async function generatePkcs11KeyPairAsync(token, tokenUri, spec, label) {
+  log.debug('Entering generatePkcs11KeyPairAsync(). ' + spec.kty);
+  const id = nodeCrypto.randomBytes(16);
+  const made = await token.generateKeyPairAsync(spec, label, id);
+  const ref = hsmRefFor(tokenUri, id, spec);
+  const key = makeHsmKey(token, made.key, made.publicKey, ref);
+  log.debug('Leaving generatePkcs11KeyPairAsync().');
+  return { privateKey: key, publicKey: made.publicKey };
+}
+
+/**
+ * Makes an HSM key object for a key pair found on a token — what the
+ * resolver answers, for `secrets.js`.
+ *
+ * @param token - the token
+ * @param ref - the reference's members
+ * @returns `{ token, key, publicKey }` for the resolver to hand back
+ */
+/**
+ * `findPkcs11KeyPair()`, off the event loop (the token's control thread).
+ *
+ * @param token - the token
+ * @param ref - the reference
+ * @returns a promise of `{ token, key, publicKey }`
+ */
+async function findPkcs11KeyPairAsync(token, ref) {
+  log.debug('Entering findPkcs11KeyPairAsync().');
+  const found = await token.keyPairAsync(Buffer.from(String(ref.id), 'hex'),
+                                         { kty: ref.kty, crv: ref.crv,
+                                           alg: ref.alg });
+  log.debug('Leaving findPkcs11KeyPairAsync().');
+  return { token: token, key: found.key, publicKey: found.publicKey };
+}
+
+function findPkcs11KeyPair(token, ref) {
+  log.debug('Entering findPkcs11KeyPair().');
+  const found = token.keyPair(Buffer.from(String(ref.id), 'hex'),
+                              { kty: ref.kty, crv: ref.crv, alg: ref.alg });
+  log.debug('Leaving findPkcs11KeyPair().');
+  return { token: token, key: found.key, publicKey: found.publicKey };
+}
+
+/**
+ * The JWS algorithms a token can make a key for and sign, of those a
+ * realm's key set holds — what the console and the docs say per realm.
+ *
+ * @param token - the token
+ * @returns `{ signs, generates }`, each a list of algorithm or curve names
+ */
+function pkcs11Capabilities(token) {
+  log.debug('Entering pkcs11Capabilities().');
+  const CK = pkcs11Engine.CK;
+  const flags = token.mechanismFlags();
+  const generates = [];
+  if (flags.has(CK.CKM_RSA_PKCS_KEY_PAIR_GEN)) {
+    generates.push('RSA');
+  }
+  if (flags.has(CK.CKM_EC_KEY_PAIR_GEN)) {
+    generates.push('P-256', 'P-384', 'P-521', 'secp256k1');
+  }
+  if (flags.has(CK.CKM_EC_EDWARDS_KEY_PAIR_GEN)) {
+    generates.push('Ed25519');
+  }
+  if (flags.has(CK.CKM_ML_DSA_KEY_PAIR_GEN)) {
+    generates.push('ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87');
+  }
+  if (flags.has(CK.CKM_SLH_DSA_KEY_PAIR_GEN)) {
+    generates.push('SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s');
+  }
+  log.debug('Leaving pkcs11Capabilities().');
+  return { signs: token.signingAlgorithms(), generates: generates };
+}
+
+/**
+ * Says what is wrong with a certificate as an S/MIME recipient's, or ''.
+ *
+ * @param certificate - a pkijs certificate
+ * @param at - the instant (a Date)
+ * @returns '' or the reason
+ */
+function smimeRecipientProblem(certificate, at) {
+  log.debug("Entering smimeRecipientProblem().");
+  const c = certificate;
+  const now = at.getTime();
+  if (c.notBefore.value.getTime() > now || c.notAfter.value.getTime() < now) {
+    log.debug("Leaving smimeRecipientProblem(). Not valid now.");
+    return 'the certificate is valid from ' +
+      c.notBefore.value.toISOString() + ' to ' +
+      c.notAfter.value.toISOString();
+  }
+  const alg = c.subjectPublicKeyInfo.algorithm;
+  const oid = String(alg.algorithmId);
+  let kind = '';
+  if (oid === '1.2.840.113549.1.1.1') {
+    kind = 'rsa';
+    let bits = 0;
+    try {
+      const rsa = c.subjectPublicKeyInfo.parsedKey;
+      const n = Buffer.from(rsa.modulus.valueBlock.valueHexView);
+      bits = (n[0] === 0 ? n.length - 1 : n.length) * 8;
+    } catch (e) {
+      log.debug("Caught in smimeRecipientProblem(): " +
+                ((e && e.message) || e));
+      bits = 0;
+    }
+    if (bits < SMIME_MIN_RSA_BITS) {
+      log.debug("Leaving smimeRecipientProblem(). Short RSA.");
+      return 'an RSA key of ' + bits + ' bits is shorter than ' +
+        SMIME_MIN_RSA_BITS;
+    }
+  } else if (oid === '1.2.840.10045.2.1') {
+    kind = 'ec';
+    const curve = alg.algorithmParams
+      ? String(alg.algorithmParams.valueBlock.toString()) : '';
+    if (!SMIME_CURVES[curve]) {
+      log.debug("Leaving smimeRecipientProblem(). Curve.");
+      return 'the EC curve ' + (curve || '(none)') + ' is not P-256, ' +
+        'P-384 or P-521';
+    }
+  } else if (SMIME_KEM[oid]) {
+    // RFC 9935: parameters absent, and keyEncipherment when usage is set.
+    kind = 'kem';
+    const row = SMIME_KEM[oid];
+    if (alg.algorithmParams) {
+      log.debug("Leaving smimeRecipientProblem(). Parameters.");
+      return row.name + ' carries parameters, and its identifier has none';
+    }
+    const bits = c.subjectPublicKeyInfo.subjectPublicKey;
+    const raw = Buffer.from(bits.valueBlock.valueHexView ||
+      bits.valueBlock.valueHex || []);
+    if (raw.length !== row.publicBytes) {
+      log.debug("Leaving smimeRecipientProblem(). Public key.");
+      return 'an ' + row.name + ' public key is ' + raw.length +
+        ' octets, not ' + row.publicBytes;
+    }
+  } else {
+    log.debug("Leaving smimeRecipientProblem(). Key kind.");
+    return 'a ' + oid + ' key cannot receive S/MIME here (RSA, EC or ' +
+      'ML-KEM)';
+  }
+  const extensions = c.extensions || [];
+  const usage = extensions.filter(function (x) {
+    return x.extnID === '2.5.29.15';
+  })[0];
+  if (usage && usage.parsedValue) {
+    // The KeyUsage BIT STRING: bit 2 keyEncipherment (RSA and ML-KEM,
+    // RFC 9935), bit 4 keyAgreement (EC).
+    const view = new Uint8Array(usage.parsedValue.valueBlock.valueHexView);
+    const first = view.length ? view[0] : 0;
+    const needed = kind === 'ec' ? 0x08 : 0x20;
+    if (!(first & needed)) {
+      log.debug("Leaving smimeRecipientProblem(). Key usage.");
+      return 'its key usage does not allow ' + (kind === 'ec'
+        ? 'keyAgreement' : 'keyEncipherment');
+    }
+  }
+  const eku = extensions.filter(function (x) {
+    return x.extnID === '2.5.29.37';
+  })[0];
+  if (eku && eku.parsedValue && eku.parsedValue.keyPurposes) {
+    const purposes = eku.parsedValue.keyPurposes.map(String);
+    if (purposes.indexOf(SMIME_EMAIL_PROTECTION) < 0 &&
+        purposes.indexOf(SMIME_ANY_EKU) < 0) {
+      log.debug("Leaving smimeRecipientProblem(). EKU.");
+      return 'its extended key usage does not include emailProtection';
+    }
+  }
+  log.debug("Leaving smimeRecipientProblem(). Usable.");
+  return '';
+}
+
+/**
+ * The addresses a certificate names: its subjectAltName rfc822Names and its
+ * subject's emailAddress (RFC 8550 section 3).
+ *
+ * @param certificate - a pkijs certificate
+ * @returns the addresses, as written
+ */
+function smimeAddressesOf(certificate) {
+  log.debug("Entering smimeAddressesOf().");
+  const out = [];
+  (certificate.extensions || []).forEach(function (x) {
+    if (x.extnID === '2.5.29.17' && x.parsedValue &&
+        x.parsedValue.altNames) {
+      x.parsedValue.altNames.forEach(function (name) {
+        if (name.type === 1 && name.value) {
+          out.push(String(name.value));
+        }
+      });
+    }
+  });
+  certificate.subject.typesAndValues.forEach(function (tv) {
+    if (tv.type === '1.2.840.113549.1.9.1') {
+      out.push(String(tv.value.valueBlock.value || ''));
+    }
+  });
+  log.debug("Leaving smimeAddressesOf(). " + out.length);
+  return out.filter(Boolean);
+}
+
+/**
+ * Chooses the certificate an S/MIME message to a person is encrypted to,
+ * from the values of their `userSMIMECertificate`: the first, in order,
+ * that is valid now and fit to receive.
+ *
+ * @param values - the attribute's values (Buffers or base64)
+ * @param at - the instant (a Date)
+ * @returns `{ ok: true, der, emails, subject, serial }`, or a coded
+ *   refusal (STS-OPENPGP-0011)
+ */
+function smimeRecipientCertificate(values, at) {
+  log.debug("Entering smimeRecipientCertificate().");
+  const when = at instanceof Date ? at : new Date();
+  const reasons = [];
+  const list = [].concat(values || []);
+  for (let i = 0; i < list.length; i++) {
+    const certificates = smimeCertificatesOf(list[i]);
+    if (!certificates.length) {
+      reasons.push('a value is neither a certificate nor a PKCS#7 ' +
+                   'SignedData carrying one');
+    }
+    for (const c of certificates) {
+      const problem = smimeRecipientProblem(c, when);
+      if (!problem) {
+        log.debug("Leaving smimeRecipientCertificate(). Chosen.");
+        // WHETHER IT IS POST-QUANTUM (#2009 P2): the post-login
+        // mail-encryption activity asks of the certificate mail goes to,
+        // and an ML-KEM key (RFC 9935) is the only post-quantum one here.
+        const keyOid = String(c.subjectPublicKeyInfo.algorithm.algorithmId);
+        return { ok: true,
+                 postQuantum: !!SMIME_KEM[keyOid],
+                 keyAlgorithm: SMIME_KEM[keyOid] ? SMIME_KEM[keyOid].name
+                   : (keyOid === '1.2.840.10045.2.1' ? 'EC' : 'RSA'),
+                 der: Buffer.from(c.toSchema().toBER(false)),
+                 emails: smimeAddressesOf(c),
+                 serial: Buffer.from(c.serialNumber.valueBlock.valueHexView)
+                   .toString('hex'),
+                 subject: c.subject.typesAndValues.map(function (tv) {
+                   return String(tv.value.valueBlock.value || '');
+                 }).join(', ') };
+      }
+      reasons.push(problem);
+    }
+  }
+  log.debug("Leaving smimeRecipientCertificate(). None usable.");
+  return openpgpRefusal('STS-OPENPGP-0011', list.length
+    ? 'no S/MIME certificate on the entry can receive: ' + reasons.join('; ')
+    : 'the entry has no userSMIMECertificate');
+}
+
+/**
+ * An ArrayBuffer view of a buffer, for asn1js.
+ *
+ * @param buf - octets
+ * @returns the view
+ */
+function smimeAsn1View(buf) {
+  log.debug("Entering smimeAsn1View().");
+  const b = Buffer.from(buf);
+  log.debug("Leaving smimeAsn1View().");
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
+/**
+ * DER of an asn1js block.
+ *
+ * @param block - the block
+ * @returns the encoding
+ */
+function smimeDer(block) {
+  log.debug("Entering smimeDer().");
+  const out = Buffer.from(block.toBER(false));
+  log.debug("Leaving smimeDer().");
+  return out;
+}
+
+/**
+ * An AlgorithmIdentifier with parameters absent.
+ *
+ * @param oid - the algorithm
+ * @returns the asn1js sequence
+ */
+function smimeAlgId(oid) {
+  log.debug("Entering smimeAlgId().");
+  log.debug("Leaving smimeAlgId().");
+  return new asn1js.Sequence({
+    value: [new asn1js.ObjectIdentifier({ value: oid })]
+  });
+}
+
+/**
+ * HKDF-SHA-256 of a KEM shared secret, then AES Key Wrap of the content-
+ * encryption key. RFC 9629: the info is CMSORIforKEMOtherInfo, the salt is
+ * absent (RFC 5869's HashLen zeros; this runtime's empty salt is that),
+ * and the output length is kekLength.
+ *
+ * @param sharedSecret - the KEM shared secret
+ * @param wrapOid - the wrap algorithm
+ * @param kekBytes - 16 or 32
+ * @param cek - the content-encryption key
+ * @returns `{ kek, wrapped, info }`
+ */
+function smimeKemWrap(sharedSecret, wrapOid, kekBytes, cek) {
+  log.debug("Entering smimeKemWrap().");
+  const info = smimeDer(new asn1js.Sequence({
+    value: [smimeAlgId(wrapOid), new asn1js.Integer({ value: kekBytes })]
+  }));
+  const kek = Buffer.from(nodeCrypto.hkdfSync('sha256',
+    Buffer.from(sharedSecret), Buffer.alloc(32, 0), info, kekBytes));
+  const wrap = kekBytes === 16 ? 'id-aes128-wrap' : 'id-aes256-wrap';
+  const cipher = nodeCrypto.createCipheriv(wrap, kek, Buffer.alloc(8, 0xa6));
+  const wrapped = Buffer.concat([cipher.update(Buffer.from(cek)),
+                                 cipher.final()]);
+  log.debug("Leaving smimeKemWrap().");
+  return { kek: kek, wrapped: wrapped, info: info };
+}
+
+/**
+ * The ML-KEM public key in a certificate: the BIT STRING's payload.
+ *
+ * @param certificate - a pkijs certificate
+ * @param row - the SMIME_KEM row
+ * @returns the raw public key
+ */
+function smimeKemPublic(certificate, row) {
+  log.debug("Entering smimeKemPublic().");
+  const bits = certificate.subjectPublicKeyInfo.subjectPublicKey;
+  const raw = Buffer.from(bits.valueBlock.valueHexView ||
+    bits.valueBlock.valueHex || []);
+  if (raw.length !== row.publicBytes) {
+    log.debug("Leaving smimeKemPublic(). Length.");
+    throw new Error('an ' + row.name + ' public key is ' + raw.length +
+      ' octets, not ' + row.publicBytes);
+  }
+  log.debug("Leaving smimeKemPublic().");
+  return raw;
+}
+
+/**
+ * OtherRecipientInfo for one KEM recipient: context tag 4, IMPLICIT, so
+ * the bytes are `A4`, the oriType OID, then the KEMRecipientInfo SEQUENCE.
+ * CMS is IMPLICIT TAGS; an extra SEQUENCE around the two fields would be
+ * the EXPLICIT form, which a recipient will not read.
+ *
+ * @param spec - issuer and serial blocks, the KEM oid, kemct, kek length,
+ *   wrap oid and the wrapped key
+ * @returns the asn1js block
+ */
+function smimeOtherRecipient(spec) {
+  log.debug("Entering smimeOtherRecipient().");
+  const kemInfo = new asn1js.Sequence({
+    value: [
+      new asn1js.Integer({ value: 0 }),
+      new asn1js.Sequence({ value: [spec.issuer, spec.serial] }),
+      smimeAlgId(spec.kemOid),
+      new asn1js.OctetString({ valueHex: smimeAsn1View(spec.kemct) }),
+      smimeAlgId(SMIME_HKDF_SHA256),
+      new asn1js.Integer({ value: spec.kekBytes }),
+      smimeAlgId(spec.wrapOid),
+      new asn1js.OctetString({ valueHex: smimeAsn1View(spec.encryptedKey) })
+    ]
+  });
+  const ori = new asn1js.Constructed({
+    idBlock: { tagClass: 3, tagNumber: 4 },
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ORI_KEM }),
+      kemInfo
+    ]
+  });
+  log.debug("Leaving smimeOtherRecipient().");
+  return ori;
+}
+
+/**
+ * ContentInfo of an EnvelopedData version 3 (a recipient of type other),
+ * content encrypted with AES-256-CBC. The encrypted content is an IMPLICIT
+ * context-0 OCTET STRING.
+ *
+ * @param ori - the OtherRecipientInfo block
+ * @param iv - the 16-octet IV
+ * @param ciphertext - the padded ciphertext
+ * @returns the asn1js ContentInfo
+ */
+function smimeKemContentInfo(ori, iv, ciphertext) {
+  log.debug("Entering smimeKemContentInfo().");
+  const encrypted = new asn1js.OctetString({
+    valueHex: smimeAsn1View(ciphertext)
+  });
+  encrypted.idBlock.tagClass = 3;
+  encrypted.idBlock.tagNumber = 0;
+  const encryptedContent = new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_DATA }),
+      new asn1js.Sequence({
+        value: [
+          new asn1js.ObjectIdentifier({ value: SMIME_AES256_CBC }),
+          new asn1js.OctetString({ valueHex: smimeAsn1View(iv) })
+        ]
+      }),
+      encrypted
+    ]
+  });
+  const enveloped = new asn1js.Sequence({
+    value: [
+      new asn1js.Integer({ value: 3 }),
+      new asn1js.Set({ value: [ori] }),
+      encryptedContent
+    ]
+  });
+  log.debug("Leaving smimeKemContentInfo().");
+  return new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_ENVELOPED }),
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 0 },
+        value: [enveloped]
+      })
+    ]
+  });
+}
+
+/**
+ * The content encryption a name asks for (#2124): `aes256-cbc` when that is
+ * what it says, and `aes256-gcm` for anything else, absent included. The
+ * authenticated one is what an unknown or missing name gets, so a value
+ * nobody meant can never be the one without integrity protection.
+ *
+ * @param name - `mail.smimeContentEncryption`'s value, or omitted
+ * @returns 'aes256-gcm' or 'aes256-cbc'
+ */
+function smimeContentEncryption(name) {
+  log.debug("Entering smimeContentEncryption().");
+  const cbc = String(name || '').trim().toLowerCase() === 'aes256-cbc';
+  log.debug("Leaving smimeContentEncryption().");
+  return cbc ? 'aes256-cbc' : 'aes256-gcm';
+}
+
+/**
+ * The `smime-type` parameter of `application/pkcs7-mime` for what
+ * `smimeEnvelope()` writes under a content encryption (RFC 8551 section
+ * 3.2.2): `authEnveloped-data` for AuthEnvelopedData, `enveloped-data` for
+ * EnvelopedData. Here so the MIME label and the CMS content type are
+ * decided by the one normaliser and cannot disagree.
+ *
+ * @param name - the content encryption, as `smimeContentEncryption()` reads
+ * @returns the parameter's value
+ */
+function smimeTypeFor(name) {
+  log.debug("Entering smimeTypeFor().");
+  const type = smimeContentEncryption(name) === 'aes256-cbc'
+    ? 'enveloped-data' : 'authEnveloped-data';
+  log.debug("Leaving smimeTypeFor(). " + type);
+  return type;
+}
+
+/**
+ * Seals the content with AES-256-GCM (RFC 5084): no additional
+ * authenticated data, because an AuthEnvelopedData here has no authAttrs
+ * (RFC 5083 section 2.1: the AAD is the DER of authAttrs when present, and
+ * nothing otherwise).
+ *
+ * @param plain - the content octets
+ * @param cek - the 32-octet content-encryption key
+ * @param nonce - the 12-octet nonce
+ * @returns `{ ciphertext, tag }`, the tag SMIME_GCM_ICV_BYTES long
+ */
+function smimeGcmSeal(plain, cek, nonce) {
+  log.debug("Entering smimeGcmSeal().");
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(cek),
+    Buffer.from(nonce), { authTagLength: SMIME_GCM_ICV_BYTES });
+  const ciphertext = Buffer.concat([cipher.update(Buffer.from(plain)),
+                                    cipher.final()]);
+  const tag = cipher.getAuthTag();
+  log.debug("Leaving smimeGcmSeal().");
+  return { ciphertext: ciphertext, tag: tag };
+}
+
+/**
+ * ContentInfo of an AuthEnvelopedData (RFC 5083 section 2.1), DER-ready:
+ *
+ *   AuthEnvelopedData ::= SEQUENCE {
+ *     version CMSVersion,                 -- always 0
+ *     recipientInfos RecipientInfos,      -- SET OF, as EnvelopedData's
+ *     authEncryptedContentInfo EncryptedContentInfo,
+ *     mac MessageAuthenticationCode }     -- the GCM tag
+ *
+ * with no originatorInfo, authAttrs or unauthAttrs. The content algorithm
+ * is id-aes256-GCM with GCMParameters { aes-nonce, aes-ICVlen 16 } (RFC
+ * 5084 section 3.2), and the ciphertext WITHOUT the tag is the IMPLICIT
+ * context-0 OCTET STRING.
+ *
+ * @param recipients - the RecipientInfo blocks (asn1js)
+ * @param nonce - the 12-octet nonce
+ * @param sealed - `smimeGcmSeal()`'s answer
+ * @returns the asn1js ContentInfo
+ */
+function smimeAuthContentInfo(recipients, nonce, sealed) {
+  log.debug("Entering smimeAuthContentInfo().");
+  const encrypted = new asn1js.OctetString({
+    valueHex: smimeAsn1View(sealed.ciphertext)
+  });
+  encrypted.idBlock.tagClass = 3;
+  encrypted.idBlock.tagNumber = 0;
+  const encryptedContent = new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_DATA }),
+      new asn1js.Sequence({
+        value: [
+          new asn1js.ObjectIdentifier({ value: SMIME_AES256_GCM }),
+          new asn1js.Sequence({
+            value: [
+              new asn1js.OctetString({ valueHex: smimeAsn1View(nonce) }),
+              new asn1js.Integer({ value: SMIME_GCM_ICV_BYTES })
+            ]
+          })
+        ]
+      }),
+      encrypted
+    ]
+  });
+  const authEnveloped = new asn1js.Sequence({
+    value: [
+      new asn1js.Integer({ value: 0 }),
+      new asn1js.Set({ value: recipients }),
+      encryptedContent,
+      new asn1js.OctetString({ valueHex: smimeAsn1View(sealed.tag) })
+    ]
+  });
+  log.debug("Leaving smimeAuthContentInfo().");
+  return new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_AUTH_ENVELOPED }),
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 0 },
+        value: [authEnveloped]
+      })
+    ]
+  });
+}
+
+/**
+ * Builds the KEM envelope from a shared secret that is already in hand.
+ * Production obtains that secret from encapsulate. A test passes a fixed
+ * one, because a runtime without ML-KEM cannot encapsulate and must still
+ * be able to check the wrap and the DER. `share.cek` and `share.iv`, when
+ * set, are that test's content key and its IV (16 octets for CBC) or nonce
+ * (12 octets for GCM); production leaves them unset.
+ *
+ * @param mimeBytes - the inner MIME entity
+ * @param certificate - the pkijs certificate
+ * @param row - the SMIME_KEM row
+ * @param kemOid - the certificate's key oid
+ * @param share - `{ cipherText, sharedSecret, cek?, iv? }`
+ * @param contentEncryption - 'aes256-gcm' (the default: AuthEnvelopedData)
+ *   or 'aes256-cbc' (EnvelopedData version 3), as
+ *   `smimeContentEncryption()` reads it
+ * @returns the ContentInfo DER
+ */
+function smimeKemAssemble(mimeBytes, certificate, row, kemOid, share,
+                          contentEncryption) {
+  log.debug("Entering smimeKemAssemble().");
+  const gcm = smimeContentEncryption(contentEncryption) === 'aes256-gcm';
+  const ivBytes = gcm ? SMIME_GCM_NONCE_BYTES : 16;
+  const cek = share.cek ? Buffer.from(share.cek) : nodeCrypto.randomBytes(32);
+  const iv = share.iv ? Buffer.from(share.iv)
+    : nodeCrypto.randomBytes(ivBytes);
+  const kemct = Buffer.from(share.cipherText);
+  const shared = Buffer.from(share.sharedSecret);
+  if (cek.length !== 32 || iv.length !== ivBytes || shared.length !== 32 ||
+      kemct.length !== row.cipherBytes) {
+    log.debug("Leaving smimeKemAssemble(). Sizes.");
+    throw new Error(row.name + ' needs a 32-octet shared secret, a ' +
+      row.cipherBytes + '-octet ciphertext, a 32-octet content key and ' +
+      'a ' + ivBytes + '-octet ' + (gcm ? 'nonce' : 'IV'));
+  }
+  const wrapped = smimeKemWrap(shared, row.wrapOid, row.kekBytes, cek);
+  const ori = smimeOtherRecipient({
+    issuer: certificate.issuer.toSchema(),
+    serial: certificate.serialNumber,
+    kemOid: kemOid, kemct: kemct, kekBytes: row.kekBytes,
+    wrapOid: row.wrapOid, encryptedKey: wrapped.wrapped
+  });
+  let info;
+  if (gcm) {
+    info = smimeAuthContentInfo([ori], iv,
+                                smimeGcmSeal(mimeBytes, cek, iv));
+  } else {
+    const cipher = nodeCrypto.createCipheriv('aes-256-cbc', cek, iv);
+    const body = Buffer.concat([cipher.update(Buffer.from(mimeBytes)),
+                                cipher.final()]);
+    info = smimeKemContentInfo(ori, iv, body);
+  }
+  const out = smimeDer(info);
+  log.debug("Leaving smimeKemAssemble(). " + out.length + " bytes.");
+  return out;
+}
+
+/**
+ * Encapsulates to the certificate's ML-KEM key and builds the envelope.
+ * A runtime that cannot encapsulate refuses. It does not fall back to a
+ * classical recipient: the certificate cannot open that.
+ *
+ * @param mimeBytes - the inner MIME entity
+ * @param certificate - the pkijs certificate
+ * @param row - the SMIME_KEM row
+ * @param kemOid - the certificate's key oid
+ * @param contentEncryption - as `smimeKemAssemble()` takes it
+ * @returns a promise of the DER
+ */
+async function smimeKemEnvelope(mimeBytes, certificate, row, kemOid,
+                                contentEncryption) {
+  log.debug("Entering smimeKemEnvelope(). " + row.name);
+  const raw = smimeKemPublic(certificate, row);
+  let share;
+  try {
+    share = nobleMlKem[row.kem].encapsulate(raw);
+  } catch (e) {
+    log.debug("Caught in smimeKemEnvelope(): " + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-OPENPGP-0028') +
+      'ML-KEM encapsulation is not available (' + row.name + '): ' +
+      ((e && e.message) || e));
+    log.debug("Leaving smimeKemEnvelope(). Unavailable.");
+    throw new Error('ML-KEM encapsulation is not available on this ' +
+      'runtime');
+  }
+  const out = smimeKemAssemble(mimeBytes, certificate, row, kemOid, {
+    cipherText: share.cipherText, sharedSecret: share.sharedSecret
+  }, contentEncryption);
+  log.debug("Leaving smimeKemEnvelope().");
+  return out;
+}
+
+// Whether this runtime encapsulated to ML-KEM, asked once a process
+// (`smimeKemAvailable()`): null until asked.
+let smimeKemAnswer = null;
+
+/**
+ * Whether this runtime can encapsulate to an ML-KEM-768 key, the one thing
+ * mail to an ML-KEM S/MIME certificate needs (STS-OPENPGP-0028 is what a
+ * send logs when it cannot). Asked by the post-login mail-encryption
+ * activity (#2009 P2), which offers an ML-KEM certificate only where mail
+ * could be encrypted to it. Tried once a process on a fresh key pair.
+ *
+ * @returns true when it can
+ */
+function smimeKemAvailable() {
+  log.debug("Entering smimeKemAvailable().");
+  if (smimeKemAnswer === null) {
+    try {
+      const pair = nobleMlKem.ml_kem768.keygen();
+      const share = nobleMlKem.ml_kem768.encapsulate(pair.publicKey);
+      smimeKemAnswer = !!(share && share.cipherText &&
+                          share.cipherText.length ===
+                            SMIME_KEM['2.16.840.1.101.3.4.4.2'].cipherBytes);
+    } catch (e) {
+      log.debug("Caught in smimeKemAvailable(): " + ((e && e.message) || e));
+      smimeKemAnswer = false;
+    }
+  }
+  log.debug("Leaving smimeKemAvailable(). " + smimeKemAnswer);
+  return smimeKemAnswer;
+}
+
+// ---------------------------------------------------------------------------
+// PROOF OF POSSESSION OF AN ML-KEM KEY, FOR AN S/MIME CERTIFICATE THIS REALM
+// ISSUES (#2220; #2009's D4 left issuance to a later ticket).
+//
+// A KEM key cannot sign, so it cannot sign a certification request, and a
+// certificate authority that certified a KEM key on the strength of a
+// request alone would be certifying a key nobody showed they hold. RFC 9810
+// (CMP v3) gives the answer for a key that cannot sign: section 5.2.8.3.3's
+// direct method, the CHALLENGE-RESPONSE protocol, written for a decryption
+// key, and named for a KEM key in section 5.2.8.4's summary of the
+// proof-of-possession options (`KEMKPOPChallengeResp`). The authority
+// encapsulates to the key, and only
+// the holder of the private key can recover the shared secret. So:
+//
+//   * `smimeKemPublicKeyOf()` reads the person's SubjectPublicKeyInfo and
+//     holds it to RFC 9935 (id-alg-ml-kem-512/768/1024, parameters absent,
+//     the public key the length FIPS 203 gives);
+//   * `smimeKemChallenge()` encapsulates to it (FIPS 203 ML-KEM.Encaps, the
+//     same `pq_native.js` the mail path uses) and answers the ciphertext and
+//     the SHA-256 of the shared secret — the secret itself is never kept;
+//   * `smimeKemAnswerMatches()` compares what the person sends back, the
+//     secret `openssl pkeyutl -decap` recovered, in constant time.
+//
+// Nothing here issues: `common/openpgp_keys.ts` asks the realm's EST Issuing
+// CA, through `common/cert_enrollment.ts`, once the answer matched.
+// ---------------------------------------------------------------------------
+/**
+ * Reads an ML-KEM public key (a SubjectPublicKeyInfo, PEM or DER) for an
+ * S/MIME certificate request.
+ *
+ * @param input - the PEM text, or the DER
+ * @returns `{ ok, name, oid, raw, spkiPem }`, or a refusal with `error`
+ */
+function smimeKemPublicKeyOf(input) {
+  log.debug("Entering smimeKemPublicKeyOf().");
+  let der = null;
+  try {
+    if (Buffer.isBuffer(input)) {
+      der = input;
+    } else {
+      const text = String(input || '');
+      const m = /-----BEGIN PUBLIC KEY-----([\s\S]*?)-----END PUBLIC KEY-----/
+        .exec(text);
+      der = m ? Buffer.from(m[1].replace(/\s+/g, ''), 'base64') : null;
+    }
+  } catch (e) {
+    log.debug("Caught in smimeKemPublicKeyOf(): " + ((e && e.message) || e));
+    der = null;
+  }
+  if (!der || !der.length || der.length > 4096) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Not a public key.");
+    return { ok: false, error: 'that is not a PEM public key (-----BEGIN ' +
+             'PUBLIC KEY-----, what openssl pkey -pubout writes)' };
+  }
+  let oid = '';
+  let params = false;
+  let raw = null;
+  try {
+    const parsed = asn1js.fromBER(smimeAsn1View(der));
+    // asn1js types `result` as every block kind at once, and only a
+    // constructed one has `valueBlock.value`; a block of another kind
+    // throws below and is caught as no key.
+    const top = /** @type {any} */ (parsed.result);
+    const algSeq = top.valueBlock.value[0];
+    oid = String(algSeq.valueBlock.value[0].valueBlock.toString());
+    params = algSeq.valueBlock.value.length > 1;
+    const bits = top.valueBlock.value[1];
+    raw = Buffer.from(bits.valueBlock.valueHexView ||
+                      bits.valueBlock.valueHex || []);
+  } catch (e) {
+    log.debug("Caught in smimeKemPublicKeyOf(): " + ((e && e.message) || e));
+    raw = null;
+  }
+  const row = SMIME_KEM[oid];
+  if (!raw || !row) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Not ML-KEM.");
+    return { ok: false, error: 'the key is not an ML-KEM key (RFC 9935: ' +
+             'ML-KEM-512, ML-KEM-768 or ML-KEM-1024)' };
+  }
+  if (params) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Parameters.");
+    return { ok: false, error: row.name + ' carries parameters, and its ' +
+             'identifier has none (RFC 9935)' };
+  }
+  if (raw.length !== row.publicBytes) {
+    log.debug("Leaving smimeKemPublicKeyOf(). Length.");
+    return { ok: false, error: 'an ' + row.name + ' public key is ' +
+             row.publicBytes + ' octets, and this one is ' + raw.length };
+  }
+  const spkiPem = '-----BEGIN PUBLIC KEY-----\n' +
+    (der.toString('base64').match(/.{1,64}/g) || []).join('\n') +
+    '\n-----END PUBLIC KEY-----\n';
+  log.debug("Leaving smimeKemPublicKeyOf(). " + row.name);
+  return { ok: true, name: row.name, oid: oid, raw: raw, spkiPem: spkiPem };
+}
+
+/**
+ * Encapsulates to an ML-KEM key for a proof of possession: the ciphertext
+ * the holder decapsulates, and the SHA-256 of the shared secret, which is
+ * all that is kept.
+ *
+ * @param key - `smimeKemPublicKeyOf()`'s answer
+ * @returns `{ cipherText, secretDigest }`
+ * @throws Error where this runtime cannot encapsulate
+ */
+function smimeKemChallenge(key) {
+  log.debug("Entering smimeKemChallenge(). " + key.name);
+  const row = SMIME_KEM[key.oid];
+  const share = nobleMlKem[row.kem].encapsulate(new Uint8Array(key.raw));
+  const out = {
+    cipherText: Buffer.from(share.cipherText),
+    secretDigest: nodeCrypto.createHash('sha256')
+      .update(Buffer.from(share.sharedSecret)).digest('hex')
+  };
+  log.debug("Leaving smimeKemChallenge().");
+  return out;
+}
+
+/**
+ * Whether the secret a person sent back is the one encapsulated: 32 octets,
+ * as base64 or hex, compared by digest in constant time.
+ *
+ * @param secretDigest - `smimeKemChallenge()`'s digest
+ * @param presented - the secret, base64 or hex
+ * @returns true when it matches
+ */
+function smimeKemAnswerMatches(secretDigest, presented) {
+  log.debug("Entering smimeKemAnswerMatches().");
+  const text = String(presented || '').trim();
+  let bytes = null;
+  if (/^[0-9a-fA-F]{64}$/.test(text)) {
+    bytes = Buffer.from(text, 'hex');
+  } else if (/^[A-Za-z0-9+/_-]{43}=?$/.test(text)) {
+    bytes = Buffer.from(text.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+  }
+  if (!bytes || bytes.length !== 32) {
+    log.debug("Leaving smimeKemAnswerMatches(). Not a 32-octet secret.");
+    return false;
+  }
+  const digest = nodeCrypto.createHash('sha256').update(bytes).digest('hex');
+  log.debug("Leaving smimeKemAnswerMatches().");
+  return constantTimeEquals(digest, String(secretDigest || ''));
+}
+
+/**
+ * The RSA or EC RecipientInfo for one certificate, carrying `cek`, built by
+ * pkijs (the header: pkijs has no AuthEnvelopedData, and its recipient code
+ * is the code the CBC path runs). `EnvelopedData.encrypt()` makes its own
+ * session key and encrypts the content with it; it is handed an engine
+ * whose AES-GCM `generateKey()` answers `cek` instead (the ECDH ephemeral
+ * pair is still generated) and whose AES-GCM `encrypt()`
+ * writes nothing, so pkijs never encrypts anything under this key but the
+ * key itself, to the recipient. Every other call (RSA-OAEP, ECDH, the RFC
+ * 5753 KDF, AES key wrap) goes to the real engine untouched.
+ *
+ * @param pkijs - the pkijs module
+ * @param certificate - the pkijs certificate (RSA or EC)
+ * @param cek - the 32-octet content-encryption key
+ * @returns a promise of the RecipientInfo blocks (asn1js)
+ */
+async function smimeClassicalRecipients(pkijs, certificate, cek) {
+  log.debug("Entering smimeClassicalRecipients().");
+  installPkijsWebCrypto(pkijs);
+  const engine = /** @type {any} */ (pkijs.getCrypto(true));
+  // `any`: an engine whose prototype is the real one, so every method it
+  // does not override runs as the real engine's, `this` included.
+  const keyed = /** @type {any} */ (Object.create(engine));
+  // Only the CONTENT key is ours: the EC recipient's ephemeral ECDH pair
+  // is generated by the same call, and must stay the real engine's.
+  keyed.generateKey = function (algorithm, extractable, usages) {
+    if (algorithm && algorithm.name === 'AES-GCM') {
+      return engine.importKey('raw', new Uint8Array(Buffer.from(cek)),
+                              { name: 'AES-GCM' }, true, ['encrypt']);
+    }
+    return engine.generateKey(algorithm, extractable, usages);
+  };
+  keyed.encrypt = function (algorithm, key, data) {
+    if (algorithm && algorithm.name === 'AES-GCM') {
+      return Promise.resolve(new ArrayBuffer(0));
+    }
+    return engine.encrypt(algorithm, key, data);
+  };
+  const enveloped = new pkijs.EnvelopedData();
+  enveloped.addRecipientByCertificate(certificate, {
+    oaepHashAlgorithm: 'SHA-256', kdfAlgorithm: 'SHA-256',
+    kekEncryptionLength: 256 });
+  await enveloped.encrypt(/** @type {any} */ ({ name: 'AES-GCM',
+                                               length: 256 }),
+                          new ArrayBuffer(0), keyed);
+  const out = enveloped.recipientInfos.map(function (one) {
+    return one.toSchema();
+  });
+  log.debug("Leaving smimeClassicalRecipients(). " + out.length);
+  return out;
+}
+
+/**
+ * Encrypts a MIME entity to an S/MIME recipient certificate (the header),
+ * DER. By default a CMS ContentInfo holding an AuthEnvelopedData under
+ * AES-256-GCM (RFC 5083, RFC 5084; `smime-type=authEnveloped-data`);
+ * `aes256-cbc` asks for the EnvelopedData under AES-256-CBC that was sent
+ * before #2124 (`smime-type=enveloped-data`), which has no integrity
+ * protection. `smimeTypeFor()` names the MIME parameter for either. An
+ * ML-KEM certificate takes RFC 9629's KEMRecipientInfo; RSA and EC take
+ * pkijs's RSA-OAEP and ECDH RecipientInfos.
+ *
+ * @param mimeBytes - the inner MIME entity, headers and body
+ * @param certificateDer - the recipient's certificate
+ *   (`smimeRecipientCertificate()`'s `der`)
+ * @param contentEncryption - `mail.smimeContentEncryption`: 'aes256-gcm'
+ *   (the default, absent included) or 'aes256-cbc'
+ * @returns a promise of the DER
+ */
+async function smimeEnvelope(mimeBytes, certificateDer, contentEncryption) {
+  log.debug("Entering smimeEnvelope().");
+  const chosen = smimeContentEncryption(contentEncryption);
+  const pkijs = require('pkijs');
+  const certificate = pkijs.Certificate.fromBER(
+    new Uint8Array(Buffer.from(certificateDer)));
+  const oid = String(
+    certificate.subjectPublicKeyInfo.algorithm.algorithmId);
+  const kem = SMIME_KEM[oid];
+  if (kem) {
+    const out = await smimeKemEnvelope(mimeBytes, certificate, kem, oid,
+                                       chosen);
+    log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, ML-KEM, " +
+              chosen + ".");
+    return out;
+  }
+  if (chosen === 'aes256-gcm') {
+    const cek = nodeCrypto.randomBytes(32);
+    const nonce = nodeCrypto.randomBytes(SMIME_GCM_NONCE_BYTES);
+    const recipients = await smimeClassicalRecipients(pkijs, certificate,
+                                                      cek);
+    const out = smimeDer(smimeAuthContentInfo(recipients, nonce,
+      smimeGcmSeal(mimeBytes, cek, nonce)));
+    cek.fill(0);
+    log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, " +
+              "AuthEnvelopedData.");
+    return out;
+  }
+  installPkijsWebCrypto(pkijs);
+  const enveloped = new pkijs.EnvelopedData();
+  enveloped.addRecipientByCertificate(certificate, {
+    oaepHashAlgorithm: 'SHA-256', kdfAlgorithm: 'SHA-256',
+    kekEncryptionLength: 256 });
+  // `any`: pkijs declares the content algorithm as Web Crypto's bare
+  // `Algorithm`, and reads `length` off it all the same.
+  await enveloped.encrypt(/** @type {any} */ ({ name: 'AES-CBC',
+                                               length: 256 }),
+                          new Uint8Array(Buffer.from(mimeBytes)).buffer);
+  const info = new pkijs.ContentInfo({
+    contentType: SMIME_ID_ENVELOPED, content: enveloped.toSchema() });
+  const out = Buffer.from(info.toSchema().toBER(false));
+  log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, " +
+            "EnvelopedData (CBC).");
+  return out;
+}
+
 /**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
@@ -18511,6 +22850,57 @@ function certificateNameMatches(cert, expected) {
  * @namespace
  */
 module.exports = {
+  // --- section 19: OpenPGP and S/MIME (#1955 P6) ---
+  OPENPGP_SIGNING_ALGORITHMS: OPENPGP_SIGNING_ALGORITHMS,
+  OPENPGP_ENCRYPTION_ALGORITHMS: OPENPGP_ENCRYPTION_ALGORITHMS,
+  OPENPGP_PQ_NAMES: OPENPGP_PQ_NAMES,
+  OPENPGP_MIN_RSA_BITS: OPENPGP_MIN_RSA_BITS,
+  openpgpIsPq: openpgpIsPq,
+  smimeKemAvailable: smimeKemAvailable,
+  smimeKemPublicKeyOf: smimeKemPublicKeyOf,
+  smimeKemChallenge: smimeKemChallenge,
+  smimeKemAnswerMatches: smimeKemAnswerMatches,
+  openpgpAlgorithmProblem: openpgpAlgorithmProblem,
+  openpgpRegistrationProblem: openpgpRegistrationProblem,
+  openpgpReadKey: openpgpReadKey,
+  openpgpNormaliseText: openpgpNormaliseText,
+  openpgpVerifyChallenge: openpgpVerifyChallenge,
+  openpgpEncrypt: openpgpEncrypt,
+  openpgpBinaryKey: openpgpBinaryKey,
+  openpgpLibraryVersion: openpgpLibraryVersion,
+  zBase32: zBase32,
+  wkdHash: wkdHash,
+  smimeRecipientCertificate: smimeRecipientCertificate,
+  smimeCertificatesOf: smimeCertificatesOf,
+  smimeEnvelope: smimeEnvelope,
+  SMIME_CONTENT_ENCRYPTIONS: SMIME_CONTENT_ENCRYPTIONS,
+  smimeContentEncryption: smimeContentEncryption,
+  smimeTypeFor: smimeTypeFor,
+  smimeKemWrap: smimeKemWrap,
+  smimeKemAssemble: smimeKemAssemble,
+  // --- section 19: keys in a hardware security module (#1955) ---
+  openPkcs11Token: openPkcs11Token,
+  forgetPkcs11Libraries: forgetPkcs11Libraries,
+  PKCS11_SIGNING_ALGS: Object.keys(pkcs11Engine.SIGNING),
+  setPkcs11KeyResolver: setPkcs11KeyResolver,
+  isHsmKey: isHsmKey,
+  signHttpMessageOffLoop: signHttpMessageOffLoop,
+  signJwsOffLoop: signJwsOffLoop,
+  signXmlOffLoop: signXmlOffLoop,
+  signQueryStringOffLoop: signQueryStringOffLoop,
+  decryptElementOffLoop: decryptElementOffLoop,
+  hsmAnswersFor: hsmAnswersFor,
+  withHsmAnswers: withHsmAnswers,
+  selfSignedRsaCertificateOffLoop: selfSignedRsaCertificateOffLoop,
+  hsmRefOf: hsmRefOf,
+  generatePkcs11KeyPair: generatePkcs11KeyPair,
+  generatePkcs11KeyPairAsync: generatePkcs11KeyPairAsync,
+  findPkcs11KeyPair: findPkcs11KeyPair,
+  findPkcs11KeyPairAsync: findPkcs11KeyPairAsync,
+  hsmRefsIn: hsmRefsIn,
+  resolveHsmKeysAsync: resolveHsmKeysAsync,
+  forgetHsmKeys: forgetHsmKeys,
+  pkcs11Capabilities: pkcs11Capabilities,
   // --- section 18: certificate field checks (#1360) ---
   CERTIFICATE_ROLES: CERTIFICATE_ROLES,
   KEY_USAGE_BITS: KEY_USAGE_BITS,
@@ -18521,6 +22911,10 @@ module.exports = {
   certificateFieldProblems: certificateFieldProblems,
   certificateFieldProblem: certificateFieldProblem,
   certificateNameMatches: certificateNameMatches,
+  certificateNameRdns: certificateNameRdns,
+  certificateLookupNames: certificateLookupNames,
+  certificateSelfSigned: certificateSelfSigned,
+  presentedAnchorProblem: presentedAnchorProblem,
   // --- section 17: the rest of the service's operations (#453) ---
   SHA1_PURPOSES: SHA1_PURPOSES,
   sha1Digest: sha1Digest,
@@ -18617,6 +23011,8 @@ module.exports = {
   pkinitDhParameters: pkinitDhParameters,
   pkinitDigestAlgorithms: pkinitDigestAlgorithms,
   pkinitPaChecksumMatches: pkinitPaChecksumMatches,
+  pkinitPaChecksum2Algorithm: pkinitPaChecksum2Algorithm,
+  pkinitPaChecksum2Matches: pkinitPaChecksum2Matches,
   pkinitOctetString2Key: pkinitOctetString2Key,
   pkinitKdf: pkinitKdf,
   // --- section 15: digests, key derivation and key import (#178) ---
@@ -18653,6 +23049,7 @@ module.exports = {
   // --- section 12: DKIM (#63) ---
   DKIM_ALGORITHMS: DKIM_ALGORITHMS,
   dkimSign: dkimSign,
+  dkimDnsRecord: dkimDnsRecord,
   dkimVerify: dkimVerify,
   dkimRelaxedBody: dkimRelaxedBody,
   dkimRelaxedHeader: dkimRelaxedHeader,
@@ -18671,6 +23068,8 @@ module.exports = {
   readWsSecuritySignature: readWsSecuritySignature,
   verifyWsSecuritySignature: verifyWsSecuritySignature,
   verifyWsSecurityHmac: verifyWsSecurityHmac,
+  signWsSecurityMessage: signWsSecurityMessage,
+  signWsSecurityMessageOffLoop: signWsSecurityMessageOffLoop,
   signQueryString: signQueryString,
   verifyQueryString: verifyQueryString,
   idOf: idOf,
@@ -18831,12 +23230,14 @@ module.exports = {
   jwkThumbprintUri: jwkThumbprintUri,
   SIGNING_JWK_PAIR_ALGS: SIGNING_JWK_PAIR_ALGS,
   generateSigningJwkPair: generateSigningJwkPair,
+  generatePqKeyPair: generatePqKeyPair,
   certificateThumbprint: certificateThumbprint,
   wssThumbprintSha1: wssThumbprintSha1,
   wssIssuerName: wssIssuerName,
   wssCertificateHandles: wssCertificateHandles,
   wssIssuerSerialHandle: wssIssuerSerialHandle,
   decryptionKeyPairProblem: decryptionKeyPairProblem,
+  tlsClientKeyPairProblem: tlsClientKeyPairProblem,
   certificateSpkiThumbprint: certificateSpkiThumbprint,
   publicKeySpkiThumbprint: publicKeySpkiThumbprint,
   constantTimeEquals: constantTimeEquals,
@@ -18846,6 +23247,21 @@ module.exports = {
   HOTP_ALGS: HOTP_ALGS,
   hotpSpec: hotpSpec,
   hotpCode: hotpCode,
+  // #1955 P5: a YubiKey OTP block. Replay and the public identity are
+  // common/yubiotp.ts.
+  YUBIOTP_MODHEX: YUBIOTP_MODHEX,
+  yubiotpModhexDecode: yubiotpModhexDecode,
+  yubiotpModhexEncode: yubiotpModhexEncode,
+  yubiotpCrc16: yubiotpCrc16,
+  yubiotpDecrypt: yubiotpDecrypt,
+  yubiotpEncrypt: yubiotpEncrypt,
+  yubiotpHmacSha1: yubiotpHmacSha1,
+  // #1955 P4: a PSKC seed file's decryption, MAC and PBKDF2.
+  pskcAlgorithm: pskcAlgorithm,
+  pskcDecrypt: pskcDecrypt,
+  pskcMacVerifies: pskcMacVerifies,
+  pskcDeriveKeyAsync: pskcDeriveKeyAsync,
+  PSKC_MAX_ITERATIONS: PSKC_MAX_ITERATIONS,
   hashSecret: hashSecret,
   // The cost a NEW hash is written under, for the console and the tests.
   scryptParameters: scryptParameters,
@@ -18872,6 +23288,8 @@ module.exports = {
   kekBytes: kekBytes,
   verifySecret: verifySecret,
   verifySecretAsync: verifySecretAsync,
+  // A hash no password matches, for a refusal that needed no comparison.
+  decoyPasswordHash: decoyPasswordHash,
   isHashedSecret: isHashedSecret,
   // --- a person's password (#847): argon2id or scrypt, by the policy ---
   PASSWORD_HASH_ALGORITHMS: PASSWORD_HASH_ALGORITHMS,
@@ -18934,6 +23352,10 @@ module.exports = {
   ID_AA_ATTESTATION: ID_AA_ATTESTATION,
   TCG_ATTEST_TPM_CERTIFY: TCG_ATTEST_TPM_CERTIFY,
   csrAttestationBundle: csrAttestationBundle,
+  YUBICO_PIV_STATEMENT: YUBICO_PIV_STATEMENT,
+  YUBICO_PIV_EXTENSIONS: YUBICO_PIV_EXTENSIONS,
+  yubicoPivAttestationFacts: yubicoPivAttestationFacts,
+  certificatePolicyOids: certificatePolicyOids,
   tpm2bContents: tpm2bContents,
   tcgTpmCertifyStatement: tcgTpmCertifyStatement,
   // --- the algorithm URIs, so that there is one spelling of each in the

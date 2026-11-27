@@ -1,6 +1,7 @@
 {
   "yes": "yes",
   "no": "no",
+  "follows": "as {row}",
   "configuration": "Configuration",
   "schema": "Schema",
   "saveProfile": "Save the profile",
@@ -230,5 +231,7 @@
   "transfer.view.trustedHeading": "Other realms this realm trusts",
   "transfer.view.noneTrusted": "This realm trusts no other realm's policy exports.",
   "transfer.view.kind": "Kind",
-  "transfer.view.addedBy": "Added by"
+  "transfer.view.addedBy": "Added by",
+  "newPolicy.button": "New policy",
+  "newPolicy.choose": "Choose the kind of policy to make."
 }

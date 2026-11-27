@@ -61,6 +61,9 @@
 // realm afterwards; see *No job removes a realm* in `tests/CLAUDE.md`.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -291,7 +294,13 @@ async function test() {
            { identifier: CLIENT, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: CLIENT,
                        oauthClientSecret: CLIENT + "-secret-" + REALM,
-                       oauthTokenEndpointAuthMethod: "client_secret_post" } },
+                       oauthTokenEndpointAuthMethod: "client_secret_post",
+                       // What section 7 asks for AS this client (#2169):
+                       // in product a client is issued only the scopes it
+                       // declares, `openid` alone when it declares none
+                       // (#1589), and held to the grants it declares.
+                       oauthGrantType: [GRANT],
+                       oauthAllowedScope: ["openid", "profile", "email"] } },
            "created the asserting application");
   await ok(realmApi + "/users/create",
            { username: ASSERTED_PERSON, invent: false,
@@ -479,8 +488,11 @@ async function test() {
   // -------------------------------------------------------------------------
   log.info("=== 4. the grant itself ===");
   const person = ASSERTED_PERSON;
+  // `openid` alone (#2169): this request names no client, and in product
+  // a request that names none may be issued nothing more (#1589). Which
+  // scope it carries is not what this section is about.
   const granted = await tokenRequest({
-    grant_type: GRANT, scope: "openid profile",
+    grant_type: GRANT, scope: "openid",
     assertion: assertionFor({ person: person,
       build: { attributes: { department: "engineering",
                              employee_number: "4711" },
@@ -751,11 +763,15 @@ async function test() {
   // 7. RFC 7521 SECTION 4.1 — THE SCOPE IS NARROWED AND NEVER WIDENED.
   // -------------------------------------------------------------------------
   log.info("=== 7. the requested scope ===");
-  // The extra scope is `profile` — one every client may ask for — and not a
-  // word of the job's own: in product mode an undeclared scope is refused
-  // invalid_scope before the grant is read (#110), and what this section is
-  // about is the ASSERTION narrowing a request, not the client's list.
+  // The extra scope is `profile`, and not a word of the job's own: in
+  // product mode an undeclared scope is refused invalid_scope before the
+  // grant is read (#110), and what this section is about is the ASSERTION
+  // narrowing a request, not the client's list. So the request AUTHENTICATES
+  // the asserting application, which declares all three (#2169): a request
+  // naming no client is issued `openid` alone in product (#1589), which
+  // leaves nothing to narrow.
   const scoped = await tokenRequest({ grant_type: GRANT,
+    client_id: CLIENT, client_secret: CLIENT + "-secret-" + REALM,
     scope: "openid email profile",
     assertion: assertionFor({ person: person,
       build: { attributes: { scope: "openid email" } } }) });
@@ -950,7 +966,7 @@ async function test() {
             return one.purpose === "saml";
           })[0];
           assert.strictEqual(saml2.handleLabel, "thumbprint");
-          assert.ok(saml2.assertionIssuers.indexOf(ISS) >= 0,
+          assert.ok(urls.holds(saml2.assertionIssuers, ISS),
             "the SAML row does not carry the declared issuer: " +
             JSON.stringify(saml2.assertionIssuers));
         });

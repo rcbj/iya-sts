@@ -106,6 +106,10 @@ const STEP_ACTS: Json = {
   '/authn/totp': {
     totp: { op: 'totp', body: function (f: Json): Json {
       return { code: f.code };
+    } },
+    // An HOTP token's two-code resynchronisation (the #1955 review).
+    resync: { op: 'totp', body: function (f: Json): Json {
+      return { code: f.resync1, code2: f.resync2 };
     } } },
   '/authn/backup-code': {
     'backup-code': { op: 'backup-code', body: function (f: Json): Json {
@@ -128,6 +132,11 @@ const STEP_ACTS: Json = {
     ignore: { op: 'skip', body: function (): Json {
       return {};
     } } },
+  // THE ROLE STEP (#1072): Continue, with the roles ticked.
+  '/authn/roles': {
+    choose: { op: 'roles', body: function (f: Json): Json {
+      return { roles: [].concat(f.roles || []).map(String) };
+    } } },
   // THE POST-LOGIN ACTIVITY (#1096): Register, and Skip.
   '/authn/post-login': {
     register: { op: 'post-login/register', body: function (): Json {
@@ -135,6 +144,30 @@ const STEP_ACTS: Json = {
     } },
     skip: { op: 'post-login/skip', body: function (): Json {
       return {};
+    } },
+    // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): the challenge, an OpenPGP
+    // key with its signed challenge, or an S/MIME certificate.
+    'openpgp-challenge': { op: 'post-login/mail', body: function (): Json {
+      return { act: 'openpgp-challenge' };
+    } },
+    'openpgp-register': { op: 'post-login/mail',
+      body: function (f: Json): Json {
+        return { act: 'openpgp-register', publicKey: f.publicKey || '',
+                 signed: f.signed || '' };
+      } },
+    'smime-register': { op: 'post-login/mail',
+      body: function (f: Json): Json {
+        return { act: 'smime-register', certificate: f.certificate || '' };
+      } },
+    // THE PIV RE-ISSUE (#2009 P3): one slot's request and attestations, or
+    // going on once every slot has a new certificate.
+    'piv-enrol': { op: 'post-login/piv', body: function (f: Json): Json {
+      return { act: 'piv-enrol', slot: f.slot || '', csr: f.csr || '',
+               slotPem: f.slotPem || '',
+               attestationPem: f.attestationPem || '' };
+    } },
+    'piv-continue': { op: 'post-login/piv', body: function (): Json {
+      return { act: 'piv-continue' };
     } } },
   '/authn/email-code': {
     send: { op: 'email/send', body: function (): Json {
@@ -381,8 +414,10 @@ class AuthnSurface extends WebSurface {
       uiLocales: ui, own: state ? state.preferredLanguage : undefined });
     if (!state) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-        'The service sent no state for it.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+        this.refusal('refusals.web.noState', {},
+                     'The service sent no state for it.'));
       return;
     }
     this.lastAnswer = state;
@@ -463,13 +498,16 @@ class AuthnSurface extends WebSurface {
    */
   async consentAct(fields: Json): Promise<void> {
     if (!await this.ensureIndex()) {
-      this.refused('The service\'s API could not be reached.');
+      this.refused(this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.'));
       return;
     }
     const op = this.operationFor(CONSENT_PATH, String(fields.action || ''));
     if (!op) {
-      this.refused('This control has no API operation (' + CONSENT_PATH +
-                   '), so the page refuses it rather than guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: CONSENT_PATH },
+        'This control has no API operation (' + CONSENT_PATH +
+        '), so the page refuses it rather than guess.'));
       return;
     }
     const answer = await this.send(String(op.path)
@@ -489,15 +527,17 @@ class AuthnSurface extends WebSurface {
    */
   async accountsAct(fields: Json): Promise<void> {
     if (!await this.ensureIndex()) {
-      this.refused('The service\'s API could not be reached.');
+      this.refused(this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.'));
       return;
     }
     const action = String(fields.action || '');
     const op = this.operationFor(ACCOUNTS_PATH, action);
     if (!op) {
-      this.refused('This control has no API operation (' + ACCOUNTS_PATH +
-                   ' ' + action + '), so the page refuses it rather than ' +
-                   'guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: ACCOUNTS_PATH + ' ' + action },
+        'This control has no API operation (' + ACCOUNTS_PATH +
+        ' ' + action + '), so the page refuses it rather than guess.'));
       return;
     }
     const body = action === 'another' ? {}
@@ -673,14 +713,17 @@ class AuthnSurface extends WebSurface {
     const action = pressed === 'email-code' || pressed === 'email-link'
       ? 'email' : pressed;
     if (!await this.ensureIndex()) {
-      this.refused('The service\'s API could not be reached.');
+      this.refused(this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.'));
       return;
     }
     const op = action === 'passkey'
       ? this.operationFor(path, 'passkey') : this.operationFor(path, action);
     if (!op) {
-      this.refused('This control has no API operation (' + path + ' ' +
-                   action + '), so the page refuses it rather than guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: path + ' ' + action },
+        'This control has no API operation (' + path + ' ' +
+        action + '), so the page refuses it rather than guess.'));
       return;
     }
     if (action === 'passkey') {
@@ -689,6 +732,8 @@ class AuthnSurface extends WebSurface {
     }
     const fp = this.fingerprint();
     const remember = fields.remember_browser ? '1' : undefined;
+    // "Choose roles for this sign-in" (#1072), sent beside it.
+    const roles = fields.choose_roles ? '1' : undefined;
     let body: Json = {};
     // THE FORCED PASSWORD CHANGE IS ASKED BY ITS PATH, FIRST: its form posts
     // no `action`, so `pressed` defaults to `login`, and asked after the
@@ -702,14 +747,17 @@ class AuthnSurface extends WebSurface {
       body = { username: fields.username, password: fields.password,
                use_webauthn: fields.use_webauthn ? '1' : undefined,
                webauthn_only: fields.webauthn_only ? '1' : undefined,
-               remember_browser: remember, device_fp: fp || undefined };
+               remember_browser: remember, choose_roles: roles,
+               device_fp: fp || undefined };
     } else if (action === 'anonymous' || action === 'certificate') {
       // The certificate (#1051) is the connection's: nothing is typed.
-      body = { remember_browser: remember, device_fp: fp || undefined };
+      body = { remember_browser: remember, choose_roles: roles,
+               device_fp: fp || undefined };
     } else if (action === 'email') {
       body = { username: fields.username,
                kind: pressed === 'email-link' ? 'link' : 'code',
-               remember_browser: remember, device_fp: fp || undefined };
+               remember_browser: remember, choose_roles: roles,
+               device_fp: fp || undefined };
     }
     const answer = await this.send(String(op.path)
       .replace('{id}', encodeURIComponent(this.idHere())), body);
@@ -722,7 +770,7 @@ class AuthnSurface extends WebSurface {
    * where the answer carried none.
    *
    * @param json - the view, or null
-   * @param error - the sentence, English
+   * @param error - the sentence, in the page's language (#2006)
    * @returns nothing
    */
   showView(json: Json, error: string): void {
@@ -730,7 +778,8 @@ class AuthnSurface extends WebSurface {
                            '');
     if (!page || !json) {
       this.view = null;
-      this.drawProblem('Nobody was signed in', error);
+      this.drawProblem(this.refusal('refusals.web.nobodySignedIn', {},
+                                    'Nobody was signed in'), error);
       return;
     }
     this.view = { page: page, query: this.pageQuery(),
@@ -742,7 +791,8 @@ class AuthnSurface extends WebSurface {
   /**
    * Draws the screen again with a refusal on it, from a fresh view.
    *
-   * @param why - the sentence, English
+   * @param why - the sentence, in the page's language where its answer
+   *   named a catalog message (#2006)
    * @returns nothing
    */
   refused(why: string): void {
@@ -762,7 +812,7 @@ class AuthnSurface extends WebSurface {
   async next(answer: Json): Promise<void> {
     const json = answer.json;
     if (!json) {
-      this.refused('The service answered ' + answer.status + '.');
+      this.refused(this.answeredStatus(answer.status));
       return;
     }
     if (json.ok && json.next === 'stay') {
@@ -779,8 +829,11 @@ class AuthnSurface extends WebSurface {
     // server drew it, from the answer.
     if (json.end && this.view) {
       this.view = { page: this.view.page, query: this.view.query,
-                    json: { state: 'end', title: String(json.end.title),
-                            sentence: (json.errors || []).join(' ') } };
+                    json: { state: 'end',
+                            title: json.end.titleRefusal
+                              ? this.said(json.end.titleRefusal)
+                              : String(json.end.title),
+                            sentence: this.said(json) } };
       this.drawView();
       return;
     }
@@ -797,8 +850,7 @@ class AuthnSurface extends WebSurface {
       this.autofill = !!json.passkey.autofill;
       this.signalUnknown(String(json.passkey.unknownCredential || ''));
     }
-    this.refused((json.errors || []).join(' ') ||
-                 'The service answered ' + answer.status + '.');
+    this.refused(this.said(json) || this.answeredStatus(answer.status));
   }
 
   /**
@@ -898,9 +950,9 @@ class AuthnSurface extends WebSurface {
    * a link to the realm's root page (`href="/"`, prefixed with the realm
    * when the page is put). In the page's language where the `authn`
    * catalog is loaded, and in English where it is not — the consent
-   * screen loads none of it, and a refusal's own sentence stays English
-   * either way. The English here is `authn/en.json`'s `stuck.close` and
-   * `stuck.home`.
+   * screen loads none of it. A refusal's own sentence is drawn from the
+   * `refusals` catalogs (#2006). The English here is `authn/en.json`'s
+   * `stuck.close` and `stuck.home`.
    *
    * @param t - the page's translator
    * @returns the markup
@@ -932,8 +984,10 @@ class AuthnSurface extends WebSurface {
     const action = String(fields.action || Object.keys(acts)[0] || '');
     const act = acts[action];
     if (!act) {
-      this.refused('This control has no API operation (' + path + ' ' +
-                   action + '), so the page refuses it rather than guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: path + ' ' + action },
+        'This control has no API operation (' + path + ' ' +
+        action + '), so the page refuses it rather than guess.'));
       return;
     }
     const query = this.pageQuery();
@@ -961,7 +1015,8 @@ class AuthnSurface extends WebSurface {
           encodeURIComponent(String(query.change)) + '/start-over'
         : '');
     if (!path) {
-      this.refused('This page names no sign-in step to start over from.');
+      this.refused(this.refusal('refusals.web.noStepToRestart', {},
+        'This page names no sign-in step to start over from.'));
       return;
     }
     const answer = await this.send(path, {});
@@ -1136,11 +1191,9 @@ class AuthnSurface extends WebSurface {
       excludeCredentials: (c.exclude || []).map(function (id: string): Json {
         return { type: 'public-key', id: WebWebAuthn.bytes(id) };
       }),
-      // credProps, and CTAP 2.1's minPinLength where the passkey policy
-      // asks for it (#529).
-      extensions: (o.credProps || o.minPinLength) ? Object.assign({},
-        o.credProps ? { credProps: true } : {},
-        o.minPinLength ? { minPinLength: true } : {}) : undefined,
+      // credProps, CTAP 2.1's minPinLength (#529) and credProtect, and the
+      // U2F appidExclude (#1955 P7), where the server asks for them.
+      extensions: WebWebAuthn.creationExtensions(o),
       hints: o.hints && o.hints.length ? o.hints : undefined,
       attestation: o.attestation || 'direct',
       timeout: o.timeout || 60000 };
@@ -1163,6 +1216,9 @@ class AuthnSurface extends WebSurface {
              }) : undefined,
              userVerification: o.userVerification || 'preferred',
              hints: o.hints && o.hints.length ? o.hints : undefined,
+             // The legacy U2F appid (#1955 P7), where the step names a key
+             // imported under it.
+             extensions: WebWebAuthn.requestExtensions(o),
              timeout: o.timeout || 60000 };
   }
 
@@ -1232,10 +1288,13 @@ class AuthnSurface extends WebSurface {
   async sendPasskey(credential: Json): Promise<void> {
     const remember = this.env.document.getElementById &&
       this.env.document.getElementById('remember_browser');
+    const roles = this.env.document.getElementById &&
+      this.env.document.getElementById('choose_roles');
     const answer = await this.send('/authn-api/pending/' +
       encodeURIComponent(this.idHere()) + '/passkey', {
         credential: JSON.stringify(credential),
         remember_browser: remember && remember.checked ? '1' : undefined,
+        choose_roles: roles && roles.checked ? '1' : undefined,
         device_fp: this.fingerprint() || undefined });
     await this.next(answer);
   }
@@ -1387,7 +1446,10 @@ class AuthnSurface extends WebSurface {
 declare const window: any;
 declare const document: any;
 
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+// NOT WHERE THE BROWSER CHECK SAID THIS BROWSER FALLS SHORT (#2220): its
+// notice is the page.
+if (typeof window !== 'undefined' && typeof document !== 'undefined' &&
+    !AuthnSurface.browserFellShort(document)) {
   new AuthnSurface({
     fetch: window.fetch.bind(window), location: window.location,
     history: window.history, document: document,

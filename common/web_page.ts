@@ -42,12 +42,17 @@
 // third surface certain; the console and the portal now inherit them, through
 // `SpaClient`, so the copies cannot drift.
 //
-// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires nothing,
-// logs nothing (code that runs in a browser is exempt from the Entering /
-// Leaving rule), and is bundled for a browser by `build-typescript.sh`.
-// Everything it touches in the browser arrives in `env`, so a test drives it
-// in node with stand-ins.
+// A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires nothing but
+// `web_safe_dom.ts` (#2098: the realm prefix is applied where markup enters
+// the page, so every draw after the first is in the realm too, and the
+// constructor tells that door where this page's prefix is), logs nothing
+// (code that runs in a browser is exempt from the Entering / Leaving rule),
+// and is bundled for a browser by `build-typescript.sh`. Everything it
+// touches in the browser arrives in `env`, so a test drives it in node with
+// stand-ins.
 // ---------------------------------------------------------------------------
+
+import WebSafeDom = require('./web_safe_dom');
 
 type Json = any;
 
@@ -65,6 +70,24 @@ class WebPage {
   // custom listener.
   protected elsewhere: Json;
 
+  // THE BROWSER CHECK SAID THIS BROWSER FALLS SHORT (#2220): every shell
+  // runs `/web/browser-check.js` first (`common/web_browser_check.ts`),
+  // which shows the shell's notice and marks `<html>` where `fetch`,
+  // `TextEncoder`, `URL` or ECMAScript 2022 is missing. Each surface's entry
+  // asks this before it starts, so no runtime draws over the notice.
+  /**
+   * Whether the browser check marked this document as one this browser
+   * cannot run.
+   *
+   * @param doc - the document
+   * @returns true where `<html data-sts-unsupported="1">`
+   */
+  static browserFellShort(doc: Json): boolean {
+    const root = doc && doc.documentElement;
+    return !!root && typeof root.getAttribute === 'function' &&
+      root.getAttribute('data-sts-unsupported') === '1';
+  }
+
   /**
    * Makes the page's runtime base.
    *
@@ -78,6 +101,14 @@ class WebPage {
     this.env = env;
     this.prefix = prefix;
     this.elsewhere = WebPage.basesOf(env, elsewhere || {});
+    // EVERY DRAW, NOT ONLY THE PAGE'S (#2098): the safe renderer reads this
+    // runtime's prefix each time, so a list redrawn or a search answered
+    // after the page posts into this realm, and a realm switch (which sets
+    // `this.prefix`) is followed.
+    const self = this;
+    WebSafeDom.realmFrom(function (): string {
+      return self.prefix;
+    });
   }
 
   /**
@@ -230,9 +261,13 @@ class WebPage {
   // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM: the renderers draw
   // root-relative addresses, and a server-rendered page had every one
   // prefixed on the way out (`common/app.js`'s `withRealmLinks()`, whose
-  // pattern this is); in a static surface the runtime does it.
+  // pattern this is); in a static surface the runtime does it. Since #2098
+  // the safe renderer does it again on EVERY draw (`WebSafeDom.realmLinks()`,
+  // which this is), so it leaves a value already in the realm alone, as
+  // `withRealmLinks()` always did.
   /**
-   * Prefixes every root-relative `href`, `action`, `formaction` and `src`.
+   * Prefixes every root-relative `href`, `action`, `formaction` and `src`
+   * not already in the realm.
    *
    * @param html - the page
    * @param prefix - the realm's path prefix, or '' for the default realm
@@ -242,17 +277,7 @@ class WebPage {
     if (!prefix) {
       return html;
     }
-    // THE PREFIX GOES INSIDE AN ATTRIBUTE, so it is escaped as one (Qualys
-    // QID 150938, 2026-11-10). It comes from the shell's own
-    // `data-sts-prefix` or from `location.pathname`, which a browser has
-    // already percent-encoded, so nothing could break out of the quotes; the
-    // escape makes that a property of this function rather than of its
-    // callers. `$` is doubled because the replacement is a pattern.
-    const safe = String(prefix).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\$/g, '$$$$');
-    return String(html).replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                                '$1="' + safe + '/');
+    return WebSafeDom.realmLinks(html, prefix);
   }
 
   /**

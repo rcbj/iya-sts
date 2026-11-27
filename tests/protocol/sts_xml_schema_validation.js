@@ -82,8 +82,12 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -712,6 +716,10 @@ async function ensureRealm(id, mode) {
   log.debug("Leaving ensureRealm().");
 }
 
+// THE PASSWORD IS THE PERSON'S OWN (#2160): a typed one is temporary in a
+// product realm, so the person is made with a temporary one and chooses
+// PASSWORD at the sign-in screen (`own_password.js`; in a development realm
+// it is simply set).
 async function createPerson(realm, username) {
   log.debug("Entering createPerson(). " + realm + " " + username);
   const r = await api(realm, "POST", "/users/create", {
@@ -719,10 +727,15 @@ async function createPerson(realm, username) {
     attributes: { cn: "Schema " + username, givenName: "Schema",
                   sn: username, displayName: "Schema " + username,
                   mail: username + "@" + realm + ".example.net" },
-    credential: "password", password: PASSWORD });
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD) });
   must(r.status === 200 && r.body && r.body.ok,
        "creating " + username + " in " + realm + " answered " + r.status +
        " " + r.text.slice(0, 300));
+  await ownPassword.ownPassword(realmBase(realm), username, PASSWORD,
+    function (who, value) {
+      return api(realm, "POST", "/users/set-password",
+                 { user: who, password: value });
+    });
   log.debug("Leaving createPerson().");
 }
 
@@ -1561,7 +1574,7 @@ async function federation(idp) {
       .map(function (x) {
         return htmlDecode(x[1]);
       }).filter(function (u) {
-        return u.indexOf(idpSlo + "?") === 0;
+        return urls.isAt(u, idpSlo) && new URL(u).search !== "";
       })[0] || "";
     await check("federation " + binding + ": signing out offers the partner " +
                 "a LogoutRequest", async function () {

@@ -51,6 +51,9 @@ const ROOT = path.join(__dirname, '..');
 
 function childMain() {
   const ROOT = process.env.SKS_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT + '/tests/protocol/url_match.js');
   const OUT = process.env.SKS_OUT;
   const findings = [];
   function note(ok, what, detail) {
@@ -114,7 +117,7 @@ function childMain() {
       return row && row.family === 'sts' && row.subject === 'none' &&
              j(row.required) === j(['realm', 'rotated', 'reason']);
     }) && uris.every(function (uri) {
-      return offered.indexOf(uri) >= 0;
+      return urls.holds(offered, uri);
     }), 'A1. the three are this service\'s own (family sts, no subject), ' +
         'require realm, rotated and reason as signing-key-rotated does, and ' +
         'are always offered', j(uris));

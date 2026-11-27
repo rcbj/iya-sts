@@ -114,7 +114,11 @@ import InstanceSlot = require('../common/instance_slot');
 // directory: it requires nothing here.
 import realms = require('../common/realms');
 import version = require('../common/version');
+// Whether the User-Agent may name the build (#2142). A leaf of this module.
+import mode = require('../common/mode');
 import OutboundTls = require('../common/outbound_tls');
+// The shared agent, deadline and connect timeout (#2220).
+import OutboundLimits = require('../common/outbound_limits');
 
 const { URL } = nodeUrl;
 
@@ -122,9 +126,8 @@ const { URL } = nodeUrl;
 // receiver unasked — that is what RFC 8935 push IS — so the receiver's log is
 // the only place its operator can find out what has been talking to them. RFC
 // 9110 product form; common/version.js owns the one copy of the product token.
-// Built once at require time: the version cannot change while the process
-// runs.
-const USER_AGENT = version.userAgent('ssf-transmitter');
+// Built per push since #2142 (`defaultDeps()`'s `userAgent` getter): product
+// leaves the build out, and the mode is per realm.
 
 // THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
 // No plain http in product at all: RFC 8935 names no loopback exception, and
@@ -844,6 +847,7 @@ class SsfHttp {
           requestOptions.lookup = require('../federation/federation_http')
             .pinnedLookup(vetted);
         }
+        OutboundLimits.useAgent(requestOptions, secure);
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
           const status = response.statusCode || 0;
@@ -950,6 +954,13 @@ class SsfHttp {
           errorCode: 'STS-SSF-0042',
           why: 'it did not answer within ' + timeoutMs() +
                'ms (ssf.pushTimeoutMs)' });
+      });
+      OutboundLimits.guard(request, {
+        timeoutMs: timeoutMs(), secure: secure, where: target.origin,
+        onTimeout: function (why: string) {
+          done({ ok: false, status: 0, err: '', description: '',
+            retryable: true, errorCode: 'STS-SSF-0042', why: 'it ' + why });
+        }
       });
       request.on('error', function (e) {
         log.debug("Caught in a callback in pushSet(): " +
@@ -1081,6 +1092,7 @@ class SsfHttp {
         };
       }
       let request = null;
+      OutboundLimits.useAgent(requestOptions, secure);
       try {
         request = (secure ? https : http).request(requestOptions,
                                                   function (response) {
@@ -1143,6 +1155,13 @@ class SsfHttp {
         done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0042',
           why: 'it did not answer within ' + timeoutMs +
                'ms (ssf.pushTimeoutMs)' });
+      });
+      OutboundLimits.guard(request, {
+        timeoutMs: timeoutMs, secure: secure, where: target.origin,
+        onTimeout: function (why: string) {
+          done({ ok: false, status: 0, json: null, errorCode: 'STS-SSF-0042',
+            why: 'it ' + why });
+        }
       });
       request.on('error', function (e) {
         log.debug("Caught in a callback in pollOwn(): " +
@@ -1397,7 +1416,15 @@ class SsfHttp {
       hostForUrl: helpers.hostForUrl,
       pinnedBaseUrl: helpers.pinnedBaseUrl,
       baseUrlOf: helpers.baseUrlOf,
-      userAgent: USER_AGENT,
+      // ASKED PER REQUEST (#2142): product leaves the build out, and the
+      // mode is per realm and may change while the process runs.
+      get userAgent(): string {
+        helpers.log.debug("Entering SsfHttp.defaultDeps().userAgent.");
+        const out = version.userAgent('ssf-transmitter',
+          mode.publishesBuildDetail());
+        helpers.log.debug("Leaving SsfHttp.defaultDeps().userAgent.");
+        return out;
+      },
       loadTlsServer: function () {
         return require('../tls/tls_server');
       }

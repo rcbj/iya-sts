@@ -79,5 +79,7 @@
   "applicationsText": "Dónde está cada aplicación alojada: las escuchas que le responden, y aquella sobre la que se construyen sus URL — su emisor, sus metadatos, sus redirecciones y los enlaces que envía por correo.",
   "tabDefaults": "Valores predeterminados del servicio",
   "defaultsNote": "Lo que hereda cada escucha TLS salvo que su propia pestaña o definición diga otra cosa.",
+  "tabCertSignIn": "Inicio de sesión con certificado",
+  "certSignInNote": "Los perfiles de inicio de sesión con certificado, la revocación que exige un inicio de sesión, el traspaso a un agente de escucha personalizado que pide un certificado y un proxy que termina TLS delante de él. Los mismos ajustes están en Protocolos → PIV.",
   "customTabNote": "Se fija en la definición de la escucha, en la pestaña Escuchas personalizadas."
 }

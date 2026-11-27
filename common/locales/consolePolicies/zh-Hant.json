@@ -1,6 +1,7 @@
 {
   "yes": "是",
   "no": "否",
+  "follows": "同 {row}",
   "configuration": "組態",
   "schema": "結構描述",
   "saveProfile": "儲存設定檔",
@@ -230,5 +231,7 @@
   "transfer.view.trustedHeading": "本領域信任的其他領域",
   "transfer.view.noneTrusted": "本領域不信任任何其他領域的原則匯出。",
   "transfer.view.kind": "類型",
-  "transfer.view.addedBy": "新增者"
+  "transfer.view.addedBy": "新增者",
+  "newPolicy.button": "新增原則",
+  "newPolicy.choose": "選擇要建立的原則類型。"
 }

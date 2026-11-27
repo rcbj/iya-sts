@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "توقيع رُئي بالفعل، لذا رُفض الطلب"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "سجل الرموز المادية"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "صف لكل رمز مادي (مفتاح YubiKey أو بطاقة ذكية) في هذا النطاق، مفهرس بالمورّد والرقم التسلسلي: من يحمله، وطرازه، وبيانات الاعتماد عليه. لا يُسجَّل الرقم التسلسلي إلا من شهادة. لا يحتوي سرًّا أبدًا."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "b2eadcf654a8cb28",
+    "text": "مُطبَّق: الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق ثقة، يُسقط أقدمها ويُقرأ من المخزن مجدداً عند طلبه في المرة التالية؛ والسجل نفسه محدود بالاعتمادات التي يسردها (webauthn.maxKeysPerPerson لـ FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "حتى إزالة الرمز؛ يُحتفظ بالرمز المفقود مع علامة المفقود."
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "معرّفات المفاتيح في RFC 9278"
@@ -702,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "رسالة كُبتت لأنها مكررة لرسالة أُدخلت في الطابور بالفعل للفعل نفسه ضمن mail.dedupWindowS"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "مخزون رموز OATH"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "صف واحد لكل مفتاح HOTP أو TOTP استورده مسؤول من ملف بذور PSKC لمورّد (RFC 6030)، مفهرس بالمورّد والرقم التسلسلي ومعرّف المفتاح: غير مُسنَد (سرّه مختوم)، أو مُسنَد إلى شخص (أُسقط السرّ، وهو الآن على إدخاله)، أو مُوقَف."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "c93f702fb2bd8e60",
+    "text": "مُطبَّق: الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق ثقة، يُسقط أقدمها ويُقرأ من المخزن مجدداً عند طلبه في المرة التالية؛ والمخزون محدود بما يستورده المسؤولون، 2000 مفتاح على الأكثر لكل ملف."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "حتى يُزال الرمز غير المُسنَد؛ أما الرمز المُسنَد أو المُوقَف فيُحتفظ به."
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
@@ -1106,6 +1138,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "إلى أن تنتهي صلاحية السلسلة (أقل exp لها، 10.4)، وعلى الأكثر oidfed.resolveCacheS."
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "تحديات تسجيل OpenPGP"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "تحدٍّ واحد لكل شخص يسجّل مفتاح OpenPGP: النص الذي يوقّعه باستخدام gpg --clearsign، وقيمة nonce الخاصة به ووقت انقضائه. يُستهلك مرة واحدة، بمطالبة على مستوى العنقود بقيمة nonce."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "bcb019b421b3e33e",
+    "text": "مُطبَّق: التحديات التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق ثقة، يُسقط أقدمها ويُقرأ من المخزن مجدداً عند طلبه في المرة التالية؛ ويحتفظ المخزن بتحدٍّ واحد لكل شخص (مفهرس بـ entryUUID)، كلٌّ منها لمدة openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "عمليات النشر في دليل مفاتيح الويب (Web Key Directory)"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "أي مفتاح OpenPGP يجيب به دليل مفاتيح الويب لكل عنوان مُجزَّأ: الحائز (entryUUID) والبصمة التي نشرها. مؤشر فقط: المفتاح نفسه يُقرأ من الإدخال. ليس سرًا أبدًا."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "67c6603e0b96fd95",
+    "text": "مُطبَّق: الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق ثقة، يُسقط أقدمها ويُقرأ من المخزن مجدداً عند طلبه في المرة التالية؛ ويحتفظ السجل بصف واحد لكل شخص اختار ذلك."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "إلى أن يوقف الشخص النشر أو يزيل المفتاح."
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
@@ -1623,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "وُجدت تذكرة بتجزئتها"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "مخزون OTP من Yubico"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "صف واحد لكل OTP من YubiKey استورده مسؤول من ملف CSV، مفهرس بالرقم التسلسلي: غير مُسنَد (مفتاح AES مختوم)، أو مُسنَد إلى شخص (أُسقط السرّ، وهو الآن على إدخاله)، أو مُوقَف."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "1b2409611ca2ae53",
+    "text": "مُطبَّق: الصفوف التي تحتفظ بها العملية ذاكرة تخزين مؤقت من 5000 لكل نطاق ثقة، يُسقط أقدمها ويُقرأ من المخزن مجدداً عند طلبه في المرة التالية."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "حتى يُزال الرمز غير المُسنَد؛ أما الرمز المُسنَد أو المُوقَف فيُحتفظ به."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "ذاكرة تخزين مؤقت محدودة بترتيب الأقل استخدامًا مؤخرًا."
@@ -1710,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "بائت: تم التنصّل من بيانات الاعتماد"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "شهادات مستخدم SSH الصادرة"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "صف واحد لكل شهادة مستخدم OpenSSH أصدرتها جهة SSH للمستخدمين في هذا النطاق، حسب الرقم التسلسلي: لمن هي (urn:uuid)، وبصمة المفتاح، وأسماؤها الرئيسية، ومدة صلاحيتها، وما إذا أُبطلت. لا يحوي مفتاحًا أبدًا."
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "e9eaf8f07040a227",
+    "text": "مُطبَّق: الصفوف التي تحتفظ بها العملية نافذة تُملأ عند الطلب من 5,000 لكل نطاق؛ ويغادر الصف المخزن عندما تنتهي صلاحية شهادته."
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "حتى تنتهي صلاحية الشهادة."
   }
 }

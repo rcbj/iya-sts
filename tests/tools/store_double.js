@@ -18,9 +18,16 @@
 // shape; this puts a layer in the require cache that builds them:
 //
 //   * `openPool(settings, options)` is `new Pool(settings + options)`, with
-//     `stats()` and `dedicated()` added where the double has none — a
-//     dedicated connection is `new Client(...)` with the same options, as the
-//     real one is dialled by the pool's own Knex instance;
+//     `stats()`, `dedicated()`, `onCreateFailure()`, `setConnectionString()`
+//     and `setSsl()` added where the double has none — a dedicated
+//     connection is `new Client(...)` with the same options, as the real one
+//     is dialled by the pool's own Knex instance, and a double never fails to
+//     make a connection, so the listener the driver hands
+//     `onCreateFailure()` at open (#2220, the refused password read again)
+//     is never called. The two setters (#2220's password read again, #2254's
+//     renewed client certificate) change the settings a later `dedicated()`
+//     dials with, as the real `StorePool`'s change what its next connection
+//     dials with; no fake pool reconnects, so nothing else follows;
 //   * `openConnection(settings)` is `new Client(settings)`;
 //   * everything else (`timedOutWaiting()`) is the real layer's.
 //
@@ -58,6 +65,19 @@ function layerOver(fakes) {
     if (typeof pool.dedicated !== 'function') {
       pool.dedicated = function () {
         return new fakes.Client(settings);
+      };
+    }
+    if (typeof pool.onCreateFailure !== 'function') {
+      pool.onCreateFailure = function () {};
+    }
+    if (typeof pool.setConnectionString !== 'function') {
+      pool.setConnectionString = function (connectionString) {
+        settings.connectionString = connectionString;
+      };
+    }
+    if (typeof pool.setSsl !== 'function') {
+      pool.setSsl = function (ssl) {
+        settings.ssl = ssl;
       };
     }
     return pool;

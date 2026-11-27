@@ -51,6 +51,22 @@
     "en": "dcc4499eac844938",
     "text": "TRUE：该角色的所有者不能通过 /admin-api 管理它（#607），无论他们拥有什么——这是管理员的标记，access-control 策略的所有者规则将其读作 urn:sts:xacml:object-protected。缺省为 FALSE。"
   },
+  "roles.schema.attributes.roleMembershipMode.what": {
+    "en": "723a14578f3a1d6e",
+    "text": "角色的持有方式（#1072）。`static` 以及缺省值表示一贯的成员资格：所列的用户、组和应用程序。`dynamic-selectable` 是没有成员的角色，登录时向其资格策略允许的每个人提供，只有在此人选择时才为此次登录的应用程序持有。角色有成员时不能更改此模式。"
+  },
+  "roles.schema.attributes.roleEligibilityPolicy.what": {
+    "en": "7a735d2e83fa9333",
+    "text": "此动态角色所拥有的 XACML 策略在 ou=policies 中的条目名称（#1072），登录时以及每次签发时都由 PDP 针对每个人单独判定。只有 Permit 才使此人具备资格；Deny、NotApplicable、Indeterminate、缺少属性以及缺少策略都不会。"
+  },
+  "roles.schema.attributes.roleSelection.what": {
+    "en": "2b5c2729294972e1",
+    "text": "选择此动态角色是 `optional`（包括缺省）还是 `required`（#1072）。对于某人具备资格的必选角色，即使未勾选登录页上的复选框也会显示角色步骤，并且必须至少选择一个必选角色；没有浏览器的登录会因此被拒绝。"
+  },
+  "roles.schema.attributes.roleSelectionExclusive.what": {
+    "en": "2c0357c376a85536",
+    "text": "不能同时选择的动态角色所共享的名称（#1072）：在具有相同值的角色中，一次登录最多只能选择一个。缺省时，此角色可以与任何其他角色一起选择。"
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "任何人，无论是否经过身份验证，是人员还是应用。这是默认要求：未指明所需角色的应用要求的就是这个角色，人人都拥有它，不拒绝任何人——这正是角色出现之前本服务的行为方式。"
@@ -178,5 +194,9 @@
   "roles.console.security.what": {
     "en": "238007ebd246b860",
     "text": "更改安全性：在目录 → 策略中保存或重置策略，为应用程序、组或人员指定策略，授予或撤销此角色，以及对持有此角色的人员的帐户执行操作。Admin Write 无法执行其中任何操作。它包含读取而不包含写入，因此可以由本身不是管理员的人员持有。"
+  },
+  "roles.builtIn.PIV_KEY_RECOVERY.what": {
+    "en": "f2c6cc9cd65c5fc0",
+    "text": "托管 PIV 密钥管理密钥的恢复者：凡是 `roles.pivKeyRecoveryGroup` 所指定组（默认“piv-key-recovery”）的成员即是。通过 /admin-api/hardware-tokens/recover-key 或控制台恢复他人的托管 piv-key-management 密钥时，除 Admin Write 之外还需要它，此外别无他用：该密钥可以解密持有人的邮件。持有人无需此角色即可在门户上恢复自己的密钥。"
   }
 }

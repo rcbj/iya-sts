@@ -302,7 +302,7 @@ declared through the one constructor.
 * **Error codes** (`sts-core::ErrorCode`). The same move for the 4,101 rows of
   `common/error_codes.js`, into a data file in `sts-core` from which `build.rs`
   generates a Rust `const` per code (so a code that is not in the table does
-  not compile) and `docs/v1.1.0/error-codes.md` is generated.
+  not compile) and `docs/v1.2.0/error-codes.md` is generated.
   The rule is unchanged: a code is recorded, never sent.
 * **Mode** (`sts-core::Mode`). The ~80 predicates of `common/mode.js`, each a
   method named for its QUESTION, and the `REQUIREMENTS` table that describes

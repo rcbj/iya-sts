@@ -425,8 +425,9 @@ class Est {
       });
       res.status(status)
          .set('Cache-Control', 'no-store')
-         .type('text/plain')
-         .send(String(sentence || 'The request was refused.') + '\n');
+         .type('text/plain');
+      this.sendBytes(res, Buffer.from(
+        String(sentence || 'The request was refused.') + '\n', 'utf8'));
     }
     log.debug("Leaving Est.sendEstError().");
   }
@@ -479,9 +480,32 @@ class Est {
     res.status(200)
        .set('Content-Type', contentType)
        .set('Content-Transfer-Encoding', 'base64')
-       .set('Cache-Control', 'no-store')
-       .send(Buffer.from(codec.base64Lines(der), 'latin1'));
+       .set('Cache-Control', 'no-store');
+    this.sendBytes(res, Buffer.from(codec.base64Lines(der), 'latin1'));
     log.debug("Leaving Est.sendBase64().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY EST ANSWER IS WRITTEN WITHOUT AN ETAG (#2236). Express's send() adds
+  // a weak `ETag` to every body, and on an answer that is `no-store` it
+  // validates nothing; it is also a header line, and libest's estclient reads
+  // at most sixteen of them (`MAX_HEADERS` in `est_client_http.c`) and takes
+  // the rest for the body. So the bytes go out with their own Content-Length
+  // through end(), which node answers without a body to a HEAD.
+  // tests/est_wire_headers.js counts the lines.
+  // ---------------------------------------------------------------------------
+  /**
+   * Ends an answer with these bytes and their length, and no ETag.
+   *
+   * @param res - the response, its status and headers already set
+   * @param bytes - the body
+   */
+  sendBytes(res, bytes) {
+    const { log } = this.deps;
+    log.debug("Entering Est.sendBytes().");
+    res.set('Content-Length', String(bytes.length));
+    res.end(bytes);
+    log.debug("Leaving Est.sendBytes().");
   }
 
   // ---------------------------------------------------------------------------
@@ -1505,8 +1529,8 @@ class Est {
                         serialHex: issued.record.serialHex });
     res.status(200)
        .set('Content-Type', 'multipart/mixed; boundary=' + parts.boundary)
-       .set('Cache-Control', 'no-store')
-       .send(parts.body);
+       .set('Cache-Control', 'no-store');
+    this.sendBytes(res, parts.body);
     log.info('est: serverkeygen issued ' + issued.record.profile + ' (' +
              keyAlg + ') serial ' + issued.record.serialHex + ' for ' +
              ctx.targetUri + ' to ' + ctx.identity);
@@ -1755,8 +1779,8 @@ class Est {
       // type defines no parameter, and JSON is UTF-8 (RFC 8259 section 8.1).
       res.status(200)
          .set('Content-Type', MEDIA.freshness)
-         .set('Cache-Control', 'no-store')
-         .send(Buffer.from(JSON.stringify(body), 'utf8'));
+         .set('Cache-Control', 'no-store');
+      this.sendBytes(res, Buffer.from(JSON.stringify(body), 'utf8'));
       log.debug("Leaving send().");
     };
     // A label naming another profile: nothing it issues reads an

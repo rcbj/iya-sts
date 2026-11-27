@@ -22,17 +22,32 @@
 import SpaClient = require('../common/web_spa_client');
 import WebSafeDom = require('../common/web_safe_dom');
 import WebI18n = require('../common/web_i18n');
+import WebPageState = require('../common/web_page_state');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
 import WebAnnouncements = require('../common/web_announcements');
 import WebFooter = require('../common/web_footer');
+// A refusal's catalog message in the page's language (#2006), where the API
+// names one: the act budget's (#2167).
+import WebSaid = require('../common/web_said');
 
 const CLIENT_ID = 'sts-report';
-const SCOPE = 'openid profile email offline_access report:use report:admin';
+// READ SCOPES ONLY SINCE #2168 (ASVS 5.0.0 10.2.3, rcbj's decision):
+// `report:read` reads with whichever report role the person holds. The first
+// write `/report-api` refuses for want of `report:use` or `report:admin`
+// asks for them by a second authorization (`SpaClient.stepUp()`), silently
+// while the sign-on session holds; issuance narrows them to the roles held,
+// and reads keep the read token.
+const SCOPE = 'openid profile email offline_access report:read';
+// What a second authorization may add (#2168).
+const WRITE_SCOPES = ['report:use', 'report:admin'];
 const BASE = '/report';
 const API = '/report-api';
 const SIGNIN_KEY = 'sts-report-pkce';
+// What a page held when a step had to leave it (#2220,
+// `common/web_page_state.ts`), the console's #508 arrangement.
+const RESTORE_KEY = 'sts-report-restore';
 const ACCOUNTS_ID = 'sts-report-accounts';
 const REFRESH_EARLY = 30;
 // The most filter rows the form reads: what an `and` may carry (#986).
@@ -388,7 +403,16 @@ function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
 
 function queryFormHtml(t: any, sources: any[], document: any): string {
   const doc = document || {};
-  const current = String(doc.source || (sources[0] && sources[0].id) || '');
+  // A SOURCE FOR REPORT ADMINISTRATORS (#2126): the API says per source
+  // whether this caller may query it (`usable`). The default is the first
+  // one they may; one they may not is offered disabled and named for
+  // whom it is — still drawn selected when a saved definition names it, so
+  // its owner sees what it was, and the run is refused (STS-REPORT-0061).
+  const usable = sources.filter(function (src: any): boolean {
+    return src.usable !== false;
+  });
+  const first = usable[0] || sources[0];
+  const current = String(doc.source || (first && first.id) || '');
   let fields: any[] = [];
   sources.forEach(function (src: any): void {
     if (src.id === current) {
@@ -401,9 +425,12 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
   const selected = Array.isArray(doc.select) && doc.select.length && !counted ?
     doc.select : null;
   const options = sources.map(function (src: any): string {
+    const closed = src.usable === false;
     return '<option value="' + esc(src.id) + '"' +
-      (src.id === current ? ' selected' : '') + '>' + esc(src.id) +
-      '</option>';
+      (src.id === current ? ' selected' : '') +
+      (closed && src.id !== current ? ' disabled' : '') + '>' +
+      esc(src.id) + (closed ? ' (' + esc(t.text('report.adminOnlySource')) +
+        ')' : '') + '</option>';
   }).join('');
   const checks = fields.map(function (field: any): string {
     const on = selected ? selected.indexOf(field.id) >= 0 : true;
@@ -875,6 +902,18 @@ function pagerHtml(t: any, path: string, pg: any, held?: boolean): string {
   return '<div class="pager">' + out.join('') + '</div>';
 }
 
+// What a refusal says: its catalog message in the page's language where it
+// carries one (`messages`, #2006), its `error_description` otherwise, then
+// its `error`; '' for no answer at all.
+function refusalSaid(t: any, json: any): string {
+  if (!json) {
+    return '';
+  }
+  const messages = Array.isArray(json.messages) ? json.messages : [];
+  return WebSaid.sentence(t, messages[0]) ||
+    String(json.error_description || json.error || '');
+}
+
 function problemHtml(t: any, text: string): string {
   return '<p class="err">' + esc(text || t.text('report.error')) + '</p>';
 }
@@ -1039,12 +1078,12 @@ class ReportRuntime extends SpaClient {
   // runs in this tab.
   private lastRun: any;
   private resultPer: number;
-  // THE REALM THE TOKEN WAS ISSUED IN (#1038): its prefix, null before a
-  // sign-in. A service administrator's default-realm token is kept when
-  // the realm field moves the page to another realm, so the token, refresh
-  // and resource requests go on naming the realm that issued it while the
-  // pages and the API calls name the realm on screen.
-  private issuerPrefix: string | null;
+  // THE REALM THE TOKEN WAS ISSUED IN (#1038) is `SpaClient`'s
+  // `issuerPrefix` since #2200: a service administrator's default-realm
+  // token is kept when the realm field moves the page to another realm, so
+  // the token, refresh, second authorization and resource requests go on
+  // naming the realm that issued it while the pages and the API calls name
+  // the realm on screen.
   // The prefix the page was loaded at: the `elsewhere` bases carry it.
   private loadedPrefix: string;
 
@@ -1060,7 +1099,8 @@ class ReportRuntime extends SpaClient {
         '/report-api': 'data-sts-api',
         '/logout': 'data-sts-authn'
       },
-      accountKey: 'sts-report-account'
+      accountKey: 'sts-report-account',
+      writeScopes: WRITE_SCOPES
     });
     this.username = '';
     this.t = WebMessages.WebTranslator.fromData(null);
@@ -1071,7 +1111,6 @@ class ReportRuntime extends SpaClient {
     this.groupQuery = '';
     this.lastRun = null;
     this.resultPer = 50;
-    this.issuerPrefix = null;
     this.loadedPrefix = ReportRuntime.prefixOf(env.location.pathname);
   }
 
@@ -1364,8 +1403,12 @@ class ReportRuntime extends SpaClient {
     const params: any = {
       response_type: 'code',
       client_id: CLIENT_ID,
-      redirect_uri: this.url(BASE + '/callback'),
-      scope: SCOPE,
+      // THE ISSUING REALM'S CALLBACK (#2200): a second authorization after
+      // the realm field moved the page is the issuer's, and so is the
+      // `redirect_uri` its client registers.
+      redirect_uri: this.issuerUrl(BASE + '/callback'),
+      // The read scope, or a second authorization's (#2168).
+      scope: (extra && extra.scope) || SCOPE,
       state: state,
       code_challenge: await this.sha256(verifier),
       code_challenge_method: 'S256',
@@ -1378,6 +1421,9 @@ class ReportRuntime extends SpaClient {
     }
     if (extra && extra.prompt) {
       params.prompt = String(extra.prompt);
+    }
+    if (extra && extra.max_age !== undefined && extra.max_age !== '') {
+      params.max_age = String(extra.max_age);
     }
     return this.authorizationRequestUrl(params);
   }
@@ -1423,6 +1469,11 @@ class ReportRuntime extends SpaClient {
   async finishSignIn(): Promise<void> {
     const query = await this.openAuthorizationResponse(
       this.callbackParameters());
+    // A SECOND AUTHORIZATION'S WINDOW (#2168) hands its answer back to the
+    // page whose write is waiting on it, and redeems nothing.
+    if (this.handBackStepUp(query, this.prefix + BASE + '/callback')) {
+      return;
+    }
     let saved: any = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -1477,8 +1528,27 @@ class ReportRuntime extends SpaClient {
     this.env.history.replaceState(null, '',
       this.prefix + String(saved.returnTo || BASE));
     await this.route();
+    // What the page held when a step had to leave it (#2220).
+    this.restorePageState();
     if (saved.another || (before && before.sub !== this.subject)) {
       this.announceAccounts('added');
+    }
+  }
+
+  /**
+   * After a sign-in that left the page: puts its choices back for the same
+   * realm, page and reader, and says in a bubble that nothing was sent
+   * (#2220, `common/web_page_state.ts`).
+   *
+   * @returns nothing
+   */
+  restorePageState(): void {
+    const done = WebPageState.take(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
+    if (done.state === 'other') {
+      this.flash('err', this.t.text('browser.stateOtherPerson'));
+    } else if (done.state === 'restored') {
+      this.flash('ok', this.t.text('browser.stateRestored'));
     }
   }
 
@@ -1530,9 +1600,13 @@ class ReportRuntime extends SpaClient {
       return NEEDS_SIGN_IN;
     }
     for (let attempt = 0; attempt < 3; attempt++) {
+      // THE READ TOKEN FOR A GET, AND A WRITE TOKEN FOR ANYTHING ELSE WHILE
+      // ONE IS HELD (#2168).
+      const token = this.tokenFor(method, this.resource());
+      const writing = token !== this.accessToken;
       const headers: any = {
-        'Authorization': 'DPoP ' + this.accessToken,
-        'DPoP': await this.proof(method, target, this.accessToken),
+        'Authorization': 'DPoP ' + token,
+        'DPoP': await this.proof(method, target, token),
         'Accept': 'application/json, text/csv, application/pdf'
       };
       if (body !== undefined && body !== null) {
@@ -1565,6 +1639,12 @@ class ReportRuntime extends SpaClient {
       if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
         continue;
       }
+      // A WRITE TOKEN IS NEVER REFRESHED (#2168): one refused is dropped,
+      // and the write goes again on the read token.
+      if (writing) {
+        this.dropWriteToken(this.resource());
+        continue;
+      }
       if (/invalid_token/.test(challenge) && await this.refresh()) {
         continue;
       }
@@ -1572,6 +1652,73 @@ class ReportRuntime extends SpaClient {
     }
     this.accessToken = '';
     return NEEDS_SIGN_IN;
+  }
+
+  // THE REPORTS APPLICATION'S HALF OF A SECOND AUTHORIZATION (#2168,
+  // `SpaClient`'s `stepUp()`): its callback, where it goes when no window
+  // can be opened, and the bar's words in the reader's language.
+  /**
+   * The application's callback, a second authorization's `redirect_uri`.
+   *
+   * @returns the URL
+   */
+  callbackUrl(): string {
+    return this.issuerUrl(BASE + '/callback');
+  }
+
+  /**
+   * Signs in on this page for a write scope. The change waiting is not
+   * sent: the reader makes it again when the page is back, with the page's
+   * choices put back.
+   *
+   * @param scope - the scope to sign in with
+   * @param prompt - `login`, or '' for none
+   * @returns nothing
+   */
+  async leaveForStepUp(scope: string, prompt: string): Promise<void> {
+    // THE PAGE'S CHOICES GO FIRST (#2220), as the console's do (#508).
+    WebPageState.save(this.env, RESTORE_KEY, {
+      prefix: this.prefix, path: this.here(), subject: this.subject });
+    await this.beginSignIn(this.here(), prompt
+      ? { scope: scope, prompt: prompt, max_age: '0' } : { scope: scope });
+  }
+
+  /**
+   * A write token carrying either report scope (#2168). `/report-api` names
+   * both, and either is enough for it: issuance narrows the pair to the
+   * roles the reader holds, so one comes back for a REPORT_USE holder.
+   *
+   * @param named - the scopes the refusal named
+   * @returns whether a write token carrying one of them is held
+   */
+  async stepUpAny(named: string[]): Promise<boolean> {
+    const resource = this.resource();
+    const carries = function (held: string[]): boolean {
+      return named.some(function (one: string): boolean {
+        return held.indexOf(one) >= 0;
+      });
+    };
+    if (carries(this.writeScopesHeld(resource))) {
+      return true;
+    }
+    await this.stepUp(resource, named);
+    return carries(this.writeScopesHeld(resource));
+  }
+
+  /**
+   * The step's bar's words, from the `report` catalog where it has them.
+   *
+   * @returns `SpaClient.stepWords()`'s shape
+   */
+  stepWords(): any {
+    const english = super.stepWords();
+    const t = this.t;
+    const out: any = {};
+    Object.keys(english).forEach(function (name: string) {
+      const key = 'report.step.' + name;
+      out[name] = t && t.has(key) ? t.text(key) : english[name];
+    });
+    return out;
   }
 
   /**
@@ -1584,7 +1731,21 @@ class ReportRuntime extends SpaClient {
    */
   async call(method: string, path: string, body?: any,
              options?: any): Promise<any> {
-    const res = await this.sendOnce(method, this.url(path), body);
+    const identity = this.identity;
+    let res = await this.sendOnce(method, this.url(path), body);
+    // A WRITE THE READ TOKEN CANNOT MAKE (#2168): the report API names
+    // `report:use report:admin`, the second authorization gets what the
+    // reader's roles allow, and the write is sent once more — the same
+    // closure, so it never leaves memory. A step that does not end with a
+    // write scope answers the refusal as it was.
+    const named = res && res !== ABORTED && res !== NEEDS_SIGN_IN
+      ? SpaClient.insufficientScopeOf(res) : [];
+    if (named.length && await this.stepUpAny(named)) {
+      if (identity !== this.identity) {
+        return null;
+      }
+      res = await this.sendOnce(method, this.url(path), body);
+    }
     if (res === ABORTED) {
       return null;
     }
@@ -1959,11 +2120,18 @@ class ReportRuntime extends SpaClient {
         answer.json.error_description));
       return;
     }
+    const t = this.t;
+    // A source the caller may not query (#2126) is still listed, its page
+    // still reachable, and named for whom it is instead of a New query
+    // link that would be refused.
     const rows = answer.json.sources.map(function (src: any): string[] {
       return ['<a href="' + esc(BASE + '/sources/' + src.id) + '">' +
         esc(src.id) + '</a>',
-        '<a href="' + esc(BASE + '/query?source=' + src.id) + '">' +
-        esc(src.id) + '</a>'];
+        src.usable === false
+          ? '<span class="sub">' + esc(t.text('report.adminOnlySource')) +
+            '</span>'
+          : '<a href="' + esc(BASE + '/query?source=' + src.id) + '">' +
+            esc(src.id) + '</a>'];
     });
     const body = rows.length ? tableHtml([
       esc(this.t.text('report.source')),
@@ -2020,6 +2188,10 @@ class ReportRuntime extends SpaClient {
     });
     const kept = src.retention ? '<p class="sub">' +
       esc(src.retention) + '</p>' : '';
+    // FOR REPORT ADMINISTRATORS (#2126): said on the source's page, and
+    // the New query link left out for a caller who may not use it.
+    const adminNote = src.adminOnly ? '<p class="sub">' +
+      esc(t.text('report.adminOnlyNote')) + '</p>' : '';
     const indexedNote = anyIndexed ? '<p class="sub">' +
       esc(t.text('report.indexedNote')) + '</p>' : '';
     // PREDEFINED QUERIES (#1110): each a link to New Query with its
@@ -2034,9 +2206,11 @@ class ReportRuntime extends SpaClient {
           encodeURIComponent(String(one.id))) + '">' +
           esc(String(one.name)) + '</a></li>';
       }).join('') + '</ul>' : '';
-    this.paint('<p><a href="' + esc(BASE + '/query?source=' + src.id) +
-      '">' + esc(this.t.text('report.newQuery')) + '</a></p>' +
-      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote + presetList +
+    this.paint((src.usable === false ? '' : '<p><a href="' +
+      esc(BASE + '/query?source=' + src.id) + '">' +
+      esc(this.t.text('report.newQuery')) + '</a></p>') +
+      '<h2>' + esc(src.id) + '</h2>' + kept + adminNote + indexedNote +
+      presetList +
       tableHtml([
         esc(this.t.text('report.fields')),
         esc(this.t.text('report.type')),
@@ -2665,8 +2839,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (answer.status !== 200 || !answer.bytes) {
-      this.flash('err', (answer.json && (answer.json.error_description ||
-        answer.json.error)) ||
+      this.flash('err', refusalSaid(this.t, answer.json) ||
         this.t.text('report.downloadFailed',
           { status: String(answer.status || '') }));
       return;
@@ -2721,8 +2894,8 @@ class ReportRuntime extends SpaClient {
       return;
     }
     // A refusal keeps the form on the page and says why above it.
-    this.flash('err', (answer.json && (answer.json.error_description ||
-      answer.json.error)) || this.t.text('report.error'));
+    this.flash('err', refusalSaid(this.t, answer.json) ||
+      this.t.text('report.error'));
   }
 
   /**
@@ -3115,6 +3288,21 @@ class ReportRuntime extends SpaClient {
    * @returns nothing
    */
   async start(): Promise<void> {
+    // NO WEBCRYPTO, NO SIGN-IN (#2143): one sentence, in the page's own
+    // language and chrome, as a refused sign-in is drawn.
+    if (SpaClient.webCryptoMissing(this.env)) {
+      await this.ensureLanguage();
+      this.paint(problemHtml(this.t, this.t.text('report.noWebCrypto.text')) +
+                 SpaClient.browserSupportHtml(this.t));
+      return;
+    }
+    // NO SESSION STORAGE, NO SIGN-IN (#2220): the same, in its words.
+    if (SpaClient.sessionStorageMissing(this.env)) {
+      await this.ensureLanguage();
+      this.paint(problemHtml(this.t, this.t.text('browser.noStorage.text')) +
+                 SpaClient.browserSupportHtml(this.t));
+      return;
+    }
     const self = this;
     this.env.document.addEventListener('click', function (event: any): void {
       // THE TAB'S OWN STORAGE GOES FIRST (#1440, ASVS 5.0.0 14.3.1): the

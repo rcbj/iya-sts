@@ -455,11 +455,13 @@ class GnapSubject {
                                       config.value(
                                           'gnap.accessTokenLifetimeS')) ||
                                               3600) / 60));
-        const xml = saml2.buildSamlAssertion(this.normaliseName(username),
-                                             context.instanceId, lifetime, {
-          issuer: context.issuer,
-          sessionIndex: context.sessionId || undefined
-        });
+        // Signed off the event loop where the realm's XML key is in the HSM
+        // (#1955 P8 follow-up); a software key signs the same bytes in place.
+        const xml = await saml2.buildSamlAssertionAsync(
+          this.normaliseName(username), context.instanceId, lifetime, {
+            issuer: context.issuer,
+            sessionIndex: context.sessionId || undefined
+          });
         // Section 3.4.1: "encoded as a single base64url string with no
         // padding".
         out.push({ format: 'saml2',

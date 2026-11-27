@@ -448,12 +448,20 @@
     "text": "Ein Token mit öffentlichem Schlüssel, das ein Inhaber OFFLINE abschwächen kann, wie ein Macaroon, das aber jeder prüfen kann, der den öffentlichen Wurzelschlüssel hält. Seine Autorisierungslogik ist Datalog, das im Token mitgeführt wird, daher läuft der Prüfer IMMER mit Grenzen für Zeit und Iterationen."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData mit einem Signierer und signierten Attributen, geprüft über die Attributbytes, wie sie empfangen wurden, und beim Schreiben DER-sortiert; EnvelopedData mit KeyTransRecipientInfo (RSA PKCS#1 v1.5 und OAEP) und Inhalt AES-CBC; entartetes certs-only-SignedData mit Zertifikaten und CRLs. Kein KeyAgreeRecipientInfo, keine authentisierten oder komprimierten Daten, keine Gegensignaturen."
+    "en": "f750e6cf7ac566b2",
+    "text": "partial: SignedData mit einem Unterzeichner und signierten Attributen, geprüft über die Attributbytes wie empfangen und DER-sortiert geschrieben; EnvelopedData mit KeyTransRecipientInfo (RSA PKCS#1 v1.5 und OAEP) und AES-CBC-Inhalt; degeneriertes SignedData nur mit Zertifikaten und CRLs; für S/MIME-E-Mails (#1955) ein EnvelopedData, geschrieben mit einem OAEP-SHA-256-KeyTransRecipientInfo, einem ECDH-KeyAgreeRecipientInfo oder, für ein ML-KEM-Zertifikat, einer KEMRecipientInfo. Keine authentifizierten oder komprimierten Daten, keine Gegensignaturen."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "Der Umschlag, den SCEP (scep/scep_cms.ts) liest und schreibt: eine vom Anfragenden signierte und an die RA verschlüsselte Anfrage und ein von der RA signiertes CertRep, dessen Zertifikat an den Anfragenden verschlüsselt ist."
+    "en": "05b9f7ff9bec76df",
+    "text": "Der Umschlag, den SCEP (scep/scep_cms.ts) liest und schreibt: eine vom Antragsteller signierte und an die RA verschlüsselte Anfrage sowie ein von der RA signiertes CertRep, dessen Zertifikat an den Antragsteller verschlüsselt ist. Seit #1955 auch das S/MIME-EnvelopedData, in dem E-Mails verschlüsselt werden; es fügt ein KeyAgreeRecipientInfo für einen EC-Empfänger (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap) und ein OAEP-SHA-256-KeyTransRecipientInfo für einen RSA-Empfänger sowie eine KEMRecipientInfo für ein ML-KEM-Zertifikat hinzu. Eine Laufzeit, die nicht kapseln kann, fällt nicht auf RSA oder ECDH zurück."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "d27e08a2f317c75c",
+    "text": "partial: Lesen übertragbarer öffentlicher Schlüssel v4 und v6, Prüfen einer Klartextsignatur und Verschlüsseln einer PGP/MIME-Nachricht, über openpgp.js; ein zusammengesetzter RFC-9980-Schlüssel wird hier gelesen und beide Hälften werden geprüft. Die erweiterte und die direkte Abfrage des Web Key Directory und seine Richtliniendatei. Kein Signieren, kein Entschlüsseln, keine Übermittlung an einen Web Key Service, kein Keyserver und kein SLH-DSA."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "Der eigene öffentliche Schlüssel einer Person, auf einen Besitznachweis hin registriert und, wenn sie es wünscht, im Web Key Directory veröffentlicht; der Schlüssel, an den ihre E-Mails verschlüsselt werden."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, beim Artefakt behalten und beim Lesen geprüft"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "Nichts. Eine Registrierung trägt die Signatur der PERSON, und eine verschlüsselte Nachricht wird nicht signiert (DKIM signiert die äußere Nachricht, wie es jede Nachricht signiert)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "e571039950254fa8",
+    "text": "Einen BESITZNACHWEIS bei der Registrierung: eine Klartextsignatur (gpg --clearsign) über genau die Challenge, die dieser Dienst der Person ausgestellt hat, durch einen signierfähigen Schlüssel des zu registrierenden Schlüssels, erstellt nach Ausstellung der Challenge (openpgp.signatureSkewS) und zu diesem Zeitpunkt gültig; der Schlüssel selbst weder widerrufen noch abgelaufen, mit einer gültigen Benutzer-ID, die die Adresse des Eintrags enthält. Schlüssel nach RFC 9580 v6 und RFC 4880 v4, gelesen von openpgp.js. Ein S/MIME-Zertifikat wird auf Gültigkeit, Schlüssel und Verwendungszweck geprüft, nicht auf seine Kette: Es bestimmt nur, an wen eine Nachricht verschlüsselt wird. Zusammengesetzte RFC-9980-Schlüssel liest der eigene Leser dieses Dienstes, der beide Hälften prüft; openpgp.js liest sie nicht."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "92940be7441a9817",
+    "text": "E-MAILS, wenn die Person es gewählt hat oder der Vertrauensbereich es verlangt (mail.encryptionRequired): PGP/MIME (RFC 3156) an den Verschlüsselungsschlüssel des Schlüssels, wie openpgp.js ihn wählt (SEIPD mit AES bei einem v4-Schlüssel, AEAD bei einem v6-Schlüssel); S/MIME (RFC 8551) als CMS EnvelopedData, Inhaltsverschlüsselung AES-256-CBC, der Inhaltsschlüssel unter RSAES-OAEP mit SHA-256 oder ECDH (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap). Ein ML-KEM-Zertifikat (RFC 9935) ist eine KEMRecipientInfo (RFC 9629): die Inhaltsverschlüsselung bleibt AES-256-CBC, und eine Laufzeit, die nicht kapseln kann, fällt nicht auf RSA oder ECDH zurück."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Nichts."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 des kleingeschriebenen lokalen Teils, in z-base-32, so wie das Web Key Directory eine Adresse benennt (ein vom Entwurf festgelegter Name, nie zur Integritätssicherung herangezogen). Der Fingerabdruck des Schlüssels ist der nach RFC 9580 (SHA-256 für v6, SHA-1 für v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "Keine eigenen. Der öffentliche Schlüssel der Person liegt in ihrem Eintrag (stsOpenPgpKey), nie ein geheimer Schlüssel, den die Registrierung ablehnt; ein Schlüssel auf der OpenPGP-Karte eines YubiKey ist von einem Schlüssel in einer Datei nicht zu unterscheiden, daher wird nichts als hardwaregebunden festgehalten."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "Registrierter Schlüssel, Signieren"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519, ML-DSA-87+Ed448 (RFC 9980), dann Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA von mindestens openpgp.minRsaBits (mindestens 3072)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "Registrierter Schlüssel, Verschlüsseln"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519, ML-KEM-1024+X448 (RFC 9980), dann X25519, X448, ECDH Curve25519 und P-256/P-384/P-521, RSA von mindestens openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "Abgelehnt"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "4c8437ead9bd7364",
+    "text": "DSA, ElGamal, Brainpool-Kurven, SLH-DSA"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME-Inhalt"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME-Schlüsseltransport"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256-Wrap; ML-KEM (RFC 9935) als KEMRecipientInfo, HKDF-SHA-256 und AES-Wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Name im Web Key Directory"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1388,24 +1468,24 @@
     "text": "Nichts, was diesen Dienst verlässt. Ein HOTP-Wert IST ein gekürzter HMAC — RFC 4226 Abschnitt 5.3 —, sodass diese Familie einen MAC mit Schlüssel berechnet und ihn dann vergleicht; deshalb liegt das Primitiv in common/crypto.js neben jeder anderen Signatur hier und nicht in dem Modul, das über die Richtlinie entscheidet."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "Einen vorgelegten Code, indem der HMAC für jeden Zeitschritt im Skew-Fenster berechnet und in konstanter Zeit verglichen wird. JEDER Schritt wird auch nach einem Treffer berechnet, absichtlich: Ein früher Rücksprung würde die benötigte Zeit davon abhängig machen, WELCHER Schritt getroffen hat, und das wäre ein besseres Orakel als der Ziffernvergleich, für den sich dieser Dienst die Mühe einer konstanten Zeit macht."
+    "en": "302891e951b96222",
+    "text": "Einen vorgelegten Code, indem für jeden Zeitschritt im Abweichungsfenster der HMAC berechnet und in konstanter Zeit verglichen wird. JEDER Schritt wird auch nach einem Treffer berechnet, absichtlich: ein frühes Zurückkehren würde die benötigte Zeit davon abhängig machen, WELCHER Schritt passte, und das wäre ein besseres Orakel als der Ziffernvergleich, der hier eigens in konstanter Zeit erfolgt. Einen HOTP-Code (RFC 4226, #1955) auf dieselbe Weise über das Vorausschaufenster ab seinem Zähler, der dann per Compare-and-Set im Speicher weitergesetzt wird. Den ValueMAC einer PSKC-Seed-Datei (RFC 6030 Abschnitt 6.1.1: HMAC-SHA1 oder ein SHA-2-MAC über den Geheimtext), bevor ihr Geheimnis entschlüsselt wird."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "Das gemeinsame Geheimnis im Ruhezustand, im PRODUKTMODUS — AES-256-GCM unter demselben Schlüsselverschlüsselungsschlüssel, der die Signierschlüssel schützt, durch common/keystore.js. Im ENTWICKLUNGSMODUS wird es als base32 gespeichert, weil der Schlüsselverschlüsselungsschlüssel dort je Lauf erzeugt wird und ein Versiegeln einen Authenticator bedeuten würde, der beim nächsten Neustart lautlos aufhörte zu funktionieren."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "Dasselbe Geheimnis, um einen Code zu prüfen. **DIES SIND DIE EINEN ANMELDEDATEN IN DIESEM DIENST, DIE SICH ZURÜCKLESEN LASSEN** — ein Passwort ist ein scrypt-Hash und lässt sich nur dagegen vergleichen, und einen Einmalcode zu prüfen heißt, ihn zu BERECHNEN. Das ist keine Schwäche von RFC 6238; es ist die Bedeutung von „gemeinsames Geheimnis“, und genau deshalb ist dieser Mechanismus hier ein ZWEITER Faktor und kann niemals ein erster werden."
+    "en": "f197370676038df3",
+    "text": "Die PSKC-Seed-Datei eines Herstellers (RFC 6030): AES-CBC oder AES Key Wrap unter dem mit dem Upload angegebenen vorab geteilten Schlüssel oder unter einem Schlüssel, den PBKDF2 aus ihrem Passwort ableitet; keines von beiden wird aufbewahrt. Dasselbe Geheimnis, um einen Code zu prüfen. **DIES IST DIE EINZIGE ANMELDEINFORMATION IN DIESEM DIENST, DIE SICH ZURÜCKLESEN LÄSST** — ein Passwort ist ein scrypt-Hash und kann nur verglichen werden, und einen Einmalcode zu prüfen heißt, ihn zu BERECHNEN. Das ist keine Schwäche von RFC 6238; es ist, was „gemeinsames Geheimnis“ bedeutet, und genau deshalb ist dieser Mechanismus hier ein ZWEITER Faktor und kann nie zu einem ersten gemacht werden."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1, SHA-256 oder SHA-512, innerhalb des HMAC und sonst nirgends."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "Es nennt niemandem den aktuellen Code und richtet niemanden an einem Anmeldungsbildschirm ein — die Einrichtung bedeutet, dass ein Geheimnis gezeigt wird, also geschieht sie dort, wo die Person bereits authentifiziert ist oder einen Aktivierungslink besitzt. Es gibt kein zählerbasiertes HOTP als Authentifizierungsmechanismus und kein Resynchronisationsprotokoll: Das Skew-Fenster ist alles, was für eine driftende Uhr angeboten wird."
+    "en": "313115cd82b83d1b",
+    "text": "Er verrät niemandem, wie der aktuelle Code lautet, und er richtet nie jemanden auf einem Anmeldebildschirm ein — Einrichten bedeutet, ein Geheimnis angezeigt zu bekommen, also geschieht es dort, wo die Person bereits authentifiziert ist oder einen Aktivierungslink hat. Einer driftenden TOTP-Uhr wird das Abweichungsfenster angeboten und sonst nichts. Ein zählerbasiertes (HOTP-)Token wird aus zwei aufeinanderfolgenden Codes neu synchronisiert, nie aus einem. Er bewahrt nie den Schlüssel oder das Passwort einer Seed-Datei auf und öffnet nie eine an ein Zertifikat verschlüsselte Datei. HOTP (RFC 4226) und ein PSKC-Seed (RFC 6030) haben keinen Post-Quanten-MAC: der MAC ist HMAC-SHA-1, SHA-256 oder SHA-512."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1422,6 +1502,50 @@
   "crypto.families.one-time-passwords-totp.algorithms.3.what": {
     "en": "e08e19def21e22b2",
     "text": "Aktuelle Einstellungen"
+  },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "Nichts, was diesen Dienst verlässt, außer dem HMAC-SHA1, den ein YK-VAL-Client auf /wsapi/2.0/verify prüft. Das OTP selbst ist AES-128-ECB eines 16-Byte-Blocks, verglichen nachdem er entschlüsselt wurde, und deshalb lebt die Primitive in common/crypto.js."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "Ein vorgelegtes OTP: die öffentliche Identität wählt das Geheimnis, der Block entschlüsselt sich unter seinem AES-128-Schlüssel, der CRC-16-Rest ist 0xf0b8, und die private Identität stimmt überein. Der Nutzungszähler und der Sitzungsnutzungszähler müssen als ein Wert streng über dem zuletzt angenommenen liegen. Der Zeitstempel wird nicht geprüft. Der HMAC-SHA1 einer YK-VAL-Anfrage, in jedem Modus, wenn yubiotp.ykval an ist."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "Der AES-Schlüssel und die private Identität im Ruhezustand, als ein versiegelter JSON-Wert, unter dem Schlüsselverschlüsselungsschlüssel, im Produktmodus. Im Entwicklungsmodus wird der Schlüsselverschlüsselungsschlüssel je Lauf erzeugt, sodass der Wert im Klartext gespeichert wird und das sagt."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "Diesen versiegelten Wert, um ein OTP zu prüfen. Der Server hält den AES-Schlüssel, daher ist die Anmeldung amr otp und niemals hwk."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "Nichts. Der CRC ist CRC-16, Polynom 0x8408. Eine YK-VAL-Signatur ist HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "f93ab78e99cd9d8d",
+    "text": "Es ruft niemals YubiCloud auf. Es prüft niemals den Zeitstempel. Es registriert niemals einen Slot, solange yubiotp.offered aus ist, und es beantwortet YK-VAL niemals, solange yubiotp.ykval aus ist. Es schreibt niemals die Programmierzeile oder den HMAC-Schlüssel eines Clients ins Protokoll. Es hat keinen Post-Quanten-Parameter: das OTP ist AES-128-ECB eines einzelnen 16-Byte-Blocks."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alphabet"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "Wiederholung"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
   },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
@@ -1596,12 +1720,12 @@
     "text": "Jedes Zertifikat, das es aushändigt, mit dem Schlüssel der EST-Issuing-CA dieses Vertrauensbereichs, durch issueEnrolled() von common/pki.js — derselbe Kodierer, aus dem hier jedes andere Zertifikat stammt. Die certs-only-CMS-Nachrichten, die es zurückgibt, sind DEGENERIERT: ein SignedData mit Zertifikaten und ohne Signierer, sodass sie keine eigene Signatur tragen und denen im Hinblick auf die darin liegenden Zertifikate vertraut wird."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "Den Besitznachweis nach PKCS#10 — die Signatur der Anfrage mit ihrem eigenen öffentlichen Schlüssel, klassisch und mit Post-Quanten-Verfahren, in common/cert_enrollment.ts — und bei der Authentifizierung mit einem Zertifikat den Pfad des Client-Zertifikats zur Intermediate dieses Vertrauensbereichs und zur Root des Dienstes, unter Hinzuziehung des Widerrufs. Eine Vorlage unter /serverkeygen wird nicht geprüft: Ihr Schlüssel wird ersetzt."
+    "en": "6b27c8877d509c46",
+    "text": "Der PKCS#10-Besitznachweis – die Signatur der Anforderung mit ihrem eigenen öffentlichen Schlüssel, klassisch und Post-Quanten, in common/cert_enrollment.ts – und bei der Zertifikatsauthentifizierung der Pfad des Clientzertifikats zum Intermediate dieses Bereichs und zum Root des Dienstes, mit Widerrufsprüfung. Eine /serverkeygen-Vorlage wird nicht verifiziert: Ihr Schlüssel wird ersetzt. Eine YubiKey-PIV-Schlüsselattestierung in der Anforderung (#1955, hier sowie über ACME und SCEP): die ECDSA- oder RSA-Signatur des Slot-Zertifikats durch das f9-Zertifikat und der Pfad des f9-Zertifikats zu den PIV-Attestierungsankern des Bereichs, über die Validierungstür."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "Den privaten Schlüssel eines vom Server erzeugten Schlüsselpaars, mit AES-256-GCM unter dem Schlüsselverschlüsselungsschlüssel auf den Eintrag versiegelt, überall dort, wo dieser Schlüssel den Prozess überdauert. Er wird NICHT an den Client verschlüsselt (RFC 7030 Abschnitt 4.4.1.2): Eine Anfrage, die das verlangt, wird abgelehnt, und der Schlüssel reist nur innerhalb von TLS."
+    "en": "a18df4311029b728",
+    "text": "Der private Schlüssel eines vom Server erzeugten Schlüsselpaars, mit AES-256-GCM unter dem Schlüsselverschlüsselungsschlüssel versiegelt auf dem Eintrag, wo immer dieser Schlüssel den Prozess überdauert; ein hinterlegter piv-key-management-Schlüssel (#1955) in jedem Modus, oder er wird gar nicht erzeugt. Er wird NICHT für den Client verschlüsselt (RFC 7030 Abschnitt 4.4.1.2): Eine Anforderung, die das verlangt, wird abgelehnt, und der Schlüssel reist nur innerhalb von TLS."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +2030,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32, ohne Padding, wie es das otpauth Key Uri Format erwartet."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Verifizierte PIV-Attestierungssignaturen"
   }
 }

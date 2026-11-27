@@ -49,6 +49,9 @@
 // repository's own.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -367,7 +370,7 @@ async function signIn(base, make) {
   const out = await answerAndCollect(base, who, request, make(request),
                                      started.door.location);
   let at = out.collected.status === 303 ? out.collected.location : "";
-  for (let n = 0; n < 6 && at && at.indexOf(root) === 0 &&
+  for (let n = 0; n < 6 && at && urls.isUnder(at, root) &&
                   !consentScreen.isConsentScreen(at); n += 1) {
     at = (await hop(who, "GET", at)).location;
   }

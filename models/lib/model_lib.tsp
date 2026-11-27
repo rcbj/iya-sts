@@ -126,6 +126,20 @@ model MechanismRow {
   primary: boolean | null;
   secondFactor: boolean | null;
   email?: boolean;
+  /**
+   * A mechanism added after API clients were written (#1955's `hotp` and
+   * `yubico-otp`): a policy save that names no value keeps its built-in
+   * one, not refused.
+   */
+  optional?: boolean;
+  /**
+   * What the row answers while the policy stores no value for it (#2031):
+   * another row's field key (`certificatePrimary`), or `setting:<key>` for a
+   * setting (`setting:piv.cardAuthSignIn`). A save may say `follow` to keep
+   * it following. Its `primary` is then only the value drawn as the
+   * built-in one where nothing it follows can be read.
+   */
+  follows?: string;
 }
 
 /**
@@ -251,6 +265,10 @@ model TableOptions {
   constraints?: PlacedText[];
   driver: unknown;
   indexes?: IndexOptions[];
+  /** MariaDB only (#1616): the verbs the application account is granted on
+   * this table by the per-table grants, where not the four it gets on every
+   * other table. */
+  grant?: string;
 }
 
 /** One column: its SQL type and the clauses after that type. */

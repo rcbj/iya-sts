@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# THE COMPANION'S /pep-app (#1284, `companion = true`): the application the
+# reverse proxy protects in the demonstrations, at the VM's 127.0.0.1:9700 —
+# the route's upstream — on the host's network, which no security group rule
+# admits on 9700. It holds no bootstrap secret, so no management power. It
+# is not the member's: a stopped companion costs /pep-app a 502 and leaves
+# the member deciding.
+[Unit]
+Description=remote PEP: the companion's /pep-app
+Requires=sts-registry.service
+After=sts-registry.service pep-member.service
+
+[Service]
+Environment=HOME=/var/lib/sts
+ExecStartPre=-/usr/bin/docker rm -f companion
+ExecStartPre=/usr/bin/docker pull ${image}
+ExecStart=/usr/bin/docker run --rm --name companion \
+  --network host \
+  --env-file /etc/pep/companion.env \
+  --log-driver=journald \
+  --log-opt tag=pep/${environment}/companion \
+  ${image}
+ExecStop=/usr/bin/docker stop -t 10 companion
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

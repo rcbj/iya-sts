@@ -2170,7 +2170,7 @@ async function reportReadCredentialHolders(rows: any, control: any):
       boolean {
     return wantedIds.indexOf(m.id) >= 0;
   }) : MECHANISM_TABLE;
-  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/v1.1.0/reporting.md`
+  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/v1.2.0/reporting.md`
   // said since #1019 that a count by mechanism reads the password's count from
   // the realm's counter, and nothing did: on 8081 `count` of `mechanism
   // equals password` counted a million holders against the cap and was
@@ -2902,11 +2902,13 @@ function reportPostLogin(): any {
  * @returns the catalog row
  */
 function reportPostLoginRow(entry: any, postLogin: any,
-                            profileOf: (username: string) => any): any {
+                            profileOf: (username: string,
+                                        activity: string) => any): any {
   log.debug("Entering reportPostLoginRow().");
   const row = entry && entry.row ? entry.row : {};
   const recorded = typeof row.profile === 'string' && row.profile !== '';
-  const profile = recorded ? null : profileOf(String(entry.username));
+  const profile = recorded ? null : profileOf(String(entry.username),
+                                              String(entry.activity || ''));
   const grace = postLogin.graceOf(row, profile ? profile.graceDays : 0);
   const done = Number(row.doneAt) > 0;
   const progress = done ? 'done'
@@ -2945,25 +2947,34 @@ async function reportReadPostLogin(rows: any, control: any): Promise<void> {
   const postLogin = reportPostLogin();
   const policy = require('../common/post_login_policy');
   const profiles = new Map<string, any>();
-  const profileOf = function (username: string): any {
-    if (!profiles.has(username)) {
+  // THE ALLOTTED TIME IS THE ROW'S ACTIVITY'S (#2009 P4): each activity has
+  // its own block of rows, so a mail-encryption row with no stamp counts its
+  // deadline from `mailGraceDays`, not the passkey migration's `graceDays`.
+  // The profile is read once a person; the timing once a person and
+  // activity.
+  const profileOf = function (username: string, activity: string): any {
+    const key = username + '|' + activity;
+    if (!profiles.has(key)) {
       let found: any = { name: '', graceDays: 0 };
       try {
         // THE PERSON'S GROUPS ALONE (#1239): a progress row belongs to no
         // sign-in, so no application's profile is a candidate; the profile
         // that applied at the ask is the row's own stamp (`profile`).
         const rules = policy.forPerson(username);
+        const timing = typeof postLogin.timingOf === 'function'
+          ? postLogin.timingOf(activity, rules)
+          : { graceDays: Number(rules.graceDays) || 0 };
         found = { name: String(rules.name || ''),
-                  graceDays: Number(rules.graceDays) || 0 };
+                  graceDays: Number(timing.graceDays) || 0 };
       } catch (e) {
         // A profile that cannot be read leaves the column empty and the
         // allotted time unknown; the row is still reported.
         log.debug("Caught in reportReadPostLogin(): " +
                   ((e && e.message) || e));
       }
-      profiles.set(username, found);
+      profiles.set(key, found);
     }
-    return profiles.get(username);
+    return profiles.get(key);
   };
   let offered = 0;
   await postLogin.eachProgressAsync(function (entry: any): boolean {
@@ -3895,13 +3906,25 @@ async function reportScheduleWork(ctx: any): Promise<any> {
     }
     // THE OWNER'S OWN QUESTION, TO THE POLICY (#1030): the roles the owner
     // holds now, and `run` on this definition.
+    // A report over an administrators' source (#2126) is asked of the
+    // owner's roles too, and refused under STS-REPORT-0061 with the
+    // source named in the note.
     const rightsOf = rights.ownerMayRun(def);
     if (!rightsOf.ok) {
       def.lastSlot = slot;
-      reportNoteFailure(def, 'The owner can no longer run reports.');
+      reportNoteFailure(def, rightsOf.code === 'STS-REPORT-0061'
+        ? String(rightsOf.description)
+        : 'The owner can no longer run reports.');
       stores.putDefinition(def);
-      log.warn(errorCodes.tag('STS-REPORT-0028') +
-        'report: a schedule was skipped because its owner lost report:use.');
+      if (rightsOf.code === 'STS-REPORT-0061') {
+        log.warn(errorCodes.tag('STS-REPORT-0061') +
+          'report: a schedule was skipped because its owner does not hold ' +
+          'REPORT_ADMIN, which its source needs.');
+      } else {
+        log.warn(errorCodes.tag('STS-REPORT-0028') +
+          'report: a schedule was skipped because its owner lost ' +
+          'report:use.');
+      }
       continue;
     }
     if (await reportOwnerDisabled(String(def.ownerKind || 'user'),

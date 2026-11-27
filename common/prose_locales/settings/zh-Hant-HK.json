@@ -64,8 +64,8 @@
     "text": "CORS 視為此部署「自身」的來源——通訊協定、主機與連接埠，不含路徑——以逗號分隔，另外加上本服務接聽的地址、global.publicBaseUrl 與內嵌偵錯工具。列於此處的來源可讀取本服務提供給瀏覽器的每個回應，無論請求指名哪個客戶端。「空白」（預設）不新增任何來源：其他每個來源只有在應用程式於 appCorsOrigin 中列出時才被允許。不是來源的值會被忽略並記錄，絕不會被放寬。"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "初始管理員的用戶名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。"
+    "en": "938e9e0c7b3b97fa",
+    "text": "初始管理員的用戶名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。 信任領域的檔案在該名稱後加上連字號與領域 ID。之後的啟動會在檔案中的密碼不再能開啟其帳戶時刪除該檔案。"
   },
   "gnap.accessTokenFormat|description": {
     "en": "4c24e750f8d05ea3",
@@ -344,8 +344,8 @@
     "text": "此領域簽署之每個 JWT 的 `kid` 標頭以何種方式指名其金鑰。`internal`——預設值——是本服務自己的名稱（`sts-…`），一個驗證者只能查詢的不透明字串。`jwk-thumbprint-uri` 是 RFC 9278 的 JWK Thumbprint URI，`urn:ietf:params:oauth:jwk-thumbprint:sha-256:<RFC 7638 thumbprint>`，任何持有公開金鑰的人都能計算。它指名的是「金鑰」，而不是其證書——那是 `x5c`/`x5u`。開啟期間，領域的 JWKS 會以兩種名稱各列出每把簽章金鑰一次，讓開啟前簽署的權杖仍能找到其金鑰；再次關閉會移除第二組項目，開啟期間簽署的權杖在到期前所指名的金鑰便不在任何 JWKS 中。本服務自行驗證的權杖，兩種名稱皆接受。HMAC 簽署的權杖無論如何都不帶 kid。可依領域設定。"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "包裝每把數據加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把數據金鑰——啟動時每把數據金鑰呼叫一次，每個值則不需呼叫。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
+    "en": "bf4e717bed6b7e03",
+    "text": "包裝每把數據加密金鑰之金鑰加密金鑰的所在位置。`file`、`aws`、`gcp`、`azure` 與 `vault` 會從掛載的檔案或秘密存放區將一把 32 位元組的金鑰「讀入」此程序；`file` 是預設值，因為它不需要任何東西。`vault-transit`（Vault 或 OpenBao Transit）、`aws-kms`、`gcp-kms`（Cloud KMS）與 `azure-keys`（Key Vault 或 Managed HSM 金鑰；keys.kekVault 為其保存庫）是金鑰管理服務：金鑰「絕不」離開它們，keys.kekRef 指名它，由 KMS 包裝與解包每把數據金鑰——啟動時每把數據金鑰呼叫一次，每個值則不需呼叫。`pkcs11` 與之相同，只是金鑰位於硬件安全模組中（YubiHSM 2、SoftHSM2 或任何 PKCS#11 模組，見 keys.pkcs11Module），keys.kekRef 為 PKCS#11 URI。除 `file` 外的每個提供者都會延遲載入其官方 SDK，而這些 SDK 刻意「不」是本服務的相依套件；缺少時會回報需安裝的套件名稱。"
   },
   "keys.vaultClientCert|label": {
     "en": "93de1cc419ba5406",
@@ -388,8 +388,8 @@
     "text": "Secrets Manager 與 AWS KMS 的 AWS 區域。空白時使用 SDK 自己的解析方式（AWS_REGION、共用設定檔、實例元數據服務），叢集內的部署就是依賴這種方式。"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之數據列的副本能在其他每個 Cell 中被開啟。"
+    "en": "73b7f0bab09392e8",
+    "text": "「此 Cell」的金鑰加密金鑰的提供者，用來密封該 Cell 自己儲存的內容（#98）。五種提供者，與 `keys.kekProvider` 相同，另有 `pkcs11`，即該 Cell 自己的 HSM。`none` 以服務金鑰加密金鑰密封 Cell 層，這在單一 Cell 模式及測試中是正確的；產品模式下的多 Cell 部署會因此「拒絕」啟動，因為如此一來，一個 Cell 之數據列的副本能在其他每個 Cell 中被開啟。"
   },
   "keys.dataKeyRotationDays|label": {
     "en": "bed6e06cfadb4d9a",
@@ -688,8 +688,8 @@
     "text": "客戶端秘密有效期（天）"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "本服務鑄造或被給予之每個客戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之客戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值，或建立表單為應用程式的第一個秘密指名了其他值。「零」（預設）即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
+    "en": "0282a861551627b6",
+    "text": "本服務鑄造或被給予之每個客戶端秘密的有效期（以天計），因此也是 RFC 7591 第 3.2.1 節為在 POST /oauth2/register 註冊之客戶端所公告的 `client_secret_expires_at`——這是每個鑄造或被給予之秘密的預設值（重新產生、輪替、新增的秘密、在主控台上輸入的值），除非新增表單指名了其他值，或建立表單為應用程式的第一個秘密指名了其他值。預設值為 365 天（ASVS 5.0.0 13.3.4）；「零」即該節自己的「永不」。它在每個秘密建立時蓋印其上，之後的變更不會移動它。"
   },
   "oauth2.registeredClientIdPrefix|description": {
     "en": "f5316599bdd2c50a",
@@ -968,16 +968,16 @@
     "text": "工作台儲存區保留的證書與金鑰數（每個領域）"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "一個人在一個 security.rateLimitWindowS 時段內可在 /portal/signing-key 上按下 Generate 的次數。產生金鑰組會在回應此處每個協定的同一線程上耗用數百毫秒的 CPU，這就是需要限制的原因。"
+    "en": "8395545b6fa2f69c",
+    "text": "一個人在一個 security.rateLimitWindowS 時段內可在 /portal/signing-key 上按下 Generate 的次數。產生金鑰組會在回應此處每個協定的同一線程上耗用數百毫秒的 CPU，這就是需要限制的原因。按領域（realm）分別計數：另一個領域中的同一用戶名稱是另一個人，有自己的額度。"
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "每個地址每個時段可要求的自行簽發金鑰組數"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "同一限制，但以客戶端「地址」計算，涵蓋其後的所有人。它自成一列，是因為人員透過同一個 NAT 或 Proxy 存取的部署會共用一個地址，整個辦公室五次與一個人五次是不同的數字。"
+    "en": "8e71583151b79b18",
+    "text": "同一限制，但以客戶端「地址」計算，涵蓋其後的所有人。它自成一列，是因為人員透過同一個 NAT 或 Proxy 存取的部署會共用一個地址，整個辦公室五次與一個人五次是不同的數字。按領域（realm）分別計數：一個領域中的簽發不會耗用另一個領域的額度，因此一個領域設定的數字只約束它自己的簽發。"
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",
@@ -1542,6 +1542,46 @@
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
     "text": "服務 Root 在建構接聽程式的 TLS 內容時放入其客戶端信任儲存區"
+  },
+  "certSignIn.profiles|label": {
+    "en": "45c9a918accd04eb",
+    "text": "證書登入設定檔（JSON）"
+  },
+  "certSignIn.profiles|description": {
+    "en": "4a9b75892efe6f41",
+    "text": "一個 JSON 陣列，列出適用於此服務未營運之授權單位所簽發客戶端證書的證書登入設定檔。每一項為 {\"id\", \"issuers\", \"keyUsage\", \"extendedKeyUsage\", \"policies\", \"bindings\", \"lowAffinity\"}：issuers 是每個涵蓋 CA 之 SubjectPublicKeyInfo 的 SHA-256，經驗證的路徑中包含其中之一的證書由第一個這樣的設定檔涵蓋；keyUsage 是它必須全部攜帶的位元；extendedKeyUsage 是它必須攜帶其中之一的用途；policies 是 RFC 5280 原則處理必須沿其路徑帶過其中之一的原則（遵循原則對應）；bindings 是指出其帳戶的方法（certificate-sha256、issuer-serial、issuer-ski、spki-sha256 與 card-uuid，只有在 lowAffinity 為 true 時才包括名稱方法 upn、email、issuer-subject 與 subject；預設為 certificate-sha256 與 issuer-serial）。每種方法都會被詢問；兩個帳戶或沒有帳戶都不會讓任何人登入。繫結儲存在此人的 stsCertificateBinding 中。空白（預設值）時不涵蓋任何證書：外部證書仍是將其儲存在 userCertificate 中的項目，或依 piv.externalIssuers 對應的 PIV 卡片，與以往相同。"
+  },
+  "certSignIn.requireRevocation|label": {
+    "en": "d14071167a900fe4",
+    "text": "證書登入時要求經驗證的撤銷狀態"
+  },
+  "certSignIn.requireRevocation|description": {
+    "en": "13f77eb21eb17caf",
+    "text": "客戶端證書是否只有在撤銷狀態經過驗證時才讓某人登入：其路徑中的每個證書都已查詢，且沒有一個在清單上。auto（預設值）在產品模式下要求如此，在開發模式下照舊交由 pki.revocationCheck 決定；on 在每種模式下都要求，因此 soft-fail 原本會接受的狀態（未知或未查詢）會拒絕登入（STS-TLS-0071）。它只決定登入：/tls/sign-in、登入畫面與證書交接。"
+  },
+  "certSignIn.handoff|label": {
+    "en": "37bcae84a89e5ef8",
+    "text": "在獨立的接聽程式上提供證書登入"
+  },
+  "certSignIn.handoff|description": {
+    "en": "2cd83e3c2c6b4cb0",
+    "text": "開啟時，登入畫面提供「使用智慧卡或憑證登入」，它會將瀏覽器送到託管應用程式 certificate-sign-in 所對應之接聽程式（listeners.applications）上的 /authn/certificate/continue——一個其 clientAuth 會要求證書的自訂接聽程式——然後返回畫面，畫面以證書持有者的身分繼續。證書會繫結至該待處理的登入與瀏覽器的登入工作階段，因此該接聽程式必須與主連接埠共用主機名稱，或兩者都位於 authn.cookieDomain 之下。開啟 tls.mainPortDisableOptionalClientCertificate 後，主連接埠便不再向任何連線要求證書，其他登入途徑也永遠不會看到提示。關閉（預設值）時，畫面只提供其自身連線上的證書。"
+  },
+  "tls.trustedProxyCertificates|label": {
+    "en": "56e567aa855102b5",
+    "text": "終止 TLS 之代理的客戶端證書（SHA-256）"
+  },
+  "tls.trustedProxyCertificates|description": {
+    "en": "16cfd6503c70990f",
+    "text": "終止 TLS 的代理連線到此處時出示之客戶端證書的 SHA-256 指紋。以十六進位書寫（允許冒號與 sha256: 前綴）。在同一十六進位值前加上 spki: 則改為固定證書 SubjectPublicKeyInfo 的 SHA-256，以同一密鑰續期後該固定值仍然有效；格式錯誤的項目會被拒絕（STS-TLS-0077）。對於出示其中之一的連線上、來自 tls.trustedProxyAddresses 中某個地址的請求，其 RFC 9440 標頭 Client-Cert 與 Client-Cert-Chain 會在此處對照客戶端信任存放區與撤銷狀態進行驗證，該證書在每道門上都代替交握中的證書。兩個設定都是必要的；來自任何其他傳送者時，這兩個標頭會被移除並記錄（STS-TLS-0072），且從不讀取。空白（預設值）時只從交握中讀取證書。"
+  },
+  "tls.trustedProxyAddresses|label": {
+    "en": "4bc0cf2135bd81af",
+    "text": "終止 TLS 之代理的地址"
+  },
+  "tls.trustedProxyAddresses|description": {
+    "en": "92e72546afce7f59",
+    "text": "tls.trustedProxyCertificates 中的代理所連線的地址或 CIDR 範圍（10.0.0.0/8、fd00::/8）。兩個設定都具備後才會讀取轉送的客戶端證書。既不是地址也不是範圍的值會被忽略並記錄，絕不會被放寬。"
   },
   "tls.hostnames|label": {
     "en": "fbb4cf44ba96aa51",
@@ -2348,8 +2388,8 @@
     "text": "產品模式一律「強制執行」簽發原則依風險所做的決定（#62 P3）：HIGH 的驗證會被拒絕，MEDIUM 的驗證會被要求升級驗證。開發模式只「觀察」：決定會做出並記錄，而簽發僅由角色決定，因此受測的客戶端不會因為其測試從新的地址執行而被拒絕。開啟時在開發模式下也強制執行。「規則」屬於簽發原則，位於 ou=policies——此開關只決定是否保留風險 Deny。"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "預設關閉（#62 P6）。開啟時，登入畫面會執行一個腳本 FingerprintJS（MIT；它不會向任何地方傳送任何內容），依瀏覽器所公開的資訊計算識別碼並放入表單；服務只保留加鍵摘要，而此人員從未從其登入的瀏覽器會成為 new-device 訊號（x2）。瀏覽器指紋屬於個人資料：開啟前請完成 docs/v1.1.0/risk-scoring.md 中的隱私影響評估，並告知登入的人員。如同每項設定，可依領域設定。"
+    "en": "c34ba5805bddbb8b",
+    "text": "預設關閉（#62 P6）。開啟時，登入畫面會執行一個腳本 FingerprintJS（MIT；它不會向任何地方傳送任何內容），依瀏覽器所公開的資訊計算識別碼並放入表單；服務只保留加鍵摘要，而此人員從未從其登入的瀏覽器會成為 new-device 訊號（x2）。瀏覽器指紋屬於個人資料：開啟前請完成 docs/v1.2.0/risk-scoring.md 中的隱私影響評估，並告知登入的人員。如同每項設定，可依領域設定。"
   },
   "risk.breachApiUrl|description": {
     "en": "9eb446d420832ce9",
@@ -2968,8 +3008,8 @@
     "text": "寄件者地址"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "每封訊息的寄件地址。空白表示該領域 DNS 網域的 `no-reply@`。提供者必須允許以此身分傳送：SES 中經驗證的身分、Azure 中已連結網域的 MailFrom 地址、Gmail 的被模擬郵箱（或其 send-as 別名之一）——而其網域的 SPF、DKIM 與 DMARC 則是 docs/v1.1.0/mail.md 的主題。"
+    "en": "a8b259e6c1037325",
+    "text": "每封訊息的寄件地址。空白表示該領域 DNS 網域的 `no-reply@`。提供者必須允許以此身分傳送：SES 中經驗證的身分、Azure 中已連結網域的 MailFrom 地址、Gmail 的被模擬郵箱（或其 send-as 別名之一）——而其網域的 SPF、DKIM 與 DMARC 則是 docs/v1.2.0/mail.md 的主題。"
   },
   "mail.fromName|description": {
     "en": "dd213cb46586c5b9",
@@ -3052,12 +3092,12 @@
     "text": "自助式重設需要已驗證的地址"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "只將自助式重設連結寄到人員已「驗證」過的地址（他們從該地址點過連結）。預設為開啟，因為連結就等於帳戶：由匯入或佈建來源寫入、從未有人證明過的地址，不是寄送它的地方。**將其關閉是較弱的設定**，適用於其地址按原樣受信任的目錄；docs/v1.1.0/mail.md 載有相關警告。"
+    "en": "af24c1ddaf83c884",
+    "text": "只將自助式重設連結寄到人員已「驗證」過的地址（他們從該地址點過連結）。預設為開啟，因為連結就等於帳戶：由匯入或佈建來源寫入、從未有人證明過的地址，不是寄送它的地方。**將其關閉是較弱的設定**，適用於其地址按原樣受信任的目錄；docs/v1.2.0/mail.md 載有相關警告。"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "忘記密碼表單會要求「用戶名稱」、帳戶上已驗證的「地址」以及該人員的一組「復原碼」之一，只有三者都正確時才寄出重設連結——屆時該代碼即被使用。每種組合都以同一句話回應。**將其關閉是較弱的設定**：表單會回到單一欄位（用戶名稱或地址），此時重設的強度就等同於它所寄往的郵箱——NIST SP 800-63B-4 允許以此方式復原，docs/v1.1.0/mail.md 則對此提出警告。此設定開啟時，沒有任何復原碼的人員無法自行重設密碼；管理員可以。"
+    "en": "f0eccb7bb4055b20",
+    "text": "忘記密碼表單會要求「用戶名稱」、帳戶上已驗證的「地址」以及該人員的一組「復原碼」之一，只有三者都正確時才寄出重設連結——屆時該代碼即被使用。每種組合都以同一句話回應。**將其關閉是較弱的設定**：表單會回到單一欄位（用戶名稱或地址），此時重設的強度就等同於它所寄往的郵箱——NIST SP 800-63B-4 允許以此方式復原，docs/v1.2.0/mail.md 則對此提出警告。此設定開啟時，沒有任何復原碼的人員無法自行重設密碼；管理員可以。"
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",

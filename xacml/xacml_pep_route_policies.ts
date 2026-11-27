@@ -96,6 +96,8 @@ interface PolicyRow {
   id: string | null;
   enabled: boolean;
   application: string | null;
+  // The dynamic role that owns it (#1072), or null.
+  role?: string | null;
   pepRoute: string | null;
   document: string;
   description: string;
@@ -383,7 +385,7 @@ class PepRoutePolicies {
     const choice = route.authorization;
     if (choice.kind === 'policy') {
       const row = this.deps.loadStore().read(choice.policy);
-      const withheld = row && (!!row.application ||
+      const withheld = row && (!!row.application || !!row.role ||
         this.withheldNames().indexOf(row.name.toLowerCase()) >= 0);
       if (!row || !row.enabled || withheld) {
         log.debug("Leaving PepRoutePolicies.routeProblem(). Policy.");
@@ -667,7 +669,7 @@ class PepRoutePolicies {
     log.debug("Entering PepRoutePolicies.stateOf(). " + route.id);
     const name = route.authorization.policy;
     const row = name ? this.deps.loadStore().read(name) : null;
-    const withheld = !!row && (!!row.application ||
+    const withheld = !!row && (!!row.application || !!row.role ||
       this.withheldNames().indexOf(row.name.toLowerCase()) >= 0);
     const problem = !row ? 'missing'
       : (!row.enabled ? 'disabled' : (withheld ? 'withheld' : null));

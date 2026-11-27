@@ -33,8 +33,22 @@ which loads `/report/report.js` and `/report/report.css`. The script is
 built as `report/report-spa.js` (`ReportRuntime extends SpaClient`,
 `common/web_spa_client.ts`) and served at `/report/report.js`. It signs in
 in the browser as the public client `sts-report` (PKCE S256, `resource`
-the realm's `/report-api`, scopes `report:use` and `report:admin`), holds
-a DPoP-bound token in memory, and draws every page from `/report-api`.
+the realm's `/report-api`), holds a DPoP-bound token in memory, and draws
+every page from `/report-api`. **It signs in with `report:read` only since
+#2168** (ASVS 5.0.0 10.2.3): the API takes `report:read` on a GET and does
+not count it on any other method (so `report:read report:use` never writes
+as a report administrator), `role_permissions.ts`'s `READ_PERMISSIONS` has
+REPORT_USE and REPORT_ADMIN authorize it at issuance and on every call
+(no role entry changes), and the first write's `insufficient_scope` naming
+`report:use report:admin` makes the page ask both by a second authorization
+(`common/CLAUDE.md` 3cl, `SpaClient.stepUp()`), issued narrowed to the roles
+held — either one is enough (`stepUpAny()`). A `report:use`/`report:admin`
+token is answered as it always was. **A browser with no window or no
+BroadcastChannel** leaves for that authorization (`leaveForStepUp()`), and
+since #2220 the page's choices go first and come back after the callback
+(`common/web_page_state.ts`), with "nothing was sent" said in a bubble; the
+write that asked is still not sent. And at `start()`, beside WebCrypto, a
+browser that refuses session storage is told so (`browser.noStorage.*`).
 In product that `resource` is a registered target because `/report-api`
 is one of this service's own resource servers
 (`common/registered_targets.ts`), compared whole, as `/account-api` is.
@@ -58,7 +72,7 @@ resource objects). The machine caller is `sts-api-client`, seeded a member
 of REPORT_USE (`common/roles.js`) and declaring `report:use`; as an
 application it reaches only what it defined (`ownerKind`, below), and its
 `client_credentials` token is unbound, so it arrives as `Bearer`.
-`docs/v1.1.0/reporting.md`'s *From another program* is the operator's half.
+`docs/v1.2.0/reporting.md`'s *From another program* is the operator's half.
 With `authn.multipleAccounts` on, the account control is the console's
 menu: the summary is the account this tab is, and the panel lists the
 browser's other signed-in accounts as switch buttons, plus a sign-in as
@@ -69,8 +83,8 @@ tab leaves stays signed in. Off, the control is not drawn.
 The shell's policy is `script-src 'self'`, `style-src 'self'`, and
 `connect-src` the origins of the authorization server and the sign-in
 screen, through `app.contentSecurityPolicy()`. The front door links to it
-(`home/home.ts`). `docs/v1.1.0/reporting.md` is the operator's page. The caps are the Reporting group in `common/config.js`
-and `docs/v1.1.0/configuration.md`.
+(`home/home.ts`). `docs/v1.2.0/reporting.md` is the operator's page. The caps are the Reporting group in `common/config.js`
+and `docs/v1.2.0/configuration.md`.
 
 | File | What it is |
 |---|---|
@@ -82,7 +96,7 @@ and `docs/v1.1.0/configuration.md`.
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. The document's SHAPE is `models/api/report.tsp`'s `QueryDocument` and `Filter*` forms, checked through `ModelZod` (#1579); the catalog, the field types, parameters, the filter's depth and the size caps are checked here, and every refusal keeps its code and sentence. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
-| `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
+| `formats.ts` | JSON, RFC 4180 CSV (each cell through `common/csv_cell.ts`, which puts a single quote before a string a spreadsheet would read as a formula, #2138), and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
 | `passkey_history.ts` | The `passkeyHistory` source's projection (#1109): one stored day of `passkey_report.history` into a row per `scope`. A library; reaches `common/passkey_report` lazily. |
 | `rights.ts` | The caller as held ∩ carried, and every question about the API, a definition or a job put to `common/access_gate.ts`. It decides nothing (#1030). |
@@ -454,6 +468,18 @@ time budget and a cancellation stop the paging and not just the taking.
   is the row's own the same way — `policy`, or the started activity that
   asked at a sign-in — and is never inferred for an older row: empty there
   is the truth, nobody recorded who asked.
+* **One row per person PER ACTIVITY, and the activity list is the
+  activities' own (#2009 P4).** `activity` enumerates
+  `common/post_login_kinds.ts`'s `ids()` — the passkey migration, the
+  mail-encryption migration, the PIV re-issue — so the filter's dropdown
+  offers all three and a definition saved with `pqc-passkey-migration`
+  still validates. **The catalog requires that file and nothing else of the
+  service**: it is a leaf on bunyan alone since P4 (it required `helpers`
+  until then, which is why this was a copy). A row with no stamped
+  `graceDays` takes its OWN activity's allotted time
+  (`post_login.timingOf()`: `graceDays`, `mailGraceDays` or `pivGraceDays`),
+  read once per person and activity. Two presets follow the first, one per
+  new activity; the first keeps its id and its filter.
 * **`role` is RETIRED, not removed (#1135).** A row written since carries
   none, and its catalog field lost its `primary`/`mfa` enumeration and
   left the *past grace period* preset's columns; a row written before
@@ -525,7 +551,7 @@ under 100 ms. Six things were wrong, and each is fixed where it lives:
   `mechanism` alone, filtered on nothing but mechanisms
   (`reportOnlyMechanisms()`), takes the password's row from
   `holderCountAsync()`'s counter through `Rows.takeCounted()` and reads the
-  other mechanisms as before. `docs/v1.1.0/reporting.md` had promised it since
+  other mechanisms as before. `docs/v1.2.0/reporting.md` had promised it since
   #1019 and nothing did it.
 * **A first page answers a read that wants any rows.** A lookup at
   `CANDIDATE_CAP` hands back its first page when the plan has no order and
@@ -1065,6 +1091,57 @@ an outsider, an application on its own rows and on a person's, a
 withdrawn role, and `permitReportSharing: no` — and its section F holds
 the console administrators below.
 
+### Sources for report administrators (#2126, 2026-11-24)
+
+The rows above are definitions and jobs; what a report READS was nobody's
+question, so any REPORT_USE holder could report over the audit ring and who
+holds which credential — what `/admin/audit` keeps behind Admin Read (the
+ASVS 5.0.0 Level 2 rescore, 8.2.3). rcbj's decision: `auditEvents`,
+`authActivity` and `credentialHolders` need REPORT_ADMIN.
+
+* **The rule is DATA in the catalog**: `adminOnly(source(...))` marks the
+  three, `Catalog.adminOnly(id)` reads it. Nothing in `rights.ts` names a
+  source.
+* **`rights.sourceRefusal(who, action, object, source)` asks twice**: the
+  catalog's mark against the caller's roles, then the PDP with the source on
+  the question (`reportObject.sources` / `adminSources`, sent as
+  `urn:sts:xacml:report-source` and `urn:sts:xacml:report-admin-source`);
+  the access-control document's first and third rules permit a question
+  carrying an administrators' source only to REPORT_ADMIN, and its
+  `reportAdminSources` parameter lets a realm add sources (`xacml/CLAUDE.md`).
+  The code check is not redundant: a realm whose `access-control` override
+  predates the rule keeps it, and `xacml.enforceAccess` may be off. Either
+  refusal is STS-REPORT-0061, 403 `forbidden`.
+* **Where it is asked**: `reportAcceptQuery()` (ad hoc query, preview, job,
+  a saved definition's run — `run`, on the row for a definition and as the
+  caller's own `kind: query` otherwise), `reportCreateDefinition()`
+  (`write`, the POSTED document's source, so an owner may move an old
+  definition off the source), `reportServeResult()` (`read` on the job, so a
+  shared member may not download an administrator's audit result), and
+  `ownerMayRun()` for the schedule (the note names the source; the slot is
+  consumed). **Never on a plain read**: `canSee()` carries no source, so a
+  definition saved before the rule stays visible to its owner (the
+  backwards-compatibility requirement) and is refused only when used. The
+  runner does not re-ask for a job already queued — it never asked roles
+  (only `reportOwnerDisabled()`), and a job queued before an upgrade runs
+  once.
+* **The seam**: `installOwnerCheck()`'s answer may carry `roles`; when it
+  does the source is asked of them, otherwise the seam answers whole.
+* **The catalog answer** carries `adminOnly` and, for the caller,
+  `usable` (`rights.sourceUsable()`, one PDP question per source); the page
+  names an unusable source *Report administrators only*, leaves out its New
+  query link, and disables it in the source select unless a saved document
+  names it.
+* **An application holding REPORT_ADMIN** passes: the rule is the role, not
+  the kind. `passkeyCeremonies` also reads the audit ring and is NOT marked;
+  the decision named three sources.
+
+`tests/report_query.js` (`adminSources()`, G1–G17: the marks, the published
+answer, both checks, the PDP asked directly, the schedule through the seam)
+and `tests/report_access_policy.js` section G (over HTTP: each source
+refused and permitted, the catalog answer, a definition saved before, a
+shared member's run and download, `reportAdminSources`) hold it.
+
 ### Console administrators (#1038, 2026-10-27)
 
 rcbj: "The admin user for the default domain should have /report access in
@@ -1143,6 +1220,18 @@ reporter still live. `STS_REPORT_NODE=true` is the only opt-in:
 `.here` jobs are what that holder runs, because `reportClusterRuns` is
 false for the holder. The variable stays off `AGREEMENT_SETTINGS` and off
 the default compose service.
+
+**The expensive acts have a per-subject budget (#2167, ASVS 5.0.0
+2.4.2)**: `POST /queries`, `POST /jobs`, `POST /definitions/{id}/run` and
+`GET /jobs/{id}/result` (`reportExpensive()`) each count, after the gate and
+the shape check, in `websecurity.subjectActShared('report-act', …)`, keyed
+by the token's realm and `sub`, at `report.actsPerSubject` in
+`report.actWindowS` (240 in 600 s in product, 0 = off in development). Past
+it: 429 `too_many_requests`, `Retry-After`, `STS-REPORT-0062`, and
+`messages` beside `error_description`, which the page draws through
+`refusalSaid()`. A job's status, the lists and the edits are not counted:
+the page polls status while it waits, and must not spend the download's
+budget doing so. `tests/subject_act_budgets.js`.
 
 An enqueue is refused (`STS-REPORT-0023`, HTTP 429) when the subject
 already has more queued and running jobs than
@@ -1292,4 +1381,4 @@ the register. It does not run SQL and it does not read the remote table.
 Connection details and secrets are not fields. `serviceMetrics` is one level of
 numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`. It is not a
 time series, and it is not the per-route or per-kind tables. `/admin/metrics`
-and `/admin-api/metrics` stay. `docs/v1.1.0/reporting.md` is the migration note.
+and `/admin-api/metrics` stay. `docs/v1.2.0/reporting.md` is the migration note.

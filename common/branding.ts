@@ -35,7 +35,10 @@
 //     runtime draws before the card (`web_surface.ts`). The form is never
 //     touched: every element id and its order are what they were.
 //   * THE LOGO (D1, D2) is UPLOADED — PNG, JPEG or WebP, decided by its
-//     bytes — kept in the realm's own persisted store (`branding.assets`),
+//     bytes; never SVG, a document that can carry script — REWRITTEN
+//     without its metadata (EXIF, XMP, text chunks, anything after the
+//     image's end: `image_metadata.ts`, the photo's writers, #2140), kept in
+//     the realm's own persisted store (`branding.assets`),
 //     and served from this origin at `/web/branding/logo`, so the sign-in
 //     page's `img-src 'self'` already admits it and no third party learns
 //     who is signing in. It needs alternative text (`branding.logoAlt`).
@@ -51,8 +54,9 @@
 // A LIBRARY THAT ALSO REGISTERS THREE ROUTES, none colliding with anything:
 // `GET /web/theme.css`, `GET /web/branding/logo` and `GET /web/branding/preview`
 // (D5: the console opens it in a new tab with pending values, to see them
-// before saving). It requires `config`, `realms`, `crypto`, `error_codes`
-// and `helpers` for the logger, and `audit` lazily, at an upload.
+// before saving). It requires `config`, `realms`, `crypto`, `error_codes`,
+// `image_metadata` (a library, #2140) and `helpers` for the logger, and
+// `audit` lazily, at an upload.
 // ===========================================================================
 
 import helpers = require('./helpers');
@@ -61,6 +65,7 @@ import realms = require('./realms');
 import stsCrypto = require('./crypto');
 import errorCodes = require('./error_codes');
 import ShellDocument = require('./shell_document');
+import ImageMetadata = require('./image_metadata');
 
 const { log } = helpers;
 
@@ -698,17 +703,35 @@ class Branding {
         return Object.assign(written, { status: 400 });
       }
     }
+    // THE METADATA GOES BEFORE ANYTHING IS KEPT (#2140): the logo is served
+    // to everybody who opens a sign-in page, and an EXIF block says where a
+    // picture was taken and who took it. The digest, the sides and the size
+    // describe the CLEANED bytes, which are what is served; the sides are
+    // read again from them rather than assumed unchanged.
+    const cleaned = ImageMetadata.stripped(b, seen.type);
+    const kept = cleaned ? Branding.sniff(cleaned) : null;
+    if (!cleaned || !kept || kept.type !== seen.type ||
+        kept.width !== seen.width || kept.height !== seen.height) {
+      log.debug("Leaving Branding.setLogo(). Could not be cleaned.");
+      return refuse('STS-AUTHN-0624', 400,
+                    'The ' + seen.type + ' image could not be read to its ' +
+                    'end, so its metadata could not be removed. A logo is ' +
+                    'served to everybody, so it is kept only without it. ' +
+                    'Save the image again from an image editor and upload ' +
+                    'that.');
+    }
     const record = {
-      type: seen.type, data: b.toString('base64'),
-      sha256: stsCrypto.digest('sha256', b, 'hex'),
-      width: seen.width, height: seen.height, bytes: b.length,
+      type: kept.type, data: cleaned.toString('base64'),
+      sha256: stsCrypto.digest('sha256', cleaned, 'hex'),
+      width: kept.width, height: kept.height, bytes: cleaned.length,
       updatedAt: Date.now(), updatedBy: String(o.actor || '')
     };
     assets.set('logo', record);
-    Branding.audited('a ' + seen.type + ' logo of ' + seen.width + 'x' +
-                     seen.height + ' pixels and ' + b.length + ' bytes was ' +
-                     'uploaded (sha256 ' + record.sha256.slice(0, 16) + ')',
-                     o.actor);
+    Branding.audited('a ' + kept.type + ' logo of ' + kept.width + 'x' +
+                     kept.height + ' pixels and ' + cleaned.length +
+                     ' bytes (' + b.length + ' uploaded, its metadata ' +
+                     'removed) was uploaded (sha256 ' +
+                     record.sha256.slice(0, 16) + ')', o.actor);
     log.debug("Leaving Branding.setLogo(). Stored.");
     return { ok: true, errors: [], logo: Branding.describeLogo(record) };
   }
@@ -1064,7 +1087,10 @@ class Branding {
       const etag = '"' + String(record.sha256).slice(0, 32) + '"';
       const asked = req.query && typeof req.query.v === 'string'
         ? req.query.v : '';
+      // `cross-origin` (#2181): a mail client and a relying party's own page
+      // show the realm's logo, and every other response is `same-site`.
       res.set('ETag', etag)
+         .set('Cross-Origin-Resource-Policy', 'cross-origin')
          .set('X-Content-Type-Options', 'nosniff')
          .set('Content-Security-Policy',
               app.contentSecurityPolicy(LOGO_POLICY))

@@ -15,11 +15,14 @@
 //   POST /access/v1/search/{subject,resource,action}
 //                                 the three searches (section 8) — #1175
 //   POST /access/v1/access-requests
+//   GET  /access/v1/access-requests/schema
+//   GET  /access/v1/access-requests/catalogs/:evaluation[/entitlements]
 //   GET  /access/v1/access-requests/:id
 //   POST|DELETE /access/v1/access-requests/:id/cancel
 //                                 the Access Request and Approval Profile's
-//                                 submission, task status and cancellation
-//                                 (`authzen_access_request.ts`) — #1180
+//                                 submission, its schema, task status and
+//                                 cancellation (`authzen_access_request.ts`)
+//                                 — #1180, the schema #1204
 //
 // per realm, under the realm's prefix. Deliberately thin, as `xacml/xacml.ts`
 // is: it reads a request, asks `authzen_caller.ts` who is asking and whether
@@ -152,6 +155,14 @@ interface SurfaceDeps {
 const UMA_RESOURCE_TYPE = 'uma_resource';
 
 class AuthzenSurface {
+  // A REQUESTABLE DENIAL'S BINDING TOKEN, DEFERRED (#1955 P8 follow-up):
+  // where the realm's keys are in the HSM, the routes set this list around
+  // their synchronous evaluations, `requestableDenial()` defers each token's
+  // signature to it, and the answer is sent once `settleDenials()` has
+  // signed them off the event loop. Null otherwise: a software key signs in
+  // place, as it always did. One synchronous call holds it at a time.
+  private denialDeferral: any[] | null = null;
+
   /**
    * Builds the surface over its dependencies.
    *
@@ -252,16 +263,20 @@ class AuthzenSurface {
     return found;
   }
 
-  // THE ROUTES STAY REGISTERED AND ANSWER 501 when the API is off, as
-  // XACML's do: the feature being off and the URL being wrong are different
-  // sentences to a PEP.
+  // THE ROUTES STAY REGISTERED AND ANSWER 403 when the API is off: the
+  // feature being off and the URL being wrong are different sentences to a
+  // PEP. 403, not the 501 XACML answers (#2208, rcbj: "Follow the spec, but
+  // return 403 otherwise"): AuthZEN 1.0 prescribes no status for an API a
+  // PDP has switched off — section 10.1.2 defines 400, 401, 403 and 500,
+  // and section 9.1.1 says only that an endpoint absent from the metadata
+  // is one the PDP "is not capable" of.
   private offCheck(res: Res): boolean {
     const self = this;
     const { log, errorCodes } = this.deps;
     log.debug("Entering AuthzenSurface.offCheck().");
     if (!self.enabled()) {
       errorCodes.mark(res, 'STS-AUTHZEN-0013');
-      callers.send(res, 501, 'The AuthZEN API is turned off in this realm ' +
+      callers.send(res, 403, 'The AuthZEN API is turned off in this realm ' +
                    '(authzen.enabled, or xacml.enabled, whose engine it ' +
                    'decides with).');
       log.debug("Leaving AuthzenSurface.offCheck(). Off.");
@@ -269,7 +284,7 @@ class AuthzenSurface {
     }
     if (!self.apiObject()) {
       errorCodes.mark(res, 'STS-AUTHZEN-0014');
-      callers.send(res, 501, 'This realm has no ' + API_OBJECT + ' ' +
+      callers.send(res, 403, 'This realm has no ' + API_OBJECT + ' ' +
                    'application, the AuthZEN API\'s resource object, so the ' +
                    'API is off here.');
       log.debug("Leaving AuthzenSurface.offCheck(). No object.");
@@ -448,7 +463,7 @@ class AuthzenSurface {
     // THE TOKEN-EXCHANGE BINDING'S TUPLES (#1181) are answered by its fixed
     // conversion, never by the root policy; everything else is the API as
     // it was, less a context member only those tuples may carry.
-    const planned = plan || self.planOf([body]);
+    const planned = plan || self.planOf([body], req);
     const entry = planned.entries[index || 0] || { kind: '' };
     if (entry.kind) {
       const bound = self.evaluateBinding(body, caller, rows, batchId, where,
@@ -522,7 +537,8 @@ class AuthzenSurface {
     const denial = !outcome.fault && !outcome.decision && xacmlDenied && req
       ? ar.requestableDenial(req, body,
                              accessRequests.termsOf(outcome.advice),
-                             caller.name, scoped.application)
+                             caller.name, scoped.application,
+                             self.denialDeferral || undefined)
       : null;
     // WHAT THE ROW CARRIES: who asked, about which application, the two
     // types and the action, the request id, the decision — and NO property
@@ -573,6 +589,12 @@ class AuthzenSurface {
       out.context = Object.assign(out.context || {},
                                   { obligations: outcome.obligations });
     }
+    // The context as it stands before a requestable denial's members, kept
+    // for a deferred denial whose token cannot be signed (#1955 P8
+    // follow-up): `settleDenials()` answers it as the synchronous door
+    // answers a denial that came back null.
+    const beforeDenial = out.context ? Object.assign({}, out.context)
+                                     : undefined;
     // The profile's Decision Context members (#1180): a requestable
     // denial's, and a re-evaluation's next step or approval.
     if (denial) {
@@ -582,8 +604,69 @@ class AuthzenSurface {
       out.context = Object.assign(out.context || {},
         accessRequests.reevaluation(verdict, outcome.decision, denial));
     }
+    // A deferred token's denial is told which result carries it, so one
+    // that cannot be signed is taken back out (`settleDenials()`).
+    const deferral = self.denialDeferral;
+    if (denial && deferral && deferral.length &&
+        deferral[deferral.length - 1].denial === denial) {
+      deferral[deferral.length - 1].result = out;
+      deferral[deferral.length - 1].before = beforeDenial;
+      deferral[deferral.length - 1].verdict = verdict || null;
+      deferral[deferral.length - 1].decision = outcome.decision;
+    }
     log.debug("Leaving AuthzenSurface.evaluateOne(). " + outcome.decision);
     return out;
+  }
+
+  // Runs synchronous evaluations with the denial deferral set where the
+  // realm's keys are in the HSM (#1955 P8 follow-up), and answers the list.
+  private deferringDenials(run: () => void): any[] | null {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.deferringDenials().");
+    const deferral = helpers.keysInHsm() ? [] : null;
+    this.denialDeferral = deferral;
+    try {
+      run();
+    } finally {
+      this.denialDeferral = null;
+    }
+    log.debug("Leaving AuthzenSurface.deferringDenials(). " +
+              (deferral ? deferral.length : 'none') + ".");
+    return deferral && deferral.length ? deferral : null;
+  }
+
+  // Signs the deferred tokens off the event loop; a denial whose token was
+  // not signed is an ordinary `false` again, as the synchronous door
+  // answers one (no `access_request` without verifiable binding material).
+  private async settleDenials(deferral: any[]): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.settleDenials().");
+    const unsigned = await this.deps.accessRequests
+      .signDeferredDenials(deferral);
+    // REBUILT, not edited: the context the item had before the denial's
+    // members, and a re-evaluation's answer asked again with no denial —
+    // exactly what `evaluateOne()` makes when `requestableDenial()` answers
+    // null, so a member that shares a name with a denial's (a reason) is
+    // never lost.
+    const ar = this.deps.accessRequests;
+    deferral.forEach(function (one: any) {
+      if (unsigned.indexOf(String(one.denial.evaluation_id)) < 0 ||
+          !one.result) {
+        return;
+      }
+      let context = one.before ? Object.assign({}, one.before) : undefined;
+      if (one.verdict) {
+        context = Object.assign(context || {},
+          ar.reevaluation(one.verdict, one.decision, null));
+      }
+      if (context && Object.keys(context).length) {
+        one.result.context = context;
+      } else {
+        delete one.result.context;
+      }
+    });
+    log.debug("Leaving AuthzenSurface.settleDenials(). " + unsigned.length +
+              " unsigned.");
   }
 
   /**
@@ -592,13 +675,28 @@ class AuthzenSurface {
    * API's own while `authzen.tokenExchange` is off.
    *
    * @param bodies - the items, defaults merged
+   * @param req - the request, for the authorization server's base a
+   *   subject token issued here names (#1201's review); none leaves it
+   *   unknown
    * @returns the plan
    */
-  planOf(bodies: unknown[]): any {
+  planOf(bodies: unknown[], req?: Req): any {
     const { log } = this.deps;
     log.debug("Entering AuthzenSurface.planOf().");
     const plan = this.deps.exchange.plan(bodies);
     exchange.AuthzenTokenExchange.noteScopes(plan, bodies);
+    if (req) {
+      try {
+        plan.asBase = String(this.deps.helpers.baseUrlOf(req, 'oauth-oidc') ||
+                             '');
+      } catch (e) {
+        // No base is no issuer: a subject token is then not issued here,
+        // the safe direction for the bound it decides.
+        log.debug("Caught in AuthzenSurface.planOf(): " +
+                  ((e && e.message) || e));
+        plan.asBase = '';
+      }
+    }
     log.debug("Leaving AuthzenSurface.planOf().");
     return plan;
   }
@@ -671,13 +769,20 @@ class AuthzenSurface {
       action: 'authzen.decision',
       actor: caller.name,
       protocol: 'AuthZEN',
+      // A detail-cell fault records the STS-FGA code. The HTTP result
+      // below is STS-AUTHZEN-0046, the same split as an unusable policy.
       errorCode: answer.code || undefined,
-      detail: where + ' decided ' + String(answer.decision) + ' for a ' +
+      detail: where + ' decided ' + (answer.fault ? 'nothing (a fault)'
+        : String(answer.decision)) + ' for a ' +
         evaluation.subject.type + ' to ' + evaluation.action.name + ' a ' +
         evaluation.resource.type + ', application "' + scoped.application +
         '"' + (batchId ? ', request ' + batchId : '') + '; ' +
         exchange.AuthzenTokenExchange.describe(entry, answer) + '.'
     });
+    if (answer.fault) {
+      log.debug("Leaving AuthzenSurface.evaluateBinding(). A fault.");
+      return failed(500, 'STS-AUTHZEN-0046', UNUSABLE_MESSAGE);
+    }
     self.deps.loadMonitor().record('authzen',
       { decision: answer.xacmlDecision || (answer.decision ? 'Permit'
                                                            : 'Deny') });
@@ -1136,8 +1241,42 @@ class AuthzenSurface {
    */
   metadata(req: Req): any {
     const self = this;
-    const { log, helpers } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AuthzenSurface.metadata().");
+    const out = self.unsignedMetadata(req);
+    const signed = self.signedMetadata(out);
+    if (signed) {
+      out.signed_metadata = signed;
+    }
+    log.debug("Leaving AuthzenSurface.metadata().");
+    return out;
+  }
+
+  /**
+   * `metadata()`, its `signed_metadata` signed off the event loop for a
+   * realm key in the HSM (#1955 P8 follow-up); the route awaits this one.
+   *
+   * @param req - the request
+   * @returns a promise of the document
+   */
+  async metadataAsync(req: Req): Promise<any> {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.metadataAsync().");
+    const out = self.unsignedMetadata(req);
+    const signed = await self.signedMetadataAsync(out);
+    if (signed) {
+      out.signed_metadata = signed;
+    }
+    log.debug("Leaving AuthzenSurface.metadataAsync().");
+    return out;
+  }
+
+  // The document's members, before `signed_metadata`.
+  private unsignedMetadata(req: Req): any {
+    const self = this;
+    const { log, helpers } = this.deps;
+    log.debug("Entering AuthzenSurface.unsignedMetadata().");
     // THE IDENTIFIER IS THE BASE THE API IS ADVERTISED UNDER, realm prefix
     // included: section 9.2.3 has a PEP refuse a document whose
     // `policy_decision_point` is not the one it built the URL from.
@@ -1179,11 +1318,7 @@ class AuthzenSurface {
     if (capabilities.length) {
       out.capabilities = capabilities;
     }
-    const signed = self.signedMetadata(out);
-    if (signed) {
-      out.signed_metadata = signed;
-    }
-    log.debug("Leaving AuthzenSurface.metadata().");
+    log.debug("Leaving AuthzenSurface.unsignedMetadata().");
     return out;
   }
 
@@ -1229,10 +1364,39 @@ class AuthzenSurface {
     }
   }
 
-  // Answers the metadata in the realm the request is in, or 501 while the
+  // `signedMetadata()` off the event loop (#1955 P8 follow-up): the same
+  // setting, the same claims, the same answer to a failure.
+  private async signedMetadataAsync(document: any): Promise<string> {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.signedMetadataAsync().");
+    if (config.value('authzen.signedMetadata') === false) {
+      log.debug("Leaving AuthzenSurface.signedMetadataAsync(). Off.");
+      return '';
+    }
+    try {
+      const signed = String(await this.deps.loadOauth2()
+        .signPublishedDocumentAsync(Object.assign({}, document,
+          { sub: document.policy_decision_point }),
+        document.policy_decision_point, 3600, 'oauth-signed-metadata') ||
+        '');
+      log.debug("Leaving AuthzenSurface.signedMetadataAsync().");
+      return signed;
+    } catch (e) {
+      log.debug("Caught in AuthzenSurface.signedMetadataAsync(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0040') + 'authzen: the ' +
+                'metadata could not be signed: ' + ((e && e.message) || e));
+      log.debug("Leaving AuthzenSurface.signedMetadataAsync(). Not signed.");
+      return '';
+    }
+  }
+
+  // Answers the metadata in the realm the request is in, or 403 while the
   // API is off there (the document would advertise an endpoint that does
   // not answer).
-  private sendMetadata(req: Req, res: Res): void {
+  // Signed off the event loop for an HSM key (#1955 P8 follow-up), so the
+  // answer is a promise the route returns.
+  private async sendMetadata(req: Req, res: Res): Promise<void> {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AuthzenSurface.sendMetadata().");
@@ -1240,8 +1404,9 @@ class AuthzenSurface {
       log.debug("Leaving AuthzenSurface.sendMetadata(). Off.");
       return;
     }
+    const document = await self.metadataAsync(req);
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(authzenModel.held('metadata', self.metadata(req),
+       .send(JSON.stringify(authzenModel.held('metadata', document,
                                               METADATA_PATH), null, 2));
     log.debug("Leaving AuthzenSurface.sendMetadata().");
   }
@@ -1304,7 +1469,7 @@ class AuthzenSurface {
    * @param caller - the admitted caller
    * @param id - the request id, or ''
    */
-  batch(req: Req, res: Res, caller: any, id: string): void {
+  batch(req: Req, res: Res, caller: any, id: string): any {
     const self = this;
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering AuthzenSurface.batch().");
@@ -1356,20 +1521,19 @@ class AuthzenSurface {
     // answer it (section 7.1: "backwards-compatible").
     if (!items.length) {
       const single = AuthzenSurface.merged(body, {});
-      const one = self.evaluateOne(single, caller, rows, id, where,
-                                   self.planOf([single]), 0, req);
-      if (one.error) {
-        errorCodes.mark(res, one.code);
-        // error-code: none — marked on the line above with the item's code.
-        callers.send(res, one.status, one.error.message);
-        log.debug("Leaving AuthzenSurface.batch(). One, refused.");
-        return;
+      let one: any = null;
+      const deferredOne = self.deferringDenials(function (): void {
+        one = self.evaluateOne(single, caller, rows, id, where,
+                               self.planOf([single], req), 0, req);
+      });
+      if (deferredOne) {
+        log.debug("Leaving AuthzenSurface.batch(). One, its token signed " +
+                  "off the event loop.");
+        return self.settleDenials(deferredOne).then(function (): void {
+          self.sendBatchOne(res, one);
+        });
       }
-      res.status(200).type('application/json')
-         .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(authzenModel.held('evaluation-response',
-           one.context ? { decision: one.decision, context: one.context }
-                       : { decision: one.decision }, EVALUATIONS_PATH)));
+      self.sendBatchOne(res, one);
       log.debug("Leaving AuthzenSurface.batch(). One.");
       return;
     }
@@ -1378,6 +1542,7 @@ class AuthzenSurface {
     const batchId = id || ('authzen-' +
                            self.deps.helpers.randomId(12));
     const out: any[] = [];
+    const results: any[] = [];
     // EVERY ITEM MERGED FIRST, and planned together: the token-exchange
     // binding's two gates and its scope tuples are one exchange (#1181),
     // so which gate an item is, and whose scope, is known only from the
@@ -1385,35 +1550,71 @@ class AuthzenSurface {
     const requests = items.map(function (item: unknown) {
       return AuthzenSurface.merged(body, item);
     });
-    const plan = self.planOf(requests);
-    for (let i = 0; i < items.length; i += 1) {
-      const request = requests[i];
-      const one = request === null
-        ? AuthzenSurface.itemRefused(items[i])
-        : self.evaluateOne(request, caller, rows,
-                           batchId + '#' + i, where, plan, i, req);
-      // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
-      // never hidden by the batch's 200 (section 7.2). It is still false,
-      // which is the fail-closed reading of an item nobody could decide.
-      if (one.error) {
-        out.push({ decision: false, context: { error: one.error } });
-      } else {
-        out.push(one.context ? { decision: one.decision,
-                                 context: one.context }
-                             : { decision: one.decision });
+    const plan = self.planOf(requests, req);
+    const deferred = self.deferringDenials(function (): void {
+      for (let i = 0; i < items.length; i += 1) {
+        const request = requests[i];
+        const one = request === null
+          ? AuthzenSurface.itemRefused(items[i])
+          : self.evaluateOne(request, caller, rows,
+                             batchId + '#' + i, where, plan, i, req);
+        results.push(one);
+        const denied = !!one.error || one.decision === false;
+        if ((semantic === 'deny_on_first_deny' && denied) ||
+            (semantic === 'permit_on_first_permit' && !one.error &&
+             one.decision === true)) {
+          break;
+        }
       }
-      const denied = !!one.error || one.decision === false;
-      if ((semantic === 'deny_on_first_deny' && denied) ||
-          (semantic === 'permit_on_first_permit' && !one.error &&
-           one.decision === true)) {
-        break;
-      }
+    });
+    const finish = function (): void {
+      log.debug("Entering finish().");
+      results.forEach(function (one: any) {
+        // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
+        // never hidden by the batch's 200 (section 7.2). It is still
+        // false, which is the fail-closed reading of an item nobody could
+        // decide.
+        if (one.error) {
+          out.push({ decision: false, context: { error: one.error } });
+        } else {
+          out.push(one.context ? { decision: one.decision,
+                                   context: one.context }
+                               : { decision: one.decision });
+        }
+      });
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(authzenModel.held('evaluations-response',
+           { evaluations: out }, EVALUATIONS_PATH)));
+      log.debug("Leaving finish().");
+    };
+    if (deferred) {
+      log.debug("Leaving AuthzenSurface.batch(). Its tokens are signed off " +
+                "the event loop.");
+      return self.settleDenials(deferred).then(finish);
     }
-    res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(authzenModel.held('evaluations-response',
-         { evaluations: out }, EVALUATIONS_PATH)));
+    finish();
     log.debug("Leaving AuthzenSurface.batch(). " + out.length + " of " +
               items.length + " answered.");
+  }
+
+  // The answer to a batch of no items: one evaluation's.
+  private sendBatchOne(res: Res, one: any): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.sendBatchOne().");
+    if (one.error) {
+      errorCodes.mark(res, one.code);
+      // error-code: none — marked on the line above with the item's code.
+      callers.send(res, one.status, one.error.message);
+      log.debug("Leaving AuthzenSurface.sendBatchOne(). Refused.");
+      return;
+    }
+    res.status(200).type('application/json')
+       .set('Cache-Control', 'no-store')
+       .send(JSON.stringify(authzenModel.held('evaluation-response',
+         one.context ? { decision: one.decision, context: one.context }
+                     : { decision: one.decision }, EVALUATIONS_PATH)));
+    log.debug("Leaving AuthzenSurface.sendBatchOne().");
   }
 
   /**
@@ -1446,24 +1647,39 @@ class AuthzenSurface {
         return;
       }
       const body = AuthzenSurface.bodyOf(req);
-      const result = self.evaluateOne(body === undefined ? null : body,
-                                      caller, self.rows(), id,
-                                      'POST ' + EVALUATION_PATH, undefined,
-                                      undefined, req);
-      if (result.error) {
-        errorCodes.mark(res, result.code);
-        callers.send(res, result.status, result.error.message);
-        log.debug('Leaving POST ' + EVALUATION_PATH + '. ' + result.code);
-        return;
+      let result: any = null;
+      const deferred = self.deferringDenials(function (): void {
+        result = self.evaluateOne(body === undefined ? null : body,
+                                  caller, self.rows(), id,
+                                  'POST ' + EVALUATION_PATH, undefined,
+                                  undefined, req);
+      });
+      const send = function (): void {
+        log.debug("Entering send().");
+        if (result.error) {
+          errorCodes.mark(res, result.code);
+          callers.send(res, result.status, result.error.message);
+          log.debug('Leaving send(). ' + result.code);
+          return;
+        }
+        const answer: any = { decision: result.decision };
+        if (result.context) {
+          answer.context = result.context;
+        }
+        res.status(200).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify(authzenModel.held('evaluation-response',
+                                                  answer, EVALUATION_PATH)));
+        log.debug('Leaving send(). ' + result.decision);
+      };
+      // A requestable denial's token signed off the event loop first, where
+      // the realm's keys are in the HSM (#1955 P8 follow-up).
+      if (deferred) {
+        log.debug('Leaving POST ' + EVALUATION_PATH + '. Signing.');
+        return self.settleDenials(deferred).then(send);
       }
-      const answer: any = { decision: result.decision };
-      if (result.context) {
-        answer.context = result.context;
-      }
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify(authzenModel.held('evaluation-response', answer,
-                                                EVALUATION_PATH)));
-      log.debug('Leaving POST ' + EVALUATION_PATH + '. ' + result.decision);
+      send();
+      log.debug('Leaving POST ' + EVALUATION_PATH + '.');
     });
 
     // -----------------------------------------------------------------------
@@ -1478,7 +1694,9 @@ class AuthzenSurface {
       }
       if (!self.batchEnabled()) {
         errorCodes.mark(res, 'STS-AUTHZEN-0039');
-        callers.send(res, 501, 'The batch endpoint is turned off in this ' +
+        // 403, as every switched-off part of this API (#2208): the
+        // metadata leaves the endpoint out, which is all the spec says.
+        callers.send(res, 403, 'The batch endpoint is turned off in this ' +
                      'realm (authzen.batchEnabled); ' + EVALUATION_PATH +
                      ' still answers.');
         log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Batch off.');
@@ -1493,8 +1711,11 @@ class AuthzenSurface {
         log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Not JSON.');
         return;
       }
-      self.batch(req, res, caller, id);
+      // RETURNED (#1955 P8 follow-up): a deferred denial's token makes the
+      // answer a promise.
+      const answered = self.batch(req, res, caller, id);
       log.debug('Leaving POST ' + EVALUATIONS_PATH + '.');
+      return answered;
     });
 
     // -----------------------------------------------------------------------
@@ -1511,7 +1732,7 @@ class AuthzenSurface {
         }
         if (!self.searchEnabled()) {
           errorCodes.mark(res, 'STS-AUTHZEN-0044');
-          callers.send(res, 501, 'The search endpoints are turned off in ' +
+          callers.send(res, 403, 'The search endpoints are turned off in ' +
                        'this realm (authzen.searchEnabled).');
           log.debug('Leaving POST ' + path + '. Search off.');
           return;
@@ -1561,7 +1782,10 @@ class AuthzenSurface {
         return null;
       }
       if (!ar.enabled()) {
-        ar.problem(res, 501, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
+        // 403 (#2208): the profile prescribes no status for a PDP that
+        // does not support it, and publishes no access_request_endpoint
+        // while it is off.
+        ar.problem(res, 403, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
                    'and Approval Profile is turned off in this realm ' +
                    '(authzen.accessRequests).');
         log.debug('Leaving requestsOpen(). The profile is off.');
@@ -1579,11 +1803,86 @@ class AuthzenSurface {
         log.debug('Leaving POST ' + REQUESTS + '. Refused.');
         return;
       }
+      // SECTION 10.1'S MUST, as `notJson()` holds it for the evaluation,
+      // batch and search endpoints (#936), in the profile's own error
+      // shape: after the caller is admitted, before the body is read. The
+      // status and the cancellation read no body that has to be JSON (a
+      // DELETE carries none), so they are not held to it.
+      if (!AuthzenSurface.isJsonType(req.headers['content-type'])) {
+        ar.problem(res, 415, '', 'STS-AUTHZEN-0122', 'The request must ' +
+                   'carry Content-Type: application/json (AuthZEN 1.0 ' +
+                   'section 10.1).');
+        log.debug('Leaving POST ' + REQUESTS + '. Not JSON.');
+        return;
+      }
       ar.submit(req, res, caller, AuthzenSurface.bodyOf(req),
                 function (who: any, application: string): any {
                   return self.deps.caller.applicationOf(who, application);
                 });
       log.debug('Leaving POST ' + REQUESTS + '.');
+    });
+    // THE SUBMISSION SCHEMA (#1204), registered before `/:id` so Express
+    // does not read "schema" as a task id. Public, as the metadata is:
+    // the document names no secret, and an autonomous PEP checks that
+    // its origin is the access request endpoint's before fetching (the
+    // profile's section 11.2). It answers 403 while the API or the
+    // profile is off, rather than describing an endpoint that does not
+    // answer. It is not held to the AuthZEN model: it is a JSON Schema.
+    app.get(accessRequests.SCHEMA_PATH, function (req, res) {
+      log.debug('Entering GET ' + accessRequests.SCHEMA_PATH + '.');
+      self.requestId(req, res);
+      if (self.offCheck(res)) {
+        log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH + '. Off.');
+        return;
+      }
+      if (!ar.enabled()) {
+        ar.problem(res, 403, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
+                   'and Approval Profile is turned off in this realm ' +
+                   '(authzen.accessRequests).');
+        log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH +
+                  '. The profile is off.');
+        return;
+      }
+      const url = ar.baseOf(req) + accessRequests.SCHEMA_PATH;
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(ar.submissionSchema(url, ar.catalogsOn())));
+      log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH + '.');
+    });
+    // THE CATALOG COMPANION (#1204): a denial's Catalogs Document and its
+    // one Catalog Endpoint, behind the same door as a submission (its
+    // section 11: the same caller credentials, the same origin), and
+    // answered only to the caller the denial was answered to. Registered
+    // before `/:id` for the schema's reason.
+    const CATALOGS = accessRequests.CATALOGS_PATH;
+    const scopeOf = function (who: any, application: string): any {
+      log.debug('Entering scopeOf().');
+      log.debug('Leaving scopeOf().');
+      return self.deps.caller.applicationOf(who, application);
+    };
+    app.get(CATALOGS + '/:evaluation', function (req, res) {
+      log.debug('Entering GET ' + CATALOGS + '/:evaluation.');
+      const caller = requestsOpen(req, res, 'GET ' + CATALOGS);
+      if (!caller) {
+        log.debug('Leaving GET ' + CATALOGS + '/:evaluation. Refused.');
+        return;
+      }
+      ar.catalogsDocument(req, res, caller,
+                          String(req.params.evaluation || ''), scopeOf);
+      log.debug('Leaving GET ' + CATALOGS + '/:evaluation.');
+    });
+    app.get(CATALOGS + '/:evaluation/entitlements', function (req, res) {
+      log.debug('Entering GET ' + CATALOGS + '/:evaluation/entitlements.');
+      const caller = requestsOpen(req, res, 'GET ' + CATALOGS +
+                                  ' entitlements');
+      if (!caller) {
+        log.debug('Leaving GET ' + CATALOGS + '/:evaluation/entitlements. ' +
+                  'Refused.');
+        return;
+      }
+      ar.catalogItems(req, res, caller, String(req.params.evaluation || ''),
+                      scopeOf);
+      log.debug('Leaving GET ' + CATALOGS + '/:evaluation/entitlements.');
     });
     app.get(REQUESTS + '/:id', function (req, res) {
       log.debug('Entering GET ' + REQUESTS + '/:id.');
@@ -1624,8 +1923,9 @@ class AuthzenSurface {
     // -----------------------------------------------------------------------
     app.get(METADATA_PATH, function (req, res) {
       log.debug('Entering GET ' + METADATA_PATH + '.');
-      self.sendMetadata(req, res);
+      const answered = self.sendMetadata(req, res);
       log.debug('Leaving GET ' + METADATA_PATH + '.');
+      return answered;
     });
     app.get(METADATA_PATH + '/*', function (req, res, next) {
       log.debug('Entering GET ' + METADATA_PATH + '/*.');
@@ -1643,8 +1943,9 @@ class AuthzenSurface {
       }
       // Once the realm's keys are made and certified: the path's prefix
       // named no realm, so `app.js` prepared none (`runInPreparedRealm()`).
-      self.deps.helpers.runInPreparedRealm(named, function () {
-        self.sendMetadata(req, res);
+      const answered = self.deps.helpers.runInPreparedRealm(named,
+                                                           function () {
+        return self.sendMetadata(req, res);
       }).catch(function (e: any) {
         log.debug('Caught in GET ' + METADATA_PATH + '/*: ' +
                   ((e && e.message) || e));
@@ -1652,6 +1953,7 @@ class AuthzenSurface {
         (next as any)(e);
       });
       log.debug('Leaving GET ' + METADATA_PATH + '/*.');
+      return answered;
     });
 
     log.debug("Leaving AuthzenSurface.registerRoutes().");

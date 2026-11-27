@@ -25,6 +25,7 @@ import SettingsForms = require('./web_settings');
 import GroupsPage = require('./web_groups');
 import AuditPage = require('./web_audit');
 import DocLinks = require('../common/web_doc_links');
+import WsTrustProtection = require('./web_wstrust_protection');
 
 type Json = any;
 
@@ -202,7 +203,10 @@ class ApplicationsPage {
       // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
       // tab's content is one frame. The `data-tab` headings stay outside
       // it, at the top level, where the splitter makes them the tab labels.
-      kit.frame('<form method="get" action="/admin/applications"><div ' +
+      // The fragment is the Applications tab. A GET with none reloads
+      // onto Metadata, and the filtered list stays on this panel.
+      kit.frame('<form method="get" ' +
+        'action="/admin/applications#applications-tab-applications"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleApplications.a1.filterApplication') +
       '</label><input type="text" ' +
@@ -220,7 +224,7 @@ class ApplicationsPage {
       'type="submit">' + t.html('consoleApplications.a1.filter') +
       '</button>' +
       ((wantedText || wantedKind)
-        ? ' <a href="/admin/applications">' +
+        ? ' <a href="/admin/applications#applications-tab-applications">' +
           t.html('consoleApplications.a1.clear') + '</a>' : '') +
       '</div></form>' +
       nav.head +
@@ -465,25 +469,27 @@ class ApplicationsPage {
       // drawing them here as well would post each name twice.
       // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): each
       // section is one frame, the field grid's included.
+      // THE IDENTIFIER IS CALLED OUT AS EVERY REQUIRED FIELD IS (#1132):
+      // the create refuses without it, so it is outlined, starred and says
+      // "required", the directory create forms' cell (`kit.createFields()`);
+      // the name is optional. Which is which is the answer's
+      // (`createFields`), as on every other create page.
+      const calledRows = kit.createRows(json.createFields, {
+        identifier: { label: t.html('consoleApplications.a1.identifier'),
+                      hint: t.html('consoleApplications.a1.identifierTip'),
+                      placeholder:
+                        t.text('consoleApplications.a1.egIdentifierLong') },
+        name: { label: t.html('consoleApplications.a1.name'),
+                hint: t.html('consoleApplications.a1.nameTip'),
+                placeholder: t.text('consoleApplications.a1.egMyWebAppName') }
+      });
       const calledSection = kit.frame(
-        '<h2>' + t.html('consoleApplications.a1.calledHeading') +
-        '</h2><div class="formrow"><label ' +
-        'for="identifier">' + t.html('consoleApplications.a1.identifier') +
-        '</label><input type="text" ' +
-          'id="identifier" ' +
-        'name="identifier" size="42" required placeholder="' +
-        kit.esc(t.text('consoleApplications.a1.egIdentifierLong')) + '"' +
-        kit.tip(t.html('consoleApplications.a1.identifierTip')) +
-        ' value="' + kit.esc(drafted('identifier')) + '"></div>' +
+        '<h2>' + t.html('consoleApplications.a1.calledHeading') + '</h2>' +
+        kit.requiredNote(calledRows, t) +
+        kit.createFields(calledRows, { identifier: drafted('identifier'),
+                                       name: drafted('name') }, t) +
         kit.note(t.html('consoleApplications.a1.theKey')) +
         kit.note(t.html('consoleApplications.a1.primaryName')) +
-        '<div class="formrow"><label for="newname">' +
-        t.html('consoleApplications.a1.name') + '</label><input ' +
-        'type="text" id="newname" name="name" size="24" ' +
-        'placeholder="' +
-        kit.esc(t.text('consoleApplications.a1.egMyWebAppName')) + '"' +
-        kit.tip(t.html('consoleApplications.a1.nameTip')) +
-        ' value="' + kit.esc(drafted('name')) + '"></div>' +
         kit.note(t.html('consoleApplications.a1.nameIs')) +
         kit.note(t.html('consoleApplications.a1.noKind')));
       // The families ticked: the ones a refused create had ticked, or OAuth 2.0
@@ -1181,7 +1187,7 @@ class ApplicationsPage {
   static newApplicationNotes(store, t) {
     return (
       kit.note(t.html('consoleApplications.a1.declaringA') +
-      '<a href="/admin/applications">' +
+      '<a href="/admin/applications#applications-tab-applications">' +
       t.html('consoleApplications.a1.applicationsLink') + '</a>' +
       t.html('consoleApplications.a1.declaringB')) +
       kit.note(t.html('consoleApplications.a1.declaredVsHappened')) +
@@ -1494,6 +1500,13 @@ class ApplicationsPage {
           label: t.text('consoleApplications.pepRoutes.tab'),
           html: ApplicationsPage.applicationPepRoutesSection(t,
             json.page.pepRoutes || []) },
+        // THE EMBEDDED REMOTE PEPS BOUND TO IT (#2025): read only, each
+        // linked to its own page, where the binding is set and removed.
+        { id: 'tab-embedded-peps',
+          label: t.text('consoleApplications.embeddedPeps.tab'),
+          html: ApplicationsPage.applicationEmbeddedPepsSection(t,
+            json.page.embeddedPeps || [],
+            json.page.pepEventsExcluded || []) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.
@@ -1679,7 +1692,7 @@ class ApplicationsPage {
         '<p class="sub"><a href="' +
         kit.esc('/admin/applications' +
                  kit.queryWith(kit.listViewOf('/admin/applications', ctx.query),
-                           {})) +
+                           {}) + '#applications-tab-applications') +
         '">' + t.html('consoleApplications.a2.backToList') + '</a> &middot; ' +
         '<a href="/admin/ldap/applications">' +
         t.html('consoleApplications.a2.registryAsDirectory') + '</a></p>';
@@ -1941,8 +1954,12 @@ class ApplicationsPage {
       // A primary name equal to the identifier is folded into the advanced
       // view (#393). The copy is what is drawn; `mine` stays the entry's
       // own rows, which the SAML panels fold for themselves.
-      const folded = ApplicationsPage.withFoldedPrimaryNames(
-        mine, values, row.identifier);
+      // EXCEPT ON WS-TRUST (rcbj, 2026-11-23, #2046): `wstrustAppliesTo` is
+      // always in that sub-tab's simplified view, whatever it holds.
+      const folded = group.id === 'wstrust'
+        ? { rows: mine, folded: false }
+        : ApplicationsPage.withFoldedPrimaryNames(mine, values,
+                                                  row.identifier);
       const drawn = folded.rows;
       const views = kit.hasViews(drawn);
       const advancedRows = drawn.filter(function (one) {
@@ -2007,6 +2024,19 @@ class ApplicationsPage {
               ['gnap_access_token'], 'cfg-gnap-claims',
               t.text('consoleApplications.a2.customClaims'))
           : '');
+      // The grid's options, for the plain grid and WS-Trust's sections.
+      const gridOptions = { redraw: '/admin/applications/edit',
+                            showSet: true, protocols: config.protocols,
+                            views: views,
+                            // The scopes the delegated permission grants
+                            // declare, read-only in their list (#1141).
+                            derived: config.derived || {},
+                            // The lists with a search, and the last
+                            // search's results for each (#459).
+                            searches: config.fieldSearches || {},
+                            finds: (state && state.finds) || {},
+                            // #488: the scope policy's warnings, by field.
+                            fieldWarnings: config.fieldWarnings || {} };
       // The sub-tab's own fields, in one form.
       const fieldForm = kit.frame(
         // A sub-tab drawn only for a section has no fields to save.
@@ -2018,19 +2048,17 @@ class ApplicationsPage {
           ? kit.note(t.html(
               'consoleApplications.a2.primaryNameFolded'))
           : '') +
-        kit.fieldGridOf(drawn, config.groups, values,
-                           { redraw: '/admin/applications/edit',
-                             showSet: true, protocols: config.protocols,
-                             views: views,
-                             // The scopes the delegated permission grants
-                             // declare, read-only in their list (#1141).
-                             derived: config.derived || {},
-                             // The lists with a search, and the last
-                             // search's results for each (#459).
-                             searches: config.fieldSearches || {},
-                             finds: (state && state.finds) || {},
-                             // #488: the scope policy's warnings, by field.
-                             fieldWarnings: config.fieldWarnings || {} }) +
+        // WS-TRUST'S SECTIONS (#2046): General, then MESSAGE PROTECTION
+        // (#1917: the eight Body / Header boxes, inside this form so the one
+        // Save stores the maps they rewrite; they post nothing themselves),
+        // then Message encryption and Message signing, each in request and
+        // response halves (`WsTrustProtection.grid()`). Every other sub-tab
+        // is the plain grid.
+        (group.id === 'wstrust'
+          ? WsTrustProtection.grid(drawn, group.label, values, gridOptions,
+              t, WsTrustProtection.frame(values, drawn,
+                                         '/admin/applications/edit', t))
+          : kit.fieldGridOf(drawn, config.groups, values, gridOptions)) +
         // #825: the three hosted surfaces. The checkbox posts confirm=1.
         // An unchanged bound does not need it; a changed one does, and the
         // server refuses the whole save without it. The list matches
@@ -2154,12 +2182,20 @@ class ApplicationsPage {
         ? ''
         : DocLinks.consoleHtml(
             DocLinks.forConsoleTab('cfg-' + group.id), t);
+      // THE XPATH BUILDER (#1917), a dialog since #2046, opened by the
+      // Message encryption and Message signing sections' buttons. Outside
+      // the form, and it posts nothing anyway.
+      const xpathBuilder = group.id === 'wstrust'
+        ? WsTrustProtection.dialog(drawn.map(function (one) {
+            return one.attribute;
+          }), t)
+        : '';
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
         cfgDocs +
         launchCard + observedFlows +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
-        passkeyCard + '</div>';
+        xpathBuilder + passkeyCard + '</div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="' +
       t.html('consoleApplications.a2.tabConfig') + '">' +
@@ -2400,7 +2436,45 @@ class ApplicationsPage {
       t.text('consoleApplications.a2.observedTip'),
       ['oauthGrantTypeObserved', 'oauthResponseTypeObserved',
        'appRedirectUriObserved', 'oauthScope', 'appAuthorizationServer'],
+      ApplicationsPage.undeclaredScopesLine(row, t) +
       ApplicationsPage.tokenResponseTypesLine(row, t));
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DEFAULT SCOPES A CLIENT THAT DECLARES NONE IS GIVEN (#1589): a line
+  // under the observed ones, drawn only where `oauthAllowedScope` lists
+  // nothing, naming what `oauth2.undeclaredClientScopes` gives it — so an
+  // administrator sees the default being applied rather than reading an
+  // empty list as "nothing". A warning while the set is wider than `openid`
+  // in product (ASVS 5.0.0 10.4.11); a plain note in development, which
+  // issues any scope a client asks for.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the line naming the default scopes of a client that declares none.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @returns the line as HTML, or ''
+   */
+  static undeclaredScopesLine(row, t) {
+    const observed = row && row.page && row.page.config
+      ? row.page.config.observed : null;
+    const state = observed && observed.undeclaredClientScopes;
+    if (!state) {
+      return '';
+    }
+    const scopes: string[] = [].concat(state.scopes || []);
+    const args = { setting: String(state.setting || ''),
+                   scopes: scopes.join(' ') };
+    const sentence = !state.enforced
+      ? 'consoleApplications.a2.undeclaredScopesDevelopment'
+      : state.credentialScopes
+        ? 'consoleApplications.a2.undeclaredScopesLegacy'
+        : 'consoleApplications.a2.undeclaredScopes';
+    const body = '<p>' + t.html(sentence, args) + '</p>';
+    return '<div class="fg-observed-row sub" id="cfg-undeclared-scopes">' +
+      (state.enforced && state.setting !== 'openid' ? kit.warn(body)
+                                                    : body) + '</div>';
   }
 
   // ---------------------------------------------------------------------------
@@ -4176,9 +4250,17 @@ class ApplicationsPage {
       ].map(function (pair) {
         return '<div><strong>' + pair[0] + ':</strong> ' + pair[1] + '</div>';
       }).join('');
+      // A definition stored before a stricter write rule (#2220): still
+      // used, and flagged, with the view's own sentence (English, as the
+      // problem above is).
+      const stale = d.schemaProblem
+        ? '<div><span class="state-revoked">' +
+          t.html('consoleApplications.a3.writeWouldRefuse') + '</span>: ' +
+          kit.esc(d.schemaProblem) + '</div>' : '';
       return '<tr><td><code>' + kit.esc(d.type) + '</code>' +
         (d.description ? '<div class="sub">' + kit.esc(d.description) +
-                         '</div>' : '') + '</td><td>' + facts + '</td><td>' +
+                         '</div>' : '') + '</td><td>' + stale + facts +
+        '</td><td>' +
         '<form method="post" action="/admin/applications" class="inline">' +
         carryBack + '<input type="hidden" name="action" ' +
         'value="remove-access-type"><input type="hidden" name="application" ' +
@@ -5502,6 +5584,37 @@ class ApplicationsPage {
           '</code></td><td><code>' + kit.esc(one.path) + '</code></td><td>' +
           kit.esc((one.mechanisms || []).join(', ')) + '</td></tr>';
       }).join('') + '</table>');
+  }
+
+  /**
+   * The embedded remote PEPs bound to an application (#2025), each linked to
+   * its own page; nothing when none is.
+   *
+   * @param t - the translator
+   * @param peps - the PEPs' usernames
+   * @param excluded - those in local mode whose stream cannot carry
+   *   pep-policies-changed (#2028)
+   * @returns the section, or '' when none is bound
+   */
+  static applicationEmbeddedPepsSection(t, peps, excluded) {
+    if (!peps.length) {
+      return '';
+    }
+    // A LOCAL PEP THAT WILL NOT HEAR OF A POLICY CHANGE (#2028): the
+    // application's ssfAllowedEvents leaves pep-policies-changed out, or the
+    // PEP said its stream does. It converges only on its fallback poll.
+    const warn = (excluded || []).length
+      ? '<p class="warn">' +
+        t.html('consoleApplications.embeddedPeps.eventsExcluded',
+               { peps: (excluded || []).map(String).join(', ') }) + '</p>'
+      : '';
+    return kit.frame(warn +
+      '<p>' + t.html('consoleApplications.embeddedPeps.lead') +
+      '</p><ul>' + peps.map(function (one) {
+        return '<li><a href="/admin/xacml/pep?pep=' +
+          kit.esc(encodeURIComponent(String(one))) + '"><code>' +
+          kit.esc(String(one)) + '</code></a></li>';
+      }).join('') + '</ul>');
   }
 
   static applicationRolesSection(row, state, carryBack, t) {

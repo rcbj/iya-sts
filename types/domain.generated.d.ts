@@ -44,6 +44,7 @@ declare namespace IyaDomain {
     authzenAttribute?: string[];
     authzenApplication?: string[];
     authzenCallbackUri?: string[];
+    authzenCallbackConfig?: string[];
     softwareStatementIssuer?: string;
     softwareStatementTrusted?: string;
     softwareStatementPublisher?: string;
@@ -80,6 +81,7 @@ declare namespace IyaDomain {
     fgaPolicy?: string;
     fgaEnforced?: string;
     umaOwnsResources?: string;
+    appDynamicRoleSelection?: string;
     verifiableCredentialPartner?: VerifiableCredentialPartner;
     wsTrustRelyingParty?: WsTrustRelyingParty;
     kerberosService?: KerberosService;
@@ -159,6 +161,8 @@ declare namespace IyaDomain {
     passkeyPrimary?: boolean;
     securityKeySecondFactor?: boolean;
     totpSecondFactor?: boolean;
+    hotpSecondFactor?: boolean;
+    yubicoOtpSecondFactor?: boolean;
     recoveryCodeSecondFactor?: boolean;
     emailCodePrimary?: boolean;
     emailCodeSecondFactor?: boolean;
@@ -166,6 +170,10 @@ declare namespace IyaDomain {
     emailLinkSecondFactor?: boolean;
     certificatePrimary?: boolean;
     kerberosPrimary?: boolean;
+    smartCardPrimary?: boolean;
+    smartCardCardAuthPrimary?: boolean;
+    pkinitSmartCardPrimary?: boolean;
+    requireAttestedHardware?: string;
     walletPrimary?: boolean;
     walletSecondFactor?: boolean;
     federationPrimary?: boolean;
@@ -216,6 +224,8 @@ declare namespace IyaDomain {
   interface Credential {
     passwordHash?: string;
     authenticatorApp?: string;
+    hotpToken?: string;
+    yubiOtp?: string;
     passkeys?: string[];
     recoveryCodes?: string;
     appPasswords?: string;
@@ -223,7 +233,17 @@ declare namespace IyaDomain {
     passwordMustChange?: boolean;
     lockedSince?: string;
     userCertificate?: string[];
+    smimeCertificate?: string[];
+    sshUserCertificate?: string[];
+    hardwareTokens?: string[];
+    oathTokens?: string[];
+    yubiOtpTokens?: string[];
     krb5KeyInfo?: string;
+    openPgpKey?: string;
+    openPgpFingerprint?: string;
+    openPgpKeyInfo?: string;
+    openPgpClassicalKey?: string;
+    openPgpClassicalKeyInfo?: string;
     hobaPublicKey?: string[];
     activationExpires?: string;
     passwordResetExpires?: string;
@@ -236,6 +256,8 @@ declare namespace IyaDomain {
     publishedDid?: string[];
     cibaUserCode?: string;
     androidAttestedCredential?: string[];
+    pivCardUuid?: string[];
+    certificateBinding?: string[];
     webauthnUserHandle?: string;
     webauthnPqcUserHandle?: string;
     mailVerifyToken?: string;
@@ -526,6 +548,7 @@ declare namespace IyaDomain {
     postLogoutRedirectUris?: string[];
     grantTypes?: string[];
     responseTypes?: string[];
+    responseModes?: string[];
     tokenEndpointAuthMethods?: string[];
     idTokenSigningAlgorithm?: string;
     audience?: string[];
@@ -678,6 +701,8 @@ declare namespace IyaDomain {
     attestationAlgorithms?: string;
     adminEnrolment?: string;
     deviceBoundRequired?: string;
+    credProtect?: string;
+    enforceCredProtect?: string;
     precedence?: number;
     description?: string[];
     stsRecoveryPending?: string;
@@ -750,7 +775,9 @@ declare namespace IyaDomain {
     defaultDelegationSemantics?: string;
     authzenApplication?: string[];
     authzenCallbackUri?: string[];
+    pepApplication?: string;
     mailVerified?: string;
+    mailEncryption?: string;
     audSub?: string[];
   }
 
@@ -766,6 +793,19 @@ declare namespace IyaDomain {
     method?: string;
     attestation?: string;
     noPasskeyFallback?: string;
+    mailEnabled?: string;
+    mailSnoozeDays?: string;
+    mailGraceDays?: string;
+    mailNoKey?: string;
+    mailPrefer?: string;
+    mailKeepClassical?: string;
+    pivEnabled?: string;
+    pivSnoozeDays?: string;
+    pivGraceDays?: string;
+    pivSlots?: string;
+    pivTrigger?: string;
+    pivRenewDays?: string;
+    pivTarget?: string;
     precedence?: number;
     description?: string[];
     noPasskeyRole?: string;
@@ -788,6 +828,10 @@ declare namespace IyaDomain {
     roleAllowedMemberType?: string[];
     owner?: string[];
     stsOwnerProtected?: boolean;
+    roleMembershipMode?: string;
+    roleEligibilityPolicy?: string;
+    roleSelection?: string;
+    roleSelectionExclusive?: string;
   }
 
   /**
@@ -1052,6 +1096,29 @@ declare namespace IyaDomain {
   }
 
   /**
+   * A named truststore: certificate authorities a use case is assigned to trust
+   * (#2118), or a key set bound to one party (#2149).
+   */
+  interface Truststore {
+    kind?: string;
+    party?: string;
+    jwks?: string;
+    jwksUri?: string;
+    sshKeys?: string;
+    document?: string;
+    addedBy?: string;
+    realm?: string;
+  }
+
+  /**
+   * Which truststores each use case of a realm trusts (#2118).
+   */
+  interface TruststoreAssignments {
+    assignments?: string[];
+    realm?: string;
+  }
+
+  /**
    * A person this service authenticates, as every protocol projects them.
    */
   interface User {
@@ -1140,6 +1207,13 @@ declare namespace IyaDomain {
     encryptionCertificate?: string;
     keyTransportAlgorithm?: string;
     responseRecipientXPath?: string;
+    signRequest?: string;
+    signRequestElements?: string[];
+    signResponse?: string;
+    signResponseElements?: string[];
+    responseProtectionOrder?: string;
+    encryptSignature?: string;
+    recipientIgnoresKeyUsage?: string;
     decryptionCertificate?: string;
     decryptionCertificateChain?: string;
     decryptionPrivateKey?: string;
@@ -1175,6 +1249,12 @@ declare namespace IyaDomain {
     settingsInUse?: string;
     listeners?: string;
     listenersInUse?: string;
+    kind?: string;
+    application?: string;
+    mode?: string;
+    protocolVersion?: number;
+    policyEvents?: string;
+    pullScope?: string;
     description?: string[];
   }
 
@@ -1206,6 +1286,7 @@ declare namespace IyaDomain {
     application?: string;
     orphanedAt?: string;
     pepRoute?: string;
+    role?: string;
   }
 
   interface Concepts {
@@ -1244,6 +1325,8 @@ declare namespace IyaDomain {
     SignerTrustAnchor: SignerTrustAnchor;
     SpiffeRegistration: SpiffeRegistration;
     TrustAnchor: TrustAnchor;
+    Truststore: Truststore;
+    TruststoreAssignments: TruststoreAssignments;
     User: User;
     VerifiableCredentialPartner: VerifiableCredentialPartner;
     WsFederationRelyingParty: WsFederationRelyingParty;

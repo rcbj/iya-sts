@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "已看過的簽章，因此請求被拒絕"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "硬體權杖登錄冊"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "本領域中每個實體硬體權杖（YubiKey、智慧卡）一列，依廠商與序號索引：誰持有、型號及其上的憑證。序號只依證明記錄。從不包含機密。"
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "b2eadcf654a8cb28",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；登記冊本身受其列出的憑證限制（FIDO 為 webauthn.maxKeysPerPerson）。"
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "直到權杖被移除；遺失的權杖會保留，並標示為遺失。"
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "RFC 9278 金鑰識別碼"
@@ -702,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "在 mail.dedupWindowS 內因與同一動作已排入佇列的郵件重複而被抑制的郵件"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "OATH 權杖清冊"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "管理員從供應商的 PSKC 種子檔案（RFC 6030）匯入的每把 HOTP 或 TOTP 金鑰各佔一列，依供應商、序號與金鑰 id 索引：未指派（其密鑰已密封）、已指派給某人（密鑰已移除，現位於其項目上）或已停用。"
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "c93f702fb2bd8e60",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；清單受管理員匯入的內容限制，每個檔案最多 2,000 個金鑰。"
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未指派的權杖被移除；已指派或已停用的權杖會保留。"
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
@@ -1106,6 +1138,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "直到憑證鏈過期（其最小的 exp，10.4），且最多 oidfed.resolveCacheS。"
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP 註冊挑戰"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "每位正在註冊 OpenPGP 金鑰的人一個挑戰：其以 gpg --clearsign 簽署的文字、其隨機數（nonce）以及失效時間。只能使用一次，透過對該隨機數的叢集宣告來達成。"
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "bcb019b421b3e33e",
+    "text": "強制：程序持有的挑戰是每個領域 5,000 個的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；儲存區為每人保存一個（以 entryUUID 為鍵），每個持續 openpgp.challengeLifetimeS。"
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Web 金鑰目錄發布"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Web 金鑰目錄針對每個雜湊地址回應哪一把 OpenPGP 金鑰：持有者（一個 entryUUID）及其發布的指紋。這只是一個指標：金鑰本身從項目中讀取。絕非機密。"
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "67c6603e0b96fd95",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；登記冊為每位選擇加入的人保存一列。"
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "直到此人停止發布或移除金鑰為止。"
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
@@ -1623,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "依摘要找到了一個票證"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico OTP 清冊"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "管理員從 CSV 匯入的每個 YubiKey OTP 各佔一列，依序號索引：未指派（其 AES 金鑰已密封）、已指派給某人（密鑰已移除，現位於其項目上）或已停用。"
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "1b2409611ca2ae53",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取。"
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "直到未指派的權杖被移除；已指派或已停用的權杖會保留。"
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "依最近最少使用順序排列的有上限快取。"
@@ -1710,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已失效：該認證資料已被否認"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "已簽發的 SSH 使用者憑證"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "此領域的 SSH 使用者 CA 簽發的每張 OpenSSH 使用者憑證一列，依序號：屬於誰（urn:uuid）、金鑰指紋、主體、有效期以及是否已撤銷。從不包含金鑰。"
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "e9eaf8f07040a227",
+    "text": "強制執行：處理程序持有的列是每個領域 5,000 列的隨需視窗；當某列的憑證到期時，該列離開儲存區。"
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "直到憑證到期。"
   }
 }

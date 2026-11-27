@@ -71,6 +71,7 @@ const tls = require("tls");
 const forge = require("node-forge");
 const names = require("./random_username.js");
 const credentials = require("../tools/pep-credential.js");
+const serviceTrust = require("../tools/service_trust.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -147,13 +148,17 @@ function stranger() {
 // ('1.2' or '1.3'), ciphers (node's list, TLS 1.3 suite names included),
 // groups, cert and key, servername ('' for none), session (to resume),
 // noTicket, path and token. Resolves { accepted, status, body, protocol,
-// cipher, reused, session, error } and never rejects.
+// cipher, reused, session, error }. It REJECTS only when this client did
+// not trust the server's certificate (the service's chain, from
+// tools/service_trust.js, verified chain and name): every claim here is
+// about the SERVER refusing a handshake, and a stale anchor refusing it
+// instead would pass for one.
 function probe(o) {
   log.debug("Entering probe().");
   log.debug("Leaving probe().");
-  return new Promise(function (resolve) {
+  return new Promise(function (resolve, reject) {
     const options = {
-      host: HOST, port: o.port || MAIN_PORT, rejectUnauthorized: false,
+      host: HOST, port: o.port || MAIN_PORT, ca: serviceTrust.trustedCa(),
       ALPNProtocols: ["http/1.1"], cert: o.cert, key: o.key,
       session: o.session
     };
@@ -185,6 +190,12 @@ function probe(o) {
         return;
       }
       settled = true;
+      if (out.error && serviceTrust.isUntrusted(out.error)) {
+        reject(new Error("the server's certificate did not verify " +
+          "against the service's chain (" + out.error.code + ": " +
+          out.error.message + "); that is the anchor, not a refusal"));
+        return;
+      }
       const m = /^HTTP\/1\.1 (\d{3})/.exec(text);
       out.status = m ? Number(m[1]) : 0;
       out.accepted = out.status === 200;
@@ -235,7 +246,7 @@ async function api(method, path, payload, tlsOptions) {
   const out = await new Promise(function (resolve, reject) {
     const req = require("https").request({
       method: method, hostname: HOST, port: MAIN_PORT, path: path,
-      agent: false, rejectUnauthorized: false,
+      agent: false, ca: serviceTrust.trustedCa(),
       cert: tlsOptions && tlsOptions.cert, key: tlsOptions && tlsOptions.key,
       headers: { "content-type": "application/json",
                  accept: "application/json",

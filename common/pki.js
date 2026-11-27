@@ -1052,7 +1052,7 @@ function signatureForIssuer(parent, preferred, subjectKeyAlg) {
 // encoder writing what it is handed is defensible; handing it a time with
 // milliseconds in it is what this module was doing wrong. The parent project
 // should still drop fractional seconds on the way out — that is its bug to
-// fix, and `docs/v1.1.0/parent-project-migration.md` is where this repository
+// fix, and `docs/v1.2.0/parent-project-migration.md` is where this repository
 // records what it owes that one.
 // ---------------------------------------------------------------------------
 function certificateInstant(at) {
@@ -2748,11 +2748,14 @@ function saveRow(realmId, row) {
   // narrowed to the two new cases, because that is the question and the last
   // three answers to it were each right when they were written.
   const rooted = (row && row.root) ? 1 : 0;
+  const sshAuthority = row && row.sshUserCa ? 1 : 0;
+  const sshIssued = row && row.sshIssued && row.sshIssued.length ? 1 : 0;
   const lists = (row && row.revoked &&
                  Object.keys(row.revoked).some(function (caId) {
                    return (row.revoked[caId] || []).length;
                  })) ? 1 : 0;
-  if (!tiers.length && !objects.length && !branch && !rooted && !lists) {
+  if (!tiers.length && !objects.length && !branch && !rooted &&
+      !sshAuthority && !sshIssued && !lists) {
     keystore.attachPki(id, null);
     log.debug('Leaving saveRow(). Nothing left; the row was removed.');
     return;
@@ -4153,39 +4156,13 @@ function asciiOf(node) {
 // with a string value compared as RFC 5280 section 7.1 asks — case folded,
 // leading and trailing space removed, internal space collapsed — and any
 // other value by its DER. Two names are the same name when these lists are
-// equal; a directoryName constraint is a PREFIX of this list.
+// equal; a directoryName constraint is a PREFIX of this list. The reading is
+// `common/crypto.js`'s `certificateNameRdns()` since #1242, so the client
+// truststore's same-subject question and these path rules read a name one
+// way; it was this function's body until then.
 function rdnsOfName(node) {
   log.debug("Entering rdnsOfName().");
-  if (!(node instanceof asn1js.Sequence)) {
-    log.debug("Leaving rdnsOfName(). Not a Name.");
-    throw new Error('a Name is not a SEQUENCE');
-  }
-  // An EMPTY RDN (a SET with no attribute) is read as no RDN at all: the
-  // ASN.1 says SIZE (1..MAX), and pkijs writes one for an empty name — the
-  // Fulcio-shaped certificates the SPIFFE sigstore tests make, and a TPM
-  // attestation key's — so what it means is not in doubt.
-  const sets = node.valueBlock.value.filter(function (set) {
-    return !(set instanceof asn1js.Set) || set.valueBlock.value.length > 0;
-  });
-  const out = sets.map(function (set) {
-    if (!(set instanceof asn1js.Set)) {
-      throw new Error('a RelativeDistinguishedName is not a SET');
-    }
-    return set.valueBlock.value.map(function (atv) {
-      // asn1js declares a generic ValueBlock; a constructed one has `value`.
-      const block = /** @type {any} */ (atv.valueBlock);
-      const parts = block && block.value;
-      if (!parts || parts.length !== 2 ||
-          !(parts[0] instanceof asn1js.ObjectIdentifier)) {
-        throw new Error('an attribute is not a type and a value');
-      }
-      const value = parts[1];
-      const text = value instanceof asn1js.BaseStringBlock
-        ? String(value.getValue()).trim().replace(/\s+/g, ' ').toLowerCase()
-        : '#' + Buffer.from(value.toBER(false)).toString('hex');
-      return parts[0].getValue() + '=' + text;
-    }).sort().join('+');
-  });
+  const out = stsCrypto.certificateNameRdns(node);
   log.debug("Leaving rdnsOfName(). " + out.length + " RDN(s).");
   return out;
 }
@@ -9169,12 +9146,22 @@ async function issueEnrolled(scopeId, useCaseId, spec) {
     }
     row = rawRowFor(id);
   }
+  // AN ML-KEM KEY CERTIFIES `keyEncipherment` AND NOTHING ELSE (RFC 9935
+  // section 5, #2220): a KEM key cannot sign, so a profile's
+  // digitalSignature or nonRepudiation would claim a use it cannot have.
+  // `stsCrypto.smimeKemPublicKeyOf()` is the reading of an ML-KEM key; any
+  // other key keeps the profile's usages.
+  const profiled = x509.defaultExtensions(asked.profile);
+  if (stsCrypto.smimeKemPublicKeyOf(asked.publicKeyPem).ok) {
+    profiled.keyUsage = Object.assign({}, profiled.keyUsage,
+                                      { usages: ['keyEncipherment'] });
+  }
   const issued = await issueUnder(id, uc.id, {
     subject: asked.subject,
     publicKeyPem: asked.publicKeyPem,
     profile: asked.profile,
     notAfter: Date.now() + Math.max(1, Number(asked.days)) * 86400000,
-    extensions: Object.assign({}, x509.defaultExtensions(asked.profile), {
+    extensions: Object.assign({}, profiled, {
       subjectKeyIdentifier: { present: true, critical: false },
       authorityKeyIdentifier: { present: true, critical: false,
                                 includeIssuerAndSerial: false },
@@ -10293,6 +10280,88 @@ function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
 }
 
 // ---------------------------------------------------------------------------
+// A CLASSICAL KEY'S CERTIFICATE IS KEPT FOR AS LONG AS IT IS STILL CURRENT
+// (GitHub Actions run 45189343764, 2026-11-23).
+//
+// `certifyKeySet()` re-issued the RSA key's two certificates and every curve
+// key's on every call, over keys that had not changed. It is called on every
+// new generation (`helpers.js`'s `replaceGeneration()` -> `certifyLater()`),
+// and the hourly `signing.rotate` mints a `next` key for any unit that lacks
+// one — the post-quantum units, which arrive after the first run, lack one
+// at the next hour. So at the first full hour of every product service the
+// classical slots took new certificates and new SHA-256 fingerprints: the
+// console's keys page, drawn before it, linked seven certificates (RS256 and
+// the six curve keys) that `/admin/crypto-metadata` no longer held, and
+// `sts_admin_console` failed in every mode with a store whenever its crawl
+// crossed the hour. The post-quantum keys kept theirs, because
+// `certifyPqKeys()` has always asked this question; this is that question
+// for the keys it was never asked of.
+//
+// CURRENT is: the plain slot holds a record over THIS key (`kid` and the
+// SubjectPublicKeyInfo's SHA-256), signed by the Issuing CA the branch holds
+// now, on a branch that still chains to the Root, not pinned, not expired and
+// not on its authority's revocation list. Anything else is certified again,
+// exactly as before — a rebuilt branch, a reissued authority, a revoked
+// certificate over a key the realm still signs with (`common/CLAUDE.md`,
+// *What is still re-certified whatever was revoked*), and a new key.
+// ---------------------------------------------------------------------------
+function heldCertificateIsCurrent(id, useCaseId, slot, kid, publicKeyPem) {
+  log.debug("Entering heldCertificateIsCurrent(). " + useCaseId + ':' + slot);
+  const held = certificateFor(id, useCaseId, slot);
+  if (!held || held.pinned || !held.serialHex) {
+    log.debug("Leaving heldCertificateIsCurrent(). None held, or pinned.");
+    return false;
+  }
+  if (kid && held.kid !== String(kid)) {
+    log.debug("Leaving heldCertificateIsCurrent(). Another key's.");
+    return false;
+  }
+  let fingerprint = '';
+  try {
+    fingerprint = thumbprintOf(publicKeyPem);
+  } catch (e) {
+    log.debug("Caught in heldCertificateIsCurrent(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving heldCertificateIsCurrent(). Unreadable key.");
+    return false;
+  }
+  if (held.subjectKeyFingerprint !== fingerprint) {
+    log.debug("Leaving heldCertificateIsCurrent(). Over another key.");
+    return false;
+  }
+  const row = rawRowFor(id);
+  const issuingNow = ((row && row.issuing && row.issuing[useCaseId]) || {})
+    .certificatePem;
+  if (!issuingNow || (held.chainPem || [])[0] !== issuingNow ||
+      !scopeChainsToRoot(id)) {
+    log.debug("Leaving heldCertificateIsCurrent(). Another authority.");
+    return false;
+  }
+  const ends = new Date(held.notAfter).getTime();
+  if (!(ends > Date.now())) {
+    log.debug("Leaving heldCertificateIsCurrent(). Expired.");
+    return false;
+  }
+  let revoked = null;
+  try {
+    revoked = require('./pki_revocation').isRevoked(id, useCaseId,
+                                                    held.serialHex);
+  } catch (e) {
+    // No revocation module in this process (an in-process caller that never
+    // loaded it): nothing here can have revoked the certificate.
+    log.debug("Caught in heldCertificateIsCurrent(): " +
+              ((e && e.message) || e));
+    revoked = null;
+  }
+  if (revoked) {
+    log.debug("Leaving heldCertificateIsCurrent(). Revoked.");
+    return false;
+  }
+  log.debug("Leaving heldCertificateIsCurrent(). Current.");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // THE STANDBY KEY GENERATIONS (2026-09-22, #42): the `next` key of each unit,
 // published before it is promoted, and each retired key still verifying. Each
 // is certified under its unit's Issuing CA in a slot of its own
@@ -10442,25 +10511,67 @@ async function certifyStandbyGroupEntry(id, one, standby) {
     : one.unit + '@' + one.kid + ': ' + done.errors.join(' ');
 }
 
+// ---------------------------------------------------------------------------
+// ONE CERTIFICATION OF A REALM'S KEY SET AT A TIME, IN THIS PROCESS
+// (2026-11-23).
+//
+// A set made by a read is certified by `helpers.js`'s `certifyLater()`, not
+// awaited; `pki.start()`, the realm watcher, a new generation and a request
+// waiting for its `x5c` each ask too. Two of them in flight together each
+// found a slot with no current certificate, each signed one, and the one that
+// saved second replaced the first's — a certificate that had already been
+// read, published or linked, gone a moment later (the in-process twin of the
+// start-up race several processes run against the store, which the merge
+// settles "first to commit wins"). Queued, the second finds the first's
+// certificates current and keeps them (`heldCertificateIsCurrent()`).
+// Nothing here calls back into a certification of the same realm, so the
+// queue cannot wait on itself.
+// ---------------------------------------------------------------------------
+const keySetCertifications = new Map();
+
 /**
  * Certifies every key in a realm's key set under its Issuing CAs: the RSA
  * key under JOSE and XML, the curve keys, the post-quantum keys and the
  * signer groups.
  *
+ * One at a time per realm in this process; a certificate already current is
+ * kept.
  * @param realmId - the realm
  * @param keys - the realm's key set
- * @returns a promise of `{ ok, certified, failed }`
+ * @returns a promise of `{ ok, certified, unchanged, failed }`
  */
-async function certifyKeySet(realmId, keys) {
+function certifyKeySet(realmId, keys) {
   log.debug('Entering certifyKeySet(). realm=' + realmId);
   const id = realmIdOf(realmId);
+  const before = keySetCertifications.get(id) || Promise.resolve();
+  const mine = before.then(null, function (e) {
+    log.debug("Caught in certifyKeySet(): " + ((e && e.message) || e));
+  }).then(function () {
+    return certifyKeySetNow(id, keys);
+  });
+  keySetCertifications.set(id, mine);
+  const forget = function () {
+    if (keySetCertifications.get(id) === mine) {
+      keySetCertifications.delete(id);
+    }
+  };
+  mine.then(forget, forget);
+  log.debug('Leaving certifyKeySet(). Queued.');
+  return mine;
+}
+
+async function certifyKeySetNow(realmId, keys) {
+  log.debug('Entering certifyKeySetNow(). realm=' + realmId);
+  const id = realmIdOf(realmId);
   if (!rawRowFor(id) || !rawRowFor(id).issuing) {
-    log.debug('Leaving certifyKeySet(). No branch for that realm.');
+    log.debug('Leaving certifyKeySetNow(). No branch for that realm.');
     return errorCodes.mark({ ok: false, certified: 0,
              errors: ['The "' + (id || 'default') + '" realm has no ' +
                       'certificate authority branch.'] }, 'STS-PKI-0008');
   }
   let certified = 0;
+  // Of those, the RSA and curve certificates already current and kept.
+  let unchanged = 0;
   const failed = [];
   // The kids still generations of this set, whose certificates a promotion
   // moves aside rather than supersedes (`keepDisplacedCertificate()`).
@@ -10478,7 +10589,7 @@ async function certifyKeySet(realmId, keys) {
     log.error(errorCodes.tag('STS-PKI-0030') + 'pki: the "' + id + '" ' +
               'realm\'s signing key could not be read to certify ' +
               'it: ' + e.message);
-    log.debug("Leaving certifyKeySet().");
+    log.debug("Leaving certifyKeySetNow().");
     return errorCodes.mark({ ok: false, certified: 0, errors: [e.message] },
                            'STS-PKI-0030');
   }
@@ -10491,7 +10602,7 @@ async function certifyKeySet(realmId, keys) {
       xmlPublicPem = stsCrypto.publicKeyOf(keys.xmlKey.privateKeyPem)
         .export({ type: 'spki', format: 'pem' });
     } catch (e) {
-      log.debug("Caught in certifyKeySet(): " + ((e && e.message) || e));
+      log.debug("Caught in certifyKeySetNow(): " + ((e && e.message) || e));
       xmlPublicPem = rsaPublicPem;
     }
   }
@@ -10508,6 +10619,13 @@ async function certifyKeySet(realmId, keys) {
     if (adoptGenerationCertificate(id, job.useCase, job.slot, job.kid,
                                    job.publicKeyPem)) {
       certified += 1;
+      continue;
+    }
+    // Still current: kept, so its fingerprint lives as long as the key.
+    if (heldCertificateIsCurrent(id, job.useCase, job.slot, job.kid,
+                                 job.publicKeyPem)) {
+      certified += 1;
+      unchanged += 1;
       continue;
     }
     const done = await certify(id, job.useCase, {
@@ -10544,6 +10662,11 @@ async function certifyKeySet(realmId, keys) {
     keepDisplacedCertificate(id, 'jose', slot, jwk.kid, keepKids);
     if (adoptGenerationCertificate(id, 'jose', slot, jwk.kid, publicPem)) {
       certified += 1;
+      continue;
+    }
+    if (heldCertificateIsCurrent(id, 'jose', slot, jwk.kid, publicPem)) {
+      certified += 1;
+      unchanged += 1;
       continue;
     }
     const done = await certify(id, 'jose', {
@@ -10606,11 +10729,14 @@ async function certifyKeySet(realmId, keys) {
     log.info('pki: the "' + id + '" realm\'s ' + certified + ' signing keys ' +
              'are certified under its own Intermediate CA — ' + extras.length +
              ' curve key(s) and the RSA key, which is certified twice ' +
-             'because it signs both JWTs and XML documents.');
+             'because it signs both JWTs and XML documents. ' + unchanged +
+             ' of the RSA and curve certificates were already current and ' +
+             'were kept.');
   }
-  log.debug('Leaving certifyKeySet(). ' + certified + ' certified.');
-  const verdict = { ok: !failed.length, certified: certified, failed: failed };
-  log.debug("Leaving certifyKeySet().");
+  log.debug('Leaving certifyKeySetNow(). ' + certified + ' certified.');
+  const verdict = { ok: !failed.length, certified: certified,
+                    unchanged: unchanged, failed: failed };
+  log.debug("Leaving certifyKeySetNow().");
   return failed.length ? errorCodes.mark(verdict, 'STS-PKI-0031') : verdict;
 }
 
@@ -11164,6 +11290,361 @@ function subjectCnOf(subject) {
   const found = /CN=([^,\n]+)/.exec(String(subject || ''));
   log.debug("Leaving subjectCnOf().");
   return found ? found[1].trim() : '';
+}
+
+// ===========================================================================
+// A CA CERTIFICATE RENEWED OVER THE SAME KEY, BEFORE IT EXPIRES (#2220, ASVS
+// 5.0.0 L3; key-management.md's Known gaps).
+//
+// Nothing renewed the Root, an Intermediate or an Issuing CA: each lived its
+// 20, 10 or 5 years and then every chain under it stopped validating, unless
+// somebody had pressed Replace the Root, Rebuild this branch or Reissue this
+// CA first — and each of those is a NEW KEY, which is a different authority:
+// a new Root is a new trust anchor everybody must be given, a rebuilt branch
+// supersedes everything under it. So the scheduled renewal does the one
+// thing none of them does: it issues the SAME authority a fresh certificate,
+// over the SAME key and with the SAME subject, signed by its parent (a Root
+// by itself). Everything follows from the key and the name not moving:
+//
+//   * **every certificate the authority signed still verifies**, against the
+//     old certificate and the renewed one alike, because a path is built on
+//     the issuer's name and checked with its key (RFC 5280 section 6.1); the
+//     authorityKeyIdentifier a child carries is the key's, and unchanged;
+//   * **a pin on the authority's key (its SubjectPublicKeyInfo) holds**, which
+//     is the pin the signer truststore and every `*TrustAnchors` setting
+//     compare by; a pin on the certificate's bytes is the one that moves, and
+//     the renewal never removes the certificate it replaced (below);
+//   * **paranoid PKI mode (#1360) keeps answering**: the certificate replaced
+//     is not revoked — a renewal is not a supersession — and its serial stays
+//     in the parent's register (`previous`, read by `pki_revocation.js`'s
+//     `issuedList()`), so an OCSP question about a chain a client still holds
+//     is answered `good` rather than `unknown`, until that certificate
+//     expires.
+//
+// **A ROOT RENEWAL IS A TRUST-ANCHOR CHANGE AND IS PUBLISHED, NEVER SWAPPED IN
+// SILENTLY.** The renewed Root is what `/pki/ca/service/root.cer` answers from
+// then on; the Root it replaced stays published at
+// `/pki/ca/service/root-previous.cer` until it expires, and every chain still
+// validates against either. The lead is long (`pki.rootRenewalLeadDays`,
+// three years) so that a relying party has the new certificate long before
+// the old one expires. A renewal keeps the key, so an anchor installed by key
+// keeps working through it; a NEW Root key is Replace the Root, which is an
+// on-demand act and is held for a second administrator when
+// `admin.dualControl` is on (`admin-core/dual_control.ts`, `buildPkiRoot`).
+// This job is scheduled, not on demand, and has no Run now.
+//
+// **AN IMPORTED AUTHORITY IS THE OPERATOR'S**, as its key is: its renewal is
+// theirs, and this renews none. **A RENEWAL THAT WOULD GAIN NOTHING IS NOT
+// MADE**: a CA cannot outlive its parent, so an Intermediate inside its lead
+// under a Root that expires first waits for the Root's renewal — which is
+// why the job renews top down, Root first.
+// ===========================================================================
+const CA_RENEW_DAY_MS = 86400000;
+// The fewest days a renewal must add to an authority's expiry, or it is not
+// made (a parent's own expiry clips it).
+const CA_RENEW_MIN_GAIN_MS = CA_RENEW_DAY_MS;
+// How many renewed-away certificates a tier keeps for the register.
+const CA_RENEW_KEPT = 4;
+
+// The lead before expiry inside which a tier is renewed, in milliseconds.
+function caRenewalLeadMs(tierName) {
+  log.debug("Entering caRenewalLeadMs(). " + tierName);
+  const days = Number(config.value(tierName === 'root'
+    ? 'pki.rootRenewalLeadDays' : 'pki.caRenewalLeadDays'));
+  log.debug("Leaving caRenewalLeadMs().");
+  return days > 0 ? days * CA_RENEW_DAY_MS : 0;
+}
+
+// The validity a renewal of `tier` under `parent` would get, from `nowMs`:
+// the configured lifetime of its tier (the profile's when 0), clipped to the
+// parent's expiry, as `issueCaTier()` clips it.
+function caRenewedValidity(tier, parent, nowMs) {
+  log.debug("Entering caRenewedValidity().");
+  const profile = x509.profile(tier.tier === 'root' ? 'root-ca'
+    : tier.tier === 'intermediate' ? 'intermediate-ca' : 'issuing-ca');
+  const configured = configuredTierYears(tier.tier);
+  const years = configured > 0 ? configured : profile.years;
+  const notBefore = certificateInstant(nowMs);
+  const notAfter = certificateInstant(notBefore.getTime());
+  notAfter.setUTCFullYear(notAfter.getUTCFullYear() + years);
+  if (parent && notAfter.getTime() > new Date(parent.notAfter).getTime()) {
+    notAfter.setTime(new Date(parent.notAfter).getTime());
+  }
+  log.debug("Leaving caRenewedValidity().");
+  return { notBefore: notBefore, notAfter: notAfter, profile: profile };
+}
+
+/**
+ * Whether one CA tier is due for its scheduled renewal at `nowMs`: inside
+ * its lead, not imported, and a renewal under its parent would extend it.
+ * Pure. Answers `{ due, why }`.
+ *
+ * @param tier - the tier record
+ * @param parent - its parent's tier record; null for the Root
+ * @param nowMs - the time, in epoch milliseconds
+ * @returns `{ due, why, notAfter }`
+ */
+function caTierDue(tier, parent, nowMs) {
+  log.debug("Entering caTierDue().");
+  const now = Number(nowMs) || Date.now();
+  if (!tier || !tier.certificatePem || !tier.privateKeyPem) {
+    log.debug("Leaving caTierDue(). Nothing held.");
+    return { due: false, why: 'nothing is held', notAfter: '' };
+  }
+  const ends = new Date(tier.notAfter).getTime();
+  if (tier.imported) {
+    log.debug("Leaving caTierDue(). Imported.");
+    return { due: false, notAfter: tier.notAfter,
+             why: 'it was imported, so its renewal is the operator\'s' };
+  }
+  // NEVER MORE THAN HALF ITS OWN LIFE: a CA made shorter than its lead
+  // would otherwise be due from the day it was made, and renewed daily.
+  const begins = new Date(tier.notBefore).getTime();
+  const lead = Math.min(caRenewalLeadMs(tier.tier),
+                        ends > begins ? (ends - begins) / 2 : 0);
+  if (!(lead > 0) || ends - now > lead) {
+    log.debug("Leaving caTierDue(). Not inside its lead.");
+    return { due: false, notAfter: tier.notAfter,
+             why: 'not due until ' +
+                  new Date(ends - lead).toISOString() };
+  }
+  const renewed = caRenewedValidity(tier, parent, now);
+  if (renewed.notAfter.getTime() < ends + CA_RENEW_MIN_GAIN_MS) {
+    log.debug("Leaving caTierDue(). Clipped by its parent.");
+    return { due: false, notAfter: tier.notAfter,
+             why: 'its parent expires first, so a renewal would gain ' +
+                  'nothing until the parent is renewed' };
+  }
+  log.debug("Leaving caTierDue(). Due.");
+  return { due: true, notAfter: tier.notAfter,
+           why: 'it expires ' + tier.notAfter + ', inside its renewal lead' };
+}
+
+/**
+ * The CA tiers the scheduled renewal would look at now, top down — the
+ * Root, then every scope's Intermediate, then their Issuing CAs — with
+ * whether each is due.
+ *
+ * @param nowMs - the time; now when omitted
+ * @returns `{ scope, tier, useCase, notAfter, due, why }` rows
+ */
+function caRenewalPlan(nowMs) {
+  log.debug("Entering caRenewalPlan().");
+  const out = [];
+  const root = serviceRoot();
+  if (root) {
+    out.push(Object.assign({ scope: SERVICE_SCOPE, tier: 'root',
+                             useCase: null },
+                           caTierDue(root, null, nowMs)));
+  }
+  const scopes = [PROCESS_SCOPE].concat(knownScopes().filter(function (id) {
+    return id !== PROCESS_SCOPE;
+  }));
+  scopes.forEach(function (scopeId) {
+    const row = rawRowFor(scopeId);
+    if (!row || !row.intermediate) {
+      return;
+    }
+    out.push(Object.assign({ scope: scopeId, tier: 'intermediate',
+                             useCase: null },
+                           caTierDue(row.intermediate, root, nowMs)));
+    Object.keys(row.issuing || {}).forEach(function (useCaseId) {
+      out.push(Object.assign({ scope: scopeId, tier: 'issuing',
+                               useCase: useCaseId },
+                             caTierDue(row.issuing[useCaseId],
+                                       row.intermediate, nowMs)));
+    });
+  });
+  log.debug("Leaving caRenewalPlan(). " + out.length + " tier(s).");
+  return out;
+}
+
+// The subject of a held certificate as the encoder takes it, read from the
+// certificate itself so the renewal names exactly what its children name as
+// their issuer.
+function caSubjectOf(certificatePem) {
+  log.debug("Entering caSubjectOf().");
+  const read = stsCrypto.parseCertificate(certificatePem);
+  const out = String(read.subject || '').split('\n').filter(Boolean)
+    .map(function (line) {
+      const at = line.indexOf('=');
+      return { name: line.slice(0, at), value: line.slice(at + 1) };
+    });
+  log.debug("Leaving caSubjectOf(). " + out.length + " attribute(s).");
+  return { attributes: out, text: String(read.subject || '') };
+}
+
+// The certificate a tier is renewed with: its own key, its own subject, its
+// parent's signature (its own, for the Root), and the extensions
+// `issueCaTier()` gives a tier of its kind.
+async function issueRenewedCaCertificate(tier, parent, scopeId, nowMs) {
+  log.debug("Entering issueRenewedCaCertificate(). " + tier.tier);
+  const validity = caRenewedValidity(tier, parent, nowMs);
+  const subject = caSubjectOf(tier.certificatePem);
+  const publicKeyPem = tier.publicKeyPem ||
+    stsCrypto.parseCertificate(tier.certificatePem).publicKey
+             .export({ type: 'spki', format: 'pem' });
+  const sigAlgId = signatureForIssuer(parent, tier.signatureAlg, tier.keyAlg);
+  const altSigner = parent
+    ? parent
+    : (tier.altPrivateKeyPem ? { altKeyAlg: tier.altKeyAlg,
+                                 altPrivateKeyPem: tier.altPrivateKeyPem }
+                             : null);
+  const kind = scopeKindOf(String(scopeId));
+  const pathLen = tier.tier === 'intermediate' ? intermediatePathLen(kind)
+    : tier.tier === 'issuing' ? issuingPathLen(tier.useCase)
+    : validity.profile.pathLen;
+  const issued = await x509.issueCertificate(Object.assign({
+    subject: subject.attributes,
+    subjectPublicKey: publicKeyPem,
+    subjectAltPublicKey: tier.altPublicKeyPem || undefined,
+    signatureAlg: sigAlgId,
+    profile: validity.profile.id || (tier.tier === 'root' ? 'root-ca'
+      : tier.tier === 'intermediate' ? 'intermediate-ca' : 'issuing-ca'),
+    notBefore: validity.notBefore.toISOString(),
+    notAfter: validity.notAfter.toISOString(),
+    issuer: parent
+      ? { certificatePem: parent.certificatePem,
+          privateKeyPem: parent.privateKeyPem, keyAlg: parent.keyAlg }
+      : { privateKeyPem: tier.privateKeyPem, keyAlg: tier.keyAlg },
+    extensions: Object.assign({
+      basicConstraints: { present: true, critical: true, ca: true,
+                          pathLen: pathLen },
+      keyUsage: { present: true, critical: true,
+                  usages: validity.profile.keyUsage },
+      subjectKeyIdentifier: { present: true },
+      authorityKeyIdentifier: { present: true }
+    }, parent
+      ? revocationExtensionsFor(parent.scope || scopeId,
+                                parent.useCase || parent.tier)
+      : {})
+  }, alternativeSignatureBy(altSigner)));
+  // THE NAME MUST NOT MOVE: a renewal whose subject differs is another
+  // authority, and every child would stop finding its issuer.
+  const renewedSubject = caSubjectOf(issued.pem).text;
+  if (renewedSubject !== subject.text) {
+    log.debug("Leaving issueRenewedCaCertificate(). The subject moved.");
+    throw errorCodes.mark(new Error('the renewed certificate\'s subject (' +
+      renewedSubject.replace(/\n/g, ', ') + ') is not the one it renews (' +
+      subject.text.replace(/\n/g, ', ') + ')'), 'STS-PKI-0311');
+  }
+  const previous = [{ serialHex: tier.serialHex, subject: tier.subject,
+                      notBefore: tier.notBefore, notAfter: tier.notAfter,
+                      certificatePem: tier.certificatePem,
+                      renewedAt: Date.now() }]
+    .concat(tier.previous || [])
+    .filter(function (one) {
+      return one && new Date(one.notAfter).getTime() > Date.now();
+    }).slice(0, CA_RENEW_KEPT);
+  log.debug("Leaving issueRenewedCaCertificate(). " + issued.serialHex);
+  return Object.assign({}, tier, {
+    serialHex: issued.serialHex,
+    subject: issued.subject || tier.subject,
+    notBefore: validity.notBefore.toISOString(),
+    notAfter: validity.notAfter.toISOString(),
+    certificatePem: issued.pem,
+    signatureAlg: sigAlgId,
+    altSignatureAlg: (altSigner && altSigner.altPrivateKeyPem &&
+                      altSigner.altKeyAlg) || tier.altSignatureAlg || null,
+    thumbprint: thumbprintOf(issued.pem),
+    renewedAt: Date.now(),
+    previous: previous
+  });
+}
+
+/**
+ * Renews one CA tier's certificate over the same key and subject, signed by
+ * its parent, and stores it; the certificate it replaces is kept, public
+ * only, in the tier's `previous` (the register, and for the Root the
+ * published `root-previous.cer`). One build of the scope at a time.
+ *
+ * @param scopeId - `SERVICE_SCOPE` for the Root, else a realm id or
+ *   `PROCESS_SCOPE`
+ * @param tierName - 'root', 'intermediate' or 'issuing'
+ * @param useCaseId - the Issuing CA's use case, for 'issuing'
+ * @param nowMs - the time; now when omitted
+ * @returns a promise of `{ ok, tier, from, to }` or `{ ok: false, errors }`
+ *   marked STS-PKI-0310
+ */
+function renewCaCertificate(scopeId, tierName, useCaseId, nowMs) {
+  log.debug("Entering renewCaCertificate(). scope=" + scopeId + " tier=" +
+            tierName + " use=" + (useCaseId || ''));
+  const id = tierName === 'root' ? SERVICE_SCOPE : String(scopeId);
+  log.debug("Leaving renewCaCertificate(). Queued behind any build.");
+  return oneBuildAtATime(id, async function () {
+    const root = serviceRoot();
+    const row = tierName === 'root' ? serviceRow() : rawRowFor(id);
+    const tier = tierName === 'root' ? root
+      : tierName === 'intermediate' ? (row && row.intermediate)
+      : (row && row.issuing && row.issuing[useCaseId]);
+    const parent = tierName === 'root' ? null
+      : tierName === 'intermediate' ? root : (row && row.intermediate);
+    const verdict = caTierDue(tier, parent, nowMs);
+    if (!verdict.due) {
+      return { ok: true, renewed: false, why: verdict.why };
+    }
+    let renewed = null;
+    try {
+      renewed = await issueRenewedCaCertificate(tier, parent, id, nowMs);
+    } catch (e) {
+      log.error(errorCodes.tag(errorCodes.codeOf(e) || 'STS-PKI-0310') +
+                'pki: the ' + (tier.label || tierName) + ' of "' +
+                (id || 'default') + '" could not be renewed: ' + e.message +
+                '. It goes on as it is, and expires ' + tier.notAfter + '.');
+      return errorCodes.mark({ ok: false, errors: ['The ' +
+        (tier.label || tierName) + ' could not be renewed: ' + e.message] },
+        errorCodes.codeOf(e) || 'STS-PKI-0310');
+    }
+    // ON THE ROW AS IT IS NOW (buildScopeNow()'s reason): the issue above
+    // awaited, and a revocation or a row adopted meanwhile must survive.
+    if (tierName === 'root') {
+      keystore.attachPki(SERVICE_SCOPE, Object.assign({}, serviceRow() || {},
+                                                      { root: renewed }));
+    } else {
+      const now = Object.assign({}, rawRowFor(id) || row);
+      if (tierName === 'intermediate') {
+        now.intermediate = renewed;
+      } else {
+        now.issuing = Object.assign({}, now.issuing || {});
+        now.issuing[useCaseId] = renewed;
+      }
+      delete now.tiers;
+      saveRow(id, now);
+    }
+    log.info('pki: the ' + (tier.label || tierName) + ' of "' +
+             (tierName === 'root' ? 'the service' : (id || 'default')) +
+             '" was renewed over the same key and subject: serial ' +
+             tier.serialHex + ' (expires ' + tier.notAfter + ') -> ' +
+             renewed.serialHex + ' (expires ' + renewed.notAfter + ').' +
+             (tierName === 'root'
+               ? ' The Root it replaced is still published at ' +
+                 '/pki/ca/service/root-previous.cer until it expires; give ' +
+                 'relying parties the renewed one before then.' : ''));
+    return { ok: true, renewed: true, tier: describeTier(renewed),
+             from: { serialHex: tier.serialHex, notAfter: tier.notAfter },
+             to: { serialHex: renewed.serialHex,
+                   notAfter: renewed.notAfter } };
+  });
+}
+
+/**
+ * The Root certificates a renewal replaced that have not expired, newest
+ * first, public only — what `/pki/ca/service/root-previous.cer` serves.
+ *
+ * @returns `{ serialHex, notAfter, certificatePem }` rows
+ */
+function previousRootCertificates() {
+  log.debug("Entering previousRootCertificates().");
+  const root = serviceRoot();
+  const out = ((root && root.previous) || []).filter(function (one) {
+    return one && one.certificatePem &&
+           new Date(one.notAfter).getTime() > Date.now();
+  }).map(function (one) {
+    return { serialHex: one.serialHex, notAfter: one.notAfter,
+             certificatePem: one.certificatePem };
+  });
+  log.debug("Leaving previousRootCertificates(). " + out.length + ".");
+  return out;
 }
 
 // A NEW KEY for one Issuing CA, and everything under it re-certified from it.
@@ -12652,9 +13133,13 @@ function registerCertifiable(spec) {
  * @param useCaseId - the use case it was issued under
  * @param held - `{ certificatePem, chainPem }`
  * @param publicKeyPem - the key being certified
+ * @param options - optional; `renewWithinMs`, a lead before expiry inside
+ *   which the certificate is due as well (#2220: the listener renewal job's
+ *   `tls.serverCertificateRenewLeadDays`), on top of the third
  * @returns `{ current: true }`, or `{ current: false, why }`
  */
-function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem) {
+function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem,
+                                options) {
   log.debug('Entering heldCertificateCurrent(). scope=' + scopeId + ' use=' +
             useCaseId);
   const id = String(scopeId);
@@ -12703,6 +13188,14 @@ function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem) {
     return { current: false,
              why: 'less than a third of its validity remains' };
   }
+  // THE LEAD AN OPERATOR ASKED FOR (#2220), where it is longer than the
+  // third: a certificate inside it is renewed as one past the third is.
+  const lead = Number(options && options.renewWithinMs) || 0;
+  if (lead > 0 && !(to - now > lead)) {
+    log.debug('Leaving heldCertificateCurrent(). Inside the renewal lead.');
+    return { current: false,
+             why: 'it expires within the renewal lead' };
+  }
   const revocation = require('./pki_revocation');
   const serial = read.serialNumber;
   if (!revocation.issuedHere(id, uc.id, serial)) {
@@ -12731,13 +13224,15 @@ function heldCertificateCurrent(scopeId, useCaseId, held, publicKeyPem) {
  * Certifies everything registered through `registerCertifiable()`.
  *
  * @param opts - `repairBranch: false` leaves a stale branch for the process
- *   rebuilding it
+ *   rebuilding it; `renewWithinMs`, a lead before expiry inside which a held
+ *   certificate is renewed too (#2220, `heldCertificateCurrent()`)
  * @returns a promise of how many registrations were certified
  */
 async function certifyRegistered(opts) {
   log.debug('Entering certifyRegistered(). ' + certifiable.length +
             ' registration(s).');
   const repairBranch = !(opts && opts.repairBranch === false);
+  const renewWithinMs = Number(opts && opts.renewWithinMs) || 0;
   let done = 0;
   for (let i = 0; i < certifiable.length; i++) {
     const one = certifiable[i];
@@ -12770,7 +13265,8 @@ async function certifyRegistered(opts) {
         held = null;
       }
       const verdict = held
-        ? heldCertificateCurrent(scope, one.useCase, held, publicPem)
+        ? heldCertificateCurrent(scope, one.useCase, held, publicPem,
+                                 { renewWithinMs: renewWithinMs })
         : { current: false, why: 'nothing is held' };
       if (verdict.current) {
         log.info('pki: the ' + one.useCase + ' key "' + one.slot + '" ' +
@@ -13566,8 +14062,12 @@ function report(realmId) {
 // PROTOCOL.certkeys: ssh-rsa, ecdsa-sha2-nistp256/384/521, ssh-ed25519 and
 // their -cert-v01 versions, an authorized_keys line, SHA-256 fingerprints,
 // and `checkSshHostCertificate()`, which is `x/crypto/ssh`'s
-// `CertChecker.CheckHostKey()`. The security-key (`sk-`) types and DSA are
-// refused; OpenSSH defines no post-quantum signature.
+// `CertChecker.CheckHostKey()`. DSA is refused; OpenSSH defines no
+// post-quantum signature. Since #1955 P3 the two security-key (`sk-`) types
+// PARSE — the SSH user CA certifies them — and still verify no signature.
+// The same section ISSUES user certificates (`buildSshCertificate()`), builds
+// a key revocation list (PROTOCOL.krl, `buildSshKrl()`) and reads a security
+// key's enrolment attestation (PROTOCOL.u2f, `parseSshSkAttestation()`).
 // ===========================================================================
 
 // One certificate from DER: `{ der, pem, x509, sha1 }`, `sha1` being SPIRE's
@@ -13762,10 +14262,30 @@ function namedAnchors(source, options) {
   let anchorDers = [];
   let intermediates = [];
   if (source === 'signer-truststore') {
-    const held = require('./signer_truststore')
-      .anchorsFor(options.realmId, options.purpose);
-    anchorDers = held.anchors;
-    intermediates = held.intermediates;
+    // THE USE CASE'S TRUSTSTORES (#2118): what the purpose's use case is
+    // assigned, the signer truststore among them by default. A purpose with
+    // no such use case keeps the signer truststore alone. Both are reached
+    // lazily: each requires this module.
+    const useCases = require('./truststore_use_cases');
+    const row = useCases.forPurpose(options.purpose, options.variant);
+    if (row && useCases.assignable(row)) {
+      const resolved = require('./truststores').resolve(row.id, {
+        realmId: options.realmId, expandSystem: true,
+        context: Object.assign({ purpose: options.purpose },
+                               options.trustContext || {})
+      });
+      anchorDers = resolved.anchors.map(function (pem) {
+        return pemToDer(pem);
+      });
+      intermediates = resolved.intermediates.map(function (pem) {
+        return pemToDer(pem);
+      });
+    } else {
+      const held = require('./signer_truststore')
+        .anchorsFor(options.realmId, options.purpose);
+      anchorDers = held.anchors;
+      intermediates = held.intermediates;
+    }
   } else {
     anchorDers = trustAnchorsFor(options.realmId).map(function (pem) {
       return pemToDer(pem);
@@ -14711,10 +15231,62 @@ function sshKeyFields(type, reader) {
     return { key: stsCrypto.publicKeyFromJwk(
       { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) }), curve: '' };
   }
+  // THE TWO SECURITY-KEY TYPES (#1955 P3, PROTOCOL.u2f): the key a FIDO
+  // authenticator holds, and the APPLICATION it was made for (the RP ID the
+  // authenticator hashed, `ssh:` by default). Read so the SSH user CA can
+  // certify them; `verifySshSignature()` still verifies no signature BY one,
+  // since a security key's signature carries flags and a counter no caller
+  // here reads, so a host key or an authority of these types is refused
+  // exactly as before.
+  if (type === 'sk-ecdsa-sha2-nistp256@openssh.com') {
+    const curve = reader.text();
+    const q = reader.string();
+    const application = reader.text();
+    const spec = SSH_CURVES.nistp256;
+    if (curve !== 'nistp256' || q[0] !== 4 || q.length !== 1 + 2 * spec.bytes) {
+      log.debug("Leaving sshKeyFields(). A bad security-key point.");
+      // error-code: none — see sshReader()
+      throw new Error('the security-key ECDSA key is not an uncompressed ' +
+                      'nistp256 point');
+    }
+    log.debug("Leaving sshKeyFields(). A security-key ECDSA key.");
+    return { curve: 'nistp256', sk: true, application: application,
+             key: stsCrypto.publicKeyFromJwk(
+               { kty: 'EC', crv: spec.crv,
+                 x: b64u(q.subarray(1, 1 + spec.bytes)),
+                 y: b64u(q.subarray(1 + spec.bytes)) }) };
+  }
+  if (type === 'sk-ssh-ed25519@openssh.com') {
+    const pk = reader.string();
+    const application = reader.text();
+    if (pk.length !== 32) {
+      log.debug("Leaving sshKeyFields(). A bad security-key Ed25519 key.");
+      // error-code: none — see sshReader()
+      throw new Error('an Ed25519 key is 32 bytes');
+    }
+    log.debug("Leaving sshKeyFields(). A security-key Ed25519 key.");
+    return { key: stsCrypto.publicKeyFromJwk(
+      { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) }), curve: '', sk: true,
+             application: application };
+  }
+  // THIS SERVICE'S OWN NAME. OpenSSH defines no ML-DSA key type. The body
+  // is the raw public key, the same shape as ssh-ed25519's one string.
+  // There is no node key: a caller verifies with the raw bytes.
+  if (type === 'ssh-mldsa-65') {
+    const pk = reader.string();
+    if (pk.length !== 1952) {
+      log.debug("Leaving sshKeyFields(). A bad ML-DSA-65 key.");
+      // error-code: none — see sshReader()
+      throw new Error('an ML-DSA-65 SSH key is 1952 bytes');
+    }
+    log.debug("Leaving sshKeyFields(). ML-DSA-65.");
+    return { key: null, raw: pk, curve: '', pq: true };
+  }
   log.debug("Leaving sshKeyFields(). Unsupported.");
   // error-code: none — see sshReader()
   throw new Error('the SSH key type ' + type + ' is not supported (ssh-rsa, ' +
-                  'ecdsa-sha2-nistp256/384/521 and ssh-ed25519 are)');
+                  'ecdsa-sha2-nistp256/384/521, ssh-ed25519, ssh-mldsa-65 ' +
+                  'and the two security-key types are)');
 }
 
 // A packed list of name-value pairs (critical options, extensions).
@@ -14741,8 +15313,9 @@ function sshOptions(bytes) {
  * `ssh.ParsePublicKey()`.
  *
  * @param blob - the wire-format bytes
- * @returns `{ type, key, curve, blob }` for a key; a certificate adds its
- *   fields, `signatureKey`, `signature` and `signed` (the signed bytes)
+ * @returns `{ type, key, curve, blob, raw }` for a key (`raw` is the
+ *   ML-DSA public key); a certificate adds its fields, `signatureKey`,
+ *   `signature` and `signed` (the signed bytes)
  * @throws Error on anything unreadable
  */
 function parseSshPublicKey(blob) {
@@ -14758,7 +15331,11 @@ function parseSshPublicKey(blob) {
       throw new Error('trailing bytes after the SSH public key');
     }
     log.debug("Leaving parseSshPublicKey(). A key.");
-    return { type: type, key: fields.key, curve: fields.curve, blob: bytes };
+    // raw is the ML-DSA public key. Classical algorithms leave it unset
+    // and carry the key in `key` instead.
+    return { type: type, key: fields.key, curve: fields.curve, blob: bytes,
+             raw: fields.raw || null, sk: !!fields.sk,
+             application: fields.application || '' };
   }
   const keyType = type.slice(0, -SSH_CERT_SUFFIX.length);
   const nonce = reader.string();
@@ -14795,6 +15372,8 @@ function parseSshPublicKey(blob) {
   log.debug("Leaving parseSshPublicKey(). A certificate.");
   return {
     type: keyType, certType: type, key: fields.key, curve: fields.curve,
+    raw: fields.raw || null, sk: !!fields.sk,
+    application: fields.application || '',
     blob: bytes, nonce: nonce, serial: serial, kind: kind, keyId: keyId,
     principals: principals, validAfter: validAfter, validBefore: validBefore,
     criticalOptions: criticalOptions, extensions: extensions,
@@ -14972,6 +15551,1294 @@ async function checkSshHostCertificate(cert, principal, authorities,
   return '';
 }
 
+// ----- OpenSSH: ISSUING (#1955 P3) ------------------------------------------
+//
+// THE SSH USER CERTIFICATE AUTHORITY'S PRIMITIVES. `ssh/ssh_ca.ts` holds the
+// realm's authority and decides what a certificate says; this section only
+// WRITES the wire formats — PROTOCOL.certkeys' -cert-v01 certificate,
+// PROTOCOL.krl's key revocation list — and reads a security key's enrolment
+// attestation (PROTOCOL.u2f). Every signature is `crypto.js`'s
+// (`signRawSignature()`), and the authority signs with ssh-ed25519,
+// ecdsa-sha2-nistp256/384/521 or RFC 8332's rsa-sha2-256 and rsa-sha2-512,
+// NEVER `ssh-rsa` (SHA-1), which OpenSSH itself has refused by default since
+// 8.8.
+//
+// OPENSSH DEFINES NO POST-QUANTUM USER CERTIFICATE. A second authority,
+// `sshUserCaPqc`, signs with this service's own `ssh-mldsa-65` (a raw
+// ML-DSA-65 public key and a raw signature, the ssh-ed25519 shape) when the
+// runtime can generate one. The line `/pki/ssh-user-ca` publishes by default
+// is always the classical authority: a peer's TrustedUserCAKeys file cannot
+// be asked to parse an algorithm OpenSSH does not name. The ML-DSA
+// authority's line is published BESIDE it, at the same path with
+// `?algorithm=ssh-mldsa-65`, so a server built to verify it has a key to
+// trust; stock OpenSSH verifies no ML-DSA certificate yet.
+// `pki.sshUserCaPqcOnly` changes what a NEW certificate is signed with, and
+// REFUSES (STS-PKI-0297) rather than issue a classical certificate when the
+// ML-DSA authority does not exist, as `openpgp.pqcOnly` and
+// `webauthn.pqcOnly` refuse rather than fall back.
+// ---------------------------------------------------------------------------
+
+const SSH_USER_CA_USE_CASE = 'ssh-user-ca';
+const SSH_USER_CA_LIFETIME_MAX_S = 3600;
+
+/**
+ * Ensures this realm has one SSH user CA, coordinated through the PKI row.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, ca }`, or a marked refusal
+ */
+async function sshUserCaForAsync(scopeId) {
+  log.debug("Entering sshUserCaForAsync().");
+  const id = realmIdOf(scopeId);
+  const existing = function () {
+    const row = rawRowFor(id);
+    return row && row.sshUserCa
+      ? { ok: true, ca: row.sshUserCa } : null;
+  };
+  try {
+    // THE AUTHORITY THIS PROCESS ALREADY HOLDS IS THE ANSWER, and a build
+    // waits behind any other build of it here (`ensureRoot()`'s shape).
+    // `oneBuildInTheCluster()` consults `existing` only when it coordinates
+    // with other nodes; with nothing to coordinate (memory mode) it runs the
+    // build at once, so every call made a NEW CA key and saved it over the
+    // last: a certificate was signed by one key and /pki/ssh-user-ca then
+    // published another (sts_ssh_user_ca.js, run 45143091785).
+    const build = async function () {
+      log.debug("Entering build(). sshUserCa");
+      const key = await generateSshCaKey(sshClassicalCaAlgorithm());
+      const row = Object.assign({}, rawRowFor(id) || {}, {
+        sshUserCa: {
+          algorithm: key.algorithm,
+          privateKeyPem: key.privatePem,
+          publicBlobB64: key.publicBlob.toString('base64'),
+          publicLine: key.publicLine,
+          fingerprint: key.fingerprint,
+          createdAt: new Date().toISOString()
+        }
+      });
+      saveRow(id, row);
+      log.debug("Leaving build(). sshUserCa");
+      return { ok: true, ca: row.sshUserCa };
+    };
+    const answer = await oneBuildAtATime(SSH_USER_CA_USE_CASE + ':' + id,
+      function () {
+        return existing() ||
+          oneBuildInTheCluster(id, 'sshUserCa', existing, build,
+                               { claim: SSH_USER_CA_USE_CASE + ':' + id,
+                                 label: 'the realm\'s SSH user CA' });
+      });
+    if (answer && answer.ok) {
+      // The sibling is best-effort. A runtime that cannot generate ML-DSA
+      // keeps the classical authority and does not fail the realm.
+      await ensureSshUserCaPqc(id);
+    }
+    log.debug("Leaving sshUserCaForAsync(). " +
+              (answer && answer.ok ? 'Ready.' : 'Refused.'));
+    return answer;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the "' +
+              (id || 'default') + '" realm\'s SSH user CA could not be ' +
+              'made: ' + ((e && e.message) || e));
+    log.debug("Leaving sshUserCaForAsync(). Failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The realm\'s SSH user certificate authority could not be made.'
+    ] }, 'STS-PKI-0290');
+  }
+}
+
+/**
+ * Answers the realm's OpenSSH `TrustedUserCAKeys` line.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, publicLine, fingerprint, pqcPublicLine,
+ *   pqcFingerprint }`, or a marked refusal
+ */
+async function sshUserCaPublicKeyAsync(scopeId) {
+  log.debug("Entering sshUserCaPublicKeyAsync().");
+  const answer = await sshUserCaForAsync(scopeId);
+  if (!answer || !answer.ok || !answer.ca) {
+    log.debug("Leaving sshUserCaPublicKeyAsync(). Refused.");
+    return answer;
+  }
+  const row = rawRowFor(realmIdOf(scopeId)) || {};
+  const pqc = row.sshUserCaPqc;
+  log.debug("Leaving sshUserCaPublicKeyAsync().");
+  // `publicLine` is the classical key only. `pqcPublicLine` is the ML-DSA
+  // sibling, published at the same path with `?algorithm=ssh-mldsa-65`
+  // (`pki/pki_service.ts`), never concatenated onto the classical body.
+  return { ok: true, publicLine: answer.ca.publicLine,
+           fingerprint: answer.ca.fingerprint,
+           pqcPublicLine: pqc ? pqc.publicLine : '',
+           pqcFingerprint: pqc ? pqc.fingerprint : '' };
+}
+
+// THE REGISTER OF ISSUED SSH CERTIFICATES (`common/ssh_issued.ts`, the
+// #1955 review): a store of its own, reached at the moment of use (it
+// requires the realms and the cache registry). Until the review the serials
+// were a member of the PKI row, `sshIssued`, which every issuance rewrote
+// whole; what is on the row is still read (backwards compatibility), and
+// nothing new is written there.
+function sshIssuedRegister() {
+  log.debug("Entering sshIssuedRegister().");
+  log.debug("Leaving sshIssuedRegister().");
+  return require('./ssh_issued');
+}
+
+/**
+ * The OpenSSH certificate extensions a realm's user certificates carry
+ * (`pki.sshUserCertificateExtensions`): the names PROTOCOL.certkeys
+ * defines, in the order given, an unknown name dropped. The default is
+ * `ssh-keygen`'s own set.
+ *
+ * @returns the extension names
+ */
+function sshUserCertificateExtensions() {
+  log.debug("Entering sshUserCertificateExtensions().");
+  const raw = config.value('pki.sshUserCertificateExtensions');
+  const asked = Array.isArray(raw) ? raw.map(String)
+    : String(raw === undefined || raw === null ? '' : raw).split(',');
+  const out = [];
+  asked.map(function (one) {
+    return String(one).trim();
+  }).forEach(function (one) {
+    if (SSH_USER_EXTENSIONS.indexOf(one) >= 0 && out.indexOf(one) < 0) {
+      out.push(one);
+    }
+  });
+  log.debug("Leaving sshUserCertificateExtensions(). " + out.length);
+  return out;
+}
+
+/**
+ * The extensions PROTOCOL.certkeys defines for a user certificate.
+ */
+const SSH_USER_EXTENSIONS = ['no-touch-required', 'permit-X11-forwarding',
+  'permit-agent-forwarding', 'permit-port-forwarding', 'permit-pty',
+  'permit-user-rc'];
+
+/**
+ * Issues and records a short-lived SSH user certificate.
+ *
+ * @param scopeId - the realm
+ * @param spec - `{ subjectBlob, principals, ownerSubject, lifetimeS,
+ *   hardwareBound, evidence, extensions }` — `extensions` the names the
+ *   certificate carries, the realm's `pki.sshUserCertificateExtensions`
+ *   where omitted
+ * @returns `{ ok, line, serialHex, validAfter, validBefore, pqcLine,
+ *   pqcSerialHex }`, or a refusal
+ */
+async function issueSshUserCertificateAsync(scopeId, spec) {
+  log.debug("Entering issueSshUserCertificateAsync().");
+  const id = realmIdOf(scopeId);
+  const s = spec || {};
+  let subject;
+  try {
+    subject = parseSshPublicKey(s.subjectBlob);
+  } catch (e) {
+    log.debug("Caught in issueSshUserCertificateAsync(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving issueSshUserCertificateAsync(). Invalid key.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH public key is not a supported OpenSSH public key.'
+    ] }, 'STS-PKI-0289');
+  }
+  const principals = Array.isArray(s.principals) ? s.principals : [];
+  const validPrincipals = principals.length > 0 &&
+    principals.length <= 64 &&
+    principals.every(function (principal) {
+      return typeof principal === 'string' && principal.length > 0 &&
+        principal.length <= 256 && !/[\u0000-\u001f\u007f]/.test(principal);
+    }) && new Set(principals).size === principals.length;
+  if (!subject || subject.certType || !validPrincipals) {
+    log.debug("Leaving issueSshUserCertificateAsync(). Invalid request.");
+    return errorCodes.mark({ ok: false, errors: [
+      'A public key and at least one permitted principal are required.'
+    ] }, 'STS-PKI-0289');
+  }
+  const seconds = Number(s.lifetimeS);
+  if (!Number.isInteger(seconds) || seconds < 60 ||
+      seconds > SSH_USER_CA_LIFETIME_MAX_S) {
+    log.debug("Leaving issueSshUserCertificateAsync(). Lifetime.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate lifetime is outside the allowed range.'
+    ] }, 'STS-PKI-0289');
+  }
+  const caAnswer = await sshUserCaForAsync(id);
+  if (!caAnswer || !caAnswer.ok || !caAnswer.ca) {
+    log.debug("Leaving issueSshUserCertificateAsync(). No CA.");
+    return caAnswer;
+  }
+  const pqcAnswer = await ensureSshUserCaPqc(id);
+  const pqcCa = pqcAnswer && pqcAnswer.ok ? pqcAnswer.ca : null;
+  // pqcOnly signs the new certificate with the ML-DSA authority and nothing
+  // else. Where that authority does not exist (a runtime that cannot
+  // generate ML-DSA, ssh-mldsa-65 off the algorithm list, or a failed
+  // build) the request is REFUSED: a switch that says post-quantum only
+  // does not quietly hand out a classical certificate, the rule
+  // openpgp.pqcOnly and webauthn.pqcOnly follow. Alongside issues both
+  // when it can, and the classical one alone when it cannot.
+  if (sshUserCaPqcOnly() && !pqcCa) {
+    log.warn(errorCodes.tag('STS-PKI-0297') + 'pki: the "' +
+             (id || 'default') + '" realm has pki.sshUserCaPqcOnly on and ' +
+             'no ML-DSA SSH user CA (' + (stsCrypto.mlDsaAvailable()
+               ? (sshPqCaWanted() ? 'it could not be made'
+                                  : 'ssh-mldsa-65 is not in ' +
+                                    'pki.sshUserCaAlgorithms')
+               : 'this runtime cannot generate ML-DSA') +
+             '), so no SSH user certificate was issued.');
+    log.debug("Leaving issueSshUserCertificateAsync(). No ML-DSA CA.");
+    return errorCodes.mark({ ok: false, errors: [
+      'SSH user certificates are post-quantum only in this realm, and its ' +
+      'ML-DSA certificate authority is not available.'
+    ] }, 'STS-PKI-0297');
+  }
+  const onlyPqc = sshUserCaPqcOnly();
+  const beside = sshUserCaAlongside() && !!pqcCa;
+  const cas = [];
+  if (!onlyPqc) {
+    cas.push({ ca: caAnswer.ca, member: 'sshUserCa' });
+  }
+  if (onlyPqc || beside) {
+    cas.push({ ca: pqcCa, member: 'sshUserCaPqc' });
+  }
+  // THE EXTENSIONS (the #1955 review): a certificate issued with none lets
+  // its holder open no shell — OpenSSH grants no pty, forwarding or rc
+  // without them — so the realm's list, ssh-keygen's own set by default.
+  const extensions = Array.isArray(s.extensions)
+    ? s.extensions.filter(function (one) {
+      return SSH_USER_EXTENSIONS.indexOf(String(one)) >= 0;
+    }).map(String)
+    : sshUserCertificateExtensions();
+  const now = Math.floor(Date.now() / 1000);
+  const validAfter = now - 30;
+  const validBefore = now + seconds;
+  let signed = [];
+  try {
+    signed = cas.map(function (one) {
+      const serial = nextSshUserSerial();
+      const serialHex = serial.toString(16);
+      const certificate = buildSshCertificate({
+        subjectBlob: subject.blob, serial: serial,
+        keyId: 'sts:' + serialHex, principals: principals,
+        validAfter: validAfter, validBefore: validBefore,
+        criticalOptions: {}, extensions: extensions,
+        caAlgorithm: one.ca.algorithm,
+        caPrivateKey: one.ca.privateSeedB64
+          ? Buffer.from(one.ca.privateSeedB64, 'base64')
+          : one.ca.privateKeyPem,
+        caPublicBlob: Buffer.from(one.ca.publicBlobB64, 'base64')
+      });
+      return { line: certificate.line, serialHex: serialHex,
+               member: one.member };
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
+              'certificate could not be signed: ' + ((e && e.message) || e));
+    log.debug("Leaving issueSshUserCertificateAsync(). Failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user certificate could not be issued.'
+    ] }, 'STS-PKI-0290');
+  }
+  // RECORDED, ONE ROW PER CERTIFICATE, BEFORE IT IS ANSWERED (the register's
+  // header): a certificate the register did not keep could not be revoked.
+  const rows = signed.map(function (one) {
+    return {
+      serialHex: one.serialHex, keyType: subject.type,
+      keyFingerprint: sshFingerprint(subject),
+      ownerSubject: String(s.ownerSubject || ''),
+      principals: principals.slice(),
+      issuedAt: new Date(now * 1000).toISOString(),
+      notAfter: new Date(validBefore * 1000).toISOString(),
+      hardwareBound: s.hardwareBound === true,
+      evidence: s.evidence ? String(s.evidence) : '',
+      extensions: extensions.slice(),
+      caMember: one.member,
+      // The certificate itself, public (#2050): what the holder's entry
+      // carries in `stsSshUserCertificate`, and what the entries job writes
+      // back where that write failed.
+      certificate: one.line
+    };
+  });
+  let kept = false;
+  try {
+    kept = await sshIssuedRegister().record(id, rows);
+  } catch (e) {
+    log.debug("Caught in issueSshUserCertificateAsync(): " +
+              ((e && e.message) || e));
+    kept = false;
+  }
+  if (!kept && keystore.persists()) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
+              'certificate was signed but its serial could not be ' +
+              'recorded.');
+    log.debug("Leaving issueSshUserCertificateAsync(). Store failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user certificate could not be recorded.'
+    ] }, 'STS-PKI-0290');
+  }
+  log.debug("Leaving issueSshUserCertificateAsync(). Issued.");
+  const primary = signed[0];
+  const extra = signed.length > 1 ? signed[1] : null;
+  const pqc = extra || (onlyPqc ? primary : null);
+  return { ok: true, line: primary.line, serialHex: primary.serialHex,
+           validAfter: validAfter, validBefore: validBefore,
+           pqcLine: pqc ? pqc.line : '',
+           pqcSerialHex: pqc ? pqc.serialHex : '',
+           extensions: extensions.slice() };
+}
+
+/**
+ * A person's SSH user certificates that have not expired, newest first:
+ * the register's, and those the PKI row recorded before the #1955 review.
+ *
+ * @param scopeId - the realm
+ * @param ownerSubject - the person's subject (`urn:uuid:...`)
+ * @returns a promise of the rows
+ */
+async function sshUserCertificatesOfAsync(scopeId, ownerSubject) {
+  log.debug("Entering sshUserCertificatesOfAsync().");
+  const id = realmIdOf(scopeId);
+  const owner = String(ownerSubject || '');
+  if (!owner) {
+    log.debug("Leaving sshUserCertificatesOfAsync(). Nobody.");
+    return [];
+  }
+  const nowMs = Date.now();
+  const fresh = await sshIssuedRegister().ofOwner(id, owner, nowMs);
+  const seen = {};
+  fresh.forEach(function (one) {
+    seen[pkiMerge.normalSerial(one.serialHex)] = true;
+  });
+  const legacy = ((rawRowFor(id) || {}).sshIssued || [])
+    .filter(function (one) {
+      const at = new Date(one.notAfter).getTime();
+      return one.ownerSubject === owner &&
+        !seen[pkiMerge.normalSerial(one.serialHex)] &&
+        (!Number.isFinite(at) || at > nowMs);
+    });
+  const out = fresh.concat(legacy).sort(function (a, b) {
+    return String(b.issuedAt || '').localeCompare(String(a.issuedAt || ''));
+  });
+  log.debug("Leaving sshUserCertificatesOfAsync(). " + out.length);
+  return out;
+}
+
+/**
+ * The SSH user certificates the realm's PKI row recorded before the #1955
+ * review (`sshIssued`), read from the store's row first: what
+ * `common/ssh_issued.ts`'s backfill copies into its register and onto the
+ * holders' entries (#2050). Nothing is written to the row.
+ *
+ * @param scopeId - the realm
+ * @returns a promise of the rows, as recorded
+ */
+async function legacySshUserCertificatesAsync(scopeId) {
+  log.debug("Entering legacySshUserCertificatesAsync().");
+  const id = realmIdOf(scopeId);
+  await keystore.refreshPki(id);
+  const rows = ((rawRowFor(id) || {}).sshIssued || []).slice();
+  log.debug("Leaving legacySshUserCertificatesAsync(). " + rows.length);
+  return rows;
+}
+
+/**
+ * Revokes an issued SSH certificate and refreshes the KRL cache.
+ *
+ * @param scopeId - the realm
+ * @param serialHex - the certificate serial as hexadecimal
+ * @param ownerSubject - when given, the serial must belong to this subject
+ * @returns `{ ok, certificate }`, or a marked refusal
+ */
+async function revokeSshUserCertificateAsync(scopeId, serialHex,
+                                             ownerSubject) {
+  log.debug("Entering revokeSshUserCertificateAsync().");
+  const id = realmIdOf(scopeId);
+  const serial = String(serialHex || '').toLowerCase().replace(/^0+/, '');
+  if (!/^[0-9a-f]{1,16}$/.test(serial)) {
+    log.debug("Leaving revokeSshUserCertificateAsync(). Invalid serial.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate serial is not valid.'
+    ] }, 'STS-PKI-0291');
+  }
+  const unknown = function () {
+    log.debug("Entering unknown().");
+    log.debug("Leaving unknown().");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate serial was not issued by this realm.'
+    ] }, 'STS-PKI-0291');
+  };
+  const unsettled = function () {
+    log.debug("Entering unsettled().");
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
+              'certificate was marked revoked but the store did not settle ' +
+              'the change.');
+    log.debug("Leaving unsettled().");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate revocation could not be recorded.'
+    ] }, 'STS-PKI-0290');
+  };
+  const register = sshIssuedRegister();
+  const held = await register.get(id, serial);
+  let certificate = null;
+  if (held) {
+    if (ownerSubject !== undefined &&
+        held.ownerSubject !== String(ownerSubject)) {
+      log.debug("Leaving revokeSshUserCertificateAsync(). Another's.");
+      return unknown();
+    }
+    const marked = await register.markRevoked(id, serial,
+                                              new Date().toISOString());
+    if (!marked.ok && keystore.persists()) {
+      log.debug("Leaving revokeSshUserCertificateAsync(). Store failed.");
+      return unsettled();
+    }
+    certificate = held;
+  } else {
+    // A CERTIFICATE ISSUED BEFORE THE REVIEW, on the PKI row. The row this
+    // process holds may be behind another node's (the #1955 review): read
+    // the store's first, as the KRL build does.
+    await keystore.refreshPki(id);
+    const row = rawRowFor(id) || {};
+    const issued = row.sshIssued || [];
+    const index = issued.findIndex(function (one) {
+      return pkiMerge.normalSerial(one.serialHex) === serial &&
+        (ownerSubject === undefined ||
+         one.ownerSubject === String(ownerSubject));
+    });
+    if (index < 0) {
+      log.debug("Leaving revokeSshUserCertificateAsync(). Unknown serial.");
+      return unknown();
+    }
+    certificate = issued[index];
+    if (!issued[index].revokedAt) {
+      const next = Object.assign({}, row);
+      next.sshIssued = issued.slice();
+      next.sshIssued[index] = Object.assign({}, issued[index], {
+        revokedAt: new Date().toISOString()
+      });
+      saveRow(id, next);
+      const outcome = await keystore.pkiSettled(id);
+      if (keystore.persists() && (!outcome || !outcome.ok)) {
+        log.debug("Leaving revokeSshUserCertificateAsync(). Store failed.");
+        return unsettled();
+      }
+    }
+    // OFF ITS HOLDER'S ENTRY (#2050), where the backfill had copied it
+    // there before the register held it; the register is authoritative and
+    // its entries job takes it off where this cannot.
+    await register.leaveEntry(id, String(certificate.ownerSubject || ''),
+                              serial);
+  }
+  const krl = await buildSshUserKrlAsync(id);
+  if (!krl || !krl.ok) {
+    log.debug("Leaving revokeSshUserCertificateAsync(). KRL failed.");
+    return krl;
+  }
+  log.debug("Leaving revokeSshUserCertificateAsync(). Revoked.");
+  return { ok: true, certificate: certificate };
+}
+
+/**
+ * Revokes every live SSH certificate backed by one lost hardware credential.
+ *
+ * @param scopeId - the realm
+ * @param fingerprint - `sshFingerprint()` of the public key
+ * @returns `{ ok, revoked }`, or a marked failure
+ */
+async function revokeSshUserKeyAsync(scopeId, fingerprint) {
+  log.debug("Entering revokeSshUserKeyAsync().");
+  const id = realmIdOf(scopeId);
+  const wanted = String(fingerprint || '');
+  const now = new Date();
+  const unsettled = function () {
+    log.debug("Entering unsettled().");
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: SSH certificates for ' +
+              'a lost hardware key were marked revoked but the store did ' +
+              'not settle the change.');
+    log.debug("Leaving unsettled().");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate revocation could not be recorded.'
+    ] }, 'STS-PKI-0290');
+  };
+  let revoked = 0;
+  // THE REGISTER'S, by the key's index.
+  const register = sshIssuedRegister();
+  const live = await register.ofKey(id, wanted, now.getTime());
+  for (const one of live) {
+    if (one.revokedAt) {
+      continue;
+    }
+    const marked = await register.markRevoked(id, one.serialHex,
+                                              now.toISOString());
+    if (!marked.ok && keystore.persists()) {
+      log.debug("Leaving revokeSshUserKeyAsync(). Store failed.");
+      return unsettled();
+    }
+    revoked += 1;
+  }
+  // AND THOSE ON THE PKI ROW FROM BEFORE THE REVIEW, the store's row read
+  // first (the #1955 review: the one this process holds may be behind).
+  await keystore.refreshPki(id);
+  const row = rawRowFor(id) || {};
+  const issued = (row.sshIssued || []).slice();
+  let legacy = 0;
+  for (let i = 0; i < issued.length; i++) {
+    const expires = new Date(issued[i].notAfter).getTime();
+    if (issued[i].keyFingerprint !== wanted || issued[i].revokedAt ||
+        (Number.isFinite(expires) && expires <= now.getTime())) {
+      continue;
+    }
+    issued[i] = Object.assign({}, issued[i], {
+      revokedAt: now.toISOString()
+    });
+    legacy += 1;
+    // Off its holder's entry (#2050), as above.
+    await register.leaveEntry(id, String(issued[i].ownerSubject || ''),
+                              String(issued[i].serialHex || ''));
+  }
+  if (legacy) {
+    saveRow(id, Object.assign({}, row, { sshIssued: issued }));
+    const outcome = await keystore.pkiSettled(id);
+    if (keystore.persists() && (!outcome || !outcome.ok)) {
+      log.debug("Leaving revokeSshUserKeyAsync(). Store failed.");
+      return unsettled();
+    }
+  }
+  revoked += legacy;
+  if (!revoked) {
+    log.debug("Leaving revokeSshUserKeyAsync(). Nothing live.");
+    return { ok: true, revoked: 0 };
+  }
+  const krl = await buildSshUserKrlAsync(id);
+  if (!krl || !krl.ok) {
+    log.debug("Leaving revokeSshUserKeyAsync(). KRL failed.");
+    return krl;
+  }
+  log.debug("Leaving revokeSshUserKeyAsync(). " + revoked + '.');
+  return { ok: true, revoked: revoked };
+}
+
+/**
+ * Builds a current OpenSSH KRL, refreshing the persisted cache when needed:
+ * the revoked certificates of the register and of the PKI row (before the
+ * #1955 review), the expired ones left off.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, bytes }`, or null before a CA exists
+ */
+async function buildSshUserKrlAsync(scopeId) {
+  log.debug("Entering buildSshUserKrlAsync().");
+  const id = realmIdOf(scopeId);
+  await keystore.refreshPki(id);
+  const row = rawRowFor(id) || {};
+  const ca = row.sshUserCa;
+  if (!ca) {
+    log.debug("Leaving buildSshUserKrlAsync(). No CA.");
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  let fresh = [];
+  try {
+    fresh = await sshIssuedRegister().revoked(id, now * 1000);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the SSH user KRL ' +
+              'could not read the issued register: ' +
+              ((e && e.message) || e));
+    log.debug("Leaving buildSshUserKrlAsync(). No register.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user key revocation list could not be built.'
+    ] }, 'STS-PKI-0290');
+  }
+  const legacy = (row.sshIssued || []).filter(function (one) {
+    const expires = new Date(one.notAfter).getTime();
+    return !!one.revokedAt &&
+      (!one.notAfter || !Number.isFinite(expires) || expires > now * 1000);
+  });
+  const bySerial = {};
+  legacy.concat(fresh).forEach(function (one) {
+    bySerial[pkiMerge.normalSerial(one.serialHex)] = one.caMember ||
+      'sshUserCa';
+  });
+  const serials = Object.keys(bySerial).sort();
+  const pqcCa = row.sshUserCaPqc;
+  const classicalSerials = [];
+  const pqcSerials = [];
+  serials.forEach(function (one) {
+    if (bySerial[one] === 'sshUserCaPqc') {
+      pqcSerials.push(one);
+    } else {
+      classicalSerials.push(one);
+    }
+  });
+  const digest = stsCrypto.digest('sha256',
+    ca.fingerprint + ':' + classicalSerials.join(',') + '|' +
+    ((pqcCa && pqcCa.fingerprint) || '') + ':' + pqcSerials.join(','),
+    'hex');
+  if (row.sshKrl && row.sshKrl.digest === digest &&
+      row.sshKrl.bytesB64) {
+    log.debug("Leaving buildSshUserKrlAsync(). Cached.");
+    return { ok: true, bytes: Buffer.from(row.sshKrl.bytesB64, 'base64') };
+  }
+  try {
+    const previous = Number((row.sshKrl || {}).version) || 0;
+    const version = Math.max(now, previous + 1);
+    const authorities = [];
+    if (classicalSerials.length) {
+      authorities.push({
+        caBlob: Buffer.from(ca.publicBlobB64, 'base64'),
+        serials: classicalSerials.map(function (one) {
+          return BigInt('0x' + one);
+        })
+      });
+    }
+    if (pqcCa && pqcSerials.length) {
+      authorities.push({
+        caBlob: Buffer.from(pqcCa.publicBlobB64, 'base64'),
+        serials: pqcSerials.map(function (one) {
+          return BigInt('0x' + one);
+        })
+      });
+    }
+    const bytes = buildSshKrl({
+      version: BigInt(version), generatedAt: BigInt(now),
+      comment: 'Iya STS SSH user CA',
+      authorities: authorities,
+      keySha256: []
+    });
+    saveRow(id, Object.assign({}, row, { sshKrl: {
+      digest: digest, bytesB64: bytes.toString('base64'),
+      version: version, generatedAt: now
+    } }));
+    // THE CACHE IS A CACHE (#2092). The KRL is derived from the register
+    // and the row, both already recorded, so a cache that did not reach the
+    // store loses nothing: the next build makes the same list again. It was
+    // a 503 (STS-PKI-0290) until #2092, and in a product realm on a store
+    // that keeps nothing no write is ever queued, so EVERY first fetch was
+    // refused and the second answered from the cache this process held —
+    // an sshd refreshing RevokedKeys at that moment kept a stale KRL. The
+    // failure is recorded and what was built is answered.
+    const outcome = await keystore.pkiSettled(id);
+    if (keystore.persists() && (!outcome || !outcome.ok)) {
+      log.warn(errorCodes.tag('STS-PKI-0299') + 'pki: the "' +
+               (id || 'default') + '" realm\'s SSH user KRL was built and ' +
+               'is answered, but its cache could not be persisted (' +
+               (outcome ? String(outcome.error || 'the write failed')
+                 : 'no write reached the store') + '); the next build ' +
+               'makes it again.');
+    }
+    log.debug("Leaving buildSshUserKrlAsync(). Built.");
+    return { ok: true, bytes: bytes };
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the SSH user KRL ' +
+              'could not be built: ' + ((e && e.message) || e));
+    log.debug("Leaving buildSshUserKrlAsync(). Failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user key revocation list could not be built.'
+    ] }, 'STS-PKI-0290');
+  }
+}
+
+/** SSH_CERT_TYPE_USER (PROTOCOL.certkeys). */
+const SSH_USER_CERT = 1;
+
+/**
+ * The signature algorithms the SSH user CA may sign with, each with the key
+ * it needs and how it signs.
+ */
+const SSH_CA_ALGORITHMS = {
+  'ssh-ed25519': { kind: 'ed25519', keyType: 'ssh-ed25519',
+                   scheme: { family: 'eddsa' } },
+  'ecdsa-sha2-nistp256': { kind: 'ec', curve: 'prime256v1',
+                           keyType: 'ecdsa-sha2-nistp256', bytes: 32,
+                           scheme: { family: 'ecdsa', hash: 'sha256',
+                                     encoding: 'p1363' } },
+  'ecdsa-sha2-nistp384': { kind: 'ec', curve: 'secp384r1',
+                           keyType: 'ecdsa-sha2-nistp384', bytes: 48,
+                           scheme: { family: 'ecdsa', hash: 'sha384',
+                                     encoding: 'p1363' } },
+  'ecdsa-sha2-nistp521': { kind: 'ec', curve: 'secp521r1',
+                           keyType: 'ecdsa-sha2-nistp521', bytes: 66,
+                           scheme: { family: 'ecdsa', hash: 'sha512',
+                                     encoding: 'p1363' } },
+  'rsa-sha2-256': { kind: 'rsa', keyType: 'ssh-rsa', bits: 3072,
+                    scheme: { family: 'rsa-pkcs1', hash: 'sha256' } },
+  'rsa-sha2-512': { kind: 'rsa', keyType: 'ssh-rsa', bits: 3072,
+                    scheme: { family: 'rsa-pkcs1', hash: 'sha512' } },
+  // OpenSSH defines no such type. The wire form is this service's own:
+  // one string of the raw ML-DSA-65 public key, and a raw signature, the
+  // ssh-ed25519 shape. It is never the published TrustedUserCAKeys line.
+  'ssh-mldsa-65': { kind: 'pq', keyType: 'ssh-mldsa-65', jose: 'ML-DSA-65',
+                    publicBytes: 1952,
+                    scheme: { family: 'pq', alg: 'ML-DSA-65' } }
+};
+
+/**
+ * The SSH user CA algorithms this realm configured, in order, dropping a
+ * name the table does not know. `ssh-rsa` is not in the table.
+ *
+ * @returns the names
+ */
+function sshUserCaAlgorithmList() {
+  log.debug("Entering sshUserCaAlgorithmList().");
+  const configured = config.value('pki.sshUserCaAlgorithms');
+  const names = Array.isArray(configured) ? configured : [];
+  const out = [];
+  names.forEach(function (name) {
+    if (SSH_CA_ALGORITHMS[name] && out.indexOf(name) < 0) {
+      out.push(name);
+    }
+  });
+  log.debug("Leaving sshUserCaAlgorithmList(). " + out.join(','));
+  return out;
+}
+
+/**
+ * The first classical algorithm in the configured list. The published
+ * OpenSSH line is this algorithm's key, never `ssh-mldsa-65`. A list that
+ * names only the post-quantum algorithm still publishes ssh-ed25519.
+ *
+ * @returns an SSH_CA_ALGORITHMS name whose kind is not `pq`
+ */
+function sshClassicalCaAlgorithm() {
+  log.debug("Entering sshClassicalCaAlgorithm().");
+  const list = sshUserCaAlgorithmList();
+  let name = 'ssh-ed25519';
+  for (let i = 0; i < list.length; i++) {
+    if (SSH_CA_ALGORITHMS[list[i]].kind !== 'pq') {
+      name = list[i];
+      break;
+    }
+  }
+  log.debug("Leaving sshClassicalCaAlgorithm(). " + name);
+  return name;
+}
+
+/**
+ * Whether the configured list asks for the ML-DSA authority at all.
+ *
+ * @returns true when `ssh-mldsa-65` is on the list
+ */
+function sshPqCaWanted() {
+  log.debug("Entering sshPqCaWanted().");
+  const wanted = sshUserCaAlgorithmList().indexOf('ssh-mldsa-65') >= 0;
+  log.debug("Leaving sshPqCaWanted(). " + wanted);
+  return wanted;
+}
+
+/**
+ * Whether a new certificate is signed only by the ML-DSA authority.
+ * `pqcOnly` wins when both switches were set from the environment.
+ *
+ * @returns the switch
+ */
+function sshUserCaPqcOnly() {
+  log.debug("Entering sshUserCaPqcOnly().");
+  const on = config.value('pki.sshUserCaPqcOnly') === true;
+  log.debug("Leaving sshUserCaPqcOnly(). " + on);
+  return on;
+}
+
+/**
+ * Whether a new certificate is issued twice, classically and with ML-DSA.
+ * Ignored while `pqcOnly` is on.
+ *
+ * @returns the switch
+ */
+function sshUserCaAlongside() {
+  log.debug("Entering sshUserCaAlongside().");
+  const on = config.value('pki.sshUserCaPqcAlongsideClassical') === true &&
+    !sshUserCaPqcOnly();
+  log.debug("Leaving sshUserCaAlongside(). " + on);
+  return on;
+}
+
+/**
+ * A fresh positive certificate serial.
+ *
+ * @returns the serial
+ */
+function nextSshUserSerial() {
+  log.debug("Entering nextSshUserSerial().");
+  let serial = BigInt('0x' + stsCrypto.randomBytes(8).toString('hex')) &
+               BigInt('0x7fffffffffffffff');
+  if (serial === BigInt(0)) {
+    serial = BigInt(1);
+  }
+  log.debug("Leaving nextSshUserSerial().");
+  return serial;
+}
+
+// RFC 4251's types, written. A HOT PATH for a certificate's every field: no
+// Entering/Leaving pair, as `sshReader()`'s methods have none.
+function sshUint32(n) {
+  const out = Buffer.alloc(4);
+  out.writeUInt32BE(Number(n) >>> 0, 0);
+  return out;
+}
+
+// A HOT PATH (as sshUint32()): no Entering/Leaving pair.
+function sshUint64(n) {
+  const out = Buffer.alloc(8);
+  out.writeBigUInt64BE(BigInt(n), 0);
+  return out;
+}
+
+// A HOT PATH (as sshUint32()): no Entering/Leaving pair.
+function sshString(bytes) {
+  const b = Buffer.isBuffer(bytes) ? bytes : Buffer.from(String(bytes), 'utf8');
+  return Buffer.concat([sshUint32(b.length), b]);
+}
+
+// An mpint from a big-endian magnitude: no leading zeros, and a zero byte
+// in front where the high bit would read as negative. A HOT PATH (as
+// sshUint32()): no Entering/Leaving pair.
+function sshMpint(magnitude) {
+  let b = Buffer.from(magnitude || []);
+  while (b.length && b[0] === 0) b = b.subarray(1);
+  if (b.length && (b[0] & 0x80)) b = Buffer.concat([Buffer.from([0]), b]);
+  return sshString(b);
+}
+
+/**
+ * The SSH public key blob of a node public key (or private key): ssh-ed25519,
+ * ecdsa-sha2-nistp256/384/521 or ssh-rsa.
+ *
+ * @param key - a KeyObject or a PEM
+ * @returns `{ type, blob, line }`, `line` the `type base64` form
+ * @throws Error for any other kind of key
+ */
+function sshPublicKeyOf(key) {
+  log.debug("Entering sshPublicKeyOf().");
+  const pub = stsCrypto.publicKeyOf(key);
+  const jwk = pub.export({ format: 'jwk' });
+  let type = '';
+  let body = null;
+  if (jwk.kty === 'OKP' && jwk.crv === 'Ed25519') {
+    type = 'ssh-ed25519';
+    body = sshString(Buffer.from(jwk.x, 'base64url'));
+  } else if (jwk.kty === 'EC') {
+    const curve = { 'P-256': 'nistp256', 'P-384': 'nistp384',
+                    'P-521': 'nistp521' }[jwk.crv];
+    if (!curve) {
+      log.debug("Leaving sshPublicKeyOf(). An unsupported curve.");
+      // error-code: none — a programming error; the CA makes its own keys
+      throw new Error('the curve ' + jwk.crv + ' has no SSH key type');
+    }
+    type = 'ecdsa-sha2-' + curve;
+    body = Buffer.concat([sshString(curve), sshString(Buffer.concat([
+      Buffer.from([4]), Buffer.from(jwk.x, 'base64url'),
+      Buffer.from(jwk.y, 'base64url')]))]);
+  } else if (jwk.kty === 'RSA') {
+    type = 'ssh-rsa';
+    body = Buffer.concat([sshMpint(Buffer.from(jwk.e, 'base64url')),
+                          sshMpint(Buffer.from(jwk.n, 'base64url'))]);
+  } else {
+    log.debug("Leaving sshPublicKeyOf(). Unsupported.");
+    // error-code: none — a programming error; the CA makes its own keys
+    throw new Error('a ' + jwk.kty + ' key has no SSH key type here');
+  }
+  const blob = Buffer.concat([sshString(type), body]);
+  log.debug("Leaving sshPublicKeyOf(). " + type);
+  return { type: type, blob: blob, line: type + ' ' + blob.toString('base64') };
+}
+
+/**
+ * Makes a new key for the SSH user CA, on libuv's thread pool.
+ *
+ * @param algorithm - one of SSH_CA_ALGORITHMS
+ * @returns a promise of `{ algorithm, privatePem, publicBlob, publicLine,
+ *   fingerprint }`
+ * @throws Error for an algorithm not on the list
+ */
+async function generateSshCaKey(algorithm) {
+  log.debug("Entering generateSshCaKey(). " + algorithm);
+  const spec = SSH_CA_ALGORITHMS[algorithm];
+  if (!spec) {
+    log.debug("Leaving generateSshCaKey(). Unknown algorithm.");
+    // error-code: none — the caller refused it under its own code
+    throw new Error('the SSH CA algorithm ' + algorithm + ' is not one of ' +
+                    Object.keys(SSH_CA_ALGORITHMS).join(', '));
+  }
+  if (spec.kind === 'pq') {
+    if (!stsCrypto.mlDsaAvailable()) {
+      log.debug("Leaving generateSshCaKey(). ML-DSA is unavailable.");
+      throw new Error('this runtime cannot generate an ML-DSA SSH CA key');
+    }
+    const pair = stsCrypto.generatePqKeyPair(spec.jose);
+    if (pair.pub.length !== spec.publicBytes) {
+      log.debug("Leaving generateSshCaKey(). Wrong public key.");
+      throw new Error('an ' + algorithm + ' public key is ' +
+                      spec.publicBytes + ' octets; this one is ' +
+                      pair.pub.length);
+    }
+    const pq = sshPqPublicKey(algorithm, pair.pub);
+    log.debug("Leaving generateSshCaKey(). " + algorithm);
+    return { algorithm: algorithm, privatePem: '', privateSeed: pair.priv,
+             publicBlob: pq.blob, publicLine: pq.line,
+             fingerprint: sshFingerprint({ blob: pq.blob }) };
+  }
+  const options = spec.kind === 'ec' ? { namedCurve: spec.curve }
+    : (spec.kind === 'rsa' ? { modulusLength: spec.bits } : {});
+  const pair = await stsCrypto.generateKeyPairAsync(spec.kind, options);
+  const pub = sshPublicKeyOf(pair.publicKey);
+  log.debug("Leaving generateSshCaKey().");
+  return { algorithm: algorithm, privateSeed: null,
+           privatePem: String(pair.privateKey.export({ type: 'pkcs8',
+                                                       format: 'pem' })),
+           publicBlob: pub.blob, publicLine: pub.line,
+           fingerprint: sshFingerprint({ blob: pub.blob }) };
+}
+
+/**
+ * The ssh-ed25519-shaped public blob of a raw ML-DSA public key.
+ *
+ * @param algorithm - `ssh-mldsa-65`
+ * @param rawPublic - the raw public key
+ * @returns `{ type, blob, line }`
+ */
+function sshPqPublicKey(algorithm, rawPublic) {
+  log.debug("Entering sshPqPublicKey(). " + algorithm);
+  const raw = Buffer.from(rawPublic);
+  const blob = Buffer.concat([sshString(algorithm), sshString(raw)]);
+  log.debug("Leaving sshPqPublicKey().");
+  return { type: algorithm, blob: blob,
+           line: algorithm + ' ' + blob.toString('base64') };
+}
+
+/**
+ * Ensures the ML-DSA sibling authority when the algorithm list names it
+ * and this runtime can generate the key. A failure here is recorded and
+ * swallowed: the classical authority still issues.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, ca }`, or null when there is no sibling
+ */
+async function ensureSshUserCaPqc(scopeId) {
+  log.debug("Entering ensureSshUserCaPqc().");
+  const id = realmIdOf(scopeId);
+  if (!sshPqCaWanted() || !stsCrypto.mlDsaAvailable()) {
+    log.debug("Leaving ensureSshUserCaPqc(). Not offered.");
+    return null;
+  }
+  const existing = function () {
+    const row = rawRowFor(id);
+    return row && row.sshUserCaPqc
+      ? { ok: true, ca: row.sshUserCaPqc } : null;
+  };
+  try {
+    // HELD ALREADY IS THE ANSWER, for `sshUserCaForAsync()`'s reason: with
+    // nothing to coordinate the cluster build runs at once, every time.
+    const build = async function () {
+      log.debug("Entering build(). sshUserCaPqc");
+      const key = await generateSshCaKey('ssh-mldsa-65');
+      const row = Object.assign({}, rawRowFor(id) || {}, {
+        sshUserCaPqc: {
+          algorithm: key.algorithm,
+          privateSeedB64: key.privateSeed.toString('base64'),
+          publicBlobB64: key.publicBlob.toString('base64'),
+          publicLine: key.publicLine,
+          fingerprint: key.fingerprint,
+          createdAt: new Date().toISOString()
+        }
+      });
+      saveRow(id, row);
+      log.debug("Leaving build(). sshUserCaPqc");
+      return { ok: true, ca: row.sshUserCaPqc };
+    };
+    const answer = await oneBuildAtATime(SSH_USER_CA_USE_CASE + '-pqc:' + id,
+      function () {
+        return existing() ||
+          oneBuildInTheCluster(id, 'sshUserCaPqc', existing, build,
+            { claim: SSH_USER_CA_USE_CASE + '-pqc:' + id,
+              label: 'the realm\'s post-quantum SSH user CA' });
+      });
+    log.debug("Leaving ensureSshUserCaPqc(). " +
+              (answer && answer.ok ? 'Ready.' : 'Absent.'));
+    return answer;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the "' +
+              (id || 'default') + '" realm\'s post-quantum SSH user CA ' +
+              'could not be made, so certificates stay classical: ' +
+              ((e && e.message) || e));
+    log.debug("Leaving ensureSshUserCaPqc(). Failed.");
+    return null;
+  }
+}
+
+/**
+ * An SSH signature (`string format, string blob`) over data, made by the CA.
+ *
+ * @param algorithm - one of SSH_CA_ALGORITHMS
+ * @param privateKey - the CA's private key (a KeyObject or a PEM)
+ * @param data - the bytes signed
+ * @returns the signature structure's bytes
+ */
+function sshSign(algorithm, privateKey, data) {
+  log.debug("Entering sshSign(). " + algorithm);
+  const spec = SSH_CA_ALGORITHMS[algorithm];
+  if (!spec) {
+    log.debug("Leaving sshSign(). Unknown algorithm.");
+    // error-code: none — a programming error; the CA checked its algorithm
+    throw new Error('the SSH CA algorithm ' + algorithm + ' is unknown');
+  }
+  let raw;
+  if (spec.kind === 'pq') {
+    const seed = Buffer.isBuffer(privateKey) ? privateKey
+      : Buffer.from(String(privateKey || ''), 'base64');
+    raw = stsCrypto.signRawSignature(spec.scheme, seed, data);
+  } else {
+    const key = stsCrypto.privateKeyFrom(privateKey);
+    raw = stsCrypto.signRawSignature(spec.scheme, key, data);
+  }
+  let blob = raw;
+  if (spec.kind === 'ec') {
+    blob = Buffer.concat([sshMpint(raw.subarray(0, spec.bytes)),
+                          sshMpint(raw.subarray(spec.bytes))]);
+  }
+  log.debug("Leaving sshSign().");
+  return Buffer.concat([sshString(algorithm), sshString(blob)]);
+}
+
+// A packed option list (PROTOCOL.certkeys): names in lexical order, each
+// followed by its data, itself a string holding a string where the option
+// has a value, and an empty string where it has none.
+function sshOptionList(options) {
+  log.debug("Entering sshOptionList().");
+  const names = Object.keys(options || {}).sort();
+  const out = Buffer.concat(names.map(function (name) {
+    const value = options[name];
+    return Buffer.concat([sshString(name), sshString(
+      value === '' || value === null || value === undefined
+        ? Buffer.alloc(0) : sshString(String(value)))]);
+  }));
+  log.debug("Leaving sshOptionList(). " + names.length);
+  return out;
+}
+
+/**
+ * Writes and signs an OpenSSH user certificate (PROTOCOL.certkeys,
+ * -cert-v01@openssh.com) for a public key.
+ *
+ * @param spec - `{ subjectBlob, serial (BigInt), keyId, principals,
+ *   validAfter, validBefore (seconds), criticalOptions ({ name: value }),
+ *   extensions ([names]), caAlgorithm, caPrivateKey, caPublicBlob }`
+ * @returns `{ blob, certType, line }`
+ */
+function buildSshCertificate(spec) {
+  log.debug("Entering buildSshCertificate().");
+  const subject = sshReader(spec.subjectBlob);
+  const keyType = subject.text();
+  const keyFields = subject.rest();
+  const certType = keyType.replace(/@openssh\.com$/, '') + SSH_CERT_SUFFIX;
+  const extensions = {};
+  (spec.extensions || []).forEach(function (name) {
+    extensions[String(name)] = '';
+  });
+  const signed = Buffer.concat([
+    sshString(certType),
+    sshString(stsCrypto.randomBytes(32)),
+    keyFields,
+    sshUint64(spec.serial),
+    sshUint32(SSH_USER_CERT),
+    sshString(String(spec.keyId || '')),
+    sshString(Buffer.concat((spec.principals || []).map(function (p) {
+      return sshString(String(p));
+    }))),
+    sshUint64(spec.validAfter),
+    sshUint64(spec.validBefore),
+    sshString(sshOptionList(spec.criticalOptions)),
+    sshString(sshOptionList(extensions)),
+    sshString(Buffer.alloc(0)),
+    sshString(Buffer.from(spec.caPublicBlob))
+  ]);
+  const signature = sshSign(spec.caAlgorithm, spec.caPrivateKey, signed);
+  const blob = Buffer.concat([signed, sshString(signature)]);
+  log.debug("Leaving buildSshCertificate(). " + certType);
+  return { blob: blob, certType: certType,
+           line: certType + ' ' + blob.toString('base64') };
+}
+
+// PROTOCOL.krl's constants.
+const KRL_MAGIC = BigInt('0x5353484b524c0a00');
+const KRL_FORMAT_VERSION = 1;
+const KRL_SECTION_CERTIFICATES = 1;
+const KRL_SECTION_FINGERPRINT_SHA256 = 5;
+const KRL_SECTION_CERT_SERIAL_LIST = 0x20;
+
+/**
+ * Writes an OpenSSH key revocation list (PROTOCOL.krl): for each authority,
+ * its revoked certificate serials, and the SHA-256 fingerprints of keys
+ * revoked outright (every certificate for such a key is refused by sshd,
+ * whatever its serial). Unsigned: OpenSSH reads a KRL's signature section
+ * and verifies nothing by it, and sshd trusts the file it is pointed at.
+ *
+ * @param spec - `{ version, generatedAt (seconds), comment, authorities:
+ *   [{ caBlob, serials: [BigInt] }], keySha256: [Buffer] }`
+ * @returns the KRL's bytes
+ */
+function buildSshKrl(spec) {
+  log.debug("Entering buildSshKrl().");
+  const parts = [sshUint64(KRL_MAGIC), sshUint32(KRL_FORMAT_VERSION),
+                 sshUint64(spec.version || 0), sshUint64(spec.generatedAt || 0),
+                 sshUint64(0), sshString(Buffer.alloc(0)),
+                 sshString(String(spec.comment || ''))];
+  (spec.authorities || []).forEach(function (one) {
+    const serials = (one.serials || []).map(function (n) {
+      return BigInt(n);
+    }).filter(function (n) {
+      return n > BigInt(0);
+    }).sort(function (a, b) {
+      return a < b ? -1 : (a > b ? 1 : 0);
+    });
+    if (!serials.length) {
+      return;
+    }
+    const sub = Buffer.concat([Buffer.from([KRL_SECTION_CERT_SERIAL_LIST]),
+      sshString(Buffer.concat(serials.map(sshUint64)))]);
+    parts.push(Buffer.from([KRL_SECTION_CERTIFICATES]), sshString(
+      Buffer.concat([sshString(Buffer.from(one.caBlob)),
+                     sshString(Buffer.alloc(0)), sub])));
+  });
+  const fps = (spec.keySha256 || []).map(function (b) {
+    return Buffer.from(b);
+  }).filter(function (b) {
+    return b.length === 32;
+  }).sort(Buffer.compare);
+  if (fps.length) {
+    parts.push(Buffer.from([KRL_SECTION_FINGERPRINT_SHA256]),
+               sshString(Buffer.concat(fps.map(sshString))));
+  }
+  log.debug("Leaving buildSshKrl().");
+  return Buffer.concat(parts);
+}
+
+/**
+ * Reads an OpenSSH key revocation list: the sections `buildSshKrl()` writes,
+ * and the others counted and skipped.
+ *
+ * @param bytes - the KRL
+ * @returns `{ version, generatedAt, comment, authorities: [{ caBlob,
+ *   serials }], keySha256, skipped }`
+ * @throws Error on anything that is not a KRL
+ */
+function parseSshKrl(bytes) {
+  log.debug("Entering parseSshKrl().");
+  const r = sshReader(bytes);
+  if (r.uint64() !== KRL_MAGIC || r.uint32() !== KRL_FORMAT_VERSION) {
+    log.debug("Leaving parseSshKrl(). Not a KRL.");
+    // error-code: none — see sshReader()
+    throw new Error('not an OpenSSH KRL (format 1)');
+  }
+  const out = { version: r.uint64(), generatedAt: r.uint64(), flags: r.uint64(),
+                comment: '', authorities: [], keySha256: [], skipped: 0 };
+  r.string();
+  out.comment = r.text();
+  while (!r.done()) {
+    const type = r.take(1)[0];
+    const data = sshReader(r.string());
+    if (type === KRL_SECTION_CERTIFICATES) {
+      const one = { caBlob: Buffer.from(data.string()), serials: [] };
+      data.string();
+      while (!data.done()) {
+        const sub = data.take(1)[0];
+        const body = sshReader(data.string());
+        if (sub === KRL_SECTION_CERT_SERIAL_LIST) {
+          while (!body.done()) one.serials.push(body.uint64());
+        } else {
+          out.skipped++;
+        }
+      }
+      out.authorities.push(one);
+    } else if (type === KRL_SECTION_FINGERPRINT_SHA256) {
+      while (!data.done()) out.keySha256.push(Buffer.from(data.string()));
+    } else {
+      out.skipped++;
+    }
+  }
+  log.debug("Leaving parseSshKrl().");
+  return out;
+}
+
+/**
+ * Reads a security key's enrolment attestation as `ssh-keygen -O
+ * write-attestation` writes it (PROTOCOL.u2f, `ssh-sk-attest-v01`): the
+ * attestation certificate, the enrolment signature and the authenticator
+ * data. The older `ssh-sk-attest-v00`, written before OpenSSH 8.4, carries
+ * no authenticator data and cannot be verified, so it is refused.
+ *
+ * @param bytes - the file's bytes
+ * @returns `{ version, certificate, signature, authData }`, `authData` the
+ *   raw authenticator data (unwrapped from its CBOR byte string)
+ * @throws Error on anything else
+ */
+function parseSshSkAttestation(bytes) {
+  log.debug("Entering parseSshSkAttestation().");
+  const r = sshReader(bytes);
+  const version = r.text();
+  if (version !== 'ssh-sk-attest-v01') {
+    log.debug("Leaving parseSshSkAttestation(). " + version.slice(0, 32));
+    // error-code: none — see sshReader()
+    throw new Error(version === 'ssh-sk-attest-v00'
+      ? 'an ssh-sk-attest-v00 attestation (OpenSSH before 8.4) carries no ' +
+        'authenticator data, so it cannot be verified'
+      : 'not an ssh-sk-attest-v01 attestation');
+  }
+  const certificate = Buffer.from(r.string());
+  const signature = Buffer.from(r.string());
+  let authData = Buffer.from(r.string());
+  r.uint32();
+  r.string();
+  if (!r.done()) {
+    log.debug("Leaving parseSshSkAttestation(). Trailing bytes.");
+    // error-code: none — see sshReader()
+    throw new Error('trailing bytes after the attestation');
+  }
+  // libfido2's `fido_cred_authdata_ptr()` is the CBOR encoding: a byte
+  // string (major type 2) around the raw authenticator data.
+  if (authData.length && (authData[0] >> 5) === 2) {
+    const info = authData[0] & 0x1f;
+    const head = info < 24 ? 1 : (info === 24 ? 2 : (info === 25 ? 3
+      : (info === 26 ? 5 : 0)));
+    const length = info < 24 ? info : (info === 24 ? authData[1]
+      : (info === 25 ? authData.readUInt16BE(1)
+        : (info === 26 ? authData.readUInt32BE(1) : -1)));
+    if (!head || head + length !== authData.length) {
+      log.debug("Leaving parseSshSkAttestation(). A bad CBOR wrapper.");
+      // error-code: none — see sshReader()
+      throw new Error('the authenticator data is not one CBOR byte string');
+    }
+    authData = authData.subarray(head);
+  }
+  log.debug("Leaving parseSshSkAttestation().");
+  return { version: version, certificate: certificate, signature: signature,
+           authData: authData };
+}
+
+/**
+ * Whether an SSH key and a node public key (a certificate's) are the same
+ * key, compared as SubjectPublicKeyInfo.
+ *
+ * @param sshKey - a parsed SSH key (`parseSshPublicKey()`)
+ * @param publicKey - a KeyObject, a PEM or a certificate's key
+ * @returns true when they are one key
+ */
+function sshKeyMatches(sshKey, publicKey) {
+  log.debug("Entering sshKeyMatches().");
+  let same = false;
+  try {
+    const a = stsCrypto.publicKeyOf(sshKey.key)
+      .export({ type: 'spki', format: 'der' });
+    const b = stsCrypto.publicKeyOf(publicKey)
+      .export({ type: 'spki', format: 'der' });
+    same = Buffer.compare(Buffer.from(a), Buffer.from(b)) === 0;
+  } catch (e) {
+    log.debug("Caught in sshKeyMatches(): " + ((e && e.message) || e));
+    same = false;
+  }
+  log.debug("Leaving sshKeyMatches(). " + same);
+  return same;
+}
+
 // ----- The clouds' published signing certificates (#40 phase three) ---------
 //
 // `pki_cloud_anchors.json` is GENERATED from SPIRE's own embedded tables (its
@@ -15139,6 +17006,108 @@ function describeDeviceAnchors() {
     });
   });
   log.debug("Leaving describeDeviceAnchors().");
+  return out;
+}
+
+// ----- YubiKey PIV key attestation anchors (#1955 P2) ------------------------
+//
+// A PIV key attestation (`common/piv_attestation.ts`) is a certificate for a
+// slot's key, signed by the key's factory "f9" attestation certificate, which
+// chains to a Yubico PIV root: "Yubico PIV Root CA Serial 263751" for firmware
+// before 5.7.4, and "Yubico Attestation Root 1" through the PIV intermediates
+// for 5.7.4 and later. Both roots and the PIV intermediates are SHIPPED, in
+// `pki_piv_anchors.json`, generated from Yubico's publications and PINNED by
+// the SHA-256 of each DER exactly as `pki_device_anchors.json` is (above): a
+// row that does not match its pin is not used, logged under STS-PIV-0001.
+// Shipped, not empty, for the device anchors' reason: the default must work
+// for the one vendor whose attestation format this verifies, and a realm's
+// `piv.attestationAnchors`, when it holds any certificate, REPLACES the roots
+// (a test configures its own generated root; an operator may drop one).
+//
+// The intermediates are NOT anchors: they are offered to the path builder
+// beside the ones a request carried, because `ykman piv keys attest` and
+// `ykman piv certificates export f9` export only the two certificates on the
+// key, and a 5.7.4 key's f9 certificate is two intermediates below its root.
+// A configured anchor set replaces the roots and keeps these, which chain to
+// nothing but Yubico's own root and so cannot widen a configured set.
+let pivAnchors = null;
+const PIV_ANCHOR_KINDS = ['yubicoPivAttestation', 'yubicoPivIntermediate'];
+
+function pivAnchorTable() {
+  log.debug("Entering pivAnchorTable().");
+  if (!pivAnchors) {
+    const raw = require('./pki_piv_anchors.json');
+    const table = {};
+    PIV_ANCHOR_KINDS.forEach(function (kind) {
+      table[kind] = (raw[kind] || []).filter(function (row) {
+        const one = certificateBundle(row.pem).certificates[0] || null;
+        const digest = one ? stsCrypto.digest('sha256', one.der, 'hex') : '';
+        if (!one || digest !== String(row.sha256 || '').toLowerCase()) {
+          log.error(errorCodes.tag('STS-PIV-0001') + 'pki: the shipped ' +
+                    kind + ' certificate "' + String(row.subject || '') +
+                    '" does not match its pinned SHA-256 and is not used.');
+          return false;
+        }
+        return true;
+      }).map(function (row) {
+        return String(row.pem);
+      });
+    });
+    pivAnchors = table;
+  }
+  log.debug("Leaving pivAnchorTable().");
+  return pivAnchors;
+}
+
+/**
+ * Answers the anchors a YubiKey PIV key attestation must chain to, the
+ * shipped intermediates offered to the path builder, and where the anchors
+ * came from.
+ *
+ * @param configuredPem - the realm's `piv.attestationAnchors`, a PEM bundle
+ * @returns `{ anchors, intermediates, source }`, `source` being
+ *   'configured', 'shipped' or 'none'; each certificate as
+ *   `certificateBundle()` answers it
+ */
+function pivAttestationAnchors(configuredPem) {
+  log.debug("Entering pivAttestationAnchors().");
+  const table = pivAnchorTable();
+  const intermediates = certificateBundle(
+    table.yubicoPivIntermediate.join('\n')).certificates;
+  const configured = certificateBundle(configuredPem).certificates;
+  if (configured.length) {
+    log.debug("Leaving pivAttestationAnchors(). Configured.");
+    return { anchors: configured, intermediates: intermediates,
+             source: 'configured' };
+  }
+  const shipped = certificateBundle(
+    table.yubicoPivAttestation.join('\n')).certificates;
+  log.debug("Leaving pivAttestationAnchors(). " + shipped.length +
+            " shipped.");
+  return { anchors: shipped, intermediates: intermediates,
+           source: shipped.length ? 'shipped' : 'none' };
+}
+
+/**
+ * Describes the shipped PIV attestation certificates: subject, expiry and
+ * pin of each, per kind. Never a certificate's text.
+ *
+ * @returns the description, per kind
+ */
+function describePivAnchors() {
+  log.debug("Entering describePivAnchors().");
+  const raw = require('./pki_piv_anchors.json');
+  const usable = pivAnchorTable();
+  const out = {};
+  PIV_ANCHOR_KINDS.forEach(function (kind) {
+    out[kind] = (raw[kind] || []).map(function (row) {
+      return { subject: String(row.subject || ''),
+               notAfter: String(row.notAfter || ''),
+               sha256: String(row.sha256 || ''),
+               used: usable[kind].indexOf(String(row.pem)) >= 0 };
+    });
+  });
+  log.debug("Leaving describePivAnchors().");
   return out;
 }
 
@@ -15665,6 +17634,45 @@ async function csrProofOfPossession(csr, spkiPem, desc) {
   return !!ok;
 }
 
+/**
+ * Refuses a write that would turn on both SSH user-CA switches. The same
+ * shape as a passkey lane: one narrows a new certificate to ML-DSA, the
+ * other issues a classical certificate beside it.
+ *
+ * @param key - the setting being written
+ * @param parsed - its parsed value
+ * @param inRealm - unused; the switches are not process-only
+ * @param beside - a companion setting's value as this write leaves it
+ * @returns `{ problem, code }`, or null
+ */
+function sshUserCaLaneWriteRule(key, parsed, inRealm, beside) {
+  log.debug("Entering sshUserCaLaneWriteRule(). " + key);
+  const other = key === 'pki.sshUserCaPqcAlongsideClassical'
+    ? 'pki.sshUserCaPqcOnly'
+    : (key === 'pki.sshUserCaPqcOnly'
+      ? 'pki.sshUserCaPqcAlongsideClassical' : '');
+  // A rule runs for every write. beside('') throws "no such setting"
+  // and a throwing rule refuses nothing (STS-CORE-0149).
+  if (!other || parsed !== true) {
+    log.debug("Leaving sshUserCaLaneWriteRule().");
+    return null;
+  }
+  const otherOn = typeof beside === 'function'
+    ? beside(other) === true : config.value(other) === true;
+  if (!otherOn) {
+    log.debug("Leaving sshUserCaLaneWriteRule().");
+    return null;
+  }
+  log.debug("Leaving sshUserCaLaneWriteRule(). Refused.");
+  return { code: 'STS-PKI-0296',
+           problem: '"' + key + '" cannot be on while "' + other +
+             '" is: post-quantum only signs a new certificate with the ' +
+             'ML-DSA authority, and a classical certificate beside one ' +
+             'needs both. Turn "' + other + '" off first.' };
+}
+
+config.addWriteRule(sshUserCaLaneWriteRule);
+
 module.exports = {
   verifyChain: verifyChain,
   issueOutsideHierarchy: issueOutsideHierarchy,
@@ -15709,10 +17717,34 @@ module.exports = {
   sshFingerprint: sshFingerprint,
   verifySshSignature: verifySshSignature,
   checkSshHostCertificate: checkSshHostCertificate,
+  // --- the SSH user CA's wire formats (#1955 P3) ---
+  SSH_USER_CERT: SSH_USER_CERT,
+  SSH_CA_ALGORITHMS: SSH_CA_ALGORITHMS,
+  sshClassicalCaAlgorithm: sshClassicalCaAlgorithm,
+  sshUserCaLaneWriteRule: sshUserCaLaneWriteRule,
+  sshPublicKeyOf: sshPublicKeyOf,
+  sshPqPublicKey: sshPqPublicKey,
+  generateSshCaKey: generateSshCaKey,
+  buildSshCertificate: buildSshCertificate,
+  buildSshKrl: buildSshKrl,
+  parseSshKrl: parseSshKrl,
+  parseSshSkAttestation: parseSshSkAttestation,
+  sshKeyMatches: sshKeyMatches,
+  sshUserCaPublicKeyAsync: sshUserCaPublicKeyAsync,
+  issueSshUserCertificateAsync: issueSshUserCertificateAsync,
+  revokeSshUserCertificateAsync: revokeSshUserCertificateAsync,
+  revokeSshUserKeyAsync: revokeSshUserKeyAsync,
+  legacySshUserCertificatesAsync: legacySshUserCertificatesAsync,
+  buildSshUserKrlAsync: buildSshUserKrlAsync,
+  sshUserCertificatesOfAsync: sshUserCertificatesOfAsync,
+  sshUserCertificateExtensions: sshUserCertificateExtensions,
+  SSH_USER_EXTENSIONS: SSH_USER_EXTENSIONS,
   awsIidCertificate: awsIidCertificate,
   azureImdsRoots: azureImdsRoots,
   deviceAttestationAnchors: deviceAttestationAnchors,
   describeDeviceAnchors: describeDeviceAnchors,
+  pivAttestationAnchors: pivAttestationAnchors,
+  describePivAnchors: describePivAnchors,
   TIERS: TIERS,
   TIER_IDS: TIER_IDS,
   // A GETTER, so a reader of `pki.MAX_OBJECTS` sees `pki.maxStoredObjects`.
@@ -15783,6 +17815,11 @@ module.exports = {
   // Editing the hierarchy: a new key for one authority, a renewal under the
   // same one, and the two doors for material an operator supplied.
   reissueUseCase: reissueUseCase,
+  // A CA certificate renewed over the same key, on the scheduler (#2220).
+  caTierDue: caTierDue,
+  caRenewalPlan: caRenewalPlan,
+  renewCaCertificate: renewCaCertificate,
+  previousRootCertificates: previousRootCertificates,
   recertifyUseCase: recertifyUseCase,
   recertifyOrphanedSlots: recertifyOrphanedSlots,
   importCa: importCa,

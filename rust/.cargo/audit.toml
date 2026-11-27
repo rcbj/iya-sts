@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# rust/.cargo/audit.toml — what `cargo audit` (the daily workflow,
+# .github/workflows/dependency-windows.yml, #2220) is told to let through,
+# and why. `cargo audit` fails that run on every
+# RustSec vulnerability in Cargo.lock that is not listed here, so an entry
+# is a REVIEWED exception: the advisory, why it does not reach the remote
+# PEP or cannot be fixed yet, and what removes it. Remove the entry in the
+# change that removes the reason. The unmaintained and unsound warnings are
+# reported and do not fail the job.
+
+[advisories]
+ignore = [
+  # RUSTSEC-2023-0071, rsa 0.9.10 (Marvin: a timing side channel on RSA
+  # private-key operations). Reviewed 2026-11-25. There is no fixed release:
+  # the advisory names rsa >= 0.10, which is still a pre-release. The crate
+  # is reached only through oidc-caep-risc 0.3.0 (this project's SSF and
+  # OpenID Connect relying-party library), for RS*/PS* JWS; every RSA
+  # operation of the PEP's own code is OpenSSL's (`openssl::rsa`). Removed
+  # when oidc-caep-risc moves to rsa 0.10 or to OpenSSL.
+  "RUSTSEC-2023-0071",
+]

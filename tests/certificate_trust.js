@@ -206,9 +206,20 @@ async function run(t, double, crls) {
       usages: ['nonRepudiation'], eku: eku });
     const usageVerdict = await trust.assess(purpose.id,
       { leaf: wrongUsage.pem }, opts);
-    t.check(!usageVerdict.ok && usageVerdict.checks['key-usage'] === 'failed' &&
-            usageVerdict.code === 'STS-KEYS-0171',
-            'A. ' + purpose.id + ': the wrong keyUsage', usageVerdict.code);
+    if (purpose.leaf.keyUsage.length) {
+      t.check(!usageVerdict.ok &&
+              usageVerdict.checks['key-usage'] === 'failed' &&
+              usageVerdict.code === 'STS-KEYS-0171',
+              'A. ' + purpose.id + ': the wrong keyUsage', usageVerdict.code);
+    } else {
+      // A ROW THAT ASKS NO keyUsage (piv-attestation, #1955 P2: the slot's
+      // attestation certificate signs nothing, so no usage is asked of it)
+      // has no wrong one: the leaf holds, and the check is not failed.
+      t.check(usageVerdict.ok &&
+              usageVerdict.checks['key-usage'] !== 'failed',
+              'A. ' + purpose.id + ': asks no keyUsage, so any one holds',
+              usageVerdict.code + ' ' + JSON.stringify(usageVerdict.checks));
+    }
 
     if (!purpose.leaf.mayBeCa) {
       const isCa = await kit.mint({ cn: purpose.id + ' ca', issuer: root,
@@ -654,6 +665,45 @@ async function run(t, double, crls) {
   t.check(trust.registrationProblem('encryption-recipient',
                                     signsOnly.pem) !== null,
           'M. and at the door', '');
+  // THE KEYUSAGE WAIVER (rcbj, 2026-11-24, #2046): keyUsage alone, an
+  // encryption recipient alone.
+  const waived = trust.pinnedSync('encryption-recipient', signsOnly.pem,
+                                  { ignoreKeyUsage: true });
+  t.check(waived.ok,
+          'M. ignoreKeyUsage: a certificate that may not encipher is ' +
+          'accepted as a recipient', waived.code + ' ' + waived.why);
+  const signsOnlyOld = await kit.mint({ cn: 'old signer', usages:
+    ['digitalSignature'], notBefore: now - 3 * kit.DAY,
+    notAfter: now - kit.DAY });
+  const waivedOld = trust.pinnedSync('encryption-recipient', signsOnlyOld.pem,
+                                     { ignoreKeyUsage: true });
+  t.check(!waivedOld.ok && waivedOld.code === 'STS-KEYS-0168',
+          'M. ignoreKeyUsage waives keyUsage alone: an expired one is still ' +
+          'refused', waivedOld.code);
+  const otherPurpose = await kit.mint({ cn: 'saml signer usage', usages:
+                                        ['keyEncipherment'] });
+  const notHere = trust.pinnedSync('saml-signer', otherPurpose.pem,
+                                   { ignoreKeyUsage: true });
+  t.check(!notHere.ok && notHere.code === 'STS-KEYS-0171',
+          'M. ignoreKeyUsage is honoured for an encryption recipient only',
+          notHere.code);
+  // THE REQUEST'S OWN SIGNER (#2046): a CA-issued, digitalSignature-only
+  // certificate whose authority the signer truststore does not hold — as
+  // the realm's message-signing certificates are — is a recipient when it
+  // is named (the message-signing door validated it) and its keyUsage is
+  // waived, and its path is still asked when it is not named.
+  const ownCa = await kit.mint({ cn: 'own message-signing ca', ca: true });
+  const ownSigner = await kit.mint({ cn: 'own signer', issuer: ownCa,
+                                     usages: ['digitalSignature'] });
+  const namedSigner = trust.pinnedSync('encryption-recipient', ownSigner.pem,
+    { ignoreKeyUsage: true, named: true });
+  t.check(namedSigner.ok,
+          'M. the accepted signer\'s certificate, named, with keyUsage ' +
+          'waived, is a recipient', namedSigner.code + ' ' + namedSigner.why);
+  const unnamedSigner = trust.pinnedSync('encryption-recipient',
+    ownSigner.pem, { ignoreKeyUsage: true });
+  t.check(!unnamedSigner.ok && /chains to nothing/.test(unnamedSigner.why),
+          'M. not named, its path is still asked', unnamedSigner.why);
   // N. THE PATH HELPERS (Phase 5): a site's shape kept, the checks added.
   t.log.info('N. attestation, enrollment and credential paths');
   const pki = require('../common/pki');
@@ -744,13 +794,17 @@ async function run(t, double, crls) {
           nViaStore.reason);
   t.check(!(await nPath('pkinit', nStoreLeaf, [])).ok,
           'N. and one that does not, does not', '');
+  // `piv-card`'s truststore is its own setting, empty here; PKINIT's is this
+  // service's Root since #2118, so it is not the case that reaches nothing.
   t.check(trust.anchorsAvailable('webauthn-attestation', []) &&
-          !trust.anchorsAvailable('pkinit', []),
+          !trust.anchorsAvailable('piv-card', []),
           'N. so with no configured anchors the store is still something to ' +
           'reach, for the use case that may', '');
   await withSettings({ 'pki.paranoid': 'off' }, async () => {
-    t.check(!trust.anchorsAvailable('webauthn-attestation', []),
-            'N. and out of force it is not', '');
+    // #2118, D4: a use case's truststores are consulted in every mode;
+    // paranoid PKI mode decides what is checked, never what is reached.
+    t.check(trust.anchorsAvailable('webauthn-attestation', []),
+            'N. and out of force it still is (#2118, D4)', '');
   });
   const listedLeaf = await kit.mint({ cn: 'n listed', issuer: nRoot,
                                       crls: [crls.base + '/n.crl'] });

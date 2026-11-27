@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "De response_type-värden som den här klienten får be om — RFC 7591 avsnitt 2:s response_types, från en registrering eller skrivna av en administratör, varje värde en svarstyp (\"code\", \"code id_token\"). Auktoriseringsslutpunkten avvisar varje annan (unauthorized_client), i varje läge; en tom lista begränsar ingenting. Vad klienten faktiskt har bett om är oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthResponseMode.what": {
+    "en": "da78c92ade8f3875",
+    "text": "De response_mode-värden som denna klient får begära — query, fragment, form_post och JARM:s jwt, query.jwt, fragment.jwt och form_post.jwt — skrivna av en administratör. Auktoriseringsslutpunkten avvisar alla andra (unauthorized_client), och en begäran som inte nämner något hålls till sin svarstyps standardläge (query för code, fragment för resten), i varje läge; en tom lista begränsar inget utöver serverns response_modes_supported. Ingen RFC 7591-medlem bär det, så en registrering skriver det inte."
+  },
   "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
     "en": "6cd0b6407f668091",
     "text": "De svarstyper som utfärdar en åtkomsttoken från auktoriseringsslutpunkten — token, code token, id_token token, code id_token token — som denna klient får använda där RFC 9700-läget gäller (produktläge gör det alltid). Respekteras bara medan sfären undantar RFC 9700 avsnitt 2.1.2 (oauth2.allowImplicitTokenResponses, aldrig under OAuth 2.1 eller FAPI); då nekas en typ som inte listas här (unauthorized_client). TOM som standard, och tom betyder ingen. Skrivs av en administratör eller applikationens ägare medan sfären tillåter dessa typer, eller av en dynamisk registrering inom oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 avsnitt 2.1.2 säger att klienter INTE BÖR använda dem."
@@ -576,8 +580,8 @@
     "text": "Omfång som den här applikationen har BETT OM, ackumulerade allteftersom den ber. OBSERVERADE, aldrig deklarerade: ingenting tillåts eller avvisas utifrån dem. Vad applikationen får utfärdas är oauthAllowedScope."
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "2efedb4db176c20e",
-    "text": "DE SCOPES SOM DEN HÄR KLIENTEN FÅR UTFÄRDAS — RFC 7591 avsnitt 2:s `scope`, \"listan som klienten kan använda när den begär åtkomsttoken\". En scope-token per värde. Tre slags scope läser den olika.\n\n**Den här tjänstens egna skyddade scopes** — admin:read och admin:write (/admin-api), report:use och report:admin (/report-api), SCIM-scopes (scim.scopeRead, scim.scopeWrite), Shared Signals-scopes (ssf.authScopeRead, ssf.authScopeWrite, och alltid ssf.read och ssf.manage) och felsökarbehörigheten — utfärdas ENDAST till en klient som listar dem, I BÅDA LÄGENA. För Shared Signals omfattar write read: att lista en write-scope auktoriserar även read-scopen, medan att bara lista en read-scope inte auktoriserar en write-scope. Resursservern bakom var och en frågar igen vid varje anrop, så att ta bort ett värde här stänger ute redan utfärdade tokens. En RFC 7591-registrering får inte deklarera dem; en administratör gör det, här.\n\n**Varje annan scope**, i produktionsläge, utfärdas bara när den listas här — eller, när inget listas, när den ingår i standarduppsättningen: openid, profile, email, address, phone, offline_access och den här sfärens OpenID4VCI-credential-scopes. I utvecklingsläge utfärdas vilken scope som helst.\n\n**En scope som namnger en applikation eller en delegerad behörighet** behåller sina egna regler (målgruppen och oauthDelegatedPermission) och behöver inte listas.\n\nEn scope utanför listan vägras med invalid_scope vid auktoriserings- och tokenslutpunkterna (RFC 6749 avsnitt 3.3), och tas bort från en refresh eller ett tokenutbyte. Skiljer sig från oauthScope, som bara är vad klienten har bett om."
+    "en": "00c084c993d99663",
+    "text": "DE SCOPES SOM DEN HÄR KLIENTEN FÅR UTFÄRDAS — RFC 7591 avsnitt 2:s `scope`, \"listan som klienten kan använda när den begär åtkomsttoken\". En scope-token per värde. Tre slags scope läser den olika.\n\n**Den här tjänstens egna skyddade scopes** — admin:read och admin:write (/admin-api), report:use och report:admin (/report-api), SCIM-scopes (scim.scopeRead, scim.scopeWrite), Shared Signals-scopes (ssf.authScopeRead, ssf.authScopeWrite, och alltid ssf.read och ssf.manage) och felsökarbehörigheten — utfärdas ENDAST till en klient som listar dem, I BÅDA LÄGENA. För Shared Signals omfattar write read: att lista en write-scope auktoriserar även read-scopen, medan att bara lista en read-scope inte auktoriserar en write-scope. Resursservern bakom var och en frågar igen vid varje anrop, så att ta bort ett värde här stänger ute redan utfärdade tokens. En RFC 7591-registrering får inte deklarera dem; en administratör gör det, här.\n\n**Varje annan scope**, i produktionsläge, utfärdas bara när den listas här — eller, när inget listas, när den ingår i den standarduppsättning som oauth2.undeclaredClientScopes väljer: som standard enbart openid sedan 1.2.0 (ASVS 5.0.0 10.4.11); identity lägger till profile, email, address och phone; legacy, vad ett uppgraderat lager behåller, lägger dessutom till offline_access och den här sfärens OpenID4VCI-credential-scopes. I utvecklingsläge utfärdas vilken scope som helst.\n\n**En scope som namnger en applikation eller en delegerad behörighet** behåller sina egna regler (målgruppen och oauthDelegatedPermission) och behöver inte listas.\n\nEn scope utanför listan vägras med invalid_scope vid auktoriserings- och tokenslutpunkterna (RFC 6749 avsnitt 3.3), och tas bort från en refresh eller ett tokenutbyte. Skiljer sig från oauthScope, som bara är vad klienten har bett om."
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -734,6 +738,10 @@
   "applications.schema.attributes.appAuthzenCallbackUri.what": {
     "en": "2e00248f61ba1cad",
     "text": "CALLBACK FÖR AUTHZEN-ÅTKOMSTBEGÄRAN (#1180): en https-URL som den här klienten, som AuthZEN PEP, får ange som en åtkomstbegärans callback.endpoint — en per värde, matchad exakt. En begäran som anger någon annan avvisas; den här tjänsten anropar aldrig en callback-URL som enbart hämtats från en begäran. Sätts av en administratör, aldrig av anroparen."
+  },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "AUTHZEN-CALLBACK-OMFÖRSÖK (#1202): en registrerad callback-URL och de försök och den backoff som åsidosätter authzen.callbackAttempts och authzen.callbackBackoffS för den. Värdet är URL:en, sedan attempts=N (1 till 20) och backoff=S (60 till 86400), det ena eller båda. URL:en måste också vara ett appAuthzenCallbackUri-värde. Om den saknas använder den URL:en sfärens inställningar. Sätts av en administratör, aldrig av anroparen."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
@@ -1323,6 +1331,34 @@
     "en": "0462e40dda10b491",
     "text": "ETT XPATH-UTTRYCK SOM VÄLJER DET CERTIFIKATELEMENT SOM ETT WS-TRUST-SVAR KRYPTERAS TILL: ett ds:X509Certificate eller en BinarySecurityToken vars ValueType slutar på #X509v3. Samma delmängd som elementkartorna. När det är satt och inte väljer något, eller väljer ett element som inte är ett av de två, finns ingen mottagare och nästa källa prövas inte. Ett valt certifikatelement vars text inte är ett certifikat är ett fel för slutförd kryptering, och nästa källa prövas inte. När det inte är satt är mottagaren det första signeringscertifikatelement som begärans WS-Security-signatur namnger — den BinarySecurityToken som den signaturens referens pekar på, eller ett ds:X509Certificate i den signaturens KeyInfo. Ett tumavtryck, en Subject Key Identifier eller en utfärdare och ett serienummer är inte ett certifikatelement."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE eller FALSE: kräv att en begäran vars AppliesTo är den här applikationen bär en WS-Security-meddelandesignatur, vilket åsidosätter wstrust.signRequest. På är en begäran utan godtagen signatur ett FailedCheck, och varje element som wstrustSignRequestElements väljer måste täckas av den signaturen. Utvecklingsläget tror på en signatur, som det alltid har gjort, och prövar ändå kartan mot det som signaturen refererar."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "ELEMENTEN I EN WS-TRUST-BEGÄRAN SOM MÅSTE VARA SIGNERADE, ett XPath 1.0-uttryck vardera, i delmängden från wstrustEncryptRequestElements. Varje uttryck måste välja minst ett element, och varje element det väljer måste vara ett som begärans godtagna WS-Security-signatur refererar, eller ligga inuti ett sådant; annars är begäran ett FailedCheck. Tom: SOAP Body, som en signatur alltid täcker. Läses bara medan wstrustSignRequest (eller wstrust.signRequest) är på."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE eller FALSE: signera ett WS-Trust-svar för den här applikationen med en WS-Security-meddelandesignatur, och åsidosätt wstrust.signResponse. Svaret bär en wsu:Timestamp och en ds:Signature i sitt wsse:Security-huvud, gjord med den här sfärens XML-signeringsnyckel och med hänvisning till dess certifikat genom ett BinarySecurityToken; signaturen täcker Timestamp och elementen i wstrustSignResponseElements. Ett fel skickas osignerat. På, och signaturen inte kan göras, är begäran ett fel i båda lägena."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "ELEMENTEN I ETT WS-TRUST-SVAR SOM DESS SIGNATUR TÄCKER utöver wsu:Timestamp, ett XPath 1.0-uttryck vardera, i delmängden från wstrustEncryptResponseElements. Tom: SOAP Body. Ett element utan wsu:Id får ett. Ett uttryck som inte matchar något, eller ett som väljer själva wsse:Security-huvudet, är ett fel."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "Den ordning i vilken ett WS-Trust-svar för den här applikationen signeras och krypteras när båda är på, vilket åsidosätter wstrust.responseProtectionOrder: sign-then-encrypt (signaturens sammandrag är av klartexten, standard i WS-SecurityPolicy) eller encrypt-then-sign (de är av chiffertexten). wsse:Security-huvudet skrivs i den ordning en mottagare behandlar det."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE eller FALSE: kryptera även ds:Signature i ett WS-Trust-svar för den här applikationen (WS-SecurityPolicys sp:EncryptSignature), vilket åsidosätter wstrust.encryptSignature. Läses bara medan svaret både signeras och krypteras, signerat först; signaturen krypteras till svarets mottagare."
+  },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE eller FALSE: kryptera den här applikationens WS-Trust-svar till mottagarcertifikatet oavsett dess keyUsage, och åsidosätt wstrust.recipientIgnoresKeyUsage. Sfärens certifikat för meddelandesignering tillåter bara digitalSignature, så utan detta nekas ett svar krypterat till begärans signeringscertifikat. Bara keyUsage-kontrollen hoppas över: certifikatets giltighet, sökväg och spärrstatus kontrolleras fortfarande där paranoid PKI-läge kontrollerar dem."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "CERTIFIKATET SOM EN WS-TRUST-BEGÄRAN FÖR DET HÄR PROGRAMMET KRYPTERAS TILL, PEM. Så länge det är satt dekrypteras en begäran för programmet med dess privata nyckel och inte sfärens, och en begäran för det som krypterats till sfärens nyckel är en FailedCheck. Offentligt: programsidan och GET /admin-api/applications lämnar ut det."
@@ -1851,6 +1887,10 @@
     "en": "498689e2da216b2e",
     "text": "TRUE när den här UMA 2.0-resursservern får registrera resurser den SJÄLV ÄGER, med en skydds-API-token som skaffats med client_credentials. Saknas eller FALSE, standardvärdet, betyder att en PAT måste tillhöra en person (kodflödet) och att den personen äger det den registrerar."
   },
+  "applications.schema.attributes.appDynamicRoleSelection.what": {
+    "en": "b508dc418113551c",
+    "text": "TRUE eller FALSE: erbjuds dynamiskt valbara roller vid inloggningar till det här programmet (#1072), i stället för roles.dynamicSelection. FALSE visar ingen ruta ”Välj roller för den här inloggningen”, erbjuder ingen roll, och en token för programmet bär ingen dynamiskt vald roll."
+  },
   "devices.schema.objectClasses.device.what": {
     "en": "d480f4c7cd3a1226",
     "text": "cn, samt standardattributen owner och description."
@@ -2003,6 +2043,10 @@
     "en": "4e1dc3fa8c6c3e3c",
     "text": "Fjärr-PEP:en och vägen, som PEP:ens namn, ett snedstreck och vägens id, som denna policy GENERERADES för av vägens auktoriseringsval (enkel eller offentlig) i den omvända proxyns vägformulär eller av åtgärden generate-pep-route-policy (#1760). En sådan policy skrivs om när vägen sparas, byter namn med vägen och tas bort med den; den är aldrig roten. Den kan redigeras i policyredigeraren, och nästa sparande av vägens enkla eller offentliga val skriver den igen — välj en befintlig policy på vägen för att behålla en handskriven."
   },
+  "xacmlPolicies.schema.attributes.xacmlRole.what": {
+    "en": "665602e5460193b1",
+    "text": "Rollen (med sitt namn i ou=roles) som ÄGER den här policyn som sin behörighetspolicy (#1072): PDP:n beslutar den ensam, för en person, för att säga om den dynamiskt valbara rollen får erbjudas personen vid inloggning. En sådan policy är aldrig roten, nås aldrig via en PolicyIdReference från roten och skickas aldrig till en fjärr-PEP."
+  },
   "xacmlPeps.schema.objectClasses.xacmlPep.what": {
     "en": "2b063c0577e29981",
     "text": "En fjärransluten Policy Enforcement Point som har registrerat sig hos den här Policy Decision Point. RADEN ÄR EN REGISTRERING OCH INTE EN BEHÖRIGHET — en PEP som aldrig registrerar sig kan ändå hämta repositoriet och upprätthålla. Det en rad ger är en plats i konsolen och en adress för ändringsknuffen."
@@ -2106,6 +2150,30 @@
   "xacmlPeps.schema.attributes.xacmlPepListenersInUse.what": {
     "en": "b2a987046bb7d733",
     "text": "Vad fjärr-PEP:en senast rapporterade, i ett hjärtslag, om varje lyssnare den har (#1760), miljöns fyra och de definierade: ett JSON-dokument { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, med när det kom. Tillståndet är ett av listening, waiting, failed och off och orsaken en ur en sluten mängd, aldrig operativsystemets text; certifikatet är subjekt, utfärdare, serienummer, subjectAltName, giltighet och fingeravtryck för det den serverar. Alla andra medlemmar kastas. Ett hjärtslag utan det behåller det, ett med null rensar det och en registrering tar bort det. Saknas hos en PEP som är äldre än lyssnarna, vilket konsolen visar som inte rapporterat."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Vilken sorts fjärr-PEP som registrerade sig (#2026, del av #1206): container, avbildningen xacml-pep, eller embedded, en PEP i ett autentiseringsbibliotek via ett iya-pep-paket. En registrering som inte anger någon är container, så en äldre PEP läses som den alltid har lästs. En inbäddad PEP har ingen omvänd proxy, inga lyssnare och ingen AuthZEN-kant."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "Programmet som en inbäddad fjärr-PEP sade att den är inbäddad i när den registrerade sig (#2026). Godtas bara om det är programmet som dess post är bunden till (stsPepApplication, satt av en administratör), så det kan skilja sig från bindningen bara fram till PEP:ens nästa hjärtslag, som avvisas så snart de skiljer sig. Tomt för en container."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "En inbäddad fjärr-PEP:s läge (#2026): central, där varje beslut efterfrågas hos den här tjänstens AuthZEN-utvärderingsslutpunkt, eller local, där den hämtar sitt programs policyer och beslutar i processen. Tomt för en container, som inte får skicka något."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "PEP-protokollversionen som fjärr-PEP:ens paket talar, enligt dess registrering eller senaste hjärtslag (#2026). Den här tjänsten stöder version 1 och avvisar alla andra, så ett bibliotek som har hamnat efter syns i stället för att tyst vara fel. Tomt för en PEP som inte skickar någon (containern)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Om strömmen för programmet som en inbäddad fjärr-PEP är inbäddad i kan bära händelsen pep-policies-changed, enligt PEP:ens senaste hjärtslag (#2026): none (värden har ingen signalström, så PEP:en hämtar regelbundet), requested, excluded (programmets ssfEvents utesluter den) eller down. Tomt tills det har rapporterats."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Vad fjärr-PEP:en senast hämtade från GET /xacml/pep/policies (#2027): repository, varje aktiverad policy utom de undanhållna (containerns hämtning), eller bound-application, en inbäddad PEP:s i läget local: programmets egen policy, eller sfärens rot, och höljet av dess referenser. Behålls vid en ny registrering; ett byte granskas som xacml.pep.scope. Tomt tills den har hämtat."
   },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",

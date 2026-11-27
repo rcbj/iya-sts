@@ -8,7 +8,8 @@
 # ONE STACK, ONE ENVIRONMENT, ONE ACTION, INSIDE THE GCP TERRAFORM IMAGE
 # (issue #95) — deploy/aws/entrypoint.sh's contract without the cells.
 #
-#   TF_STACK    environment (default) | foundation
+#   TF_STACK    environment (default) | foundation | pep-cluster
+#   TF_PEP_CLUSTER  pep-cluster only: the cluster's name (#1284)       (aws)
 #   TF_ENV      an environment name, 2-12 [a-z0-9]
 #   TF_ACTION   init | validate | plan | apply | destroy | import | output |
 #               output-json
@@ -85,14 +86,50 @@ case "${TF_STACK}" in
     # Its prefix is in its own backend block.
     TF_DIR=/workspace/deploy/gcp/foundation
     ;;
-  *) die "unknown TF_STACK='${TF_STACK}' (environment | foundation)." ;;
+  pep-cluster)
+    # A REMOTE XACML PEP CLUSTER (#1284, deploy/gcp/pep-cluster/): AN
+    # ENVIRONMENT OF ITS OWN, named by TF_ENV like any other (`testpep`), that
+    # reads nothing of an iya-sts environment. Its state is under
+    # `environment/<pep env>/pep-cluster/<cluster>`, the prefix the deployer
+    # may write, and its name must be in the foundation's `pep_environments`
+    # (its members' account). The cluster name goes into a GCS prefix and
+    # resource names, so its grammar is checked here.
+    : "${TF_PEP_CLUSTER:=aws}"
+    [[ "${TF_PEP_CLUSTER}" =~ ^[a-z][a-z0-9-]{0,11}$ ]] || \
+      die "TF_STACK=pep-cluster needs TF_PEP_CLUSTER, 1-12 [a-z0-9-] starting with a letter; got '${TF_PEP_CLUSTER}'."
+    TF_DIR=/workspace/deploy/gcp/pep-cluster
+    BACKEND_ARGS+=(-backend-config="prefix=environment/${TF_ENV}/pep-cluster/${TF_PEP_CLUSTER}")
+    export TF_VAR_environment="${TF_ENV}" TF_VAR_cluster="${TF_PEP_CLUSTER}"
+    ;;
+  *) die "unknown TF_STACK='${TF_STACK}' (environment | foundation | pep-cluster)." ;;
 esac
 
 VAR_FILE_ARGS=()
-if [ "${TF_STACK}" = "environment" ] && [ -f "${TF_DIR}/envs/${TF_ENV}.tfvars" ];
+if { [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "pep-cluster" ]; } && [ -f "${TF_DIR}/envs/${TF_ENV}.tfvars" ];
 then
   say "using envs/${TF_ENV}.tfvars"
   VAR_FILE_ARGS=(-var-file="envs/${TF_ENV}.tfvars")
+fi
+
+# A PEP CLUSTER'S TWO VARIABLES WITH NO DEFAULT, as for an environment on
+# AWS (deploy/aws/entrypoint.sh): real ones for plan and apply, a stated
+# placeholder where the action only reads or destroys what state records.
+if [ "${TF_STACK}" = "pep-cluster" ];
+then
+  case "${TF_ACTION}" in
+    plan|apply|import)
+      [ -n "${TF_VAR_image_tag:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_image_tag (the pep-, companion- and init- images' tag)."
+      [ -n "${TF_VAR_allowed_cidrs:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_allowed_cidrs."
+      ;;
+    *)
+      : "${TF_VAR_image_tag:=unused}"
+      # A JSON list for Terraform, its quotes meant literally.
+      # shellcheck disable=SC2089
+      : "${TF_VAR_allowed_cidrs:=[\"192.0.2.1/32\"]}"
+      # shellcheck disable=SC2090
+      export TF_VAR_image_tag TF_VAR_allowed_cidrs
+      ;;
+  esac
 fi
 
 cd "${TF_DIR}"

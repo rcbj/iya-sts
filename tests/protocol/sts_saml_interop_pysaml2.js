@@ -42,6 +42,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const kitFactory = require("./saml_peer_kit.js");
@@ -145,7 +148,7 @@ async function signIn(w, b, query, opts) {
   const walked = await kit.walk(b, PEER + "/login?" + query, Object.assign({
     username: w.person, password: PASSWORD,
     stopAt: function (u, r) {
-      return u.indexOf(PEER + "/acs") === 0 && r.status !== 302;
+      return urls.isAt(u, PEER + "/acs") && r.status !== 302;
     } }, opts || {}));
   const last = await peer("GET", "/last");
   log.debug("Leaving signIn().");
@@ -340,7 +343,7 @@ async function unsolicited(w) {
     const walked = await kit.walk(b, url, {
       username: w.person, password: PASSWORD,
       stopAt: function (u, r) {
-        return u.indexOf(PEER + "/acs") === 0 && r.status !== 302;
+        return urls.isAt(u, PEER + "/acs") && r.status !== 302;
       } });
     const last = (await peer("GET", "/last")).body || {};
     await kit.check(w.mode + ": identity-provider-initiated SSO — pysaml2 " +
@@ -360,7 +363,7 @@ async function singleLogout(w) {
     await signIn(w, b, "binding=redirect&response=post");
     const walked = await kit.walk(b, PEER + "/logout", {
       stopAt: function (u, r) {
-        return u.indexOf(PEER + "/slo") === 0 && r.status !== 302;
+        return urls.isAt(u, PEER + "/slo") && r.status !== 302;
       } });
     const last = (await peer("GET", "/last")).body || {};
     const again = await signIn(w, b, "binding=redirect&response=post",

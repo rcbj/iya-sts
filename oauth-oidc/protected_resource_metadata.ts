@@ -144,8 +144,8 @@ interface ProtectedResourceMetadataDeps {
 }
 
 // Which build is calling, in RFC 9110 product form — the rule every outbound
-// requester here follows. Built once: the version cannot change.
-const USER_AGENT = version.userAgent('protected-resource-metadata');
+// requester here follows. Built per import by `defaultDeps()`'s `USER_AGENT`
+// getter since #2142: product leaves the build out.
 
 // RFC 9728 section 3's well-known URI suffix.
 const WELL_KNOWN = '/.well-known/oauth-protected-resource';
@@ -276,7 +276,17 @@ class ProtectedResourceMetadata {
       fedHttp: fedHttp,
       jwtAccessToken: jwtAccessToken,
       authorizationServers: authorizationServers,
-      USER_AGENT: USER_AGENT
+      // ASKED PER REQUEST (#2142): product leaves the build out, and the
+      // mode is per realm and may change while the process runs.
+      get USER_AGENT(): string {
+        helpers.log.debug("Entering ProtectedResourceMetadata" +
+                          ".defaultDeps().USER_AGENT.");
+        const out = version.userAgent('protected-resource-metadata',
+          mode.publishesBuildDetail());
+        helpers.log.debug("Leaving ProtectedResourceMetadata" +
+                          ".defaultDeps().USER_AGENT.");
+        return out;
+      }
     };
   }
 

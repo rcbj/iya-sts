@@ -793,6 +793,7 @@ import InstanceSlot = require('../common/instance_slot');
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
 import ProtocolSettingsPage = require('./web_protocol_settings');
+import ClusterStatusPage = require('./web_cluster_status');
 import RolesPage = require('./web_roles');
 import GroupsPage = require('./web_groups');
 import AuditPage = require('./web_audit');
@@ -1237,6 +1238,47 @@ const SECTIONS = [
                'browser was asked about attestation, the resident key or the ' +
                'attachment. Who holds a key is on that person\'s row under ' +
                '<a href="/admin/users">Users</a>.' },
+      // THE #1955 HARDWARE-TOKEN MECHANISMS, ONE PROTOCOLS PAGE EACH (#2049,
+      // rcbj 2026-11-23), beside the second factors because each answers
+      // *what does this mechanism do, and how is it configured* about a
+      // credential a person carries. The registers stay Directory →
+      // Hardware tokens (`/admin/hardware-tokens`), which keeps its tabs:
+      // where a page is filed is decided by the question it answers. Each
+      // is a row of PROTOCOL_SETTINGS_PAGES with a settings group of its
+      // own; they were scattered over Devices, TOTP MFA and PKI.
+      { path: '/admin/hardware-tokens-settings', label: 'Hardware tokens',
+        blurb: 'What a hardware-token register is and what a token proves: ' +
+               'a serial recorded only from the token\'s own attestation ' +
+               '(FIDO enterprise attestation, a YubiKey PIV attestation), ' +
+               'the evidence that earns <code>amr hwk</code> and ' +
+               '<code>pkinit-hardware</code>, the token facts XACML reads, ' +
+               'and retiring a lost token\'s credentials. The ' +
+               '<code>hardwareTokens.*</code> setting. The tokens ' +
+               'themselves are Directory → Hardware tokens.' },
+      // PIV with the tokens rather than beside PKI: its settings decide
+      // what an attested key on a card must be and whether a card signs a
+      // person in, which is a question about the token; the profiles it
+      // issues under are PKI's.
+      { path: '/admin/piv', label: 'PIV',
+        blurb: 'PIV and CAC smart cards (FIPS 201, NIST SP 800-73): the ' +
+               'YubiKey PIV attestation a slot certificate is issued ' +
+               'against, the PIN and touch policies an attested key must ' +
+               'hold, whether a card-authentication (9e) certificate signs ' +
+               'in, key-management escrow, and outside issuers mapped by ' +
+               'card UUID. Every <code>piv.*</code> setting.' },
+      { path: '/admin/yubiotp', label: 'YubiKey OTP',
+        blurb: 'Yubico OTP, checked by this service with the AES key it ' +
+               'holds: whether a slot may be enrolled, assigned or claimed, ' +
+               'whether the YK-VAL 2.0 verify endpoint answers, and ' +
+               'whether a plaintext seed file may be imported. Every ' +
+               '<code>yubiotp.*</code> setting.' },
+      { path: '/admin/oath-tokens', label: 'OATH tokens',
+        blurb: 'A vendor\'s HOTP and TOTP tokens, imported from its PSKC ' +
+               'seed file (RFC 6030), assigned by serial or claimed by the ' +
+               'person holding one, and checked at the one-time-code step ' +
+               '(RFC 4226). The <code>hotp.*</code> and <code>pskc.*</code> ' +
+               'settings; the imported tokens are Directory → Hardware ' +
+               'tokens.' },
       // DEVICE REGISTRATION (#164, #218, 2026-09-26): HOW a device comes to
       // be in the register and how it is recognised — the enrolment
       // methods, attestation, the MDM feed — and every `devices.*` setting.
@@ -1320,6 +1362,27 @@ const SECTIONS = [
                'project\'s own PKI code, vendored byte-identical, so a ' +
                'certificate issued here and one issued on its PKI / X.509 ' +
                'page are built by one encoder.' },
+      // SSH USER CERTIFICATES AND OPENPGP (#2049), beside PKI: both are
+      // keys this realm vouches for or publishes for a person — an OpenSSH
+      // user CA and the Web Key Directory — which is the question PKI's
+      // page answers for X.509. A person's own key and certificates stay
+      // Directory → Hardware tokens (its SSH tab) and Directory → OpenPGP
+      // keys (`/admin/openpgp`).
+      { path: '/admin/ssh-user-ca', label: 'SSH user certificates',
+        blurb: 'The realm\'s OpenSSH user certificate authority: the ' +
+               'public key a server trusts (TrustedUserCAKeys), its ' +
+               'revocation list, the algorithms it signs in, how long a ' +
+               'certificate lives with and without hardware evidence, its ' +
+               'extensions and principals: every <code>pki.ssh*</code> ' +
+               'setting.' },
+      { path: '/admin/openpgp-settings', label: 'OpenPGP',
+        blurb: 'OpenPGP keys (RFC 9580, and RFC 9980\'s post-quantum ' +
+               'composites) registered by signing a challenge, published ' +
+               'in the Web Key Directory, and used with S/MIME (RFC 8551) ' +
+               'to encrypt a person\'s mail: the algorithms accepted, the ' +
+               'post-quantum rules, the challenge, and the Web Key ' +
+               'Directory\'s switch and domains. Every ' +
+               '<code>openpgp.*</code> setting.' },
       // CERT ISSUANCE (2026-09-13 as *Certificate enrollment*; RENAMED AND
       // WIDENED 2026-09-22 at rcbj's ask): every protocol by which something
       // asks the certificate authority above for a certificate — ACME, EST,
@@ -1513,6 +1576,29 @@ const SECTIONS = [
                'compliance, and when it was last used. Click one to edit ' +
                'it, add or remove a key, give it to another owner or remove ' +
                'it; register one by hand at the foot of the list.' },
+      // HARDWARE TOKENS (#1955 P1): the device register's sibling, beside
+      // it and in Directory for its reason — the register is somebody's,
+      // and the page is a destination. Drawn by `web_hardware_tokens.ts`
+      // from `mgmt-api/hardware_tokens_api.ts`.
+      { path: '/admin/hardware-tokens', label: 'Hardware tokens',
+        blurb: 'Every physical security key and smart card this realm has ' +
+               'recorded, each from its own attestation (a self-declared ' +
+               'serial is never recorded): its vendor, serial and model, ' +
+               'who holds it, and the passkeys and certificates on it. ' +
+               'Report one lost to retire every credential on it at once.' },
+      // OpenPGP KEYS (#1955 P6): a person's OpenPGP key, its Web Key
+      // Directory publication, their S/MIME certificate and their mail
+      // encryption — what the OpenPGP and S/MIME tab of Tokens and keys
+      // shows the person, for an administrator. In Directory beside the
+      // tokens: it is somebody's.
+      // Drawn by `web_openpgp.ts` from `mgmt-api/openpgp_api.ts`.
+      { path: '/admin/openpgp', label: 'OpenPGP keys',
+        blurb: 'One person\'s OpenPGP key, registered by signing a ' +
+               'challenge with it (gpg --clearsign; on a YubiKey the card ' +
+               'signs), its publication in the Web Key Directory, their ' +
+               'S/MIME certificate and how their mail is encrypted. Issue ' +
+               'a challenge for them, register what they signed, or remove ' +
+               'the key.' },
       // ATTRIBUTE SOURCES (#94): in Directory because what they write is
       // on people's directory entries, and the register is `ou=
       // attributesources` in this realm's directory.
@@ -2364,6 +2450,17 @@ const SECTIONS = [
                'URL every issuer is built from. It replaces the development ' +
                'pages <code>/tls</code> and <code>/tls/forwarded</code>, and ' +
                'answers in product mode. No control.' },
+      // CSP REPORTS (#2164), beside TLS connection and for its reason: it
+      // REPORTS what arrived — the Content Security Policy violations
+      // browsers sent to this realm's `/web/csp-report` — and a realm
+      // administrator may read their own realm's. Drawn by
+      // `admin-ui/web_csp_reports.ts` from `GET /admin-api/csp-reports`.
+      { path: '/admin/csp-reports', label: 'CSP reports',
+        blurb: 'The Content Security Policy violations browsers reported ' +
+               'for this realm\'s pages, counted by directive since this ' +
+               'node\'s front process started, and where they are ' +
+               'forwarded. <strong>The figures are this node\'s' +
+               '</strong>.' },
       // THE SCHEDULER (2026-09-22, #49), after the caches and before the
       // audit log: the last page whose subject is the process itself, and the
       // one that says whether the background work is being DONE. Drawn by
@@ -2467,7 +2564,7 @@ const SECTIONS = [
       // service can draw, how often this realm's held rows carry each code, is
       // an account of what this service has DONE. A catalogue with no such
       // column would belong in the documentation, which is where the rest of
-      // this table is published (`docs/v1.1.0/error-codes.md`).
+      // this table is published (`docs/v1.2.0/error-codes.md`).
       { path: '/admin/error-codes', label: 'Error codes',
         blurb: 'Every way this service can fail or refuse, by subsystem, ' +
                'with what the client is told instead and how many rows in ' +
@@ -2612,6 +2709,18 @@ const SECTIONS = [
                'first signs in, anybody who signs in holds the roles ' +
                'that account holds: all three in the default realm, and ' +
                'Admin Read and Admin Write in a trust realm.' },
+      // TWO-PERSON APPROVAL (#2166), beside Admin roles: who may decide a
+      // held act is the roster on the page above. Drawn by
+      // `web_approvals.ts` from `GET /admin-api/approvals`.
+      { path: '/admin/approvals', label: 'Pending approvals',
+        blurb: 'Administrator acts held for a second administrator while ' +
+               'two-person approval (<code>admin.dualControl</code>, off by ' +
+               'default) is on: deleting a realm, granting an ' +
+               'administrator role, re-keying or revoking a CA, replacing ' +
+               'a trust anchor, signing-key and key-encryption-key ' +
+               'rotation. A second, different administrator holding the ' +
+               'same authority approves or refuses each; its requester may ' +
+               'withdraw it; it expires undecided.' },
       // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), beside Admin roles and
       // for the reason it is in this section at all: the question it answers
       // is whether this service is set up to serve the debugger and to whom,
@@ -2920,7 +3029,12 @@ const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
 // `tests/person_fields.js` now holds every sub-tab the page draws to this
 // list.
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
-  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos'].concat(
+  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos',
+  // A person's token and key sub-tabs (#2052).
+  'ucred-hardware-tokens', 'ucred-oath-tokens', 'ucred-yubiotp',
+  'ucred-piv', 'ucred-ssh', 'ucred-openpgp',
+  // Its certificate sign-in bindings (#2080).
+  'ucred-cert-binding'].concat(
   personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
@@ -4514,7 +4628,16 @@ class AdminConsole {
       '.fg-cell.fg-required{border-color:#e8b4b0;border-left:4px solid ' +
       '#b00020;background:#fffafa}' +
       '.fg-required .fg-name::after{content:" *";color:#b00020}' +
+      // The same in a policy's table of fields (#1132), and a required
+      // cell drawn on its own above such a table.
+      '.fg-required-row>td:first-child{border-left:4px solid #b00020;' +
+      'background:#fffafa}' +
+      '.fg-required-row>td:first-child label::after{content:" *";' +
+      'color:#b00020}' +
+      '.fg-cell.fg-solo{max-width:28rem;margin:.4em 0 .8em}' +
+      // A directory create form's email and password boxes (#1132) too.
       '.fg-cell input[type=text],.fg-cell input[type=number],' +
+      '.fg-cell input[type=email],.fg-cell input[type=password],' +
       '.fg-cell select,.fg-cell textarea{width:100%;box-sizing:border-box;' +
       'min-height:0}' +
       '.fg-item{display:flex;gap:.3em;align-items:center;margin:.2em 0}' +
@@ -4556,6 +4679,43 @@ class AdminConsole {
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +
       '.fg-view{align-items:center;gap:.8em}' +
+      // THE WS-TRUST XPATH BUILDER (#1917, `web_wstrust_protection.ts`): the
+      // sample's element tree as nested lists of names, the elements the
+      // expression matches marked in amber and the one clicked outlined, so
+      // a match is never told by colour alone.
+      '.wsp-presets td{vertical-align:middle}' +
+      '.wsp-sample{width:100%;font-family:monospace;font-size:.85em}' +
+      '.wsp-tree{max-height:28em;overflow:auto;margin:.4em 0}' +
+      '.wsp-tree ul{list-style:none;margin:0;padding-left:1.2em}' +
+      '.wsp-tree ul.wsp-root{padding-left:0}' +
+      '.wsp-el{font-family:monospace;font-size:.85em;padding:.05em .4em;' +
+      'margin:.1em 0}' +
+      '.wsp-el.wsp-match{background:#fff8c5;border-color:#9a6700}' +
+      '.wsp-el.wsp-match::after{content:" \\2713"}' +
+      '.wsp-el.wsp-chosen{outline:2px solid #0969da}' +
+      '.wsp-expression{width:70%;font-family:monospace}' +
+      // ITS DIALOG AND THE CARDS THAT OPEN IT (#2046): a modal `<dialog>`
+      // in the page, its body scrolling inside the viewport, and the button
+      // at the foot of each target field's card.
+      '.wsp-dialog{width:min(64rem,94vw);max-height:90vh;padding:0;' +
+      'border:1px solid #c5c5d3;border-radius:10px;' +
+      'box-shadow:0 18px 60px rgba(0,0,0,.35)}' +
+      '.wsp-dialog[open]{display:flex;flex-direction:column}' +
+      '.wsp-dialog::backdrop{background:rgba(20,20,30,.55)}' +
+      '.wsp-dialog-head{display:flex;align-items:flex-start;gap:1rem;' +
+      'padding:.8rem 1.1rem .6rem;border-bottom:1px solid #e3e3ea}' +
+      '.wsp-dialog-head h3{margin:0;flex:1 1 auto}' +
+      '.wsp-dialog-head .sub{font-weight:400;color:#555}' +
+      '.wsp-dialog-x{font-size:1.5rem;line-height:1;padding:.05rem .45rem}' +
+      '.wsp-dialog-body{padding:.6rem 1.1rem;overflow:auto}' +
+      '.wsp-dialog-foot{padding:.6rem 1.1rem;border-top:1px solid #e3e3ea;' +
+      'text-align:right}' +
+      '.wsp-list code{word-break:break-all}' +
+      '.wsp-list li{margin:.2em 0}' +
+      '.wsp-cellbuilder{margin-top:.4em}' +
+      '.wsp-cellbuilder .wsp-added{margin:.3em 0 0;font-size:.9em}' +
+      '.wsp-part{border-top:1px solid #e3e3ea;margin-top:.8em}' +
+      '.wsp-part .fg-section h5{margin:.6em 0 .3em;font-size:.95em}' +
       // A SUB-TAB'S SIMPLE / ADVANCED SWITCH (#500, `WebKit.viewSwitch()`):
       // while Simplified is ticked the form's advanced cells, and a headed
       // section holding only those, are not drawn; they stay in the form,
@@ -4689,7 +4849,8 @@ class AdminConsole {
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
        'tab-locale', 'tab-attributes', 'tab-profiles', 'tab-transfer',
        'listeners-tab-metadata',
-       'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
+       'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults',
+       'tab-cert-sign-in'],
       LISTENER_TAB_IDS, POLICY_SUB_TAB_IDS,
       CERT_TAB_IDS, CERT_SUB_TAB_IDS,
       WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
@@ -4774,6 +4935,9 @@ class AdminConsole {
     // `web_runtime.ts`, only where one is not this listener — so a service
     // with no custom listener draws the shell it always did.
     const there = elsewhere || {};
+    // THE NOTICE IN THE REQUEST'S LANGUAGE (#2220), from the `browser`
+    // catalog; the English is the words it always had.
+    const t = ShellDocument.translator();
     // ONE WRITER FOR EVERY STATIC SURFACE'S SHELL (#570): the bytes are
     // what this method drew by hand until then.
     const html = ShellDocument.document({
@@ -4791,10 +4955,13 @@ class AdminConsole {
                              'in at this address.'),
                     'This console cannot sign in here')
         : null,
-      noscript: this.warn('This console is a script that runs ' +
+      noscript: this.warn(ShellDocument.said(t, 'browser.noscript.console',
+        'This console is a script that runs ' +
         'in your browser and draws every page from <code>/admin-api' +
-        '</code>; with scripts blocked there is nothing it can show.',
-        'Scripts are blocked'),
+        '</code>; with scripts blocked there is nothing it can show.'),
+        t && t.has('browser.noscript.console.title')
+          ? t.text('browser.noscript.console.title') : 'Scripts are blocked'),
+      translator: t,
       loading: '<p class="lede">Signing in&hellip;</p>',
       esc: (value: unknown) => this.esc(value)
     });
@@ -7766,131 +7933,36 @@ class AdminConsole {
   // page, and the page says how old it is. A synchronous page cannot wait for a
   // query, and a page that silently showed an hour-old membership would be
   // worse than one that says "as of two seconds ago".
+  //
+  // **DRAWN BY `web_cluster_status.ts` SINCE #2070** (2026-11-24), from the
+  // JSON this block answers passed through JSON, as `persistenceStatusBlock()`
+  // is drawn by `web_protocol_settings.ts`. The console is a static
+  // application since #446, so that JSON is all a browser has: the markup
+  // this function built here went unused from then until #2070 and is gone,
+  // and what the page decides — serving or standby read from the lease
+  // table, the members folded by name, every time the database's clock — is
+  // decided there, over `status.self`, `status.nodes`, `status.members`,
+  // `status.leases` and `status.serviceLease`.
   // ===========================================================================
   /**
-   * The Cluster page's section on every OTHER cell's cluster (#361), from
+   * The Cluster page's facts about every OTHER cell's cluster (#361), from
    * what `prepareClusterPage()` read: each cell's running members (folded
    * by name, with their restarts), its leases and each node's worker
-   * pools; a cell that did not answer is drawn as unreachable, with why.
-   * Times are the answering cell's database clock, shown relative to the
-   * moment it answered.
+   * pools, or why a cell did not answer.
    *
-   * @returns `{ html, json }`; both empty in single-cell mode
+   * @returns `{ askedAt, cells, error }`, or null in single-cell mode
    */
-  otherCellsBlock() {
+  otherCellsJson() {
     const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.otherCellsBlock().");
+    log.debug("Entering AdminConsole.otherCellsJson().");
     const held = this.peerClustersNow;
     if (!held) {
-      log.debug("Leaving AdminConsole.otherCellsBlock(). Single cell.");
-      return { html: '', json: null };
+      log.debug("Leaving AdminConsole.otherCellsJson(). Single cell.");
+      return null;
     }
-    const agoFrom = function (at, t) {
-      if (!t) {
-        return '—';
-      }
-      const ms = at - t;
-      return ms >= 0 ? self.esc(self.durationText(ms)) + ' ago'
-                     : 'in ' + self.esc(self.durationText(-ms));
-    };
-    const sections = (held.rows || []).map(function (row) {
-      const head = '<h3>Cell <code>' + self.esc(row.cell) + '</code> (' +
-        self.esc(row.jurisdiction || '?') + ')</h3>';
-      if (!row.reachable) {
-        return head + self.warn('<strong>This cell did not answer.</strong> ' +
-          self.esc(row.error || '') + ' Its members may be running; the ' +
-          'inter-cell channel could not ask them.');
-      }
-      const sum = row.summary || {};
-      const at = Number(sum.at) || 0;
-      if (!sum.clustered) {
-        return head + self.note('Answered in ' +
-          self.esc(String(row.answeredMs)) + 'ms; it is not clustered ' +
-          '(<code>cluster.mode</code> ' + self.esc(sum.mode || 'off') +
-          ').');
-      }
-      const members = sum.members || { live: [], restarts: {}, gone: [] };
-      const restarts = members.restarts || {};
-      const live = (members.live || []).map(function (n) {
-        const r = restarts[n.name] || null;
-        return '<tr><td><strong>' + self.esc(n.name) + '</strong></td><td>' +
-          self.esc(n.mode) + '</td><td>' + self.esc(n.version || 'unknown') +
-          '</td><td>' + (n.uptimeMs
-            ? self.esc(self.durationText(n.uptimeMs)) : '—') +
-          (r ? '<br><span class="sub">restarted ' + self.esc(String(r.count)) +
-               ' time(s), the last life ended ' + agoFrom(at, r.lastEndedAt) +
-               '</span>' : '') +
-          '</td><td>' + agoFrom(at, n.heartbeatAt) +
-          (n.lastStallMs ? '<br><strong>last stall ' +
-            self.esc(String(Math.round(n.lastStallMs / 100) / 10)) +
-            's</strong>' : '') +
-          '</td><td>' + self.esc(String(n.workers || 0)) + '</td><td>' +
-          ((n.leases || []).map(function (l) {
-            return '<code>' + self.esc(l) + '</code>';
-          }).join('<br>') || 'none') + '</td><td>' +
-          (n.agrees === null ? 'not known there'
-            : n.agrees ? 'yes' : '<strong>NO</strong>') + '</td></tr>';
-      }).join('');
-      const gone = (members.gone || []).map(function (n) {
-        return '<tr><td>' + self.esc(n.name || '(no name)') + '</td><td>' +
-          self.esc(n.version || 'unknown') + '</td><td>' +
-          (n.how === 'left' ? 'left cleanly ' : '<strong>expired</strong> ') +
-          agoFrom(at, n.endedAt) + (n.earlierLives
-            ? '<br><span class="sub">and ' + self.esc(String(n.earlierLives)) +
-              ' earlier life/lives</span>' : '') + '</td></tr>';
-      }).join('');
-      const pools = (sum.pools || []).map(function (node) {
-        return (node.pools || []).map(function (p) {
-          return '<tr><td>' + self.esc(node.name) +
-            (node.state && node.state !== 'live'
-              ? ' <em>(' + self.esc(node.state) + ')</em>' : '') +
-            '</td><td>' + self.esc(p.title || p.id) + '</td><td>' +
-            self.esc(p.state || '') + '</td><td>' +
-            self.esc(String(p.currentWorkers)) + '</td><td>' +
-            self.esc(String(p.busyWorkers)) + '</td><td>' +
-            self.esc(String(p.freeWorkers)) + '</td><td>' +
-            self.esc(String(p.crashed)) + '</td><td>' +
-            self.esc(String(p.failedStarts)) + '</td></tr>';
-        }).join('');
-      }).join('');
-      return head + '<div class="tiles">' +
-        self.tile((members.live || []).length, 'running') +
-        self.tile((sum.leases || []).length, 'leases held') +
-        self.tile((members.gone || []).length, 'left or expired') +
-        '</div><p class="sub">Mode ' + self.esc(sum.mode) +
-        '; answered in ' + self.esc(String(row.answeredMs)) + 'ms. Times ' +
-        'are that cell\'s database clock, relative to when it answered.</p>' +
-        self.wideTable('Running members of cell ' + row.cell,
-          '<table><tr><th>Node</th><th>Mode</th><th>Version</th><th>Up</th>' +
-          '<th>Last seen</th><th>Request workers</th><th>Leases</th>' +
-          '<th>Settings agree</th></tr>' +
-          (live || '<tr><td colspan="8">no running members</td></tr>') +
-          '</table>') +
-        (gone ? '<details class="fold"><summary>' +
-          self.esc(String((members.gone || []).length)) + ' node name(s) ' +
-          'that have left or expired</summary><div class="foldbody">' +
-          self.wideTable('Left or expired in cell ' + row.cell,
-            '<table><tr><th>Node</th><th>Version</th><th>Ended</th></tr>' +
-            gone + '</table>') + '</div></details>' : '') +
-        (pools ? self.wideTable('Worker pools of cell ' + row.cell,
-          '<table><tr><th>Node</th><th>Pool</th><th>State</th>' +
-          '<th>Workers</th><th>Busy</th><th>Free</th><th>Crashed</th>' +
-          '<th>Failed starts</th></tr>' + pools + '</table>')
-          : (sum.poolsError ? self.note('Its worker pools could not be ' +
-              'read: ' + self.esc(sum.poolsError)) : ''));
-    }).join('');
-    const html = '<h2>The other cells</h2>' +
-      self.note('This service runs as several cells, each its own cluster ' +
-        'against its own database; the list above is this cell\'s. Each ' +
-        'other cell was asked over the inter-cell channel for its members ' +
-        'and pools when this page was drawn — names and counts only, never ' +
-        'an address.') +
-      (held.error ? self.warn(self.esc(held.error)) : '') +
-      (sections || self.note('No other cell is configured.'));
-    log.debug("Leaving AdminConsole.otherCellsBlock().");
-    return { html: html, json: { askedAt: held.at, cells: held.rows || [],
-                                 error: held.error || null } };
+    log.debug("Leaving AdminConsole.otherCellsJson().");
+    return { askedAt: held.at, cells: held.rows || [],
+             error: held.error || null };
   }
 
   /**
@@ -7898,413 +7970,49 @@ class AdminConsole {
    * active-active still waits for and the shared secrets, for
    * /admin/cluster. The member tables are a snapshot, and say how old.
    *
-   * @returns `html`, the block, and `json`, the status, snapshot and
-   *   secrets it was drawn from
+   * @returns `html`, the block (`web_cluster_status.ts`), and `json`, the
+   *   status, snapshot and secrets it is drawn from
    */
   clusterStatusBlock() {
     const { log, cluster, clusterSecrets, clusterBarrier } = this.deps;
-    const consoleSelf = this;
     log.debug("Entering AdminConsole.clusterStatusBlock().");
     const self = cluster.status();
     const snap = cluster.snapshot();
     const state = snap.state;
-    const secrets = clusterSecrets.describe();
-    const barrier = clusterBarrier.report();
-    const off = self.mode === 'off';
-    const nameOf = {};
-    ((state && state.nodes) || []).forEach(function (node) {
-      nameOf[node.nodeId] = node.name;
-    });
-    // A TIME AGAINST THE DATABASE'S CLOCK, never this process's. Tenths of a
-    // second up to two minutes, because every lifetime and every heartbeat on
-    // this page is seconds long and a tenth is the difference between a node
-    // that is late and one that is dead; past two minutes it is a duration,
-    // because "7200s ago" is a number a reader has to divide (2026-09-17, the
-    // roster — a node that left hours ago is on this page now).
-    const ago = function (at) {
-      if (!state || !at) {
-        return '—';
-      }
-      const ms = state.now - at;
-      const size = Math.abs(ms);
-      const much = size >= 120000
-        ? consoleSelf.durationText(size)
-        : String(Math.round(size / 100) / 10) + 's';
-      return ms >= 0 ? consoleSelf.esc(much) + ' ago'
-                     : 'in ' + consoleSelf.esc(much);
-    };
-
-    const rows = [
-      ['Mode',
-       '<strong>' + this.esc(self.mode) + '</strong> — ' + this.esc(self.why) +
-        (self.refused ? '. ' + this.warn(this.esc(self.refused)) : '')],
-      ['This node', off ? 'not a member of anything'
-        : '<code>' + this.esc(self.nodeId) + '</code> (' + this.esc(self.name) +
-          '), ' +
-          this.esc(self.role === 'worker' ? 'a request worker of that node'
-                                          : 'the front process') +
-          (self.joinedAt ? ', joined ' + this.esc(self.joinedAt) : '')],
-      ['Heartbeat', off ? '—'
-        : 'every ' + this.esc(String(self.heartbeatMs)) + 'ms, lifetime ' +
-          this.esc(String(self.ttlMs)) + 'ms by the database clock' +
-          (self.msSinceRenewal !== null
-            ? '; last renewed ' + this.esc(String(self.msSinceRenewal)) +
-              'ms ago'
-            : '') +
-          (self.heartbeatFailures
-            ? '. <strong>' + this.esc(String(self.heartbeatFailures)) +
-              ' consecutive failure(s)</strong>: ' +
-              this.esc(String(self.lastHeartbeatError)) +
-              '. A node that cannot renew within its lifetime exits.'
-            : '')],
-      ['Leases held here', off || !self.leases.length ? 'none'
-        : self.leases.map(function (lease) {
-          return '<code>' + consoleSelf.esc(lease.name) + '</code> at token ' +
-                 consoleSelf.esc(String(lease.token));
-        }).join(', ')],
-      ['Read barrier', barrier.active
-        ? this.esc(String(barrier.requests)) + ' request(s) waited a mean ' +
-          this.esc(String(Math.round(barrier.meanWaitMs * 10) / 10)) + 'ms ' +
-          'to catch up; ' + this.esc(String(barrier.gaveUp)) + ' were served ' +
-          'before catching up; ' + this.esc(String(barrier.heldForCommit)) +
-          ' response(s) were held a mean ' +
-          this.esc(String(Math.round(barrier.meanHoldMs * 10) / 10)) + 'ms ' +
-          'for their writes to commit' + (barrier.commitFailures
-            ? ', <strong>' + this.esc(String(barrier.commitFailures)) +
-              ' of which failed</strong>' : '')
-        : 'off — only active-active nodes wait for each other\'s writes']
-    ];
-
-    // =======================================================================
-    // THE ROSTER (2026-09-17): WHO IS RUNNING, AND WHEN ANYTHING LAST HEARD
-    // FROM THEM.
-    //
-    // The first question an operator brings to this page is whether the other
-    // container is up and when it was last seen, and until this it was
-    // answered by one table that mixed the live members in with every row the
-    // store has kept and left out everything the membership row's `info`
-    // carries. So the LIVE members come first, one row each, with what only
-    // that node can say about itself — where it runs, how long its process has
-    // been up, how many processes answer requests there, whether its event
-    // loop has stalled — and the rows that have left or expired are folded
-    // underneath rather than thrown away, because #46's own failure mode is a
-    // node whose row expired while its process kept running and the operator
-    // needs to see that it was here.
-    //
-    // **EVERY TIME HERE IS THE DATABASE'S CLOCK** (`state.now`), never this
-    // process's: two containers' clocks differ, and `cluster.js` measures a
-    // lease against the store's clock for exactly that reason. `info.uptimeMs`
-    // is the one exception and is labelled as the node's own, because no other
-    // clock can state how long a process has been running.
-    //
-    // **AND IT IS DRAWN EVEN WHEN THIS PROCESS IS NOT CLUSTERED.** A section
-    // that disappears in `off` mode reads as a page that has not loaded; one
-    // that says there is no membership to list answers the question.
-    // =======================================================================
-    const nodes = state ? state.nodes : [];
-    const now = state ? state.now : 0;
     // FOLDED BY NAME (2026-09-30, `cluster.foldMembers()`): a dead row whose
-    // name has a live row is that node's restart history and is counted on
-    // its live row; only a name with no live row has left or expired, drawn
-    // once. A snapshot from an older build carries no `members`, so it is
-    // folded here from the rows.
-    const folded = (state && state.members) ||
-                   cluster.foldMembers(nodes, now);
-    const live = folded.live;
-    const gone = folded.gone;
-    const restarts = folded.restarts || {};
-
-    // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
-    // a released lease is expired and never deleted (the fencing token must
-    // never go back to 1), so a page that listed every row would say a node
-    // holds what it gave up.
-    const leasesOf = {};
-    ((state && state.leases) || []).forEach(function (lease) {
-      if (lease.expiresAt <= now) {
-        return;
-      }
-      if (!leasesOf[lease.holder]) {
-        leasesOf[lease.holder] = [];
-      }
-      leasesOf[lease.holder].push(lease);
-    });
-
-    // WHAT A LIVE NODE IS DOING is not the same question as whether it is
-    // alive, and the difference is the whole of active-passive mode: one
-    // member holds the service lease and serves, and every other one is a
-    // standby that has restored nothing and bound nothing. The LEASE TABLE is
-    // the only thing that says which, so it is read rather than guessed from
-    // the node's own mode.
-    const roleOf = function (node) {
-      const mine = leasesOf[node.nodeId] || [];
-      const serving = node.mode === 'active-active' || mine.some(
-        function (lease) {
-          return lease.name === cluster.SERVICE_LEASE;
-        });
-      return serving ? { label: 'serving', cls: 'state-valid' }
-                     : { label: 'standby', cls: 'state-none' };
+    // name has a live row is that node's restart history; only a name with
+    // no live row has left or expired. A snapshot from an older build
+    // carries no `members`, so it is folded here from the rows.
+    const folded = state
+      ? (state.members || cluster.foldMembers(state.nodes, state.now))
+      : null;
+    const json = {
+      self: self, snapshotAgeMs: snap.ageMs,
+      nodes: state ? state.nodes : [],
+      // The page's reading of `nodes`, folded by name (rule 7).
+      members: folded ? {
+        running: folded.live.map(function (node) {
+          return node.nodeId;
+        }),
+        restarts: folded.restarts || {},
+        leftOrExpired: folded.gone.map(function (node) {
+          return { nodeId: node.nodeId, name: node.name,
+                   earlierLives: node.earlierLives || 0 };
+        })
+      } : null,
+      leases: state ? state.leases : [],
+      // Which lease makes a member the one serving in active-passive mode
+      // (#2070): the page reads serving or standby from the lease table.
+      serviceLease: cluster.SERVICE_LEASE,
+      databaseNow: state ? state.now : null,
+      otherCells: this.otherCellsJson(),
+      secrets: clusterSecrets.describe(),
+      barrier: clusterBarrier.report()
     };
-
-    // WHERE THE CONTAINER IS, out of the membership row's `info` — the only
-    // channel a node has to tell the others anything about itself, rewritten
-    // on its join and on every heartbeat (`cluster/cluster.js`, `nodeInfo()`).
-    // A row written by an older build simply has fewer members in it, so
-    // nothing below assumes any one of them is there.
-    const whereOf = function (node) {
-      const info = node.info || {};
-      const parts = [];
-      if (info.host) {
-        parts.push('<code>' + consoleSelf.esc(String(info.host)) +
-                   (info.port ? ':' + consoleSelf.esc(String(info.port)) : '') +
-                   '</code>');
-      }
-      if (info.pid) {
-        parts.push('pid ' + consoleSelf.esc(String(info.pid)));
-      }
-      if (info.workers) {
-        parts.push(consoleSelf.esc(String(info.workers)) +
-                   ' request worker(s)');
-      }
-      return parts.length ? parts.join('<br>') : '—';
-    };
-
-    // HOW LONG THE PROCESS HAS BEEN UP, which the node states itself, falling
-    // back to how long its membership row has existed. They are different
-    // facts and the second is the weaker one — a row is written after the
-    // process starts and survives a restart that reuses no node id — so it is
-    // only used where the node said nothing.
-    const upOf = function (node) {
-      const info = node.info || {};
-      const r = restarts[node.name || ''];
-      const history = r
-        ? '<br><span class="sub">restarted ' +
-          consoleSelf.esc(String(r.count)) + ' time(s), the last life ended ' +
-          ago(r.lastEndedAt) + '</span>'
-        : '';
-      if (info.uptimeMs) {
-        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs)) +
-               history;
-      }
-      return 'joined ' + ago(node.startedAt) + history;
-    };
-
-    // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
-    // the stall that explains a late heartbeat. A blocked event loop cannot
-    // heartbeat, so the last stall a node saw is the first thing to look at
-    // when its row is close to expiring, and it is the reason `cluster.js`
-    // logs `STS-CLUSTER-0025` at all. It is the MOST RECENT stall rather than
-    // the worst one, which is what `status()` reports as `lastStallMs` too.
-    const seenOf = function (node) {
-      const info = node.info || {};
-      const stall = Number(info.lastStallMs) || 0;
-      return ago(node.heartbeatAt) + (stall
-        ? '<br><strong>last stall ' +
-          consoleSelf.esc(String(Math.round(stall / 100) / 10)) + 's</strong>'
-        : '');
-    };
-
-    const leasesCell = function (node) {
-      const mine = leasesOf[node.nodeId] || [];
-      if (!mine.length) {
-        return 'none';
-      }
-      return mine.map(function (lease) {
-        return '<code>' + consoleSelf.esc(lease.name) + '</code> at token ' +
-               consoleSelf.esc(String(lease.token));
-      }).join('<br>');
-    };
-
-    const agreesCell = function (node) {
-      if (node.agrees === null) {
-        return 'not known here';
-      }
-      return node.agrees ? 'yes'
-        : '<strong>NO</strong> — two nodes with different values answer ' +
-          'the same request two ways';
-    };
-
-    const liveRows = live.map(function (node) {
-      const role = roleOf(node);
-      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
-        '</strong>' + (node.nodeId === self.nodeId
-          ? ' <em>(this node)</em>' : '') +
-        '<br><code>' + consoleSelf.esc(node.nodeId) + '</code></td><td>' +
-        whereOf(node) + '</td><td><span class="' + role.cls + '">' +
-        consoleSelf.esc(role.label) + '</span><br>' +
-        consoleSelf.esc(node.mode) + '</td><td>' +
-        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
-        upOf(node) + '</td><td>' + seenOf(node) + '</td><td>' +
-        ago(node.expiresAt) + '</td><td>' + leasesCell(node) + '</td><td>' +
-        agreesCell(node) + '</td></tr>';
-    }).join('');
-
-    const goneRows = gone.map(function (node) {
-      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
-        '</strong><br><code>' + consoleSelf.esc(node.nodeId) +
-        '</code></td><td>' + whereOf(node) + '</td><td>' +
-        consoleSelf.esc(node.mode) + '</td><td>' +
-        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
-        ago(node.startedAt) + '</td><td>' + ago(node.heartbeatAt) +
-        '</td><td>' + (node.leftAt
-          ? 'left cleanly ' + ago(node.leftAt)
-          : '<strong>expired</strong> ' + ago(node.expiresAt)) +
-        (node.earlierLives
-          ? '<br><span class="sub">and ' +
-            consoleSelf.esc(String(node.earlierLives)) +
-            ' earlier life/lives under this name</span>'
-          : '') +
-        '</td></tr>';
-    }).join('');
-
-    const goneTable = !gone.length ? ''
-      : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
-        ' node(s) that have left or expired</summary><div class="foldbody">' +
-        '<p>One row per NODE NAME with no running member: a name that is ' +
-        'running again is that node restarted, counted on its running row ' +
-        'above rather than listed here, and a name that ended several ' +
-        'times is shown once, as its latest life.</p>' +
-        '<p>A node that stopped cleanly released its leases on the way out, ' +
-        'so another member took them over within one heartbeat. A node that ' +
-        'EXPIRED did not, and its leases waited out their lifetime — and it ' +
-        'is dead for good either way: the heartbeat refuses to renew an ' +
-        'expired row, so its process exits rather than come back quietly.</p>' +
-        this.wideTable('Nodes that have left or expired',
-          '<table><tr><th>Node</th><th>Where</th><th>Mode</th>' +
-          '<th>Version</th><th>Started</th><th>Last seen</th><th>Ended</th>' +
-          '</tr>' + goneRows + '</table>') + '</div></details>';
-
-    // TWO DIFFERENT REASONS FOR NO LIST, AND THEY MUST NOT SHARE A SENTENCE
-    // (2026-09-18). `off` is a fact about the configuration. No `state` on a
-    // clustered process is a fact about THIS PROCESS: it has not read the
-    // member list yet — a request worker reads it when it attaches and then
-    // at most once a heartbeat, and a page drawn in the gap has nothing to
-    // show. The first version said "cluster.mode resolved to off" for both,
-    // and on testidp, where `/admin` is served by a worker, told somebody
-    // looking at a healthy three-node cluster that it was not clustered.
-    const noList = off
-      ? this.note('There is no membership to list: <code>cluster.mode</code> ' +
-                  'resolved to <code>off</code>, so this process is not a ' +
-                  'node of anything and writes nothing another node could ' +
-                  'fence. What runs here is one container, which is correct ' +
-                  'for one container and WRONG for several against one store.')
-      : this.note('<strong>This process has not read the member list ' +
-                  'yet.</strong> The node is clustered (' +
-                  this.esc(self.mode) + '); the ' +
-                  (self.role === 'worker' ? 'request worker' : 'process') +
-                  ' drawing this page reads the membership from the store ' +
-                  'when it starts and then at most once a heartbeat, and ' +
-                  'this page was drawn before the first read came back. ' +
-                  'Reload it.');
-    const nodeTable = '<h2>Members</h2>' + (off || !state
-      ? noList
-      : '<div class="tiles">' +
-        this.tile(live.length, 'running') +
-        this.tile(Object.keys(leasesOf).length, 'nodes holding a lease') +
-        this.tile(gone.length, 'left or expired') +
-        '</div><p>As of ' +
-        this.esc(String(Math.round((snap.ageMs || 0) / 100) / 10)) +
-        's ago, read at most one heartbeat apart by whichever process drew ' +
-        'this page. <strong>Every time below is the database\'s ' +
-        'clock</strong>, which a lifetime is measured against — two ' +
-        'containers\' clocks differ, and a lease that expires by ' +
-        'whoever-is-asking\'s ' +
-        'clock is a lease two nodes both hold. <em>Up</em> is the exception: ' +
-        'it is the node\'s own process uptime, which no other clock can ' +
-        'state.</p>' +
-        this.wideTable('Running cluster members',
-          '<table><tr><th>Node</th><th>Where</th><th>State</th>' +
-          '<th>Version</th><th>Up</th><th>Last seen</th><th>Expires</th>' +
-          '<th>Leases</th><th>Settings agree</th></tr>' +
-          (liveRows || '<tr><td colspan="9">no live member rows — this ' +
-           'node\'s own row arrives on its first heartbeat</td></tr>') +
-          '</table>') + goneTable +
-        '<h2>Leases</h2><p>A lease is a named role ONE node holds, with a ' +
-        'fencing token that goes up every time it changes hands. A released ' +
-        'lease is expired and never deleted, so the token never goes back ' +
-        'to 1.</p><table><tr><th>Lease</th><th>Holder</th>' +
-        '<th>Token</th><th>Expires</th></tr>' +
-        (state.leases.length ? state.leases.map(function (lease) {
-          const lapsed = lease.expiresAt <= now;
-          return '<tr><td><code>' + consoleSelf.esc(lease.name) +
-                 '</code></td><td>' +
-            consoleSelf.esc(nameOf[lease.holder] || lease.holder) +
-            '</td><td>' +
-            consoleSelf.esc(String(lease.token)) + '</td><td>' +
-            (lapsed ? 'released or expired' : ago(lease.expiresAt)) +
-            '</td></tr>';
-        }).join('') : '<tr><td colspan="4">none</td></tr>') + '</table>');
-
-    const caps = self.capabilities;
-    const capabilityTable = '<h2>What active-active depends on</h2><p>' +
-      (caps.ready
-        ? 'Every capability is provided' + (caps.acceptedMissing.length
-          ? ' or accepted as missing (<code>' +
-            this.esc(caps.acceptedMissing.join(', ')) + '</code>)' : '') + '.'
-        : '<strong>' + this.esc(String(caps.missing.length)) + ' of ' +
-          this.esc(String(caps.rows.length)) + ' are missing</strong>, so ' +
-          '<code>cluster.mode=active-active</code> refuses to start. Each is ' +
-          'a way two nodes give different answers, described under the ' +
-          'section of issue #46 named beside it.') +
-      (caps.unknownAccepted.length
-        ? ' <strong>cluster.acceptMissingCapabilities names ids this build ' +
-          'does not know:</strong> <code>' +
-          this.esc(caps.unknownAccepted.join(', ')) + '</code>.' : '') +
-      '</p><table><tr><th>Capability</th><th>#46</th><th>State</th>' +
-      '<th>What</th><th>Where</th></tr>' +
-      caps.rows.map(function (row) {
-        return '<tr><td><code>' + consoleSelf.esc(row.id) + '</code></td><td>' +
-          consoleSelf.esc(row.section) + '</td><td>' +
-          (row.provided ? 'provided'
-            : (row.accepted ? '<strong>accepted as missing</strong>'
-                            : '<strong>missing</strong>')) + '</td><td>' +
-          consoleSelf.esc(row.what) + '</td><td><code>' +
-          consoleSelf.esc(row.by) + '</code></td></tr>';
-      }).join('') + '</table>';
-
-    const secretTable = '<h2>Shared secrets</h2><table><tr><th>Secret</th>' +
-      '<th>Where this process\'s value came from</th><th>What</th></tr>' +
-      secrets.secrets.map(function (one) {
-        return '<tr><td><code>' + consoleSelf.esc(one.name) +
-               '</code></td><td>' +
-          consoleSelf.esc(one.source) + '</td><td>' +
-          consoleSelf.esc(one.what) + '</td></tr>';
-      }).join('') + '</table>';
-
-    const otherCells = this.otherCellsBlock();
-    const html = '<h2>Right now</h2>' +
-      (off ? this.note('This process is not clustered: ' +
-                       '<code>cluster.mode</code> resolved to ' +
-                       '<code>off</code>. That is correct for one container ' +
-                       'and WRONG for several against one store — see the ' +
-                       'first paragraph above.') : '') +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      rows.map(function (row) {
-        return '<tr><th>' + consoleSelf.esc(row[0]) + '</th><td>' + row[1] +
-               '</td></tr>';
-      }).join('') + '</table>' + nodeTable + otherCells.html + capabilityTable +
-      secretTable;
-
+    const html = ClusterStatusPage.render(JSON.parse(JSON.stringify(json)),
+                                          WebKit.context().t);
     log.debug("Leaving AdminConsole.clusterStatusBlock(). mode=" + self.mode);
-    return {
-      html: html,
-      json: { self: self, snapshotAgeMs: snap.ageMs,
-              nodes: state ? state.nodes : [],
-              // The page's reading of `nodes`, folded by name (rule 7).
-              members: state ? {
-                running: live.map(function (node) {
-                  return node.nodeId;
-                }),
-                restarts: restarts,
-                leftOrExpired: gone.map(function (node) {
-                  return { nodeId: node.nodeId, name: node.name,
-                           earlierLives: node.earlierLives || 0 };
-                })
-              } : null,
-              leases: state ? state.leases : [],
-              databaseNow: state ? state.now : null,
-              otherCells: otherCells.json,
-              secrets: secrets, barrier: barrier }
-    };
+    return { html: html, json: json };
   }
 
   // ===========================================================================
@@ -9138,7 +8846,9 @@ const SETTING_HOMES = [
   // these five had to LEAVE /admin/oauth2, and a group leaves a page by being
   // homed on another. The four global oauth2 rows — the issuer, RFC 9700 mode
   // and the two clock skews — stay in the `OAuth 2.0 / OIDC` group and stay
-  // over there.
+  // over there. The page's table holds the lifetimes; the group's other
+  // three rows are an ordinary settings form under it since #2070
+  // (`otherSettings` on the answer), where they had been drawn nowhere.
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
@@ -9152,6 +8862,7 @@ const SETTING_HOMES = [
   // certificate, and so did the realm listener's rows (#99).
   { group: 'Listeners', pages: ['/admin/listeners'] },
   { group: 'Malware scanning', pages: ['/admin/malware-scanning'] },
+  { group: 'CSP reports', pages: ['/admin/csp-reports'] },
   // ONE GROUP PER TLS LISTENER (#429): its own rows, generated in
   // common/config.js, and its client-certificate pair.
   { group: 'Listener: Main port', pages: ['/admin/listeners'] },
@@ -9165,6 +8876,11 @@ const SETTING_HOMES = [
   // Service-wide defaults tab beside the TLS ones.
   { group: 'HTTP connections', pages: ['/admin/listeners'] },
   { group: 'TLS', pages: ['/admin/listeners'] },
+  // CERTIFICATE SIGN-IN (#2080): the profiles, the revocation a sign-in
+  // needs, the handoff and the TLS-terminating proxy — on Protocols → PIV,
+  // where a smart-card sign-in is set up, and still on the Listeners page,
+  // whose custom listener and truststore the handoff and the proxy need.
+  { group: 'Certificate sign-in', pages: ['/admin/piv', '/admin/listeners'] },
   // The custom listeners and which hosted application is on which (#472,
   // which folded #99's realm listener in): on the Listeners page's
   // Applications tab, beside the forms that edit them.
@@ -9269,8 +8985,22 @@ const SETTING_HOMES = [
   { group: 'Audit log', pages: ['/admin/audit'] },
   { group: 'Audit export', pages: ['/admin/audit-export'] },
   { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
-  // What a person may set, so beside the people it is about (#719).
+  // What a person may set, so beside the people it is about (#719). Drawn
+  // on the Users page's Settings tab since #2070; until then the page drew
+  // the people and no settings form, and none of the six could be changed.
   { group: 'Profile photos', pages: ['/admin/users'] },
+  // A person's OpenPGP key and the Web Key Directory (#1955 P6). On
+  // Protocols → OpenPGP since #2049: Directory → OpenPGP keys
+  // (/admin/openpgp) never drew a settings form, so none of the eight could
+  // be changed in the console while this row named it.
+  { group: 'OpenPGP', pages: ['/admin/openpgp-settings'] },
+  // THE #1955 HARDWARE-TOKEN MECHANISMS (#2049), a group and a Protocols
+  // page each; Directory → Hardware tokens keeps the registers.
+  { group: 'Hardware tokens', pages: ['/admin/hardware-tokens-settings'] },
+  { group: 'PIV', pages: ['/admin/piv'] },
+  { group: 'YubiKey OTP', pages: ['/admin/yubiotp'] },
+  { group: 'OATH tokens', pages: ['/admin/oath-tokens'] },
+  { group: 'SSH user certificates', pages: ['/admin/ssh-user-ca'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },
@@ -10381,6 +10111,270 @@ const PROTOCOL_SETTINGS_PAGES = [
             ['/admin/users', 'who holds a key, and how to remove one'],
             ['/admin/crypto-metadata', 'every algorithm this service performs'],
             ['/portal/keys', 'where a person enrols one']] },
+
+  // -------------------------------------------------------------------------
+  // THE #1955 MECHANISMS AND OPENPGP, A PROTOCOLS PAGE EACH (#2049, rcbj
+  // 2026-11-23). Every one of them had settings and no page that drew them:
+  // OpenPGP's group was homed on Directory → OpenPGP keys, which draws a
+  // person's key and never a settings form, so `/admin/config` pointed at a
+  // page with nothing to change on it; the token mechanisms' rows were
+  // scattered over Devices, TOTP MFA and PKI. Each is now a group of its
+  // own drawn here, Metadata first; the registers and a person's keys stay
+  // on the Directory pages each `links` names. `tests/setting_homes_drawn.js`
+  // is the check that a page named in SETTING_HOMES draws its group.
+  // -------------------------------------------------------------------------
+  { path: '/admin/hardware-tokens-settings', title: 'Hardware tokens',
+    lead: '<strong>A hardware-token register: the physical security keys ' +
+          'and smart cards this realm recorded, and what a credential on ' +
+          'one proves.</strong> A token is recorded only from its own ' +
+          'attestation — a security key registered with FIDO enterprise ' +
+          'attestation (W3C WebAuthn Level 3, CTAP 2.1), a certificate ' +
+          'issued against a YubiKey PIV attestation, or a vendor\'s PSKC ' +
+          'seed file (RFC 6030) when its token is assigned or claimed. ' +
+          '<strong>A serial is never typed in</strong>: a self-declared ' +
+          'serial would let anybody claim somebody else\'s key. The tokens ' +
+          'themselves are <a href="/admin/hardware-tokens">Directory → ' +
+          'Hardware tokens</a>.',
+    also: ['<strong>EVIDENCE AT SIGN-IN.</strong> RFC 8176\'s ' +
+           '<code>hwk</code> and <code>sc</code>, and PKINIT\'s ' +
+           '<code>pkinit-hardware</code> and <code>pkinit-smartcard</code>, ' +
+           'are earned from recorded evidence. ' +
+           '<code>hardwareTokens.hardwareClaims</code> below decides ' +
+           'whether a PKINIT inference (a smart-card logon certificate ' +
+           'whose key this service did not generate) and a passkey ' +
+           'without trusted attestation still earn <code>hwk</code>: ' +
+           '<code>inference</code>, the default, keeps the behaviour ' +
+           'before #1955; <code>evidence</code> earns it from attestation ' +
+           'only. A slot 9e (card authentication) key is never evidence.',
+           '<strong>XACML READS THE TOKEN.</strong> Every browser sign-in ' +
+           'sends the token its credential is on as environment ' +
+           'attributes — <code>urn:sts:xacml:hardware-token-attested</code>, ' +
+           '<code>-key</code>, <code>-vendor</code>, <code>-model</code>, ' +
+           '<code>-evidence</code>, <code>-smart-card</code>, ' +
+           '<code>-holder-matches</code>, <code>-status</code>, the PIV ' +
+           'PIN and touch policies, the firmware, the form factor and ' +
+           '<code>-fips</code> — so a policy can require one, and the ' +
+           '<code>attested-hardware</code> mechanism is asked again at ' +
+           'every issuance.',
+           '<strong>A LOST TOKEN RETIRES EVERY CREDENTIAL ON IT AT ' +
+           'ONCE.</strong> Reported lost by its holder on the portal or by ' +
+           'an administrator, it stops counting as evidence; each passkey ' +
+           'on it is removed, each certificate revoked for ' +
+           '<code>keyCompromise</code>, each imported one-time-code secret ' +
+           'taken off its holder, a CAEP credential-change sent and the ' +
+           'sessions they started ended. A credential that could not be ' +
+           'retired is named in the answer and stays live.'],
+    links: [['/admin/hardware-tokens', 'the tokens, the OATH inventory, ' +
+             'PIV enrolment, escrow and SSH certificates'],
+            ['/admin/piv', 'PIV'],
+            ['/admin/yubiotp', 'YubiKey OTP'],
+            ['/admin/oath-tokens', 'OATH tokens'],
+            ['/admin/webauthn', 'enterprise attestation'],
+            ['/portal/tokens-and-keys#tk-hardware-tokens',
+             'where a person sees their own']] },
+
+  { path: '/admin/piv', title: 'PIV',
+    lead: '<strong>PIV and CAC smart cards — FIPS 201 and NIST SP 800-73 — ' +
+          'and the YubiKey PIV attestation a slot certificate is issued ' +
+          'against.</strong> A <code>piv-auth</code> (9a), ' +
+          '<code>piv-sign</code> (9c), <code>piv-key-management</code> ' +
+          '(9d) or <code>piv-card-auth</code> (9e) certificate carries the ' +
+          'card\'s attestation as evidence when the request has one that ' +
+          'verifies against Yubico\'s roots (or ' +
+          '<code>piv.attestationAnchors</code>); the attested PIN and ' +
+          'touch policies are held to the settings below. Issuing one is ' +
+          'the PIV enrolment tab of <a href="/admin/hardware-tokens">' +
+          'Directory → Hardware tokens</a>.',
+    also: ['<strong>A card-authentication key works without a ' +
+           'PIN</strong>, for physical access, so whether a ' +
+           '<code>piv-card-auth</code> (9e) certificate signs anybody in — ' +
+           'over TLS or at PKINIT — is the <a ' +
+           'href="/admin/policies#authn">authentication ' +
+           'policy</a>\'s PIV card authentication key row (#2031), which ' +
+           'follows <code>piv.cardAuthSignIn</code> only while the policy ' +
+           'stores no value for it. It never earns <code>hwk</code> or ' +
+           '<code>sc</code>.',
+           '<strong>Escrow is the one place this service keeps a card ' +
+           'key.</strong> With <code>piv.keyEscrow</code> on, EST ' +
+           '<code>/serverkeygen</code> for <code>piv-key-management</code> ' +
+           'keeps the generated key sealed under the key-encryption key, ' +
+           'so old mail can be decrypted after a card is lost; an escrowed ' +
+           'key is never hardware evidence. Off, the default, that profile ' +
+           'is refused there and the 9d key is generated on the card.',
+           '<strong>An outside PIV or CAC card is mapped by its FIPS 201 ' +
+           'card UUID, never by a name.</strong> A client certificate an ' +
+           'issuer in <code>piv.externalIssuers</code> issued, asserting a ' +
+           'policy in <code>piv.externalPolicyOids</code>, signs in the one ' +
+           'person whose <code>stsPivCardUuid</code> holds that UUID. No ' +
+           'entry is created, and the CA must also be in a client ' +
+           'truststore.',
+           // EVERYTHING A SMART-CARD SIGN-IN NEEDS, FROM ONE PAGE (#2080):
+           // rcbj set up a real PIV sign-in and could not find the
+           // settings, which were on four pages and one of them a JSON box.
+           '<strong>Setting up a smart-card sign-in.</strong> (1) Put the ' +
+           'card\'s CA in the <a href="/admin/tls/trust">client ' +
+           'truststore</a>. (2) Add a certificate sign-in profile for it ' +
+           'under <em>Certificate sign-in</em> below — the CA picked from ' +
+           'the truststore, the purposes, the policy and how a card names ' +
+           'its holder — and record each person\'s binding on their ' +
+           'Credentials → Certificate sign-in tab (<a ' +
+           'href="/admin/users">Directory → Users</a>). (3) Decide ' +
+           'revocation: <code>certSignIn.requireRevocation</code> below, ' +
+           'and <code>pki.revocationCheck</code> on <a ' +
+           'href="/admin/pki">PKI</a>. (4) To ask for the card on a ' +
+           'listener of its own, turn on <code>certSignIn.handoff</code>, ' +
+           'map the <code>certificate-sign-in</code> application to a ' +
+           '<a href="/admin/listeners#tab-custom">custom listener</a> ' +
+           'whose <code>clientAuth</code> asks for a certificate, and ' +
+           'stop the main port asking with ' +
+           '<code>tls.mainPortDisableOptionalClientCertificate</code> (<a ' +
+           'href="/admin/listeners#tab-main">Listeners → Main port</a>). ' +
+           '(5) Allow the sign-in: the <a ' +
+           'href="/admin/policies#authn">authentication policy</a>\'s ' +
+           'smart card row. The whole walk-through is <a ' +
+           'href="https://rcbj.github.io/iya-sts/v1.2.0/configure-tls.html' +
+           '#smart-card-and-certificate-sign-in">Smart-card and ' +
+           'certificate sign-in</a>.'],
+    links: [['/admin/hardware-tokens', 'PIV enrolment and escrowed keys'],
+            ['/admin/hardware-tokens-settings', 'hardware tokens'],
+            ['/admin/tls/trust', 'the client truststore'],
+            ['/admin/pki', 'revocation (pki.revocationCheck) and the ' +
+             'certificate authority that issues them'],
+            ['/admin/pki/trust', 'paranoid PKI mode'],
+            ['/admin/listeners#tab-custom', 'custom listeners'],
+            ['/admin/listeners#tab-main',
+             'tls.mainPortDisableOptionalClientCertificate'],
+            ['/admin/policies#authn', 'the authentication policy\'s ' +
+             'smart card row'],
+            ['/admin/tls', 'certificate sign-in']] },
+
+  { path: '/admin/yubiotp', title: 'YubiKey OTP',
+    lead: '<strong>Yubico OTP, checked by this service itself</strong>: ' +
+          'the 44 characters a YubiKey types are decrypted with the slot\'s ' +
+          'AES-128 key, which this service holds, and the counters checked ' +
+          'so a code is accepted once. Nothing is sent to YubiCloud. A ' +
+          'person enrols a slot on <code>/portal/mfa</code>. An ' +
+          'administrator imports a batch of YubiKeys from a CSV on the ' +
+          'YubiKey OTP tab of <a href="/admin/hardware-tokens#hardware-' +
+          'tokens-tab-yubiotp">Directory → Hardware tokens</a>, which ' +
+          'lists them and assigns one; a person\'s own YubiKey OTP ' +
+          'sub-tab on Directory → Users lists theirs and assigns one by ' +
+          'serial, or the person claims it on the portal.',
+    also: ['<strong>THE AES KEY STAYS ON THIS SERVICE, SO THE SIGN-IN IS ' +
+           '<code>amr otp</code> AND NEVER <code>hwk</code>.</strong> ' +
+           'Holding the key that checks a code is what lets a copy of it ' +
+           'make one; the code proves a secret, not where it lives.',
+           '<strong>THE YK-VAL 2.0 ENDPOINT IS A SECOND SWITCH.</strong> ' +
+           'With <code>yubiotp.ykval</code> on, <code>/wsapi/2.0/verify' +
+           '</code> answers a client that signed its request with its id ' +
+           'and HMAC-SHA1, checked in every mode including development. ' +
+           'Off, the default, it answers <code>OPERATION_NOT_ALLOWED</code>.',
+           '<strong>A credential already held is still checked</strong> ' +
+           'while <code>yubiotp.offered</code> is off: the switch decides ' +
+           'enrolment, assignment and a claim, not whether a slot somebody ' +
+           'has keeps working.'],
+    links: [['/admin/hardware-tokens', 'imported YubiKeys and who holds one'],
+            ['/admin/oath-tokens', 'a YubiKey\'s OATH-HOTP slot'],
+            ['/admin/totp', 'the one-time-code step'],
+            ['/portal/mfa', 'where a person enrols one']] },
+
+  { path: '/admin/oath-tokens', title: 'OATH tokens',
+    lead: '<strong>Counter-based one-time codes — OATH HOTP, RFC 4226 — ' +
+          'and the vendor tokens imported from their PSKC seed files ' +
+          '(RFC 6030).</strong> A person programs a YubiKey\'s OATH-HOTP ' +
+          'slot on <code>/portal/mfa</code>; an administrator imports a ' +
+          'vendor\'s file and assigns a token by serial, or its holder ' +
+          'claims it, on <a href="/admin/hardware-tokens">Directory → ' +
+          'Hardware tokens</a>. Either is accepted at every door that ' +
+          'takes a code, its counter advanced by compare-and-set.',
+    also: ['<strong>A PLAINTEXT SEED FILE IS A LIST OF WORKING SECOND ' +
+           'FACTORS</strong> on every disk and mailbox it passed through. ' +
+           'Product mode refuses one unless ' +
+           '<code>pskc.allowPlaintextImport</code> is on; a vendor can ' +
+           'encrypt it under a pre-shared key or a password (RFC 6030 ' +
+           'sections 6.1 and 6.2). Development mode accepts one regardless.',
+           '<strong>The windows are policy and live; the digits are the ' +
+           'token\'s.</strong> <code>hotp.window</code> and ' +
+           '<code>hotp.resyncWindow</code> apply to every enrolment at ' +
+           'once. <code>hotp.digits</code> is copied onto a new ' +
+           'enrolment, and an imported token keeps the length its file ' +
+           'names.',
+           '<strong>THE SECRET IS NEVER SHOWN.</strong> An imported token ' +
+           'is recorded by the serial its file\'s <code>DeviceInfo</code> ' +
+           'names, with evidence <code>pskc-import</code>; neither the ' +
+           'inventory nor any answer carries the secret.'],
+    links: [['/admin/hardware-tokens', 'the OATH inventory'],
+            ['/admin/totp', 'time-based codes'],
+            ['/admin/yubiotp', 'Yubico OTP'],
+            ['/portal/mfa', 'where a person programs one']] },
+
+  { path: '/admin/ssh-user-ca', title: 'SSH user certificates',
+    lead: '<strong>This realm\'s OpenSSH user certificate authority</strong> ' +
+          '(OpenSSH\'s <code>PROTOCOL.certkeys</code>): it signs a ' +
+          'person\'s SSH public key into a user certificate a server ' +
+          'trusts through <code>TrustedUserCAKeys</code>. The public key ' +
+          'is <code>GET /pki/ssh-user-ca/{scope}</code> and its key ' +
+          'revocation list <code>GET /pki/ssh-user-krl/{scope}</code>. A ' +
+          'person\'s certificates — issuing one for them, listing them ' +
+          'and revoking one — are the SSH tab of <a ' +
+          'href="/admin/hardware-tokens">Directory → Hardware tokens</a> ' +
+          'and the person\'s own SSH sub-tab on Directory → Users.',
+    also: ['<strong>OPENSSH DEFINES NO POST-QUANTUM SIGNATURE.</strong> ' +
+           '<code>ssh-mldsa-65</code> is this service\'s own wire name, a ' +
+           'second authority published at the same path with ' +
+           '<code>?algorithm=ssh-mldsa-65</code> and never put on the ' +
+           '<code>TrustedUserCAKeys</code> line, which is always the first ' +
+           'classical name in <code>pki.sshUserCaAlgorithms</code>. Stock ' +
+           '<code>sshd</code> cannot verify it yet.',
+           '<strong>Hardware evidence buys a longer certificate.</strong> ' +
+           'A key whose security-key attestation was verified may hold a ' +
+           'certificate up to <code>pki.sshHardwareLifetimeSeconds</code>; ' +
+           'any other key, <code>pki.sshSoftwareLifetimeSeconds</code>.',
+           '<strong>These settings kept their <code>pki.</code> ' +
+           'keys</strong> when they moved here from the PKI group (#2049), ' +
+           'so an appconfig file or a variable that sets one still does.'],
+    links: [['/admin/hardware-tokens', 'a person\'s SSH certificates'],
+            ['/admin/pki', 'the X.509 certificate authority'],
+            ['/pki/ssh-user-ca/default', 'the default realm\'s CA key']] },
+
+  { path: '/admin/openpgp-settings', title: 'OpenPGP',
+    lead: '<strong>OpenPGP keys — RFC 9580, and RFC 9980\'s post-quantum ' +
+          'composites — registered by signing a challenge, published in ' +
+          'the Web Key Directory, and used to encrypt a person\'s ' +
+          'mail.</strong> A person registers a key on the OpenPGP and ' +
+          'S/MIME tab of <strong>Tokens and keys</strong> ' +
+          '(<code>/portal/tokens-and-keys#tk-openpgp</code>) by signing ' +
+          'the challenge with ' +
+          '<code>gpg --clearsign</code> (on a YubiKey the card signs). ' +
+          'Mail this service sends them is encrypted to it (RFC 3156), or ' +
+          'to their S/MIME certificate (RFC 8551). One person\'s key is <a ' +
+          'href="/admin/openpgp">Directory → OpenPGP keys</a>.',
+    also: ['<strong>THE WEB KEY DIRECTORY IS OFF BY DEFAULT</strong> ' +
+           '(draft-koch-openpgp-webkey-service). With ' +
+           '<code>openpgp.wkd</code> on, this realm answers ' +
+           '<code>/.well-known/openpgpkey/&lt;domain&gt;/hu/&lt;hash&gt;' +
+           '</code> (the advanced method, on ' +
+           '<code>openpgpkey.&lt;domain&gt;</code>) and ' +
+           '<code>/.well-known/openpgpkey/hu/&lt;hash&gt;</code> (the ' +
+           'direct method) for the domains in ' +
+           '<code>openpgp.wkdDomains</code> — the realm\'s own DNS domain ' +
+           'when that is empty — and only for a person who opted in. The ' +
+           'endpoints of this realm are listed below.',
+           '<strong>THE POST-QUANTUM RULES NARROW REGISTRATION ONLY.' +
+           '</strong> <code>openpgp.pqcOnly</code> and ' +
+           '<code>openpgp.pqcAlongsideClassical</code> cannot both be on; ' +
+           'either applies to a key registered after it is set, and a ' +
+           'classical key already registered still verifies and still ' +
+           'receives mail.',
+           '<strong>Until #2049 these settings could not be changed here.' +
+           '</strong> They were homed on Directory → OpenPGP keys, which ' +
+           'never drew a settings form.'],
+    links: [['/admin/openpgp', 'one person\'s key'],
+            ['/admin/mail', 'the mail channel'],
+            ['/admin/crypto-metadata', 'every algorithm this service ' +
+             'performs'],
+            ['/portal/tokens-and-keys#tk-openpgp',
+             'where a person registers one']] },
 
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
     lead: '<strong>The authorization server\'s own settings.</strong> ' +

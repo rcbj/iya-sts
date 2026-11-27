@@ -96,6 +96,9 @@
 // OWNED HERE (local: true): `/authn/wallet` is this repository's own door.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -653,7 +656,7 @@ async function startSignIn(who) {
 async function finishAuthorization(who, location, pair) {
   log.debug("Entering finishAuthorization().");
   let at = location;
-  for (let n = 0; n < 6 && at && at.indexOf(base) === 0 &&
+  for (let n = 0; n < 6 && at && urls.isUnder(at, base) &&
                   !consentScreen.isConsentScreen(at); n += 1) {
     const r = await hop(who, "GET", at);
     at = r.location;
@@ -778,7 +781,11 @@ async function test() {
               oauthConfidential: "FALSE",
               oauthRedirectUri: [REDIRECT_URI],
               oauthResponseType: ["code"],
-              oauthScope: credentialScopes },
+              oauthScope: credentialScopes,
+              // Declared (#2169): in product a client that declares nothing
+              // is issued `openid` alone (#1589), not the realm's credential
+              // scopes.
+              oauthAllowedScope: credentialScopes },
     why: "the wallet sts_oid4vp_wallet.js collects credentials with and " +
          "signs its holder in through"
   });
@@ -791,7 +798,8 @@ async function test() {
               oauthConfidential: "FALSE",
               oauthRedirectUri: [RP_REDIRECT_URI],
               oauthResponseType: ["code"],
-              oauthScope: ["openid"] },
+              oauthScope: ["openid"],
+              oauthAllowedScope: ["openid"] },
     why: "the relying party sts_oid4vp_wallet.js signs its holder in to " +
          "with the wallet"
   });

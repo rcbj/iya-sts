@@ -44,6 +44,11 @@
 //         the store after a flush here, as restorableOverrides() says.
 //      5. a change to one realm's row updates that realm here and no
 //         other (2026-11-18: every realm was updated on every change).
+//      6. a realm created and flushed here while another node's change has
+//         the realm list in flight is not removed by that stale answer
+//         (GitHub run 45732176952, `sts_pseudonyms`);
+//      7. and a setting made and flushed here while another node's settings
+//         change has the table in flight is not cleared by that answer.
 //
 // Each part in a CHILD PROCESS: B puts a database double in the require
 // cache, and A sets a process-wide override.
@@ -140,7 +145,9 @@ function storeChild() {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
   }
-  const db = { realms: new Map(), log: [] };
+  const db = { realms: new Map(), log: [], holdRealmReads: false,
+               heldRealmReads: [], realmReads: 0, appconfig: new Map(),
+               holdSettingsReads: false, heldSettingsReads: [] };
   const rows = function (list) {
     return Promise.resolve({ rows: list, rowCount: list.length });
   };
@@ -175,10 +182,45 @@ function storeChild() {
     }
     if (/^SELECT id, name, description, created_at, overrides, domain, retiring_at FROM sts_realms/
           .test(text)) {
-      return rows(Array.from(db.realms.values()).map(function (row) {
+      // The snapshot is taken when the statement is sent, as a database
+      // takes it; B6 holds the ANSWER back while this process writes.
+      const snapshot = rows(Array.from(db.realms.values()).map(function (row) {
         return Object.assign({}, row,
                              { overrides: Object.assign({}, row.overrides) });
       }));
+      if (db.holdRealmReads) {
+        db.realmReads += 1;
+        return new Promise(function (resolve) {
+          db.heldRealmReads.push(function () {
+            resolve(snapshot);
+          });
+        });
+      }
+      return snapshot;
+    }
+    // The settings table, for B7: the read held as B6 holds the realms'.
+    if (/^SELECT key, value FROM sts_appconfig/.test(text)) {
+      const table = rows(Array.from(db.appconfig.keys()).map(function (key) {
+        return { key: key, value: { raw: db.appconfig.get(key) } };
+      }));
+      if (db.holdSettingsReads) {
+        return new Promise(function (resolve) {
+          db.heldSettingsReads.push(function () {
+            resolve(table);
+          });
+        });
+      }
+      return table;
+    }
+    if (/^INSERT INTO sts_appconfig/.test(text)) {
+      db.appconfig.set(p[0], json(p[1]).raw);
+      return rows([]);
+    }
+    if (/^DELETE FROM sts_appconfig/.test(text)) {
+      (p[0] || []).forEach(function (key) {
+        db.appconfig.delete(key);
+      });
+      return rows([]);
     }
     if (/^INSERT INTO sts_realms/.test(text)) {
       // The driver's merge, as the real statement makes it:
@@ -340,6 +382,77 @@ function storeChild() {
          realms.get(ID).overrides['saml2.publishAlgorithmSupport'] === 'true',
          'B5. a change to one realm\'s row updates that realm here and no ' +
          'other', JSON.stringify(updated));
+
+    // B6 (GitHub run 45732176952): a realm list read that this process's
+    // own realm write overtakes is read again, and never removes the realm
+    // it did not yet hold. Another node's change asks for the list; the
+    // answer is held while a realm is created and flushed HERE, so it is a
+    // snapshot from before that realm existed in the store.
+    const FRESH = 'rro-fresh';
+    const removedHere = [];
+    realms.onChange(function (id, what) {
+      if (what === 'remove') {
+        removedHere.push(id);
+      }
+    });
+    db.holdRealmReads = true;
+    anotherNodeWrites(ID, function (row) {
+      row.overrides['saml2.publishAlgorithmSupport'] = 'false';
+    });
+    const pulling = persistence.syncNow();
+    for (let i = 0; i < 200 && !db.heldRealmReads.length; i++) {
+      await new Promise(function (resolve) { setImmediate(resolve); });
+    }
+    const heldOne = db.heldRealmReads.length === 1;
+    realms.create({ id: FRESH, name: FRESH });
+    db.holdRealmReads = false;
+    await persistence.flush();
+    db.heldRealmReads.splice(0).forEach(function (release) {
+      release();
+    });
+    await pulling;
+    note(heldOne && !!db.realms.get(FRESH) && !!realms.get(FRESH) &&
+         removedHere.indexOf(FRESH) < 0 &&
+         realms.get(ID).overrides['saml2.publishAlgorithmSupport'] ===
+           'false',
+         'B6. a realm created and flushed here while another node\'s ' +
+         'change had the realm list in flight is kept: the overtaken answer ' +
+         'is read again, and the other change still lands',
+         JSON.stringify({ held: heldOne, stored: !!db.realms.get(FRESH),
+                          here: !!realms.get(FRESH), removed: removedHere,
+                          reads: db.realmReads }));
+
+    // B7: the settings applier, for B6's reason. Another node sets one
+    // setting; while its table is being read here, this process sets and
+    // flushes another, which the held answer predates.
+    const config = require(ROOT + '/common/config');
+    db.holdSettingsReads = true;
+    db.appconfig.set('oid4vci.batchSize', '6');
+    db.log.push({ seq: db.log.length + 1, origin: 'node-b',
+                  kind: 'appconfig', realm: '', key: '' });
+    const settling = persistence.syncNow();
+    for (let i = 0; i < 200 && !db.heldSettingsReads.length; i++) {
+      await new Promise(function (resolve) { setImmediate(resolve); });
+    }
+    const heldSettings = db.heldSettingsReads.length === 1;
+    config.setOverride('oid4vci.offerUsername', 'b7.person');
+    db.holdSettingsReads = false;
+    await persistence.flush();
+    db.heldSettingsReads.splice(0).forEach(function (release) {
+      release();
+    });
+    await settling;
+    const B7 = 'oid4vci.offerUsername';
+    note(heldSettings && db.appconfig.get(B7) === 'b7.person' &&
+         String(config.value(B7)) === 'b7.person' &&
+         String(config.value('oid4vci.batchSize')) === '6',
+         'B7. a setting made and flushed here while another node\'s ' +
+         'settings change had the table in flight is kept here, and the ' +
+         'other change still lands',
+         JSON.stringify({ held: heldSettings,
+                          stored: db.appconfig.get('oid4vci.offerUsername'),
+                          here: config.value('oid4vci.offerUsername'),
+                          theirs: config.value('oid4vci.batchSize') }));
 
     await persistence.stop();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

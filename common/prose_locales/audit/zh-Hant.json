@@ -231,6 +231,54 @@
     "en": "228f7d738861aa3c",
     "text": "驗證器應用程式變更因 CSRF 權杖錯誤而被拒絕"
   },
+  "audit.actions.portal.hotp.started.label": {
+    "en": "62c42316ca23b77d",
+    "text": "向某人顯示了新的一次性驗證碼權杖密鑰"
+  },
+  "audit.actions.portal.hotp.enrolled.label": {
+    "en": "075083e107878395",
+    "text": "某人在自己的帳戶上設定了一次性驗證碼權杖"
+  },
+  "audit.actions.portal.hotp.refused.label": {
+    "en": "5b5a058daa2dcab7",
+    "text": "一次性驗證碼權杖的設定未獲確認"
+  },
+  "audit.actions.portal.hotp.removed.label": {
+    "en": "133822944d90f1bf",
+    "text": "某人從自己的帳戶移除了一次性驗證碼權杖"
+  },
+  "audit.actions.portal.hotp.resynced.label": {
+    "en": "912cd583f7760c65",
+    "text": "某人重新同步了自己的一次性驗證碼權杖"
+  },
+  "audit.actions.portal.hotp.resync-refused.label": {
+    "en": "01c45765b9c3cd87",
+    "text": "一次性驗證碼權杖未能重新同步"
+  },
+  "audit.actions.portal.yubiotp.started.label": {
+    "en": "b206def4fb8ccc3d",
+    "text": "向某人顯示了 YubiKey OTP 程式設計行"
+  },
+  "audit.actions.portal.yubiotp.enrolled.label": {
+    "en": "00886a6cb1cc407b",
+    "text": "某人在自己的帳戶上設定了 YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.refused.label": {
+    "en": "bd0fa598eb880f3a",
+    "text": "YubiKey OTP 的設定未獲確認"
+  },
+  "audit.actions.portal.yubiotp.removed.label": {
+    "en": "57e0e2f87367e090",
+    "text": "某人從自己的帳戶移除了 YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.claimed.label": {
+    "en": "452306461ebd5b17",
+    "text": "某人認領了匯入的 YubiKey OTP"
+  },
+  "audit.actions.portal.yubiotp.claim-refused.label": {
+    "en": "2f50c910534b974e",
+    "text": "YubiKey OTP 未被認領"
+  },
   "audit.actions.portal.activate.mfa.started.label": {
     "en": "df561a24375c8165",
     "text": "在使用啟用連結期間顯示了驗證器應用程式秘密"
@@ -354,6 +402,34 @@
   "audit.actions.keys.retire.label": {
     "en": "04a39be278dba264",
     "text": "已超過寬限期的已淘汰簽署金鑰被捨棄"
+  },
+  "audit.actions.pki.ca.renew.label": {
+    "en": "8ad540ec7802f59f",
+    "text": "憑證授權單位的憑證已在其自身金鑰上續期"
+  },
+  "audit.actions.tls.server-certificate.renew.label": {
+    "en": "969325b4f659f810",
+    "text": "監聽器憑證已續期"
+  },
+  "audit.actions.keys.credential-signer.rotate.label": {
+    "en": "56e810fa68592d7c",
+    "text": "專用憑證簽署者的金鑰已輪替"
+  },
+  "audit.actions.keys.encryption.rotate.label": {
+    "en": "36e67b7b33154a93",
+    "text": "請求物件、KEM 與憑證請求的加密金鑰已輪替"
+  },
+  "audit.actions.cluster.secret-rotated.label": {
+    "en": "9ad599b846eaffcf",
+    "text": "一個共用叢集密碼已輪替"
+  },
+  "audit.actions.application.secret-rotated.label": {
+    "en": "e50935a17d7f9e87",
+    "text": "應用程式的用戶端密碼已自動輪替"
+  },
+  "audit.actions.persistence.database-password-changed.label": {
+    "en": "317d4e81e67db95f",
+    "text": "已重新讀取資料庫密碼，且密碼已變更"
   },
   "audit.actions.keys.data-key-rotate.label": {
     "en": "a92aef70eea08562",
@@ -486,6 +562,138 @@
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "安全金鑰的證明不再受信任：Google 的 Android 證明狀態清單撤銷了其鏈結"
+  },
+  "audit.actions.hardware-token.create.label": {
+    "en": "23939dae5f4b89dc",
+    "text": "已依證明記錄一個硬體權杖"
+  },
+  "audit.actions.hardware-token.credential-add.label": {
+    "en": "79c33d3849e02f0c",
+    "text": "已在硬體權杖上新增一個憑證"
+  },
+  "audit.actions.hardware-token.holder-change.label": {
+    "en": "06fc03f7983fd5ad",
+    "text": "硬體權杖由其持有人以外的人註冊"
+  },
+  "audit.actions.hardware-token.lost.label": {
+    "en": "f7fb5461e2325e1e",
+    "text": "硬體權杖已回報遺失，其憑證已停用"
+  },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "某個硬體權杖已從某人的項目中移除，其在該權杖上的憑證也已離開登記簿"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "寫到某人項目上的權杖被拒絕，並按登記內容還原"
+  },
+  "audit.actions.oath-token.import.label": {
+    "en": "4da380e22dff30ec",
+    "text": "供應商的 PSKC 種子檔案已匯入或遭拒"
+  },
+  "audit.actions.oath-token.assign.label": {
+    "en": "19b678e9bbc10747",
+    "text": "匯入的 OATH 權杖已指派給某人，或由某人認領"
+  },
+  "audit.actions.oath-token.claim.label": {
+    "en": "5c54ac8752e21682",
+    "text": "某人對匯入的 OATH 權杖的認領遭拒"
+  },
+  "audit.actions.oath-token.remove.label": {
+    "en": "92d69a1a2d848892",
+    "text": "未指派的 OATH 權杖已從清冊移除"
+  },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "已指派的 OATH 權杖因從持有人的項目中移除而被停用"
+  },
+  "audit.actions.yubiotp.import.label": {
+    "en": "6f92401fa557c5e6",
+    "text": "匯入或拒絕了 YubiKey OTP CSV"
+  },
+  "audit.actions.yubiotp.assign.label": {
+    "en": "c4f793ef7a16734a",
+    "text": "匯入的 YubiKey OTP 已指派給某人"
+  },
+  "audit.actions.yubiotp.claim.label": {
+    "en": "08d55e823350bd4a",
+    "text": "某人認領了匯入的 YubiKey OTP，或認領被拒絕"
+  },
+  "audit.actions.yubiotp.remove.label": {
+    "en": "a4a9aedd10cc2813",
+    "text": "未指派的 YubiKey OTP 已從清冊中移除"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "已指派的 YubiKey OTP 因從持有人的項目中移除而被停用"
+  },
+  "audit.actions.yubiotp.client-add.label": {
+    "en": "40676cb783f36097",
+    "text": "已建立 YK-VAL 用戶端"
+  },
+  "audit.actions.yubiotp.client-remove.label": {
+    "en": "92433c797106d523",
+    "text": "已移除 YK-VAL 用戶端"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "一個 YK-VAL 用戶端詢問了某個 YubiKey OTP 是否有效"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "已復原一把託管的 PIV 金鑰管理金鑰"
+  },
+  "audit.actions.openpgp.challenge.label": {
+    "en": "454a22b5bcd9d6a2",
+    "text": "已發出 OpenPGP 金鑰註冊挑戰"
+  },
+  "audit.actions.openpgp.key-registered.label": {
+    "en": "1ed8de1f8777a015",
+    "text": "已憑持有證明註冊 OpenPGP 金鑰"
+  },
+  "audit.actions.openpgp.key-refused.label": {
+    "en": "f1e7e3c6808ba33b",
+    "text": "OpenPGP 金鑰未獲註冊"
+  },
+  "audit.actions.openpgp.key-removed.label": {
+    "en": "89a284fa6508eae4",
+    "text": "已移除 OpenPGP 金鑰"
+  },
+  "audit.actions.openpgp.publication.label": {
+    "en": "f6d12f16eca6796a",
+    "text": "OpenPGP 金鑰已在 Web 金鑰目錄中發布或撤回"
+  },
+  "audit.actions.openpgp.mail-encryption.label": {
+    "en": "ba0fb7a4133d94e2",
+    "text": "寄給某人的郵件的加密方式已變更"
+  },
+  "audit.actions.openpgp.smime-certificate.label": {
+    "en": "663072a33ce1e178",
+    "text": "某人的 S/MIME 憑證已設定或移除"
+  },
+  "audit.actions.openpgp.smime-kem-challenge.label": {
+    "en": "8c98376a74285b9a",
+    "text": "已簽發 ML-KEM S/MIME 持有證明挑戰"
+  },
+  "audit.actions.openpgp.smime-kem-refused.label": {
+    "en": "098701c73eee8b23",
+    "text": "未簽發 ML-KEM S/MIME 憑證"
+  },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "一個傳統 OpenPGP 金鑰被保留在取代它的後量子金鑰旁邊"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "一個保留的傳統 OpenPGP 金鑰已被移除"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "登入後重新簽發了一個 PIV 憑證"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "一個 PIV 憑證在其替代憑證用於登入後被撤銷"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -667,6 +875,14 @@
     "en": "478c7ee15248637f",
     "text": "營運者清除了某人的驗證器應用程式"
   },
+  "audit.actions.admin.mfa.hotp.cleared.label": {
+    "en": "027dab5576016e61",
+    "text": "操作員清除了某人的一次性驗證碼權杖"
+  },
+  "audit.actions.admin.mfa.yubiotp.cleared.label": {
+    "en": "f075ff8b6c725197",
+    "text": "操作員清除了某人的 YubiKey OTP"
+  },
   "audit.actions.admin.mfa.key.cleared.label": {
     "en": "d62700d9f7751e8b",
     "text": "營運者移除了某人的安全金鑰"
@@ -674,6 +890,10 @@
   "audit.actions.admin.mfa.key.renamed.label": {
     "en": "c179dbd3cb227763",
     "text": "營運者重新命名了某人的密碼金鑰"
+  },
+  "audit.actions.admin.mfa.key.imported.label": {
+    "en": "134b88075c58eab3",
+    "text": "操作員為某人匯入了 U2F 安全金鑰"
   },
   "audit.actions.admin.password.reset.label": {
     "en": "079b0b2fbe1a3633",
@@ -802,6 +1022,10 @@
   "audit.actions.admin.pki.trust.change.label": {
     "en": "ab34b1a9778d5c8e",
     "text": "簽署者信任存放區或某個偏執 PKI 設定已變更"
+  },
+  "audit.actions.admin.pki.truststore.change.label": {
+    "en": "9c51f91b9b9c407d",
+    "text": "已變更某個具名信任庫或某個使用案例的信任庫指派"
   },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
@@ -991,6 +1215,46 @@
     "en": "432e877d55af1913",
     "text": "已傳送 AuthZEN 存取請求的回呼，或回呼失敗"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "一個 AuthZEN 存取請求失敗"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN 可申請拒絕儲存區已滿"
+  },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "一項管理員操作被暫緩，等待第二位管理員"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "一項被暫緩的管理員操作已獲核准並執行"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "一項被暫緩的管理員操作被拒絕"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "一項被暫緩的管理員操作被其提出者撤回"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "一項被暫緩的管理員操作未獲決定而過期"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "一項被暫緩的管理員操作已獲核准但未執行"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "有人被拒絕對一項被暫緩的管理員操作作出決定"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "一項高風險管理員操作在沒有第二位管理員的情況下執行"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "簽發 PEP 拒絕讓本服務產生某項內容"
@@ -1014,6 +1278,14 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "遠端 PEP 的斷言金鑰已根據其請求完成認證"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "嵌入式遠端 PEP 已繫結至其應用程式，或已解除繫結"
+  },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "遠端 PEP 開始擷取另一個原則範圍"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -1230,6 +1502,10 @@
   "audit.actions.persistence.minted-drop.label": {
     "en": "065f403ac7419f76",
     "text": "已捨棄一筆永遠無法提交的已簽發記錄"
+  },
+  "audit.actions.persistence.database-certificate-changed.label": {
+    "en": "4295a073b7d58b79",
+    "text": "已重新讀取資料庫用戶端憑證，且憑證已變更"
   },
   "audit.actions.admin.aud-sub.set.label": {
     "en": "67489d67e805ecfd",
@@ -1643,6 +1919,18 @@
     "en": "55c1155d5daa1c68",
     "text": "某人撤銷了自己的一個簽章金鑰組"
   },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "已為某人簽發 SSH 使用者憑證"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "某人撤銷了自己的一張 SSH 使用者憑證"
+  },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "寫到某人項目上的 SSH 使用者憑證被拒絕：CA 並未向其簽發，或該憑證已撤銷或已過期"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "某人發布了自己的 did:web"
@@ -1778,6 +2066,34 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "設定了角色的描述、顯示名稱或成員類型"
+  },
+  "audit.actions.roles.set-mode.label": {
+    "en": "b1e0f3b6e5738f21",
+    "text": "某個角色被設為靜態或可動態選擇"
+  },
+  "audit.actions.roles.set-selection.label": {
+    "en": "0fbfbe0d177c5543",
+    "text": "設定了登入時如何選擇某個動態角色"
+  },
+  "audit.actions.roles.eligibility.label": {
+    "en": "28d96273b40dea3f",
+    "text": "已判定某人對某個動態角色的資格"
+  },
+  "audit.actions.roles.selection.offered.label": {
+    "en": "dd135469babd9bdc",
+    "text": "登入時提供了動態角色"
+  },
+  "audit.actions.roles.selection.chosen.label": {
+    "en": "2daaeb4ea81b1012",
+    "text": "登入時選擇了動態角色"
+  },
+  "audit.actions.roles.selection.refused.label": {
+    "en": "cbed03565474afc0",
+    "text": "某次登入對動態角色的選擇被拒絕"
+  },
+  "audit.actions.roles.selection.dropped.label": {
+    "en": "042b7f95a92cd6d2",
+    "text": "某個已選擇的動態角色未被放入權杖"
   },
   "audit.actions.node-health.collect-garbage.label": {
     "en": "cb2531d8ee2f27ce",
@@ -2118,6 +2434,10 @@
   "audit.actions.device.risk.label": {
     "en": "229ae42804651e11",
     "text": "已設定某個已註冊裝置的風險等級"
+  },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "領域的管理員現在需要符合規範的已註冊裝置"
   },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",

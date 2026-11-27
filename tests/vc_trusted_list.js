@@ -45,6 +45,9 @@ const ROOT = path.join(__dirname, '..');
 function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.VTL_ROOT;
+  // An address compared by parsing it (`protocol/url_match.js`),
+  // required here: this function runs in a child of its own.
+  const urls = require(ROOT_DIR + '/tests/protocol/url_match.js');
   const OUT = process.env.VTL_OUT;
   const http = require('http');
   const nodeCrypto = require('crypto');
@@ -158,7 +161,7 @@ function childMain() {
          JSON.stringify(scheme.DistributionPoints) ===
            JSON.stringify([listUrl]) &&
          pointer.LoTELocation === listUrl &&
-         String(scheme.LoTEType).indexOf(listUrl + '/') === 0 &&
+         urls.isUnder(scheme.LoTEType, listUrl + '/') &&
          JSON.stringify(kinds) === JSON.stringify(['Issuance', 'Revocation']) &&
          anchorsRoot && (lote.TrustedEntitiesList || []).length === 1,
          '2. sequence 1, NextUpdate a day on, its own distribution point and ' +

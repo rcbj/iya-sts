@@ -33,12 +33,30 @@ pub mod components {
         pub value: String,
     }
 
+    /// Unknown members are ignored. id is required when the object is present.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    pub struct Approval {
+        pub id: String,
+        /// The members the schema does not name, which it allows.
+        #[serde(flatten)]
+        pub extra: serde_json::Map<String, serde_json::Value>,
+    }
+
     /// application names the application asked about, one of the caller's; required
     /// when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused
-    /// when not one of them (403 STS-AUTHZEN-0025). Every other member is a
-    /// catalogue property, as in Properties.
+    /// when not one of them (403 STS-AUTHZEN-0025). supported_obligations and
+    /// approval are reserved and are not catalogue properties: a bad shape is 400
+    /// STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084);
+    /// the answer's context then says reason approval_unverifiable and next_action
+    /// none. Every other member is a catalogue property, as in Properties.
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub struct Context {
+        /// Each item at most 64 characters. Present, including an empty array, is
+        /// supplied and not mapped.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub supported_obligations: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub approval: Option<crate::pep_authzen::components::Approval>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub application: Option<String>,
         /// The members the schema does not name, which it allows.
@@ -58,11 +76,12 @@ pub mod components {
         Indeterminate,
     }
 
-    /// Decided here: present only when the realm's authzen.returnReasons is on,
-    /// holding xacml_decision and reason_admin, and undischargeable_obligations and
-    /// advice when not empty. Forwarded to the service (an application enforcing
-    /// fine-grained authorization): the service's context, whole, whatever
-    /// returnReasons says. On a batch item that failed: error alone.
+    /// Decided here: present when the realm's authzen.returnReasons is on, holding
+    /// xacml_decision and reason_admin, and undischargeable_obligations and advice
+    /// when not empty; and whenever obligations were handed, whether or not reasons
+    /// are on. Forwarded to the service (an application enforcing fine-grained
+    /// authorization): the service's context, whole, whatever returnReasons says.
+    /// On a batch item that failed: error alone.
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub struct DecisionContext {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -74,6 +93,18 @@ pub mod components {
         pub undischargeable_obligations: Option<Vec<String>>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub advice: Option<Vec<crate::pep_authzen::components::Advice>>,
+        /// Handed when the PEP declared every type and the realm's obligations
+        /// profile is on. A Permit is then true.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub obligations: Option<Vec<crate::pep_authzen::components::Obligation>>,
+        /// When the request presented context.approval: approval_unverifiable,
+        /// since this edge verifies no approval (STS-AUTHZEN-0084), as the service
+        /// answers an approval it cannot verify.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub reason: Option<String>,
+        /// With reason: none, since this edge serves no access-request endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub next_action: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub error: Option<crate::pep_authzen::components::ErrorDetail>,
         /// The members the schema does not name, which it allows.
@@ -129,8 +160,10 @@ pub mod components {
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct EvaluationResponse {
-        /// True only on a Permit with nothing undischargeable; decided deny-biased.
-        /// A failed batch item is false with context.error.
+        /// True only on a Permit with nothing undischargeable, or a Permit whose
+        /// obligations were handed because the caller declared every type; decided
+        /// deny-biased. A failed batch item is false with context.error, including
+        /// a token-exchange tuple (403, STS-XPEP-0140).
         pub decision: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub context: Option<crate::pep_authzen::components::DecisionContext>,
@@ -197,6 +230,11 @@ pub mod components {
         /// Only while the realm's authzen.batchEnabled is on.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub access_evaluations_endpoint: Option<String>,
+        /// step-up, notification, session_termination, then custom. Only while the
+        /// realm's authzen.obligationsProfile is on. No signed_metadata,
+        /// access_request_endpoint, jwks_uri or capabilities member is published.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub supported_obligations: Option<Vec<String>>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -206,6 +244,17 @@ pub mod components {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub error_description: Option<String>,
     }
+
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    pub struct Obligation {
+        pub id: String,
+        #[serde(rename = "type")]
+        pub type_: String,
+        pub properties: crate::pep_authzen::components::ObligationProperties,
+    }
+
+    pub type ObligationProperties = serde_json::Map<String, serde_json::Value>;
 
     pub type Properties = serde_json::Map<String, serde_json::Value>;
 
@@ -252,6 +301,41 @@ pub mod get_authzen_configuration {
     pub type Answer200 = crate::pep_authzen::components::Metadata;
 }
 
+/// Submit an access request (the service's)
+pub mod post_access_request {
+    pub const METHOD: &str = "POST";
+    pub const PATH: &str = "/access/v1/access-requests";
+    pub const OPERATION_ID: &str = "postAccessRequest";
+}
+
+/// The access-request schema (the service's)
+pub mod get_access_request_schema {
+    pub const METHOD: &str = "GET";
+    pub const PATH: &str = "/access/v1/access-requests/schema";
+    pub const OPERATION_ID: &str = "getAccessRequestSchema";
+}
+
+/// Read an access request (the service's)
+pub mod get_access_request {
+    pub const METHOD: &str = "GET";
+    pub const PATH: &str = "/access/v1/access-requests/{id}";
+    pub const OPERATION_ID: &str = "getAccessRequest";
+}
+
+/// Cancel an access request, DELETE (the service's)
+pub mod delete_cancel_access_request {
+    pub const METHOD: &str = "DELETE";
+    pub const PATH: &str = "/access/v1/access-requests/{id}/cancel";
+    pub const OPERATION_ID: &str = "deleteCancelAccessRequest";
+}
+
+/// Cancel an access request (the service's)
+pub mod post_cancel_access_request {
+    pub const METHOD: &str = "POST";
+    pub const PATH: &str = "/access/v1/access-requests/{id}/cancel";
+    pub const OPERATION_ID: &str = "postCancelAccessRequest";
+}
+
 /// Access evaluation (AuthZEN 1.0 section 6)
 pub mod post_evaluation {
     pub const METHOD: &str = "POST";
@@ -277,6 +361,27 @@ pub mod post_evaluations {
         EvaluationsResponse(crate::pep_authzen::components::EvaluationsResponse),
         EvaluationResponse(crate::pep_authzen::components::EvaluationResponse),
     }
+}
+
+/// Search actions (the service's)
+pub mod post_search_action {
+    pub const METHOD: &str = "POST";
+    pub const PATH: &str = "/access/v1/search/action";
+    pub const OPERATION_ID: &str = "postSearchAction";
+}
+
+/// Search resources (the service's)
+pub mod post_search_resource {
+    pub const METHOD: &str = "POST";
+    pub const PATH: &str = "/access/v1/search/resource";
+    pub const OPERATION_ID: &str = "postSearchResource";
+}
+
+/// Search subjects (the service's)
+pub mod post_search_subject {
+    pub const METHOD: &str = "POST";
+    pub const PATH: &str = "/access/v1/search/subject";
+    pub const OPERATION_ID: &str = "postSearchSubject";
 }
 
 /// Reads `value` as the JSON body of `operation_id`; `None` when the

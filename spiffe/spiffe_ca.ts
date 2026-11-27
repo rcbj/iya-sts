@@ -2614,7 +2614,10 @@ class SpiffeCa {
     }
     // THIS REALM'S federated bundles only, and never one named after a trust
     // domain this process serves — see `servedTrustDomains()`.
-    const foreign = this.shadowsServedDomain(trustDomain)
+    // And only one `spiffe-jwt-svid` is assigned, where it is (#2118).
+    const foreign = this.shadowsServedDomain(trustDomain) ||
+      !require('../common/truststores').trustsSpiffeDomain('spiffe-jwt-svid',
+                                                           trustDomain)
       ? null : this.federatedIn().get(trustDomain);
     if (!foreign) {
       log.debug('Leaving SpiffeCa.jwkSetFor().');

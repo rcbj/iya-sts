@@ -228,6 +228,7 @@ import webauthnPolicy = require('../authn/webauthn_policy');
 // route, so requiring it here cannot move one, and it is already loaded by
 // `common/credentials.ts` long before this line.
 import totp = require('../common/totp');
+import yubiotp = require('../common/yubiotp');
 // Device Bound Session Credentials (#725): the algorithms it offers.
 import deviceBound = require('../authn/device_bound_sessions');
 import backupCodes = require('../common/backup_codes');
@@ -513,7 +514,7 @@ const STANDARDS = [
     // AND NO PATH LONGER THAN ONE, until 2026-09-17 (#70)** — six days after
     // `common/pki.js` made every key pair a leaf of one service Root
     // (`common/CLAUDE.md` 3w) and `pki/pki_service.ts` began publishing a CRL
-    // and an OCSP responder per CA (`docs/v1.1.0/pki.md`).
+    // and an OCSP responder per CA (`docs/v1.2.0/pki.md`).
     coverage: 'partial: one Root for the service, an Intermediate per trust ' +
               'realm (and one for the process) and an Issuing CA per use ' +
               'case, so a leaf path is four certificates long and an SVID ' +
@@ -656,12 +657,35 @@ const STANDARDS = [
               'verified over the attribute bytes as received and written ' +
               'DER-sorted; EnvelopedData with KeyTransRecipientInfo (RSA ' +
               'PKCS#1 v1.5 and OAEP) and AES-CBC content; degenerate ' +
-              'certs-only SignedData with certificates and CRLs. No ' +
-              'KeyAgreeRecipientInfo, no authenticated or compressed data, ' +
+              'certs-only SignedData with certificates and CRLs; for ' +
+              'S/MIME mail (#1955) an EnvelopedData written with an OAEP ' +
+              'SHA-256 KeyTransRecipientInfo, an ECDH ' +
+              'KeyAgreeRecipientInfo, or, for an ML-KEM certificate, a ' +
+              'KEMRecipientInfo. No authenticated or compressed data, ' +
               'no countersignatures.',
     what: 'The envelope SCEP (scep/scep_cms.ts) reads and writes: a request ' +
           'signed by the requester and encrypted to the RA, and a CertRep ' +
-          'signed by the RA whose certificate is encrypted to the requester.' }
+          'signed by the RA whose certificate is encrypted to the requester. ' +
+          'Since #1955 also the S/MIME EnvelopedData mail is encrypted in, ' +
+          'which adds a KeyAgreeRecipientInfo for an EC recipient ' +
+          '(dhSinglePass-stdDH-sha256kdf, AES-256 key wrap), an OAEP ' +
+          'SHA-256 KeyTransRecipientInfo for an RSA one, and a ' +
+          'KEMRecipientInfo for an ML-KEM certificate. A runtime that ' +
+          'cannot encapsulate does not fall back to RSA or ECDH.' },
+  // OpenPGP (#1955 P6): a person's key and the mail encrypted to it.
+  { key: 'openpgp', name: 'OpenPGP',
+    specs: ['RFC 9580', 'RFC 9980', 'RFC 4880', 'RFC 3156',
+            'draft-koch-openpgp-webkey-service'],
+    coverage: 'partial: reading v4 and v6 transferable public keys, ' +
+              'verifying a cleartext signature, and encrypting a PGP/MIME ' +
+              'message through openpgp.js; an RFC 9980 composite key is ' +
+              'read here and both halves are checked. The Web Key ' +
+              'Directory\'s advanced and direct lookups and policy file. ' +
+              'No signing, no decryption, no Web Key Service submission, ' +
+              'no keyserver, and no SLH-DSA.',
+    what: 'A person\'s own public key, registered on a proof of possession ' +
+          'and published in the Web Key Directory if they choose; the key ' +
+          'their mail is encrypted to.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -1671,6 +1695,74 @@ class CryptoMetadata {
           ];
         }
       },
+      // OpenPGP (#1955 P6): a person's key, verified once with a proof of
+      // possession and published; mail encrypted to it, or to an S/MIME
+      // certificate. Nothing is signed: DKIM signs the outer message.
+      // `common/crypto.js` section 19 is all of it.
+      {
+        name: 'OpenPGP',
+        signs: 'Nothing. A registration is the PERSON\'S signature, and ' +
+               'an encrypted message is not signed (DKIM signs the outer ' +
+               'message, as it signs every message).',
+        verifies: 'A PROOF OF POSSESSION at registration: a cleartext ' +
+                  'signature (gpg --clearsign) over exactly the challenge ' +
+                  'this service issued the person, by a signing-capable ' +
+                  'key of the key they register, made after the challenge ' +
+                  'was issued (openpgp.signatureSkewS) and valid then; the ' +
+                  'key itself neither revoked nor expired, with a valid ' +
+                  'user id carrying the entry\'s address. RFC 9580 v6 and ' +
+                  'RFC 4880 v4 keys, read by openpgp.js. RFC 9980 composite ' +
+                  'keys are read by this service\'s own reader, which ' +
+                  'verifies both halves; openpgp.js does not parse them. ' +
+                  'An S/MIME certificate is checked for validity, key and ' +
+                  'usage, not chained: it only chooses whom a message is ' +
+                  'encrypted to.',
+        encrypts: 'MAIL, where the person chose it or the realm requires ' +
+                  'it (mail.encryptionRequired): PGP/MIME (RFC 3156) to the ' +
+                  'key\'s encryption key, as openpgp.js chooses (SEIPD with ' +
+                  'AES for a v4 key, AEAD for a v6 one); S/MIME (RFC 8551) ' +
+                  'as a CMS EnvelopedData, AES-256-CBC content encryption, ' +
+                  'the content key under RSAES-OAEP with SHA-256 or ' +
+                  'ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap). ' +
+                  'An ML-KEM certificate (RFC 9935) is a KEMRecipientInfo ' +
+                  '(RFC 9629): the content cipher stays AES-256-CBC, and a ' +
+                  'runtime that cannot encapsulate does not fall back to ' +
+                  'RSA or ECDH.',
+        decrypts: 'Nothing.',
+        keys: 'None of its own. The person\'s public key is on their ' +
+              'entry (stsOpenPgpKey), never a secret key, which ' +
+              'registration refuses; a key on a YubiKey OpenPGP card is ' +
+              'not told apart from one in a file, so nothing is recorded ' +
+              'as hardware-bound.',
+        hashes: 'SHA-1 of the lower-cased local part, in z-base-32, as the ' +
+                'Web Key Directory names an address (a name the draft ' +
+                'fixes, never trusted for integrity). The key\'s ' +
+                'fingerprint is the RFC 9580 one (SHA-256 for v6, SHA-1 ' +
+                'for v4).',
+        envelopes: ['openpgp', 'cms'],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            { what: 'Registered key, signing',
+              how: 'ML-DSA-65+Ed25519, ML-DSA-87+Ed448 (RFC 9980), then ' +
+                   'Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA of ' +
+                   'openpgp.minRsaBits (3072 at least)' },
+            { what: 'Registered key, encryption',
+              how: 'ML-KEM-768+X25519, ML-KEM-1024+X448 (RFC 9980), then ' +
+                   'X25519, X448, ECDH Curve25519 and P-256/P-384/P-521, ' +
+                   'RSA of openpgp.minRsaBits' },
+            { what: 'Refused',
+              how: 'DSA, ElGamal, Brainpool curves, SLH-DSA' },
+            { what: 'S/MIME content', how: 'AES-256-CBC (CMS EnvelopedData)' },
+            { what: 'S/MIME key transport',
+              how: 'RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 ' +
+                   'wrap; ML-KEM (RFC 9935) as KEMRecipientInfo, ' +
+                   'HKDF-SHA-256 and AES-Wrap' },
+            { what: 'Web Key Directory name', how: 'SHA-1, z-base-32' }
+          ];
+        }
+      },
       // XACML IS THE ONE FAMILY HERE THAT PERFORMS NO CRYPTOGRAPHY AT ALL, and
       // saying so is the point of the row rather than an admission. A PDP reads
       // a policy and a request and returns a decision; nothing is signed,
@@ -2603,7 +2695,7 @@ class CryptoMetadata {
       // 2026-09-11 every one is a leaf of the service Root (`common/pki.js`,
       // `tls/CLAUDE.md`), and a verified client certificate has been a sign-in
       // since 2026-09-05 — at `GET /tls/sign-in` since 2026-09-16. LDAPS 636
-      // asks for no client certificate (`docs/v1.1.0/pki.md`), so it left
+      // asks for no client certificate (`docs/v1.2.0/pki.md`), so it left
       // `verifies`.
       { name: 'PKI / X.509',
         signs: 'Nothing itself — the certificates this service PRESENTS are ' +
@@ -2761,7 +2853,12 @@ class CryptoMetadata {
                   'EVERY step is computed even after a match, deliberately: ' +
                   'returning early would make the time taken depend on WHICH ' +
                   'step matched, which is a better oracle than the digit ' +
-                  'comparison this bothers to make constant-time.',
+                  'comparison this bothers to make constant-time. An HOTP ' +
+                  'code (RFC 4226, #1955) the same way over the look-ahead ' +
+                  'window from its counter, which is then advanced by ' +
+                  'compare-and-set in the store. A PSKC seed file\'s ' +
+                  'ValueMAC (RFC 6030 section 6.1.1: HMAC-SHA1 or a SHA-2 ' +
+                  'MAC over the ciphertext) before its secret is decrypted.',
         encrypts: 'The shared secret at rest, in PRODUCT mode — AES-256-GCM ' +
                   'under the same key-encryption key that protects the ' +
                   'signing keys, through common/keystore.js. In DEVELOPMENT ' +
@@ -2769,7 +2866,11 @@ class CryptoMetadata {
                   'key there is generated per run and sealing would mean an ' +
                   'authenticator that silently stopped working at the next ' +
                   'restart.',
-        decrypts: 'The same secret, to verify a code. **THIS IS THE ONE ' +
+        decrypts: 'A vendor\'s PSKC seed file (RFC 6030): AES-CBC or AES Key ' +
+                  'Wrap under the pre-shared key given with the upload, or ' +
+                  'under a key PBKDF2 derives from its password, neither ' +
+                  'kept. ' +
+                  'The same secret, to verify a code. **THIS IS THE ONE ' +
                   'CREDENTIAL IN THIS SERVICE THAT CAN BE READ BACK** — a ' +
                   'password is a scrypt hash and can only be compared ' +
                   'against, and verifying a one-time code means COMPUTING ' +
@@ -2782,10 +2883,15 @@ class CryptoMetadata {
                        'it never enrols anybody at a sign-in screen — ' +
                        'enrolment means being shown a secret, so it happens ' +
                        'where the person is already authenticated or holds ' +
-                       'an activation link. There is no counter-based HOTP ' +
-                       'as an authentication mechanism, and no ' +
-                       'resynchronisation protocol: the skew window is the ' +
-                       'whole of what is offered for a drifting clock.',
+                       'an activation link. A drifting TOTP clock is ' +
+                       'offered the skew window and nothing else. A ' +
+                       'counter-based (HOTP) token is resynchronised from ' +
+                       'two consecutive codes, never from one. It never ' +
+                       'keeps a seed file\'s key or password, and never ' +
+                       'opens a file encrypted to a certificate. HOTP ' +
+                       '(RFC 4226) and a PSKC seed (RFC 6030) have no ' +
+                       'post-quantum MAC: the MAC is HMAC-SHA-1, SHA-256 ' +
+                       'or SHA-512.',
         envelopes: [],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -2808,6 +2914,54 @@ class CryptoMetadata {
               digits: String(report.digits), period: String(report.period),
               window: String(report.window)
             })]]
+          ];
+        } },
+
+      // ---------------------------------------------------------------------
+      // YUBICO OTP (#1955 P5). A second one-time password, AES-128-ECB of
+      // one block rather than a truncated HMAC. The card name matches
+      // sts_metadata.ts. The facts are read from common/yubiotp.ts.
+      // ---------------------------------------------------------------------
+      { name: 'Yubico OTP',
+        signs: 'Nothing that leaves this service, except the HMAC-SHA1 a ' +
+               'YK-VAL client checks on /wsapi/2.0/verify. The OTP itself ' +
+               'is AES-128-ECB of one 16-byte block, compared after it is ' +
+               'decrypted, which is why the primitive lives in ' +
+               'common/crypto.js.',
+        verifies: 'A presented OTP: the public identity selects the ' +
+                  'credential, the block decrypts under its AES-128 key, ' +
+                  'the CRC-16 residual is 0xf0b8, and the private identity ' +
+                  'matches. The use counter and the session-use counter, ' +
+                  'as one value, must be strictly above the last accepted ' +
+                  'one. The timestamp is not checked. A YK-VAL request\'s ' +
+                  'HMAC-SHA1, in every mode, when yubiotp.ykval is on.',
+        encrypts: 'The AES key and the private identity at rest, as one ' +
+                  'sealed JSON value, under the key-encryption key, in ' +
+                  'product mode. In development mode the key-encryption ' +
+                  'key is generated per run, so the value is stored in ' +
+                  'the clear and says so.',
+        decrypts: 'That sealed value, to check an OTP. The server holds ' +
+                  'the AES key, so the sign-in is amr otp and never hwk.',
+        hashes: 'Nothing. The CRC is CRC-16, polynomial 0x8408. A YK-VAL ' +
+                'signature is HMAC-SHA1.',
+        whatItDoesNot: 'It never calls YubiCloud. It never checks the ' +
+                       'timestamp. It never enrols a slot while ' +
+                       'yubiotp.offered is off, and it never answers ' +
+                       'YK-VAL while yubiotp.ykval is off. It never logs ' +
+                       'the programming line or a client\'s HMAC key. It ' +
+                       'has no post-quantum parameter: the OTP is ' +
+                       'AES-128-ECB of one 16-byte block.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          const report = yubiotp.report();
+          log.debug("Leaving algorithms().");
+          return [
+            ['OTP', [String(report.algorithm || '')]],
+            ['Alphabet', [String(report.alphabet || '')]],
+            ['CRC', [String(report.crc || '')]],
+            ['Replay', [String(report.replay || '')]],
+            ['YubiCloud', [String(report.cloud || '')]]
           ];
         } },
 
@@ -3057,10 +3211,17 @@ class CryptoMetadata {
                   'certificate authentication, the client certificate\'s ' +
                   'path to this realm\'s Intermediate and the service Root ' +
                   'with revocation consulted. A /serverkeygen template is ' +
-                  'not verified: its key is replaced.',
+                  'not verified: its key is replaced. A YubiKey PIV key ' +
+                  'attestation in the request (#1955, here and over ACME ' +
+                  'and SCEP): the slot certificate\'s ECDSA or RSA ' +
+                  'signature by the f9 certificate, and the f9 ' +
+                  'certificate\'s path to the realm\'s PIV attestation ' +
+                  'anchors, through the validation door.',
         encrypts: 'The private key of a server-generated key pair, sealed ' +
                   'with AES-256-GCM under the key-encryption key onto the ' +
-                  'entry, wherever that key outlives the process. It is NOT ' +
+                  'entry, wherever that key outlives the process; an ' +
+                  'escrowed piv-key-management key (#1955) in every mode, ' +
+                  'or not generated at all. It is NOT ' +
                   'encrypted to the client (RFC 7030 section 4.4.1.2): a ' +
                   'request asking for that is refused, and the key travels ' +
                   'inside TLS only.',
@@ -3089,7 +3250,11 @@ class CryptoMetadata {
              })],
             ['Server-generated key algorithms', keys.keyAlgIds()],
             ['Private key container', ['PKCS#8 (RFC 5958), base64']],
-            ['Certificate container', ['CMS SignedData, certs-only (RFC 5652)']]
+            ['Certificate container', ['CMS SignedData, certs-only (RFC 5652)']],
+            // #1955 P2: what a YubiKey signs its PIV attestations with, per
+            // Yubico's PIV attestation page (the f9 key's own algorithm).
+            ['PIV attestation signatures verified',
+             ['ECDSA with SHA-256', 'RSASSA-PKCS1-v1_5 with SHA-256']]
           ];
         } },
       // ===== SCEP family (scep/) ===== SCEP (RFC 8894, 2026-09-13). Every

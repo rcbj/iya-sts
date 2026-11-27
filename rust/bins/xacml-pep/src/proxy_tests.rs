@@ -97,6 +97,9 @@ struct UpState {
     /// Every request that reached it, whatever it was (#1760: a refused
     /// request must not be one).
     hits: u32,
+    /// What each of those requests was: its method, path and query, and
+    /// its headers, so an assertion on `hits` can say what reached it.
+    seen: Vec<String>,
     /// The application sessions it holds.
     valid: HashSet<String>,
     acs_posts: u32,
@@ -143,8 +146,15 @@ async fn upstream(app: Arc<Mutex<UpState>>) -> u16 {
     let echo = move |request: Request| {
         let app = app.clone();
         async move {
-            app.lock().unwrap().hits += 1;
             let (parts, body) = request.into_parts();
+            {
+                let mut g = app.lock().unwrap();
+                g.hits += 1;
+                g.seen.push(format!(
+                    "{} {} {:?}",
+                    parts.method, parts.uri, parts.headers
+                ));
+            }
             let bytes = axum::body::to_bytes(body, 10_000_000).await.unwrap();
             if parts.uri.path() == "/pep-app/acs" {
                 let form = String::from_utf8_lossy(&bytes).to_string();
@@ -1079,6 +1089,30 @@ async fn harness_of(
     }
 }
 
+/// A HARNESS TAKES ITS RECEIVERS WITH IT (#1935). The runtime a test ran
+/// on ends its tasks; it cannot end the library's poll threads, which went
+/// on polling this harness's mock service's port after the test — and,
+/// once the kernel handed that port to a later harness's mock
+/// application, reached it (`a_request_that_cannot_be_parsed_is_a_bare_
+/// status` saw one hit). `a_dropped_harness_polls_no_more` holds it.
+impl Drop for Harness {
+    fn drop(&mut self) {
+        self.proxied.stop_signals();
+    }
+}
+
+/// A port nobody answers on, HELD for as long as the socket returned is:
+/// bound and not listening, so a connection to it is refused, and the
+/// kernel cannot give it to another test's listener meanwhile. A port
+/// bound and released was the other way one test reached another's
+/// mock application (#1935).
+fn refused_port() -> (tokio::net::TcpSocket, u16) {
+    let held = tokio::net::TcpSocket::new_v4().unwrap();
+    held.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let port = held.local_addr().unwrap().port();
+    (held, port)
+}
+
 impl Harness {
     fn get(&self, path: &str) -> reqwest::RequestBuilder {
         self.http.get(format!("{}{}", self.proxy, path))
@@ -1300,9 +1334,7 @@ async fn routes_paths_methods_and_bodies() {
     assert_eq!(h.get("/slow").send().await.unwrap().status(), 504);
     assert!(started.elapsed() < Duration::from_millis(1800));
     // Nobody listening at the upstream: 502.
-    let gone = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let dead = gone.local_addr().unwrap().port();
-    drop(gone);
+    let (_held, dead) = refused_port();
     let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
     h.sync.receive_proxy(
         &configuration(
@@ -2165,7 +2197,11 @@ async fn identity_headers_from_the_service() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 502, "a CR LF value is refused, not forwarded");
+    assert_eq!(
+        r.status(),
+        403,
+        "a CR LF value is refused (a PEP failure), not forwarded"
+    );
     let r = h
         .get("/hdr/x")
         .basic_auth("denied", Some("right"))
@@ -2965,6 +3001,12 @@ fn hits(h: &Harness) -> u32 {
     h.app.lock().unwrap().hits
 }
 
+/// The requests that reached the application, one per line, for an
+/// assertion's message.
+fn seen(h: &Harness) -> String {
+    h.app.lock().unwrap().seen.join("\n")
+}
+
 /// #1760: a route is decided by the policy it NAMES, never the root —
 /// whichever way round the two disagree.
 #[tokio::test]
@@ -3383,9 +3425,7 @@ async fn each_refusal_a_browser_meets_is_the_standard_page() {
     the_page(r, 504, "The application did not answer in time").await;
     assert_eq!(hits(&h), before + 1, "only /slow reached the application");
     // 502, nobody at the upstream: nothing about where it was.
-    let gone = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let dead = gone.local_addr().unwrap().port();
-    drop(gone);
+    let (_held, dead) = refused_port();
     let cert = String::from_utf8(h.saml_signer.1.to_pem().unwrap()).unwrap();
     h.sync.receive_proxy(
         &configuration(
@@ -3668,34 +3708,34 @@ fn waiting_announced() -> usize {
 
 /// NOT CONFIGURED YET IS NOT "PAGE NOT FOUND" (rcbj, 2026-11-15). After a
 /// start and before the first configuration answer, every path — the
-/// proxy's own `/.iya-pep/*` too — is 503 with `Retry-After` (the poll
-/// interval, rounded up to whole seconds): the standard page's "Try again
-/// later" for a browser, the `{error, error_description}` of the other
-/// 503s for anything else. Once a configuration arrives the routes answer;
+/// proxy's own `/.iya-pep/*` too — is a PEP failure, 403 (#2208: it was
+/// 503), with `Retry-After` (the poll interval, rounded up to whole
+/// seconds): the standard page's "Try again later" for a browser, the
+/// `{error, error_description}` of every refusal for anything else. Once a configuration arrives the routes answer;
 /// one received EMPTY or SWITCHED OFF is the 404 of STS-XPEP-0065, as
 /// before. The log has the state change, not a line per request.
 #[tokio::test]
 async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     let h = harness_unconfigured(|o| o.poll_interval_ms = 1500).await;
-    // A browser: the standard page at 503, with Retry-After.
+    // A browser: the standard page at 403, with Retry-After.
     let r = as_browser(h.get("/public/page")).send().await.unwrap();
     assert_eq!(r.headers()["retry-after"], "2", "1500 ms, rounded up");
-    let html = the_page(r, 503, "Try again later").await;
+    let html = the_page(r, 403, "Try again later").await;
     assert!(
-        html.contains("<dt>error</dt><dd><code>temporarily_unavailable"),
+        html.contains("<dt>error</dt><dd><code>access_denied"),
         "{}",
         html
     );
     assert!(html.contains("still receiving its settings"), "{}", html);
-    // An API client: the JSON of the proxy's other 503s, no code in it.
+    // An API client: the JSON of every refusal, no code in it.
     let r = h.get("/api/x").send().await.unwrap();
-    assert_eq!(r.status(), 503);
+    assert_eq!(r.status(), 403);
     assert_eq!(r.headers()["retry-after"], "2");
     assert_eq!(r.headers()["content-type"], "application/json");
     let body: Value = r.json().await.unwrap();
     assert_eq!(
         body,
-        json!({ "error": "temporarily_unavailable",
+        json!({ "error": "access_denied",
                 "error_description": "This proxy has not yet received its \
                                       configuration since it started." })
     );
@@ -3710,7 +3750,7 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
         "/nowhere",
     ] {
         let r = h.get(path).send().await.unwrap();
-        assert_eq!(r.status(), 503, "{}", path);
+        assert_eq!(r.status(), 403, "{}", path);
         assert_eq!(r.headers()["retry-after"], "2", "{}", path);
     }
     assert_eq!(hits(&h), 0, "nothing reached the application");
@@ -3738,7 +3778,7 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     );
     let r = h.get("/nowhere").send().await.unwrap();
     assert_eq!(r.status(), 404, "no route is 404 again");
-    // A configuration switched off: received, so 404 — not 503.
+    // A configuration switched off: received, so 404 — not 0118's 403.
     let mut off = configuration(&h.upstream_base, &h.service_base, &cert);
     off["proxy"]["enabled"] = json!(false);
     h.sync.receive_proxy(&off, None);
@@ -3757,11 +3797,11 @@ async fn before_its_first_configuration_the_proxy_says_try_again_later() {
     assert_eq!(r.status(), 404);
     let body: Value = r.json().await.unwrap();
     assert_eq!(body["error"], "not_found");
-    assert_eq!(waiting_announced(), 1, "no 503 after the first answer");
+    assert_eq!(waiting_announced(), 1, "no 0118 after the first answer");
 }
 
-/// A FIRST answer that is empty is an answer: 404 from the start, never a
-/// 503 the client would wait out for nothing.
+/// A FIRST answer that is empty is an answer: 404 from the start, never
+/// 0118's refusal the client would wait out for nothing.
 #[tokio::test]
 async fn a_first_answer_that_holds_nothing_is_404_not_503() {
     let h = harness_unconfigured(|_| {}).await;
@@ -3851,7 +3891,7 @@ async fn queues_a_record_for_each_request_its_route_decided() {
     let wire = serde_json::to_value(unauthenticated).unwrap();
     assert_eq!(wire.as_object().unwrap().len(), 22);
 
-    // NOT CONFIGURED YET: a 503, and no record.
+    // NOT CONFIGURED YET: 0118's 403, and no record.
     let waiting = harness_unconfigured(|_| {}).await;
     let r = waiting
         .get("/api/x")
@@ -3859,7 +3899,7 @@ async fn queues_a_record_for_each_request_its_route_decided() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.status(), 503);
+    assert_eq!(r.status(), 403);
     assert!(waiting.proxied.audit().queued_for_test().is_empty());
 }
 
@@ -3987,6 +4027,29 @@ async fn the_proxys_own_paths_are_reserved_and_take_their_methods() {
         "nothing under /.iya-pep/ went upstream"
     );
     assert!(!proxy::logged::holding("STS-XPEP-0134").is_empty());
+}
+
+/// THE POLL STREAM ENDS WITH ITS HARNESS (#1935): once a harness is
+/// dropped its receiver polls its mock service no more. Before, the
+/// library's poll thread went on for the rest of the binary, and reached
+/// whichever later listener the kernel gave that port to.
+#[tokio::test]
+async fn a_dropped_harness_polls_no_more() {
+    let h = harness().await;
+    let service = h.service.clone();
+    let polls = || service.lock().unwrap().polls;
+    let started = std::time::Instant::now();
+    while polls() == 0 && started.elapsed() < Duration::from_secs(5) {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(polls() > 0, "the live client's receiver polls");
+    drop(h);
+    // A poll already sent when the harness went is answered after it.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let after = polls();
+    // Six poll intervals, and more than the 400 ms a failed poll waits.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(polls(), after, "no poll after the harness was dropped");
 }
 
 /// Every error the proxy makes itself is a standard one, and every error

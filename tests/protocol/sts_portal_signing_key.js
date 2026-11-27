@@ -62,6 +62,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 // RFC 7522's signer is this suite's own XML Signature, for the reason the JWS
 // signer below is this file's own: see `saml_xmldsig.js`'s header.
 const samlSigner = require("./saml_xmldsig.js");
@@ -428,10 +429,10 @@ async function test() {
   log.info("=== 0. two people ===");
   const made = await apiPost("/users/create",
     { username: OWNER, invent: false, attributes: personAttributes(OWNER),
-      credential: "password", password: PASSWORD });
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD) });
   const madeOther = await apiPost("/users/create",
     { username: OTHER, invent: false, attributes: personAttributes(OTHER),
-      credential: "password", password: PASSWORD });
+      credential: "password", password: ownPassword.temporaryFor(PASSWORD) });
   check("both people are created through the management API, with their " +
         "attributes and a password, and nothing invented", function () {
     assert.strictEqual(made.status, 200,
@@ -444,6 +445,18 @@ async function test() {
       "the create invented attributes: " +
       JSON.stringify(made.body).slice(0, 300));
   });
+  // THE PASSWORD IS THE OWNER'S OWN (#2160): a typed one is temporary in
+  // product, so OWNER chooses PASSWORD at the sign-in screen
+  // (`own_password.js`; in development it is simply set). OTHER chooses
+  // theirs too: section 7 signs them in to the portal to try revoking
+  // OWNER's key, and with the typed password still temporary the screen
+  // asked them for a new one and the authorization endpoint answered that
+  // step's 200 rather than a code (#2258).
+  for (const who of [OWNER, OTHER]) {
+    await ownPassword.ownPassword(base, who, PASSWORD, function (one, value) {
+      return apiPost("/users/set-password", { user: one, password: value });
+    });
+  }
 
   // -------------------------------------------------------------------------
   // 1. THE PAGE BEFORE ANYTHING IS ISSUED.
@@ -803,8 +816,25 @@ async function test() {
             const card = cardOf(atCap.text, "jwt");
             assert.ok(card.indexOf('name="action" value="generate"') < 0,
               "the JWT card still offers Generate at the cap");
+            // Which of the card's three conditions failed, when it does: a
+            // card with neither Generate nor the note is one the page drew
+            // with no entry, no chain or self-service off (run 45236493306's
+            // mariadb mode saw it once, and the text alone could not say
+            // which).
+            const shown = atCap.json || {};
+            const jwtProfile = (shown.profiles || []).filter(function (one) {
+              return one.id === "jwt";
+            })[0] || {};
             assert.ok(/the most this service issues to one person/
-              .test(card), "the cap note is not on the card");
+              .test(card), "the cap note is not on the card: " +
+              JSON.stringify({ status: atCap.status, entry: shown.entry,
+                               issuable: shown.issuable,
+                               offered: shown.offered,
+                               maxPerPerson: shown.maxPerPerson,
+                               atCap: jwtProfile.atCap,
+                               valid: jwtProfile.held &&
+                                 jwtProfile.held.valid }) + " " +
+              card.slice(0, 300));
             assert.ok(cardOf(atCap.text, "saml")
               .indexOf('name="action" value="generate"') >= 0,
               "the cap is per profile, and the SAML card lost Generate");

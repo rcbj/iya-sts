@@ -111,6 +111,11 @@ const ROWS: Row[] = [
          'in every cell' },
   { prefix: '/pki', strategy: 'local',
     why: 'the certificate authority is the global tier\'s' },
+  { prefix: '/wsapi/2.0/verify', strategy: 'local',
+    why: 'YK-VAL (#1955 P5): its clients and its nonce replay set are the ' +
+         'global tier\'s (persistence/tiers.js), so any cell checks the ' +
+         'client and the nonce; the OTP is checked against the token ' +
+         'inventory of the cell that answers' },
   { prefix: '/crypto', strategy: 'local',
     why: 'the signer generations are the global tier\'s' },
   { prefix: '/docs', strategy: 'local', why: 'static documentation' },
@@ -300,6 +305,8 @@ const ROWS: Row[] = [
     why: 'a CIBA request names its person, whose home runs it' },
   { prefix: '/oauth2/userinfo', strategy: 'bearer',
     why: 'answered by the cell that minted the access token' },
+  { prefix: '/oauth2/groups', strategy: 'bearer',
+    why: 'the groups of the person the access token names (#2247)' },
   { prefix: '/oauth2/grants', strategy: 'bearer',
     why: 'the grant is held by the cell that minted the access token' },
   // --- SAML, WS-Federation, WS-Trust ---

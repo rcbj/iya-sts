@@ -95,7 +95,7 @@ const log = bunyan.createLogger({ name: 'pki_merge' });
 config.registerLogger(log);
 
 // The members a row may hold that are one CA TIER each, and the map of them.
-const TIER_MEMBERS = ['root', 'intermediate'];
+const TIER_MEMBERS = ['root', 'intermediate', 'sshUserCa', 'sshUserCaPqc'];
 const TIER_MAP_MEMBERS = ['issuing'];
 
 // The use case whose displaced certificates stay published (#318).
@@ -436,6 +436,44 @@ function mergeIssued(mine, theirs, extra, nowMs) {
   return trimPublished(out);
 }
 
+// THE SSH USER-CA REGISTER: a union by serial, less expired certificates.
+// Revocation is monotonic; when either copy has a revocation time it survives.
+function mergeSshIssued(base, mine, theirs, nowMs) {
+  log.debug("Entering mergeSshIssued().");
+  const seen = Object.create(null);
+  const out = [];
+  [theirs || [], mine || [], base || []].forEach(function (list) {
+    list.forEach(function (one) {
+      if (!one || !one.serialHex) {
+        return;
+      }
+      if (one.notAfter && new Date(one.notAfter).getTime() <= nowMs) {
+        return;
+      }
+      const serial = normalSerial(one.serialHex);
+      if (seen[serial] === undefined) {
+        seen[serial] = out.length;
+        out.push(one);
+        return;
+      }
+      const index = seen[serial];
+      const held = out[index];
+      const dates = [held.revokedAt, one.revokedAt].filter(function (date) {
+        return !!date;
+      }).sort();
+      const merged = Object.assign({}, one, held);
+      if (dates.length) {
+        merged.revokedAt = dates[0];
+      } else {
+        delete merged.revokedAt;
+      }
+      out[index] = merged;
+    });
+  });
+  log.debug("Leaving mergeSshIssued(). " + out.length + " record(s).");
+  return out;
+}
+
 // ONE AUTHORITY'S REVOCATION LIST: a union, less a hold one side released.
 function mergeRevokedList(base, mine, theirs) {
   log.debug("Entering mergeRevokedList().");
@@ -756,6 +794,9 @@ function merge(base, mine, theirs, options) {
       // Filled after `certs`, which may add displaced serials to it.
       return;
     }
+    if (member === 'sshIssued') {
+      return;
+    }
     if (member === 'objects') {
       row.objects = mergeObjects(b.objects, m.objects, t.objects);
       return;
@@ -801,6 +842,10 @@ function merge(base, mine, theirs, options) {
   if (m.issuedKeyPairs || t.issuedKeyPairs || displaced.length) {
     row.issuedKeyPairs = mergeIssued(m.issuedKeyPairs, t.issuedKeyPairs,
                                      displaced, nowMs);
+  }
+  if (m.sshIssued || t.sshIssued || b.sshIssued) {
+    row.sshIssued = mergeSshIssued(b.sshIssued, m.sshIssued, t.sshIssued,
+                                   nowMs);
   }
   const published = liveAgain(row);
   const orphaned = orphanedSlots(row, nowMs);

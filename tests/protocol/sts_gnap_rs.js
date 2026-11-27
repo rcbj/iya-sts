@@ -70,6 +70,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
+const serviceTrust = require("../tools/service_trust.js");
 const flowLib = require("./gnap_flow.js");
 const testPeer = require("./test_peer.js");
 
@@ -1232,9 +1233,13 @@ async function test() {
   const keyPem = forge.pki.privateKeyToPem(pair.privateKey);
   const certDer = Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(
       cert)).getBytes(), "binary");
+  // ITS CONNECTIONS ARE VERIFIED, to both servers it dials: the service's
+  // chain (tools/service_trust.js) for the grant, and the peer's CA for
+  // the resource at `h.RS_TLS`. One truststore holds both.
   const mtlsClient = new gnap.Client({ key: { alg: "RS256" }, proof: "mtls",
     tls: { cert: certPem, key: keyPem, certDer: certDer,
-           rejectUnauthorized: false } });
+           ca: serviceTrust.trustedCa().concat(h.peerCaPem ? [h.peerCaPem]
+                                                          : []) } });
   const mtlsFlow = await h.redirectGrant(mtlsClient, OWNER);
   // AT THE PEER'S TLS LISTENER (#586): the proof is the client certificate
   // on the connection, so the resource is its https address, verified

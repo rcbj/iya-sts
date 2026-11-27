@@ -251,5 +251,13 @@
   "thAlgName": "Algorithm",
   "thAlgSigns": "Pumipirma",
   "thAlgAccepts": "Tumatanggap",
-  "thAlgWhyNot": "Bakit hindi"
+  "thAlgWhyNot": "Bakit hindi",
+  "tlsKxHeading": "Palitan ng susi ng TLS, ayon sa napagkasunduan",
+  "tlsKxNote": "Ang napagkasunduan ng bawat natapos na TLS handshake sa mga listener ng node na ito mula nang magsimula ang front process nito, binasa mula sa session na hawak ng server. Ang post-quantum ay isang grupong ML-KEM, mag-isa o sa isang hybrid. Ang mga bilang ay sa node na ito at hindi naitatabi pagkatapos ng restart.",
+  "tlsKxSummary": "{pq} sa {total} na koneksyon mula {since} ay post-quantum.",
+  "tlsKxListener": "Listener",
+  "tlsKxGroup": "Grupo",
+  "tlsKxConnections": "Mga koneksyon",
+  "tlsKxLast": "Huling nakita",
+  "tlsKxNone": "Wala pang koneksyong TLS na nabilang sa node na ito."
 }

@@ -110,7 +110,9 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
   (`step` and the address of the page that draws it, by its own GET),
   `password-change`, `home-cell` (#98's restart: the start's method, address
   and fields, sent by the runtime exactly as the re-post page sent them), or
-  `refused` with the English sentence and no error code. One copy of the
+  `refused` with the English sentence, its catalog message beside it
+  (`messages`, #2006: the page draws it in its own language), and no
+  error code. One copy of the
   logic answers both kinds of door: `answersJson(res)` (`res.locals.authnApi`,
   set by the API) is asked at the one line where a page was sent, and a door
   that is still a FORM (the wallet's, until #574) gets a 303 instead — its
@@ -194,7 +196,8 @@ that page; nothing draws a page that loads it now, and it is gone.
 
 **A page with nowhere to go** gets a way off (`AuthnSurface.put()`). The
 problem page — a sign-in this service no longer has, or any other refusal
-that drew no view — shows the language chooser and the English sentence
+that drew no view — shows the language chooser and the sentence (in the
+page's language where its answer named a catalog message, #2006)
 and nothing else, and the same is true of any screen whose body draws
 neither a link nor a button (the chooser redraws the page, so it is not
 one). That page tells the person to close the browser tab or window and
@@ -261,7 +264,17 @@ completes the pending sign-in on it.
   (0464), not a person here or another realm's (0465), an application's
   (0466), not taken here (0467).
 
-**Tests**: `tests/authn_certificate_signin.js`, over a real handshake.
+* **A SMART CARD OR ANOTHER CERTIFICATE (#2031)**: the offer is drawn while
+  the policy takes either (`certificatePrimary` or `smartCardPrimary`); the
+  act asks the row for the kind `screenCertificateHolder()` found
+  (`holder.smartCard`) and refuses the other with STS-AUTHN-0593 and the
+  not-offered sentence, and the session's credential carries `smartCard`
+  and `cardAuth`. `authnPolicyRefusal()` asks `smartCard` for such a
+  credential (0590), `pkinitSmartCard` for a Kerberos session whose amr has
+  `sc` (0591), and `requireAttestedHardware` last (0592).
+
+**Tests**: `tests/authn_certificate_signin.js`, over a real handshake;
+`tests/authn_policy_smart_card.js` for the rows.
 **Not yet tested**: a second factor after the certificate, and the cell
 restart; both are the paths the emailed first factor already exercises.
 
@@ -327,7 +340,9 @@ Every page in that table also carries **Start over** (`start-over`, below).
   set-up step's "Set up a passkey"), a recovery-code page with no unspent
   code, a password page after a password. **The emailed factor's pages
   answer the shell whatever their query**, and the view draws what is
-  wrong as the end page `endPage()` drew (state `end`, English).
+  wrong as the end page `endPage()` drew (state `end`: its title and
+  sentence in English, and as catalog messages, `titleRefusal` and
+  `refusal`, which the page draws in its own language, #2006).
 * **THE ID IS A BEARER CAPABILITY**, as `?mfa=` always was: every act is
   bound as the screen's are (JSON, an Origin of this service, the
   `X-CSRF-Token` of the `sts_session` cookie), the id is never logged, and
@@ -1015,10 +1030,22 @@ written; the cookies stay.
   and a fresh state would tell every relying party of that account
   `changed` under OpenID Connect Session Management (`oauth-oidc/CLAUDE.md`
   3ax).
-* **`authn.account-set-expiry`**, a cluster job per realm, hourly
-  (`cluster/CLAUDE.md`'s table): `sweepAccountSets()` prunes every set and
-  deletes an empty one. It walks the realm's sets, as the session expiry
-  walks sessions; nothing on a request path does.
+* **`authn.account-set-expiry`**, a cluster job per realm
+  (`cluster/CLAUDE.md`'s table): every set pruned and an empty one deleted.
+  It walks the realm's sets, as the session expiry walks sessions; nothing
+  on a request path does. **A pass is spread over the hour** (#784): a run a
+  minute, `sweepAccountSetsBudgeted()`, at most a second of held time, from
+  where the last run stopped. **And it reads no session synchronously**
+  (#780, reopened by rcbj 2026-11-13: "a run holds no worker"): a batch of
+  64 sets' sessions is read on the store's read pool
+  (`accountSessionsKeptAsync()` over `SessionWindow.readAsync()`, which
+  admits nothing, so the walk does not push live sessions out of the
+  window), and the batch is then decided on in memory. A failed read is
+  kept (#350); a session added to a set while its batch was out is kept for
+  the next pass; a read-ahead that fails decides nothing and the next run
+  starts that batch again (`STS-AUTHN-0558`); a run due while one is still
+  reading is skipped; a run lasts at most 20 s by the clock.
+  `tests/account_set_sweep_slices.js` A1–A4 and W1–W3.
 * **Audit rows**, each with the set, the sid and `sub`: `account.add` (with
   `adopted: true` for D12), `account.select`, `account.switch` (the default
   changed), `account.forget`, `account.ambiguous` (the picker shown, or
@@ -2065,6 +2092,18 @@ is about to draw** — a link is markup, and a hand-made GET of
 whose account is configured for an authenticator app. That is the bypass above,
 arriving through a different door.
 
+### The code step takes either kind of one-time code (#1955 P4)
+
+The step id is still `totp` and the screen still asks for "a one-time
+code", but it is offered to anybody holding an authenticator app OR an
+HOTP token (`mechanismsFor().oneTimeCode`), the field takes the longer of
+the two lengths, and `credentials.verifyTotpAsync()` decides which answered.
+`finishTotp()` records the KIND on the event (`credential.kind` `totp` or
+`hotp`, which an application's named second-factor list holds separately,
+`common/mfa_mechanisms.ts`), and adds `hwk` beside `otp` only where the
+verdict says the code came from an imported token still active in the
+hardware token register (design X3). Never `phr`.
+
 ### The code is checked for real, and this screen is the second SPNEGO
 
 `common/totp.ts`'s header carries the argument at length and it is the one
@@ -2566,7 +2605,7 @@ beside the User-Agent's. The risk engine scores a digest this person never
 signed in from as `new-device` (×2).
 
 **Turning it on is the operator's decision**, after the privacy impact
-assessment `docs/v1.1.0/risk-scoring.md` sets out: a browser fingerprint is personal
+assessment `docs/v1.2.0/risk-scoring.md` sets out: a browser fingerprint is personal
 data about the device, collected without the person doing anything.
 
 ## EVERY SIGN-IN SCREEN ANSWERS A REFUSED SESSION, AND THE REFUSAL SAYS WHY (2026-09-22, #62 P0)
@@ -3131,7 +3170,8 @@ next refusal, the next screen act and Start over); `screenView()` answers
 `postQuantumRequired` as `postQuantumHelp()`'s `{ register }` and
 the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
 `WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
-translated, under the English sentence. `register` is `/portal/keys` where
+translated, under the sentence (translated too since #2006). `register`
+is `/portal/keys` where
 passkeys may be registered here. (#939's upgrade link went with the
 portal's Upgrade button, #1100: the post-login activity upgrades a classical
 passkey at a sign-in.) The usernameless
@@ -3183,6 +3223,23 @@ header; what a maintainer of THIS directory needs is where it sits:
   JWK now carries `alg`**, so an assertion is checked with the credential's own
   hash and padding; a key stored before has none and is read by key type — which
   fixed ES384 and ES512 keys, checked with SHA-256 until then.
+* **A LEGACY U2F APPID (#1955 P7).** `verifyAssertion()` takes
+  `expectedAppId` and `appidUsed`, and holds the rpIdHash to SHA-256 of the
+  AppID (check `rpIdHash is SHA-256 of the AppID (the appid extension)`, the
+  same `STS-AUTHN-0031`) ONLY when both are given and `appidUsed` is true —
+  the client's `appid` extension output, carried by `WebWebAuthn.asserted()`'s
+  `clientExtensionResults`. A caller passes `expectedAppId` only for a key
+  imported under that AppID and still permitted; so a key registered here is
+  held to the RP ID whatever the client claims. The passkey step
+  (`webauthnFacts()`) offers such a key at a
+  second-factor step only, with `appid` in the options and `userVerification`
+  `preferred` where the realm asks `required`; the verification of that one
+  key does not require UV, every other key's does, and an imported key at a
+  passwordless step, or under an AppID no longer permitted, is refused
+  (`STS-AUTHN-0565`). The step, the upgrade proof and every other assertion
+  door take both halves from `webauthn_policy.ts`'s `assertionOptions()` and
+  `assertionExpectations()`; `common/CLAUDE.md` lists the doors. The usernameless sign-in never meets one: a U2F key
+  holds no user handle. `common/CLAUDE.md` has the import and the setting.
 * **EVERY ALGORITHM, REQUESTED BY DEFAULT (2026-10-01, rcbj).** The verifier
   also checks RFC 9864's fully specified ESP256/384/512 (-9/-51/-52) and
   Ed25519/Ed448 (-19/-53), whose curve is checked against the key, and RFC
@@ -3746,6 +3803,25 @@ somebody who does not exist) had always answered 500. It falls back to the
 
 ## AFTER AN ACCOUNT RECOVERY, A PASSKEY FIRST (#724, 2026-10-19)
 
+**A SECURITY KEY REPORTED LOST IS A RECOVERY OWED (#1955 P1).** The lost-key
+act (`common/hardware_tokens.ts`) notes a `lost-key` recovery
+(`passkey_policy.ts`'s RECOVERY_DOORS, not self-service) for a person whose
+every passkey was on the token, BEFORE it removes them; `holdsPasskey()`
+counts such a person as covered while it is pending, and
+`setRecoveryPending()` keeps `lost-key` when a later door writes its own.
+So the next session a passkey did not answer is held as any recovery's is —
+under `not-weaker`, the set-up step below — and a passkey signing them in
+clears it. Under `any` nothing is written.
+
+**THE CREDENTIAL'S HARDWARE TOKEN IS ON THE EVENT (#1955 P1)**:
+`eventContext()` records `context.credential.hardwareToken` (key, vendor,
+model, evidence source, smart card) from the register at the sign-in — a
+passkey by its credential id, a certificate by the serial the two
+certificate doors now pass — and `common/authn_mechanisms.ts` reads it as
+the `attested-hardware` mechanism. A list naming `attested-hardware` draws a
+screen with a passkey and, where the realm takes one, the certificate door,
+and no password field; nothing is forced.
+
 The design is `common/CLAUDE.md` 3cq; what this module does with it:
 
 * **`startSessionHere()` asks the recovery question** right after the passkey
@@ -4108,10 +4184,33 @@ one click from skipped.
   pending record. `refusedSession()` turns `extra.postLogin` into the step
   (`postLoginStep()`, `factor: 'post-login'`, the door's amr/acr/credential
   kept as `held`) on `/authn/post-login`; `finishPostLogin()` starts the held
-  session with `postLoginDone` once Register's ceremony verifies or Skip is
-  taken. A door that cannot draw the step (federation, wallet, SPNEGO,
+  session once Register's ceremony verifies or Skip is taken — or holds it
+  again for the next activity due (below). A door that cannot draw the step (federation, wallet, SPNEGO,
   certificate, anything outside this file) is NOT interrupted for a
   skippable activity and is REFUSED for a required one (STS-AUTHN-0473).
+* **SEVERAL ACTIVITIES ARE ASKED IN TURN (#2009 P1, 2026-11-23).**
+  `startSessionHere()` asks `postLogin.nextDue()`, not `dueFor()`:
+  never an activity already asked at this sign-in, and at most ONE that may
+  be skipped, every required one still asked (rcbj's decision D2 on #2009).
+  `finishPostLogin()` starts the held session with `postLoginHold`,
+  `postLoginAsked` (this activity added) and `postLoginSkippableAsked`
+  rather than `postLoginDone`, so it is held again for the next activity due
+  and `refusedSession()` draws that step as it drew this one; with nothing
+  more due it starts and returns to the caller. The asked list lives only in
+  the server's pending step, so nothing a browser sends can skip one.
+  `postLoginDone` is still honoured where a caller sets it.
+* **THE ROLES ARE SETTLED BEFORE A POST-LOGIN STEP (`rolesSettled`, #2009 —
+  a behaviour change).** The role step (#1072) is asked first, so the
+  session `finishPostLogin()` starts carries `rolesSettled` and the role
+  question is not asked again. Until #2009 it was, because that session was
+  started without `postLoginHold`: a sign-in naming no application ran
+  `role_eligibility.requiredFor()` a second time and could be refused
+  STS-XACML-0329 after the person had done the activity, and an offer that
+  appeared during the step was asked then. Not `rolesDone`, which also
+  REPLACES the session's role choice for the application. `roleHeldOf()`
+  and `finishRoles()` carry `postLoginAsked` too, so a session the role step
+  holds never re-asks an activity. `tests/post_login.js` N drives the chain
+  and the offer that appears.
 * **A post-login step is answered to no other step's act**
   (`mfaStepFor(id, accepts)`): a code, a recovery code or a wallet posted to
   its id would start the held session without the activity.
@@ -4146,3 +4245,43 @@ one click from skipped.
   process; `tests/post_login_started.js` holds #1126's selection.
 
 **An app password at a password-only door needs no second factor, deliberately (rcbj, 2026-11-09).** Those doors cannot ask for one. `mode.requiresSecondFactorOfEveryone()` (#1490) refuses a person's own password there and leaves the app password working; do not extend the requirement to it.
+
+## THE ROLE STEP (#1072, 2026-11-20; rule 3dg)
+
+A dynamic selectable role is chosen HERE, after every factor and before a
+post-login activity, on the post-login hold's pattern (`startSessionHere()`):
+
+* **The screen's box** "Choose roles for this sign-in" is drawn where
+  `roleBoxOffered()`: the application's `roles.dynamicSelection` (with
+  `appDynamicRoleSelection` overriding it) is on and the realm defines a
+  dynamic role. It says nothing about the person. Ticked, it rides as
+  `choose_roles` beside `remember_browser` and lands on the pending record
+  (`record.chooseRoles`).
+* **Held** when `roleOfferFor()` finds a role the person is eligible for and
+  the door is the screen's (`postLoginHold`); `refusedSession()` then draws
+  the step (`/authn/roles`, factor `roles`) where the box was ticked or a
+  `required` role is offered (rcbj's decision 3), and otherwise starts the
+  session at once with no role (`finishRoles(…, [])`). A door that cannot
+  draw it is refused for a required role (STS-XACML-0329) and otherwise
+  starts with none — a door that names no application (the certificate's)
+  about the realm-wide required roles (`requiredFor()`).
+* **Single sign-on into an application that would require a role**, on a
+  session that chose nothing for it, is not answered from the session:
+  `roleChoiceOwed()` is the browser protocols' force-login (STS-XACML-0333).
+* **The step holds the OFFER** — the server's own list — and `rolesAct()`
+  checks the ticked names against it and the policies again
+  (`role_selection.ts`'s `validateChoice()`: 0325–0328). `mfaStepFor()`
+  answers a role step only to its own act, as a post-login step: a code
+  posted to its id would start the held session without the choice.
+* **The choice is on the session** — `selectedRoles`, `{ role, application,
+  at }` — stamped by `startSessionHere()`'s record, carried through a
+  post-login step's `held`, and on a re-authentication REPLACED for that
+  application only (`reauthenticateSession()`), which is what the portal's
+  "Sign in again" relies on. Nothing is written to the directory.
+
+`role_selection.ts` is the other half: `selectedFor()`, the reader
+`roles.js`'s selection slot calls at every issuance, re-asking each chosen
+role's policy (`roles.selection.dropped` where it no longer permits) and
+answering nothing for an ended, expired or somebody else's session — which
+is also what an `offline_access` refresh token outliving its session gets.
+`tests/role_selection.js` holds both halves.

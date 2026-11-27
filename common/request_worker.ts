@@ -326,6 +326,12 @@ const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 // `common/revoking_writes.ts` names it and `request_pool.js` spells it too;
 // `tests/revoking_writes.js` compares the three.
 const REVOKING_HEADER = 'x-sts-pool-revoking';
+// The header a worker marks an answer with when a realm row or a setting
+// changed while it was being answered, so the front process catches up on
+// its own copy before forwarding it (persistence.js, THE SETTINGS
+// GENERATION). `request_pool.js` spells it too, and
+// `tests/front_settings_catch_up.js` compares the two.
+const SETTINGS_HEADER = 'x-sts-pool-settings';
 // How many revocations came after their answer's headers had gone.
 let lateRevocations = 0;
 
@@ -592,6 +598,43 @@ class RequestWorker {
     res.setHeader(REVOKING_HEADER, '1');
     log.debug('Leaving RequestWorker.markRevokingAnswer(). Marked.');
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A SETTINGS WRITE, SAID ON ITS ANSWER (found in #2019; rcbj, 2026-11-23:
+  // "catch up on change"). The settings generation is read as the request
+  // arrives and again as the answer's headers are written — `writeHead()`,
+  // which `res.end()` calls too, and which on a database store runs after
+  // the commit (`cluster/cluster_barrier.js` rule 2) — and an answer during
+  // which it moved is marked SETTINGS_HEADER. The front process catches up
+  // on the realm and settings logs before it forwards a byte of it, so the
+  // client's next request is decided in the front on the value it just
+  // wrote. The generation is process-wide, so an answer that overlapped
+  // another request's settings write is marked too: one more catch-up,
+  // never a wrong one. persistence.js, THE SETTINGS GENERATION, argues it.
+  // A HOT PATH (every dispatched request): no Entering/Leaving pair in
+  // markSettingsAnswer() or its writeHead() wrapper, which would drown the
+  // log.
+  // ---------------------------------------------------------------------------
+  /**
+   * Wraps one answer's `writeHead()` so that it carries SETTINGS_HEADER when
+   * a realm row or a setting changed while it was being answered.
+   *
+   * @param res - the answer
+   * @param store - `persistence/persistence` (its `settingsGeneration()`)
+   */
+  static markSettingsAnswer(res: http.ServerResponse, store: any): void {
+    if (!store || typeof store.settingsGeneration !== 'function') {
+      return;
+    }
+    const at = store.settingsGeneration();
+    const writeHead = res.writeHead;
+    (res as any).writeHead = function (this: any, ...args: any[]): any {
+      if (store.settingsGeneration() !== at && !res.headersSent) {
+        res.setHeader(SETTINGS_HEADER, '1');
+      }
+      return (writeHead as any).apply(res, args);
+    };
   }
 
   /**
@@ -928,6 +971,7 @@ class RequestWorker {
       // IN THE RESPONSE'S OWN CONTEXT. Everything the handler does — including
       // a sign-out reaching `ldap_server.js` several modules down — can find
       // the answer it is going to ride out on. See currentResponse.
+      RequestWorker.markSettingsAnswer(res, persistence);
       currentResponse.run(res, function () {
         app(req, res);
       });
@@ -1196,9 +1240,33 @@ class RequestWorker {
       log.debug("Leaving exit().");
       process.exit(0);
     };
-    const timer = setTimeout(exit, RELEASE_WAIT_MS);
+    // ITS OWN FLUSH SETTLES FIRST (#1934's follow-up). A worker retired
+    // because that flush was stuck, or stopped while one was out, would
+    // otherwise be gone RELEASE_WAIT_MS later with the statement still in
+    // flight and the writes in it — a revocation among them — nowhere but
+    // in this thread's memory. `settleOwnFlush()` waits for it to land or
+    // fail, bounded by the instant persistence gives it up on, which is the
+    // same instant the front process's retirement waits for; a flush that
+    // fails leaves its writes dirty for releaseOrigin()'s own flush below.
+    let timer: any = null;
+    const persistence = require('../persistence/persistence');
     Promise.resolve().then(function (): any {
-      return require('../persistence/persistence').releaseOrigin();
+      return typeof persistence.settleOwnFlush === 'function'
+        ? persistence.settleOwnFlush() : true;
+    }).then(function (settled: any): void {
+      if (!settled) {
+        log.error(errorCodes.tag('STS-WORKER-0057') + 'request_worker ' +
+                  WorkerChannel.id() + ': its own flush did not settle ' +
+                  'within the bound persistence gives it, so it exits with ' +
+                  'that flush still out; the writes in it may not have ' +
+                  'reached the store.');
+      }
+    }, function (e: any): void {
+      log.debug("Caught in RequestWorker.releaseThenExit(): " +
+                ((e && e.message) || e));
+    }).then(function (): any {
+      timer = setTimeout(exit, RELEASE_WAIT_MS);
+      return persistence.releaseOrigin();
     }).then(function (): void {
       clearTimeout(timer);
       exit();
@@ -1931,6 +1999,7 @@ export = {
   PROTOCOL_WORKER_HEADER: PROTOCOL_WORKER_HEADER,
   // And the revoking answer's (the review of #879).
   REVOKING_HEADER: REVOKING_HEADER,
+  SETTINGS_HEADER: SETTINGS_HEADER,
   // The marker's one decision, for a test with a response of its own.
   markRevokingAnswer: RequestWorker.markRevokingAnswer,
   // Installing the directory mirror, exported so that a test can put this

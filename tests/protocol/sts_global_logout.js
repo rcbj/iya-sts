@@ -98,14 +98,19 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const zlib = require("zlib");
+const serviceTrust = require("../tools/service_trust.js");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const krb5 = require("./krb5_drive.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 const anchors = require("../tools/pep-credential.js");
 // The two scenario CAs this job posts. Removed when it finishes, pass or
 // fail (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
@@ -309,7 +314,7 @@ async function follow(cookies, url, options) {
     const loc = r.headers.get("location");
     if (!loc) break;
     const next = new URL(loc, r.url).toString();
-    if (next.indexOf(base) !== 0) {
+    if (!urls.isUnder(next, base)) {
       log.debug("Leaving follow().");
       return { r: r, landed: next };
     }
@@ -800,10 +805,11 @@ async function x509(username) {
       const req = https.request({
         host: host, port: port, path: "/tls/sign-in", method: "GET",
         cert: pki.certPem, key: pki.keyPem,
-        // The SERVER's certificate is not verified here: what is under test
-        // is the CLIENT certificate. (This said the server's was self-signed;
-        // it is certified under the service Root now, `tls/CLAUDE.md`.)
-        rejectUnauthorized: false,
+        // What is under test is the CLIENT certificate, and the SERVER's is
+        // verified as well, chain and name, against the service's chain
+        // (tools/service_trust.js): it is certified under the service Root,
+        // `tls/CLAUDE.md`, and nothing here needs it unverified.
+        ca: serviceTrust.trustedCa(),
         // A full handshake every time: a session resumed from a try made
         // before the anchor arrived keeps that handshake's "not verified"
         // (`sts_console_bootstrap_product.js`, 2026-10-07).
@@ -1087,10 +1093,19 @@ async function createUser(username) {
     attributes: { cn: "Global Logout " + username, givenName: "Global",
                   sn: username, displayName: "Global Logout " + username,
                   mail: username + "@" + MAIL_DOMAIN },
-    credential: "password", password: PERSON_PASSWORD });
+    credential: "password",
+    password: ownPassword.temporaryFor(PERSON_PASSWORD) });
   assert.ok(r.status === 200 || /already/i.test(r.text),
     "the person should be created before anybody signs in; POST " +
     "/users/create answered " + r.status + " " + r.text.slice(0, 200));
+  // Temporary, then the person's own (#2160, `own_password.js`): every
+  // protocol below presents PERSON_PASSWORD, and in product a typed one is
+  // temporary.
+  await ownPassword.ownPassword(base, username, PERSON_PASSWORD,
+    function (who, value) {
+      return postJson(api("/users/set-password"),
+                      { user: who, password: value });
+    });
   log.debug("Leaving createUser().");
 }
 

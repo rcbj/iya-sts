@@ -5,6 +5,7 @@
   "reauth.here": "Sign in on this page",
   "reauth.hereInstead": "Sign in on this page instead",
   "reauth.noPopup": "This browser cannot hand a sign-in back from another window, so sign in on this page.",
+  "reauth.popupBlocked": "The sign-in window was blocked. Allow pop-ups for this site, or sign in on this page.",
   "reauth.finish": "Finish signing in in the window that opened.",
   "otherPerson.waiting": "A different person signed in, so what was waiting on this page was not sent.",
   "otherPerson.typed": "A different person signed in, so what was typed on this page before was not put back.",
@@ -17,5 +18,17 @@
   "accounts.unsaved": "This page has changes that have not been saved. Switch account anyway? They will be lost.",
   "accounts.otherAccount": "That sign-in was another account, so this tab did not take it. Sign in again as {user}, or switch account from the account menu.",
   "accounts.refused.title": "The console will not open for this account",
-  "accounts.refused.text": "The management API answered {status} for the account this tab is signed in as."
+  "accounts.refused.text": "The management API answered {status} for the account this tab is signed in as.",
+  "policyName.required": "A name is required.",
+  "noWebCrypto.title": "This browser cannot open this page",
+  "noWebCrypto.text": "This browser cannot run this page securely: WebCrypto is unavailable, usually because the page was not opened over HTTPS or the browser is too old.",
+  "step.pending": "Getting permission to make this change…",
+  "step.blocked": "This change needs your permission. Open the window to give it.",
+  "step.signIn": "Sign in to make this change.",
+  "step.fresh": "This change needs you to sign in again.",
+  "step.open": "Continue",
+  "step.cancel": "Cancel",
+  "step.refused": "Permission to make this change was not given: ",
+  "step.other": "That sign-in was another account, so nothing was sent.",
+  "step.failed": "Permission to make this change could not be had."
 }

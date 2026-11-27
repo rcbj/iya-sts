@@ -40,6 +40,10 @@ override_resource {
   values = { member = "serviceAccount:iya-sts-env@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/iya-sts-env@p.iam.gserviceaccount.com" }
 }
 override_resource {
+  target = google_service_account.pep
+  values = { member = "serviceAccount:iya-sts-pep@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/iya-sts-pep@p.iam.gserviceaccount.com" }
+}
+override_resource {
   target = google_service_account.cell
   values = { member = "serviceAccount:iya-sts-cell@p.iam.gserviceaccount.com", name = "projects/p/serviceAccounts/iya-sts-cell@p.iam.gserviceaccount.com" }
 }
@@ -96,4 +100,27 @@ run "sub_day_rotation_refused" {
     kek_rotation_period = "3600s"
   }
   expect_failures = [var.kek_rotation_period]
+}
+
+# A REMOTE PEP ENVIRONMENT (#1284): its members' account exists, the deployer
+# may attach it, and it holds nothing of the key-encryption key — a PEP seals
+# nothing.
+run "a_pep_environment_gets_an_account_and_no_kek" {
+  command = apply
+  variables {
+    project_id       = "p"
+    deployer_members = ["user:someone@example.com"]
+  }
+  assert {
+    condition     = keys(google_service_account.pep) == ["testpep"] && google_service_account.pep["testpep"].account_id == "iya-sts-pep-testpep"
+    error_message = "testpep's members run as iya-sts-pep-testpep."
+  }
+  assert {
+    condition     = google_service_account_iam_member.deployer_attaches_pep["testpep"].role == "roles/iam.serviceAccountUser"
+    error_message = "The deployer may attach the PEP account to a VM, and nothing more."
+  }
+  assert {
+    condition     = !contains([for g in values(google_kms_crypto_key_iam_member.kek_nodes) : g.member], google_service_account.pep["testpep"].member)
+    error_message = "A PEP's account holds nothing of the KEK."
+  }
 }

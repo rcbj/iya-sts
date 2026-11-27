@@ -57,6 +57,9 @@
 // OWNED HERE (local: true): this repository's own policies and sign-in.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
 const nodeCrypto = require("crypto");
@@ -449,7 +452,7 @@ async function passwordSignIn(who) {
                                        realmBase(REALM) + "/").toString());
   }
   const out = { next: sent.answer.next, errors: sent.answer.errors || [],
-    code: !!landed && landed.location.indexOf(REDIRECT) === 0 &&
+    code: !!landed && urls.isAt(landed.location, REDIRECT) &&
           /[?&]code=/.test(landed.location),
     shown: sent.status + " " + sent.answer.next + " " +
            JSON.stringify(sent.answer.errors || []) + " " +
@@ -492,6 +495,11 @@ async function profileSections() {
              p.emailLinkSecondFactor === false, JSON.stringify(p));
       expect(p.passwordPrimary === true &&
              p.requireSecondFactor === "if-held", JSON.stringify(p));
+      expect(p.hotpSecondFactor === false &&
+             p.yubicoOtpSecondFactor === false,
+             "HOTP and YubiKey OTP are listed and off by default: " +
+             JSON.stringify({ hotp: p.hotpSecondFactor,
+                              yubiotp: p.yubicoOtpSecondFactor }));
     });
   }
   const keys = v.authn.fields.map(function (f) {
@@ -776,7 +784,80 @@ async function test() {
   // the question), and the mechanism rule is the same in both modes.
   REALM = await makeRealm("apolg", "development");
   await groupSections();
+  REALM = await makeRealm("apolsc", "development");
+  await smartCardSections();
   log.debug("Leaving test().");
+}
+
+// THE SMART-CARD ROWS (#2031) over /admin-api: unset they follow, a save
+// written before them keeps them following, `follow` is a value, and the
+// HOTP and YubiKey OTP rows say they must be turned on.
+async function smartCardSections() {
+  log.debug("Entering smartCardSections().");
+  log.info("=== S. the smart-card rows (#2031) ===");
+  const v = await view(REALM);
+  const field = function (view, key) {
+    return view.authn.fields.filter(function (f) {
+      return f.key === key;
+    })[0];
+  };
+  await check("S1. unset, the smart card row follows certificatePrimary and " +
+              "says so", async function () {
+    const f = field(v, "smartCardPrimary");
+    expect(f && f.follows === "certificatePrimary" && f.following === true &&
+           f.value === field(v, "certificatePrimary").value,
+           JSON.stringify(f));
+    const k = field(v, "pkinitSmartCardPrimary");
+    expect(k && k.follows === "kerberosPrimary" && k.following === true,
+           JSON.stringify(k));
+    const c = field(v, "smartCardCardAuthPrimary");
+    expect(c && c.following === true && c.value === false,
+           JSON.stringify(c));
+  });
+  // A body as a client written before #2031 sends it.
+  const before = fullProfile(v, { certificatePrimary: false });
+  ["smartCardPrimary", "smartCardCardAuthPrimary", "pkinitSmartCardPrimary",
+   "requireAttestedHardware"].forEach(function (k) {
+    delete before[k];
+  });
+  await apiOk(REALM, "/policies/save-authn-policy", before,
+              "a save naming none of the new rows");
+  const after = await view(REALM);
+  await check("S2. a save naming none of the new rows is accepted, and the " +
+              "smart card row goes on following certificatePrimary (off)",
+              async function () {
+    const f = field(after, "smartCardPrimary");
+    expect(f.following === true && f.value === false, JSON.stringify(f));
+  });
+  await apiOk(REALM, "/policies/save-authn-policy",
+              fullProfile(after, { certificatePrimary: false,
+                                   smartCardPrimary: true }),
+              "smart cards yes, other certificates no");
+  const set = await view(REALM);
+  await check("S3. smart cards yes and other certificates no is a policy " +
+              "the realm can hold", async function () {
+    const f = field(set, "smartCardPrimary");
+    expect(f.following === false && f.value === true &&
+           field(set, "certificatePrimary").value === false,
+           JSON.stringify(f));
+  });
+  await apiOk(REALM, "/policies/save-authn-policy",
+              fullProfile(set, { smartCardPrimary: "follow" }),
+              "the row put back to following");
+  const back = await view(REALM);
+  await check("S4. `follow` puts the row back to following", async function () {
+    const f = field(back, "smartCardPrimary");
+    expect(f.following === true && f.value === false, JSON.stringify(f));
+  });
+  await check("S5. HOTP and YubiKey OTP say they are off by default and " +
+              "must be turned on", async function () {
+    ["hotpSecondFactor", "yubicoOtpSecondFactor"].forEach(function (k) {
+      const f = field(back, k);
+      expect(f && /OFF BY DEFAULT, and it must be turned on/.test(f.what),
+             k + ": " + JSON.stringify(f && f.what));
+    });
+  });
+  log.debug("Leaving smartCardSections().");
 }
 
 main();

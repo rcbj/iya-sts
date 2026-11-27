@@ -1,0 +1,1466 @@
+---
+title: Reports
+nav_order: 11
+---
+
+# Reports
+
+Reports is an application at `/report`. A query is one JSON document
+against one catalog source. The answer is JSON, CSV or PDF. This service
+does not accept a SQL statement, and it does not forward a query to
+PostgreSQL or to an operator's attribute-source database.
+
+Open `/report` — the front page links to it — and sign in. The browser uses the public client
+`sts-report` (PKCE S256, a DPoP-bound token, `resource` this realm's
+`/report-api`). `sts-report` holds delegated permission grants of
+`report:use` and
+`report:admin`, the two permissions the `sts-report-api` application defines
+(`urn:sts:report-api:report:use` and `…:report:admin`), the same way the
+admin console holds them of `admin:read` and `admin:write` on
+`sts-management-api`. The delegated permission grant is the client's half;
+who is issued the
+scopes is decided by two roles, below. The words on the page come from the signed-in user's
+language. The API stays language-free, and every error sentence is
+English. When several accounts in one browser are enabled, the page uses
+the same account switcher as the portal.
+
+`GET /report-api/openapi.json`, after you are signed in, is the API's own
+description of every released route, an OpenAPI 3.1.0 document. This page is the same surface in
+prose. The [endpoint list](endpoints.md) names the paths.
+[Reporting](configuration.md#reporting) is every cap.
+
+## Who can open it
+
+Two roles decide it, seeded in every realm and listed on
+Directory → Roles (`/admin/roles`), the way `admin:read` and `admin:write`
+are decided by `ADMIN_READ` and `ADMIN_WRITE`:
+
+- **`REPORT_USE`** authorizes `report:use`. A person holds it by being in
+  the group `report-users`, as a direct member of the role, or by holding
+  Admin Read or Admin Write on the realm's console roster; an application
+  holds it by being a member of the role.
+- **`REPORT_ADMIN`** authorizes `report:admin`. A person holds it through
+  `report-admins`, as a direct member, or by holding Admin Write on the
+  realm's console roster. It does not imply `report:use`: the page asks
+  for both and is issued what the person holds.
+- **`report:read`** is authorized by either role. It reads, with whichever
+  report role its subject holds now, and changes nothing: the API takes it
+  on a GET and ignores it on anything else.
+
+**The page signs in with `report:read` only.** The first change it sends
+(a definition saved, a run, a cancel) is refused `insufficient_scope`
+naming `report:use report:admin`, and the page asks for them by a second
+authorization in a small window, silently (`prompt=none`) while the sign-on
+session lasts; issuance narrows them to the roles held, and the change is
+sent again with that token. That token is used for changes only, is never
+refreshed and is dropped after ten minutes. A program's own `report:use` or
+`report:admin` token works as before.
+
+Both groups are created empty. **A console administrator has reports
+without joining either group**: Admin Write is a report administrator in
+its realm, and Admin Read a report user. A realm's own administrators
+have this in their realm only. **The default realm's administrators are
+the service's**, and they reach every realm's reports: the realm field
+keeps their token when it moves to another realm, as the console's realm
+switcher does. Anybody else's default-realm token is refused under another
+realm's prefix, and they sign in to that realm instead.
+
+A token is issued only the report scopes its subject's roles authorize,
+and every call to `/report-api` asks again, so a person taken out of the
+group, or off the console roster, is refused at once, before their token
+expires. The person is found by the token's `sub` first, never only by a
+username that may since belong to somebody else; in product mode a token whose
+`sub` names nobody is refused `invalid_token`.
+
+What a holder may reach is the access-control policy's decision
+([XACML](xacml.md#the-embedded-peps-this-services-own-issuance-and-access)),
+asked for every definition and every job:
+
+- **The owner** of a definition or a job sees, runs, changes, shares and
+  deletes it.
+- **A report administrator** (a person holding `REPORT_ADMIN`) sees,
+  runs, changes and deletes every definition and every job in the realm.
+- **A member of a group a definition is shared with** (a person holding
+  `REPORT_USE`) may read it, run it, and download the result of a run —
+  the actions the policy's `reportSharedActions` lists; editing, sharing
+  and deleting stay with the owner and the administrators. The share body
+  is `{ "groups": ["cn=reporters,ou=groups,…"] }`: each value is a group
+  DN in this realm.
+- **An application** (a `client_credentials` token for a client that is a
+  member of `REPORT_USE` or `REPORT_ADMIN` and declares the scope) reaches
+  only the definitions and jobs it defined itself, whichever role it
+  holds. It may save definitions, run them, queue queries and download
+  its own results.
+
+**Three sources are for report administrators.** `auditEvents`,
+`authActivity` and `credentialHolders` hold who did what, from where, and
+who holds which credential, which the console keeps behind Admin Read, so a
+report over one of them needs `REPORT_ADMIN` (since 1.2.0, #2126):
+
+- A caller holding only `REPORT_USE` is refused `forbidden` (HTTP 403,
+  `STS-REPORT-0061`) a query, a job or a saved definition over one, a run of
+  a definition that uses one — their own, or one shared with them — and the
+  download of a result read from one.
+- A scheduled run of such a definition is skipped, and the occurrence
+  consumed, while its owner does not hold `REPORT_ADMIN`. The definition's
+  failures say "The owner does not hold REPORT_ADMIN, which a report over
+  auditEvents needs."
+- The catalog marks the three sources `adminOnly`, and says for each source
+  whether you may use it (`usable`). The page names them *Report
+  administrators only* and does not offer them on New Query to a caller who
+  may not use them.
+- The access-control policy decides it too: the source travels in the
+  request, and the built-in rules permit an administrators' source only to
+  a subject holding `REPORT_ADMIN`. The policy's `reportAdminSources`
+  parameter adds sources of a realm's own choosing; it cannot open the three.
+
+**A definition saved before 1.2.0** by a report user over one of these
+sources does not disappear: its owner still sees it, may give it another
+source or delete it, and its run and its schedule are refused with
+`STS-REPORT-0061` until a report administrator owns it or the owner is given
+`REPORT_ADMIN`. An application holding `REPORT_ADMIN` may use them for its own
+definitions.
+
+A definition or a job you may not see is answered as not found. A job id
+in a URL is not permission to read it. The same token is required for the
+result as for the query that created the job. A realm that wants
+something else — a helpdesk group that may read everything, shares that
+may edit — writes an override of `access-control` into its own policies
+(`/admin/xacml/policies`); the built-in rules are documented there.
+
+## From another program
+
+The reports API is represented in every realm by the application
+**`sts-report-api`**. It holds the audience a token for `/report-api` names
+(this realm's base address followed by `/report-api`), and it is an OAuth 2.0
+resource, **never a client**: the authorization server refuses its client_id
+at every endpoint a client presents itself at (`STS-OAUTH-0985`). A report
+generator, a scheduler or a script calls the API as a client application
+configured to call it.
+
+The seeded client **`sts-api-client`** is one. It is a member of
+`REPORT_USE` and holds a delegated permission grant of `report:use`, so it
+can mint a token with the
+client credentials grant and use it at once. Its secret is the one the
+[management API](management-api.md#the-client-secret) describes:
+
+```bash
+BASE=https://localhost:8081
+
+TOKEN=$(curl -sk -u "sts-api-client:$ADMIN_API_CLIENT_SECRET" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode scope=report:use \
+  --data-urlencode "resource=$BASE/report-api" \
+  "$BASE/oauth2/token" | jq -r .access_token)
+
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/report-api/catalog" | jq
+```
+
+That token is not bound to a key, so it is sent as `Bearer`; a token bound
+with DPoP or a client certificate is presented the way it was bound. Like
+every application, **`sts-api-client` reaches only the definitions and jobs
+it defined itself**, whichever role it holds; it does not see a person's
+reports. For anything that lasts, create an application of your own in the
+realm, give it a client secret, give it a delegated permission grant of
+`urn:sts:report-api:report:use`
+(`POST /admin-api/permissions/grant-permission`, or its Permissions tab) and
+add it to `REPORT_USE`, as
+[An application of your own](management-api.md#an-application-of-your-own-for-every-token-after-that)
+does for the admin roles.
+
+## The page
+
+Every report page has the same chrome. A small right-justified bar at
+the top holds the controls about you: a field naming the **trust realm**
+the page is showing (when the service has several realms it is a
+drop-down, and choosing another realm opens that realm's reports
+application at the same page, where you sign in as you did here, because
+a token belongs to the realm that issued it — except for a service
+administrator signed in to the default realm, whose token the other realm
+accepts, so the page moves there without a sign-in; `GET
+/report-api/realms` is what it reads), the language chooser, and the user menu, which names the
+account this tab is signed in as and holds **Sign out** (with several
+accounts on it also switches between the browser's signed-in accounts).
+Under it the navigation bar holds the pages and Refresh, and under that
+a link opens this documentation. At the bottom of the card the service's
+**version** is shown, read from the same source every other page reads.
+
+The query form starts with **one filter row**; the `+` beside the last
+row adds another, up to the sixteen an `and` may hold. Rows left blank
+are ignored. The **Save query** box reveals the Name field and the Save
+button; unchecked, the form only runs the query. Once it is ticked, Enter
+in the Name box saves.
+
+A **job's page says why the query became a job** (`queuedBecause` on the
+job): `every-person` (an auto-mode query whose filter the directory
+cannot answer from an index, so it has to read every person), `asked`
+(mode `async`, or `POST /report-api/jobs`), `limit` (auto over
+`report.syncMaxRows`), `source` (a source that cannot be read
+synchronously), `run` (a saved definition run by hand) or `schedule`.
+
+A definition's page names its **owner** by display name or username
+(`ownerName`), with the subject kept on the API. Its **query is edited
+with the New Query form's own controls**, filled from the saved
+document; a filter the rows cannot draw (an `or`, a `not`, an `in`) is
+shown as JSON and kept until a row is filled in. Its **schedule** is
+edited as a date-time in UTC and seven weekday boxes: with weekdays
+ticked the definition runs at that time on those days every week; with
+none it runs on that date every year. The sentence under the controls
+says which, and shows the cron expression the API stores, so an
+expression written by hand on the API that the editor cannot draw is
+still seen. Save and Delete are buttons at the foot of the form.
+
+Every field of the application carries a **tooltip** on its label, the
+console's shape, saying what the field is for. The outcome of an act — a
+save, a delete, a query queued as a job, a refused run, a download that
+failed — is shown in a **status bubble** at the top of the page, with a
+dismiss; a refusal leaves the form as it was. A failed download names
+the API's reason, or the HTTP status when it gave none.
+
+**The Parameters box** on a definition's page is for a saved filter that
+names a parameter instead of a value, such as
+`{ "op": "eq", "field": "username", "param": "who" }`. The definition
+stores a default for it, and a run fills it from the JSON object typed
+in the box, for example `{"who": "rcbj"}`; a key given there overrides
+the stored default for that run only, and an empty box uses the defaults.
+The sentence under the box names the parameters the filter holds, or
+says that it holds none, in which case the box is ignored. The query form
+writes values, not parameters, so a definition made on the page names
+none unless its document is edited through the API.
+
+**How a schedule runs.** An enabled schedule is checked about once a
+minute by the `report.schedule` job. The most recent occurrence that has
+not yet been taken is queued as a job, owned by the definition's owner;
+so the first run follows within a minute of saving an enabled schedule
+whose expression has any past occurrence, and later runs follow each
+occurrence. The definition page says when the next run is due and which
+occurrence was last taken, and lists the reasons a scheduled run did not
+happen (`failures` on the API): the owner may no longer run it (their report
+role was taken away, or the policy refuses), a parameter
+has no stored value, the query no longer validates, or the job could not
+be queued. A schedule that is saved with the Enabled box clear is kept
+and never runs.
+
+**The Definitions and Jobs lists are paged** as the console pages its
+tables: first, previous, a window of page numbers, next and last, a line
+saying page x of y and rows a–b of n, and a rows-per-page choice (25, 50,
+100 or 200), carried in the page's address as `?page=&per=` so a page can
+be linked to. `GET /report-api/definitions` and `GET /report-api/jobs`
+take `page` and `per` (50 unless given, at most 200) and answer `page`,
+`pages`, `per` and `total` beside the rows; the jobs list still answers a
+cursor walk with `after` and `limit`.
+
+**`GET /report-api/schedules`** lists every definition that carries a
+schedule, each with `nextRunAt`, `lastSlotAt`, its last three skip notes
+and its most recent scheduled jobs (at most five, with `jobCount` for the
+total). With `report:use` the list is the definitions you own or are
+shared (`scope: "mine"`); with `report:admin` it is every one in the
+realm (`scope: "realm"`), and `?owner=` narrows it to one owner, given
+as a `urn:uuid:` subject or a username. A `report:use` token that names
+another owner is refused with `forbidden` (403). `page` and `per` page
+it, `per` at most 100.
+
+### The groups a definition is shared with, and who is emailed
+
+The **Groups emailed the result** pane is a search over the realm's
+groups (`GET /report-api/groups?q=&page=`, five a page, with Previous
+and Next), an Add beside each hit, and the chosen groups in a list with a
+Remove beside each. Save sends the list to the share endpoint. Members of
+those groups may run the definition and read its result, as before.
+
+**Since #989 those groups are also who is emailed.** When a job of the
+definition finishes with Notify on, the owner's notice is sent as before
+and each shared group is sent one at the group's own email address, the
+`mail` attribute of the group entry, which the console's group page sets
+(*Email address*, or `POST /admin-api/groups/set-mail`; a create may give
+it too). **A shared group with no address is an error of its own**,
+`STS-REPORT-0037`: logged, written on the audit row as `report.notify`
+with outcome `error`, and shown as *no email address* beside the group in
+the pane. The other recipients are still sent to.
+
+**Filter rows come and go.** The `+` on the last row adds a row; the
+trash can beside a row removes it. The last row left is emptied rather
+than removed, so there is always one.
+
+**Each filter row fits its field.** A field with a short list of values
+(20 or fewer, true/false included) is a dropdown and offers equals, does
+not equal and is empty; a date is a date-time picker in UTC with before
+and after; a number offers the six comparisons; text offers equals, does
+not equal, contains and starts with. On `users` and `credentialHolders`
+the first row offers only the indexed fields and, for each, only the
+operators its index answers.
+
+**Sort and Group by are behind checkboxes.** Tick **Sort** to choose the
+field and the direction on the same row; unticked, the query carries no
+order. Tick **Group by**, on its own row under Count, to choose the group
+field; a group-by is always
+a count, so it counts whether or not **Count** is ticked. A saved
+definition with an order or a group opens with the boxes ticked and the
+choices shown.
+
+**The result of Run is paged on the page.** Every row the query
+returned is kept in the browser and shown fifty at a time, with the same
+pager the Definitions and Jobs lists use above and below the table:
+first, previous, a window of page numbers, next, last, a "rows N–M of T"
+line and a rows-per-page choice (25, 50, 100 or 200). Turning a page or
+changing the size redraws from what came back and asks the service
+nothing; the query's `limit` still decides how many rows that is.
+
+## Signals
+
+The reports application is a Shared Signals receiver, like the admin console
+and the user portal (see [Signals received](signals-received.md)). Its own
+stream receives every CAEP and RISC event in the realm, and **Signals** shows
+what arrived:
+
+- a report administrator sees every event delivered in the realm;
+- anybody else who may use reports sees only the events about themselves;
+- an application sees none.
+
+When the `signal-response` policy permits it, an event revokes the access
+tokens the reports application's client (`sts-report`) holds for the person
+it names. That person's next call to `/report-api` is refused, and the
+application signs them in again. Each row says what was done.
+
+`GET /report-api/signals` is the same list as JSON, paged with `page` and
+`per`.
+
+## The catalog
+
+`GET /report-api/catalog` lists every source. `GET /report-api/catalog/{id}`
+is one of them. Each source is bounded: a limit can be honoured without
+holding the population. Each source says `paging: "limit"` and
+`relationships: []`. There is no second page key and no join. An `offset`,
+a `sources` key, or `source` sent as an array, is `invalid_query`.
+
+A source may also carry `presets`: predefined queries, each a name and a
+whole query document, which the source's page lists and New Query opens
+filled in. They are not saved definitions; nobody owns them, and nothing
+runs until somebody presses Run.
+
+A field has an id, a type (`string`, `number`, `timestamp` or `boolean`),
+an English meaning, and whether it can be filtered, sorted or grouped. A
+field that can hold only certain values lists them as `values`, and the
+page draws a dropdown of them in a filter row under `equals` and `not
+equals`, and offers only `equals`, `does not equal` and `is empty` as the
+row's operators. `credentialHolders`' `mechanism`, `role` and `lane` are
+the first.
+Grouping is only with `aggregate: "count"`. The operators depend on the
+type, not on the source:
+
+| Type | Operators |
+|---|---|
+| string | `eq`, `ne`, `contains`, `startsWith`, `in`, `isNull` |
+| number | `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `in`, `isNull` |
+| timestamp | `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `isNull` |
+| boolean | `eq`, `ne`, `isNull` |
+
+`in` takes an array of 1 to 50 values of that type. The query form does
+not offer `in`. Send it on the API. `isNull` names a field and nothing
+else. A credential attribute id (`userPassword`, `unicodePwd`,
+`ntPassword`, `krb5Key`, `totpSecret`, `webauthnCredential`,
+`backupCodes`, `mailSecret`, `clientSecret`) is not a field. Selecting
+one is `unknown_field`.
+
+`members` can be selected and cannot be filtered, sorted or grouped.
+`entryUuid` and `memberOf` can be filtered and cannot be sorted.
+
+### Indexed filters
+
+A field also says which operators the directory answers with an index
+(`indexed`, shown as the Indexed column on a source's page). A filter
+using one of them reads only the rows it names, however large the
+directory. A person's attributes are stored as one sealed value, so the
+directory can filter on very few of them: `username` for `eq`, `in`,
+`contains` and `startsWith` (the substring needs three characters or
+more), `mail` and `entryUuid` for `eq` and `in`, and `memberOf` for `eq`
+and `in` through the group's own member list, `status` for `eq` `locked`
+through the lock's holders, and `createdAt` and `modifiedAt` for the four
+range operators through a B-tree over each column (schema version 28; two
+bounds on one date are read as one span). Every other field of
+`users` is filtered after the rows are read. **Every source uses every
+index the store has for its fields**: `credentialHolders` the same four
+and its `mechanism`, `groups` its `name`; a field the directory indexes
+is never filtered row by row where the index could have named the rows.
+
+**A filter on `users` or `credentialHolders` has to name an indexed
+field.** These two sources read the directory, and on a directory held in
+a database a filter on any other field alone would read every person. Such
+a filter is refused when the query is accepted, in every mode, as
+`invalid_query` with the indexed fields named: the first condition of an
+`and`, or every arm of an `or`, has to be one of them, and the other
+conditions narrow that read. On the page the first filter row of these
+sources offers only the indexed fields; the rows the `+` adds offer every
+field. `status` is indexed for `locked` only (`active` is everybody
+else), so that first row offers `locked` alone; the catalog says so as
+the field's `indexedValues`. A small directory held in memory is not
+held to this. A query with no filter still stops at its limit.
+
+A `users` query is answered from the index when its filter is an indexed
+leaf, an `and` with an indexed arm (the other arms are applied to the
+rows found), or an `or` whose every arm is indexed, up to sixteen lookups.
+A `not`, `ne` or `isNull` never narrows.
+
+A lookup that matches more than a thousand people (a long date span, a
+short name) is not read whole. A query with no order and no count is
+answered from the first thousand when its limit is met there, since any
+rows that match are a correct answer; otherwise, and for an ordered or
+counted query, it is refused with `result_too_large` and a sentence
+asking for a narrower filter.
+
+On a directory held in a database, a `users` query with no filter that
+sorts or counts has to read every person. The people are counted first:
+over `report.asyncMaxRows` the query is refused at once with
+`result_too_large`, in every mode, rather than queued as a job that would
+run into `report.asyncMaxMs`. Under it, the query is refused in `sync`
+mode with a sentence naming the indexed fields, and in `auto` mode it
+becomes a job and answers `202` with the job. A query with no filter, no
+order and no count stops at its limit and is answered now. The in-memory
+directory of a service with no database is small and is always read in
+full.
+
+### `users`
+
+The directory as it is now. Not a history of accounts. `status` `locked`
+means `pwdAccountLockedTime` is set, which is an administrative disable
+or any other lock. `active` is the other value.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `username` | string | The directory uid. Indexed: `eq`, `in`, `contains`, `startsWith`. | yes | yes | no |
+| `status` | string | `locked` when `pwdAccountLockedTime` is set; `active` otherwise. | yes | yes | yes |
+| `createdAt` | timestamp | When the directory created the entry. | yes | yes | no |
+| `modifiedAt` | timestamp | When the directory last changed the entry. | yes | yes | no |
+| `entryUuid` | string | The entryUUID. Indexed: `eq`, `in`. | yes | no | no |
+| `mail` | string | The mail attribute. Indexed: `eq`, `in`. | yes | yes | no |
+| `displayName` | string | `displayName`, or `cn` when `displayName` is empty. | yes | yes | no |
+| `memberOf` | string | The names of the groups that list this person, joined. Indexed: `eq`, `in` (the group's member list). | yes | no | no |
+| `hasPassword` | boolean | Whether a password is set on the entry. | yes | yes | yes |
+| `factors` | number | How many second-factor credentials the person holds: passkeys (every one, since a passkey has no role, #1135), authenticator apps, mail factors. `hasPassword` true and `factors` 0 is a password alone. | yes | yes | yes |
+| `methodsUsed` | string | The RFC 8176 methods the person has signed in with here (`pwd`, `hwk`, `otp`, …), joined; compared value by value. | yes | yes | no |
+| `mfaLastAuthTime` | timestamp | When the person last completed a multi-factor sign-in. | yes | yes | no |
+
+None of the four is indexed: a filter on them reads every person, so on
+a large directory it is a job (`mode: auto`), best narrowed by
+`memberOf`. "Who has only a password" is `hasPassword` equals `true` and
+`factors` equals `0`; "who has signed in with a password" is
+`methodsUsed` equals `pwd`.
+
+### `groups`
+
+The directory as it is now. Member lists are selected, not filtered.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `name` | string | The group cn. | yes | yes | no |
+| `description` | string | The description attribute. | yes | yes | no |
+| `memberCount` | number | How many members the group lists. | yes | yes | no |
+| `members` | string | Member names, joined. | no | no | no |
+
+### `applications`
+
+The realm's configured applications, as they are now.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `id` | string | The application identifier. | yes | yes | no |
+| `name` | string | The application name. | yes | yes | no |
+| `status` | string | `active` when the application is registered and enabled; `disabled` otherwise. | yes | yes | yes |
+| `enabled` | boolean | Whether the application is registered and enabled. | yes | yes | yes |
+
+### `federation`
+
+The realm's configured federation relationships, as they are now.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `id` | string | The relationship id. | yes | yes | no |
+| `partner` | string | The partner name. | yes | yes | no |
+| `protocol` | string | The protocol the relationship speaks. | yes | yes | yes |
+| `enabled` | boolean | Whether the relationship is enabled. | yes | yes | yes |
+
+### `authMechanisms`
+
+The realm authentication policy, one row per mechanism with `application`
+`realm`, plus one row per mechanism the [named authentication
+policy](authentication.md#named-authentication-policies) an application
+names in `appAuthnPolicy` lists, plus one row per mechanism the named
+policy a group names in `stsAuthnPolicy` lists. An application on
+`default`, or whose policy lists none, inherits the realm policy and adds no
+row; so does one naming a policy that does not exist. Where an application
+and a member's groups name policies for one sign-in, the lowest precedence
+applies, so a group's rows say what its members may get, not what they
+always get. This is not a count of sign-ins.
+Non-browser doors are outside the policy.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `id` | string | The mechanism id. Realm rows use the policy names. An application row uses the value it lists. | yes | yes | no |
+| `type` | string | `both`, `primary`, `second` or `other` for a realm row. `primary` for a first-factor mechanism of the application's authentication policy and `second` for a second factor. | yes | yes | yes |
+| `enabled` | boolean | For a realm row, whether that policy flag is on. For an application row, `true` because its policy lists it. A listed second factor the realm has switched off stays off at sign-in. | yes | yes | yes |
+| `application` | string | `realm`, or the application identifier; empty on a group's row. | yes | yes | yes |
+| `group` | string | The group cn on a row from the policy that group names; empty otherwise. | yes | yes | yes |
+| `policy` | string | `default` on a realm row; otherwise the named authentication policy the row comes from. | yes | yes | yes |
+
+### `auditEvents`
+
+For report administrators only (`adminOnly`): see
+[Who can open it](#who-can-open-it).
+
+The audit rings still held by the service's processes, newest first,
+each capped by `audit.maxEvents` (5000 unless an operator set another
+cap). Every process keeps its own ring, and a report waits for the
+other processes' rows before it reads, as the console's audit page does,
+so the answer does not depend on which process served it. Not a
+warehouse of sign-ins.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `timestamp` | timestamp | When the event was recorded. | yes | yes | no |
+| `category` | string | The audit category. | yes | yes | yes |
+| `action` | string | The audit action. | yes | yes | yes |
+| `outcome` | string | The audit outcome. | yes | yes | yes |
+| `actor` | string | The account name on the audit row. | yes | yes | no |
+
+### `authActivity`
+
+For report administrators only (`adminOnly`).
+
+Sign-in attempts still in that same ring: `authentication`,
+`authentication.refused`, `session.refuse` and `session.refused`.
+`session.reauthenticate` is not an attempt. The same cap applies. A
+session id, an address, a note and a presented credential are not fields.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `timestamp` | timestamp | When the attempt was recorded. | yes | yes | no |
+| `day` | string | The UTC calendar day, `yyyy-mm-dd`. | yes | yes | yes |
+| `outcome` | string | The audit outcome, such as `success` or `refused`. | yes | yes | yes |
+| `mechanism` | string | `detail.method` when the row has one, otherwise `detail.amr`. | yes | yes | yes |
+| `actor` | string | The account name on the audit row. | yes | yes | no |
+| `application` | string | `detail.application`, or `detail.client_id` when the row has no application. | yes | yes | yes |
+| `protocol` | string | The protocol on the audit row. | yes | yes | yes |
+
+### `serviceMetrics`
+
+Numeric leaves of a live service-counter snapshot. Not a time series.
+See [Statistics that stay where they are](#statistics-that-stay-where-they-are)
+for what this source does not carry. `/admin/metrics` and
+`/admin-api/metrics` stay.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `name` | string | `family.leaf`, the snapshot member and the number under it. | yes | yes | no |
+| `value` | number | The number at the moment of the read. | yes | yes | no |
+| `family` | string | The snapshot member the leaf was read from, such as `calls` or `tokens`. | yes | yes | yes |
+
+### `reportJobs`
+
+Report jobs this realm still holds. Artifacts age out on
+`report.artifactRetentionS`. The job row ages out later, on
+`report.jobRetentionS`. A job that is still queued or running is kept.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `id` | string | The job id. It is not an authorization. | yes | yes | no |
+| `status` | string | `queued`, `running`, `completed`, `failed`, `cancelled` or `expired`. | yes | yes | yes |
+| `format` | string | `json`, `csv` or `pdf`. | yes | yes | yes |
+| `submittedAt` | timestamp | When the job was queued. | yes | yes | no |
+| `completedAt` | timestamp | When the job finished, or null while it has not. | yes | yes | no |
+| `byteSize` | number | The stored artifact size, or null before it exists. | yes | yes | no |
+
+### `attributeSources`
+
+The attribute-source register as it is now. Connection details and
+secrets are not fields. This source does not run SQL and does not read
+the remote table. Values those sources write are already on directory
+entries, which is what `users` reads.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `id` | string | The source id. | yes | yes | no |
+| `dialect` | string | `postgres` or `mysql`, as configured. | yes | yes | yes |
+| `database` | string | The database name. Not the host. | yes | yes | no |
+| `table` | string | The table the lookup reads. | yes | yes | no |
+| `keyAttribute` | string | The directory attribute the lookup key is taken from. | yes | yes | no |
+| `mode` | string | The refresh modes, joined, such as `sign-in` or `schedule`. | yes | yes | yes |
+| `onFailure` | string | `keep` or `refuse`, as the source is configured. | yes | yes | yes |
+| `enabled` | boolean | Whether the source is enabled. | yes | yes | yes |
+
+### `credentialHolders`
+
+For report administrators only (`adminOnly`).
+
+Who holds which authentication credential, as the directory is now: one
+row per credential — a passkey, an authenticator app, an enrolled
+certificate, a mail factor, a Kerberos key set — with the person who
+holds it, its mechanism and role, and its own algorithm. A passkey has
+no role since [#1135](https://github.com/rcbj/iya-sts/issues/1135), so its
+rows' `role` is empty: the realm decides at the sign-in whether a passkey
+signs a person in on its own or after a password. An authenticator app
+and an emailed code are `mfa`; a certificate and a Kerberos key are
+`primary`.
+
+**How it reads, and why it costs little.** A filter on `mechanism` reads
+the holders of that mechanism's attribute through the store's index of
+who holds what, so it costs the holders and never the population; a
+filter on `memberOf` reads that group's members. A query naming neither
+reads every mechanism's holders: on a directory held in a database that
+is refused synchronously (`result_too_large`) and becomes a job in
+`auto` mode. Nothing new is stored or indexed, and nothing changes what
+is sealed: the rows are read from the holders' own entries, as the users
+page's census reads them. A recovery code set is one row with its unused
+codes counted, the hash scheme as its algorithm and its generation as
+`enrolledAt`; no code reaches a row (since schema version 27, which put
+the attribute in the index). App passwords are not listed, because their
+attribute is not in that index.
+
+**Wallets.** `verifiableCredential` is every credential this realm
+issued and still remembers, read from the issuer's register rather than
+the directory: one row per kind of copy a person holds — the copies that
+share a credential type (`credentialId`), `format`, holder-key
+`algorithm`, `lane` and `channel` are one row with `credentials` their
+number, so a batch that bound four keys to four copies of one credential
+is one row saying 4, while an ES256 copy and an ML-DSA copy are two. The
+`channel` is `web` when the wallet's request carried a browser Origin,
+`app` otherwise. A copy the holder removed is left out. `selfIssued` is every
+DID or key a person enrolled, one row each, with the channel the
+enrolment recorded (`web`, `app`, `dc_api`, or `admin` for one an
+administrator entered) and the key's algorithm, read off a `did:jwk` or
+`did:key`, else the algorithm the proof was signed with. A count grouped
+by `channel` and `algorithm` is how many wallet credentials there are of
+each kind; add `memberOf` for one community. A credential issued or a
+subject enrolled before this was recorded has no channel and, for a
+`did:web`, no algorithm.
+
+**Signing keys, enrollment credentials and certificates.**
+`jwtSigningKey` and `samlSigningKey` are a person's RFC 7523 and RFC 7522
+key pairs (role `signer`): one row each, with the kid or thumbprint, the
+certificate's key algorithm, and whether it was issued here or uploaded;
+the private half is never read. `acmeAccountKey` and `scepChallenge` are
+the credentials ACME and SCEP authenticate an enrollment with (role
+`enrollment`), with their id, profile and creation; the key and the
+challenge are never read. EST has no credential of its own. `certificate`
+is every certificate issued through ACME, EST or SCEP, a TLS client
+certificate included: its serial, the issuing protocol as `channel`, its
+profile as `format`, and its key algorithm.
+
+**The password is the one mechanism counted rather than indexed.**
+Nearly everyone holds one, so the directory keeps no index of its
+holders; it keeps a counter per realm, and that is what a count by
+`mechanism` reads for `password`, instantly. A list of password holders
+is the population, so it is refused like any read over the cap and runs
+only narrowed by `memberOf`, for example `mechanism` equals `password`
+and `memberOf` equals a group. The counter answers a count grouped by
+`mechanism` alone whose filter names only mechanisms; a count grouped by
+anything else reads the holders. Each kind of filter narrows the read
+only where the whole filter says it may: in an `and` the person, the
+group and the mechanisms each narrow it, and an `or` of a mechanism and
+a group narrows nothing, so it is refused as unbounded rather than read
+as the group alone. A password row carries the hash scheme as
+its `algorithm` (`scrypt` or `argon2id` for a password this service set,
+the braced scheme of an imported hash such as `SSHA`) and
+`pwdChangedTime` as its `enrolledAt`, and never the hash.
+
+**The holders are counted before they are read.** A mechanism nearly
+everyone holds is the population under another name: on a service where
+every person has a password, every person also holds Kerberos keys, so
+`mechanism` equals `kerberos` names a million people. The store counts
+the holders through the index that lists them, no further than one past
+the execution's row cap (`report.syncMaxRows` synchronously,
+`report.asyncMaxRows` in a job), so the question costs the cap and not
+the population; over the cap the query is refused as `result_too_large`
+before the first entry is opened. Synchronously the refusal says to run
+it as a job, which `auto` mode does, and the job counts again against
+its own cap. A `memberOf` filter's members are counted the same way. The
+read that does start stops with the query's time cap or its
+cancellation, not with its last holder.
+
+**The census is a count of credentials.** `aggregate: "count"` with
+`groupBy` `mechanism`, `role`, `algorithm` or `lane` answers how many
+credentials of each mechanism there are, how many passkeys of each
+algorithm, and so on (a passkey has no role since #1135); group by `username` for
+how many each person holds, and add a `memberOf` filter for one
+community. The maintained per-realm passkey aggregate stays on
+Monitoring → Passkeys.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `username` | string | The directory uid. | yes | yes | no |
+| `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
+| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos`, `password`, `recoveryCodes`, `jwtSigningKey`, `samlSigningKey`, `acmeAccountKey`, `scepChallenge`, `selfIssued` or `verifiableCredential`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
+| `role` | string | `primary`, `mfa`, `recovery`, `signer` (a signing key pair) or `enrollment` (an ACME or SCEP enrollment credential); enumerated. Empty for a passkey, which has no role since #1135. | yes | yes | yes |
+| `credentials` | number | How many credentials of this mechanism the person holds; the same on each of their rows. | yes | yes | no |
+| `credentialId` | string | This credential's own id (a passkey's credential id). | yes | yes | no |
+| `algorithm` | string | This credential's signature algorithm (a passkey's JOSE name, such as `ES256` or `ML-DSA-65`). | yes | yes | yes |
+| `lane` | string | A passkey's or a wallet key's lane, `classical` or `pqc`; enumerated. Empty for the other mechanisms. | yes | yes | yes |
+| `channel` | string | Where the credential came from: a wallet credential's `web`, `app`, `dc_api` or `admin`; a certificate's or enrollment credential's protocol, `acme`, `est` or `scep`; a signing key pair `issued` here or `uploaded`; enumerated. Empty where nothing was recorded. | yes | yes | yes |
+| `format` | string | What kind it is within its mechanism: a verifiable credential's format, a certificate's or enrollment credential's profile (`tls-client`, `server`, `device`, …), a signing key's `RFC 7523` or `RFC 7522`. | yes | yes | yes |
+| `enrolledAt` | timestamp | When this credential was enrolled, where recorded. | yes | yes | no |
+| `lastUsedAt` | timestamp | When this credential was last used, where recorded. | yes | yes | no |
+| `methodsUsed` | string | The RFC 8176 methods the person has ever signed in with here. | yes | yes | no |
+| `mfaLastAuthTime` | timestamp | When the person last completed a multi-factor sign-in. | yes | yes | no |
+| `memberOf` | string | The groups that list this person, by name (`cn`), joined. Indexed: `eq`, `in`, each value a group's name. | yes | no | no |
+
+Every passkey, with its holder, its algorithm and how many that person
+holds:
+
+```json
+{
+  "source": "credentialHolders",
+  "select": ["username", "displayName", "algorithm", "lane", "credentials"],
+  "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
+  "limit": 500
+}
+```
+
+How many passkeys there are, by algorithm and lane:
+
+```json
+{
+  "source": "credentialHolders",
+  "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
+  "aggregate": "count",
+  "groupBy": ["algorithm", "lane"]
+}
+```
+
+A stored definition that still filters a passkey on `role` `primary` or
+`mfa` validates and finds nobody, since #1135.
+
+### `postLoginProgress`
+
+Where each person stands on a [post-login activity](post-login-activities.md):
+one row per person and activity that this realm has asked at a sign-in or
+mailed by a [started activity](post-login-activities.md#starting-an-activity). Somebody who
+was never asked and never mailed has no row. The rows come from the
+post-login progress store, not from the directory, so a filter on any field
+is allowed; an unordered query stops at its limit, and a sorted or counted
+one reads the rows a page at a time under the usual time limits.
+
+The profile and allotted time on a row are the ones that applied when
+the row was last written, so a report shows which profile asked a person
+without the directory being asked again for every row. A row written
+without them takes the allotted time of its own activity's block
+(`graceDays`, `mailGraceDays` or `pivGraceDays`) from the profile the
+person's groups select now.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `username` | string | The person's uid. | yes | yes | no |
+| `activity` | string | The post-login activity: `pqc-passkey-migration` (a post-quantum passkey), `pqc-mail-encryption` (a post-quantum OpenPGP key or S/MIME certificate) or `piv-reissue` (a new PIV slot certificate). Filter on it to report one activity; the filter offers the three. | yes | yes | yes |
+| `profile` | string | The post-login profile that reached the person (`default`, or a named profile), as recorded when they were asked; a row recorded without one shows the profile their groups select now (no application is known outside a sign-in). | yes | yes | yes |
+| `role` | string | Retired (#1135): a passkey has no role, so a row written since is empty. A row written before keeps the role it was asked for then, `primary` or `mfa`. | yes | yes | yes |
+| `progress` | string | Where the person stands, the first that holds: `done`, `past-grace`, `snoozed`, `asked`, `mailed`. | yes | yes | yes |
+| `invitedAt` | timestamp | When the person was first asked at a sign-in; the allotted time counts from here. Null when they were only mailed. | yes | yes | no |
+| `snoozedUntil` | timestamp | Until when Skip put the activity off. | yes | yes | no |
+| `asks` | number | How many sign-ins asked the person. | yes | yes | no |
+| `skips` | number | How many times the person chose Skip. | yes | yes | no |
+| `done` | boolean | Whether the person did the activity. | yes | yes | yes |
+| `doneAt` | timestamp | When they did it. | yes | yes | no |
+| `deadline` | timestamp | When the allotted time ends, or null where there is none. | yes | yes | no |
+| `graceEnded` | boolean | The allotted time has ended and the activity is not done: Skip is gone and the next sign-in is held. | yes | yes | yes |
+| `askedBy` | string | Who asked the person at a sign-in: `policy`, or the id (`pla-…`) of the started post-login activity whose groups hold them. Empty when they were never asked at a sign-in. | yes | yes | yes |
+| `mailedBy` | string | The started post-login activity (its id, `pla-…`) that last mailed the person. | yes | yes | yes |
+| `mails` | number | How many mails the started activity named in `mailedBy` sent the person. | yes | yes | no |
+| `firstMailedAt` | timestamp | When that started activity's first mail went. | yes | yes | no |
+| `lastMailedAt` | timestamp | When the last reminder mail went. | yes | yes | no |
+
+Five **predefined queries** come with it. The source's page lists them; each
+opens New Query with its query filled in, and nothing runs until you press
+Run. Save it to keep your own copy as a definition.
+
+| Predefined query | What it asks |
+|---|---|
+| Progress by activity | How many people of the post-quantum passkey migration are at each `progress`. |
+| Progress of the mail-encryption migration | The same for `pqc-mail-encryption`. |
+| Progress of the PIV re-issue | The same for `piv-reissue`. |
+| People past their grace period | Everybody whose `graceEnded` is true, the earliest deadline first. |
+| People who skipped most | Everybody who skipped at least once, the most skips first. |
+
+On the API the catalog carries them as `presets`, each an `id`, a `name` and
+the whole query `document`, ready to post to `/report-api/queries`:
+
+```json
+{
+  "source": "postLoginProgress",
+  "select": ["progress"],
+  "where": { "op": "eq", "field": "activity", "value": "pqc-passkey-migration" },
+  "aggregate": "count",
+  "groupBy": ["progress"],
+  "orderBy": [{ "field": "progress", "dir": "asc" }]
+}
+```
+
+### `passkeyHistory`
+
+The move to post-quantum passkeys, day by day. The daily
+[passkey report](passkeys.md#the-move-over-time) recount keeps one stored
+row per realm per day, for `webauthn.passkeyHistoryDays` days (400 by
+default), and this source reads each day as several rows, told apart by
+`scope`:
+
+| `scope` | One row per day for | What it counts |
+|---|---|---|
+| `realm` | the realm | its people by kind, and its passkeys |
+| `profile` | each named passkey profile that selects people by group | the same numbers over that profile's people |
+| `algorithm` | each algorithm and lane | `count` passkeys |
+| `lane` | each lane | `count` passkeys |
+| `attestation` | each attestation certificate algorithm | `count` passkeys whose attestation it signed |
+
+The scopes count the same passkeys more than once, so filter on `scope`
+before reading or counting. The rows come from the history store, never
+the directory, and there are at most a few hundred a day, so any field may
+be filtered. A day on which the recount did not run has no rows; a later
+recount on the same day replaces that day's rows.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `day` | string | The UTC day, `yyyy-mm-dd`. | yes | yes | yes |
+| `countedAt` | timestamp | When the recount that wrote the day finished. | yes | yes | no |
+| `scope` | string | `realm`, `profile`, `algorithm`, `lane` or `attestation`. | yes | yes | yes |
+| `name` | string | The profile, algorithm, lane or attestation algorithm; empty on a `realm` row. | yes | yes | yes |
+| `coseAlg` | number | The COSE identifier of an algorithm, where it has one. | yes | yes | no |
+| `lane` | string | `classical` or `pqc` on an `algorithm` or `lane` row. | yes | yes | yes |
+| `postQuantum` | boolean | Whether an `algorithm` or `attestation` row's algorithm is ML-DSA. | yes | yes | yes |
+| `count` | number | Passkeys counted in the row. | yes | yes | no |
+| `people` | number | People in the realm, or in the profile's population. | yes | yes | no |
+| `holding` | number | People holding at least one passkey. | yes | yes | no |
+| `postQuantumOnly` | number | People whose passkeys are all ML-DSA. | yes | yes | no |
+| `classicalOnly` | number | People whose passkeys are all classical. | yes | yes | no |
+| `both` | number | People holding both kinds. | yes | yes | no |
+| `none` | number | People holding no passkey. | yes | yes | no |
+| `withPostQuantum` | number | People holding at least one ML-DSA passkey. | yes | yes | no |
+| `postQuantumShare` | number | `withPostQuantum` as a percentage of `holding`, to one decimal; empty when nobody holds a passkey. | yes | yes | no |
+| `postQuantumKeys` | number | ML-DSA passkeys among `count`. | yes | yes | no |
+| `postQuantumRequired` | string | A profile's `postQuantumRequired` on the day. | yes | yes | yes |
+| `members` | number | A profile's members. | yes | yes | no |
+| `complete` | boolean | Whether every member of the profile was read (at most 50,000 are). | yes | yes | yes |
+| `counted` | boolean | False on a profile the day did not count (past the 25 counted a day, or its group could not be read). | yes | yes | yes |
+
+The people fields are empty on the `algorithm`, `lane` and `attestation`
+rows.
+
+| Predefined query | What it asks |
+|---|---|
+| Post-quantum adoption by day | The realm's row for each day, oldest first: people holding a passkey, those holding an ML-DSA one, the share, and the counts by kind. |
+| Passkeys by algorithm by day | Each day's passkeys by algorithm and lane. |
+| Post-quantum adoption by passkey profile by day | Each named profile's numbers for each day. |
+
+```json
+{
+  "source": "passkeyHistory",
+  "select": ["day", "holding", "withPostQuantum", "postQuantumShare"],
+  "where": { "op": "eq", "field": "scope", "value": "realm" },
+  "orderBy": [{ "field": "day", "dir": "asc" }]
+}
+```
+
+### `passkeyCeremonies`
+
+Every passkey registration and sign-in still in the same audit ring as
+`auditEvents`: one row per `webauthn.ceremony` audit row, and one per
+`webauthn.algorithm-mismatch` row
+([#1107](https://github.com/rcbj/iya-sts/issues/1107)). The same cap
+applies, and the read waits for the other processes' rows as
+`auditEvents` does. It is the source to read while moving a realm to
+ML-DSA passkeys: which clients make one when asked, which fail and how,
+and who still signs in with a classical passkey after making an ML-DSA
+one. [Passkeys](passkeys.md#watching-the-move-to-post-quantum-passkeys-the-ceremony-audit-rows)
+describes the audit rows themselves. Nothing here is indexed: the ring is
+a list in memory, and the read is bounded by its cap. To keep a history
+longer than the ring, schedule a definition and keep its reports.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `timestamp` | timestamp | When the row was recorded. | yes | yes | no |
+| `day` | string | The UTC calendar day, `yyyy-mm-dd`. | yes | yes | yes |
+| `kind` | string | `ceremony`, or `algorithm-mismatch` for a classical sign-in by a person who holds an ML-DSA passkey. Filter on it before counting, so a mismatch is not counted beside its ceremony. | yes | yes | yes |
+| `ceremony` | string | `registration` or `assertion` (a sign-in); empty on a mismatch row. | yes | yes | yes |
+| `door` | string | `sign-in-step`, `usernameless`, `portal`, `activation`, `upgrade`, `admin-enrolment` or `device-link`. | yes | yes | yes |
+| `outcome` | string | `success` or `refused`. | yes | yes | yes |
+| `errorCode` | string | The code a refused ceremony was recorded under. | yes | yes | yes |
+| `actor` | string | The person, where known. | yes | yes | no |
+| `application` | string | The application the sign-in was for; empty where none was in play. | yes | yes | yes |
+| `role`, `lane` | string | The use an assertion answered: `primary` (in place of a password) or `mfa` (after one); empty for a registration since #1135, a passkey having no role, and where no step applied. `classical` or `pqc`. | yes | yes | yes |
+| `offered` | string | The algorithms offered, in order. | yes | yes | no |
+| `offerRule` | string | The client rule that narrowed the offer, or would have, where one applied ([#1112](https://github.com/rcbj/iya-sts/issues/1112)); empty otherwise. | yes | yes | yes |
+| `offeredFirst` | string | The first algorithm offered. | yes | yes | yes |
+| `postQuantumOffered` | boolean | Whether an ML-DSA algorithm was offered. | yes | yes | yes |
+| `algorithm` | string | The algorithm used; on a mismatch row, the classical one that signed. | yes | yes | yes |
+| `postQuantum` | boolean | Whether the algorithm used is ML-DSA. | yes | yes | yes |
+| `held` | string | On a mismatch row, the person's ML-DSA algorithms. | yes | yes | yes |
+| `client` | string | The browser and operating system, by name and major version. | yes | yes | yes |
+| `clientError` | string | The error name the browser reported for a ceremony it did not complete. | yes | yes | yes |
+| `capabilities` | string | The client capabilities the browser reported. | yes | yes | no |
+| `attachment` | string | `platform` or `cross-platform`. | yes | yes | yes |
+| `transports` | string | The transports the browser reported. | yes | yes | no |
+| `attestation` | string | What a registration's attestation was signed with. | yes | yes | no |
+| `durationMs` | number | Milliseconds from the options being issued to the response, measured by the service; null on rows written before the field existed. It includes the person's time at the prompt, so compare many rows. | yes | yes | no |
+
+**Predefined queries.** The source carries three, listed on its page in
+`/report` and as `presets` on `GET /report-api/catalog/passkeyCeremonies`.
+Opening one fills the query form; run it as it is, or change it and save
+it as your own definition:
+
+* **ML-DSA registrations that failed, by client**: `kind` is `ceremony`,
+  `ceremony` is `registration`, `postQuantumOffered` is true and
+  `outcome` is `refused`, counted by `client`. Group by `clientError`
+  instead to see how they failed.
+* **Registrations that asked for ML-DSA and made a classical passkey, by
+  client**: the same, with `outcome` `success` and `postQuantum` false.
+* **Classical sign-ins by people who hold an ML-DSA passkey**: `kind` is
+  `algorithm-mismatch`, counted by `client`.
+
+How long ML-DSA ceremonies take, against classical ones, by client:
+
+```json
+{
+  "source": "passkeyCeremonies",
+  "select": ["client", "algorithm", "ceremony", "durationMs"],
+  "where": { "op": "and", "args": [
+    { "op": "eq", "field": "kind", "value": "ceremony" },
+    { "op": "eq", "field": "outcome", "value": "success" } ] },
+  "orderBy": [{ "field": "durationMs", "dir": "desc" }],
+  "limit": 500
+}
+```
+
+### The AuthZEN search sources
+
+`authzenSubjects`, `authzenResources` and `authzenActions` are the three
+AuthZEN Search APIs ([AuthZEN](authzen.md#searching)) as sources. Nothing is
+kept: each run is **one search**, decided now by the realm's root XACML policy,
+**as the report's owner**. The owner is the search's caller and `sts-report`
+the application, so the answer is what the policy permits that person.
+A scheduled run asks again as the owner, with the permissions the owner has
+at that time.
+
+Every source has the same five string fields. The ones a search is asked with
+are **required**: each must be an `eq` filter of the top-level `and`, or the
+whole filter. A query missing one is refused as `invalid_query`
+(`STS-REPORT-0054`). The search's answer fills the remaining field, one row
+per permitted result.
+
+| Source | Required filters | One row per |
+|---|---|---|
+| `authzenSubjects` | `subjectType`, `action`, `resourceType`, `resourceId` | permitted `subjectId` |
+| `authzenResources` | `subjectType`, `subjectId`, `action`, `resourceType` | permitted `resourceId` |
+| `authzenActions` | `subjectType`, `subjectId`, `resourceType`, `resourceId` | permitted `action` |
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `subjectType` | string | `user` for a directory person, or a declared type. | yes | yes | no |
+| `subjectId` | string | The subject's id. | yes | yes | no |
+| `action` | string | The action name. | yes | yes | yes |
+| `resourceType` | string | `application`, `api` or `delegation`, or a declared type. | yes | yes | no |
+| `resourceId` | string | The resource's id. | yes | yes | no |
+
+The candidates are those the search endpoints use, at most
+`authzen.searchMaxCandidates`. Past that the rows are the ones decided and
+the log says the search was incomplete. With `authzen.searchEnabled` off, or
+for an owner who is a person of another realm, a run fails with
+`STS-REPORT-0055`.
+
+The applications Alice may audit:
+
+```json
+{
+  "source": "authzenResources",
+  "select": ["resourceId"],
+  "where": { "op": "and", "args": [
+    { "op": "eq", "field": "subjectType", "value": "user" },
+    { "op": "eq", "field": "subjectId", "value": "alice" },
+    { "op": "eq", "field": "action", "value": "audit" },
+    { "op": "eq", "field": "resourceType", "value": "application" } ] },
+  "limit": 500
+}
+```
+
+## The query document
+
+The keys are `source`, `select`, `where`, `orderBy`, `limit`, `format`,
+`mode`, `locale`, `aggregate` and `groupBy`. An unknown key is
+`invalid_query`. A string body is refused, and the refusal does not
+repeat what was sent.
+
+`select` is the field ids to return. `format` is `json`, `csv` or `pdf`
+(the default the API uses when the key is omitted is `json`). `mode` is
+`auto`, `sync` or `async`. Omitted, it is `auto`. `locale` is a language
+tag of at most 35 characters, such as `fil` or `zh-Hans`. Omit it, or
+send null, and a PDF is drawn in English. The page sets it from the
+user's language when it builds or saves a query.
+
+`limit` is a positive whole number. Zero is `invalid_query`. Omit it and
+the synchronous row cap is the limit the size check uses.
+
+`orderBy` is a list of `{ "field", "dir" }` with `dir` `asc` or `desc`.
+
+`where` is one filter, or `and`, `or` or `not`. `and` and `or` take
+`args`, a list of 1 to 16 filters. `not` takes `arg`, one filter. A leaf
+is `{ "op", "field", "value" }` or `{ "op", "field", "param" }`. A value
+and a parameter together are refused. A parameter name is a string of 1
+to 64 characters, as a parameter bag's keys are, so a definition never
+names a parameter a run could not supply; a longer or empty one is
+refused, "A parameter name is a string of 1 to 64 characters.". The
+bag is supplied beside a saved definition, not inside an ad hoc document
+that already has `source`.
+
+A field that is a list drawn as one string — `memberOf`, and the
+`credentialHolders` source's `methodsUsed` —
+is compared value by value under `eq`, `ne` and `in`: a person in three
+groups matches `memberOf` equals any one of them. `contains` and
+`startsWith` look at the joined string.
+
+A string value is a string. A number is a finite JSON number. A boolean
+is `true` or `false`. A timestamp is a finite number of epoch
+milliseconds, or a string `Date.parse` accepts, at most 40 characters.
+
+`aggregate` is `count` or omitted. `groupBy` without a count is refused.
+A count's `select` is the group fields. The result rows carry those
+fields and `count`.
+
+`mode: auto` is answered in the same call when the source is bounded and
+the limit is at most `report.syncMaxRows`. Otherwise it is a job.
+`mode: sync` over that cap, or with no limit that fits, is
+`result_too_large`. Over `report.asyncMaxRows` is `result_too_large` in
+every mode. PDF over `report.pdfMaxRows` or `report.pdfMaxPages` is the
+same refusal, and the sentence names CSV. A `users` query on a directory
+held in a database that would have to read every person (see *Indexed
+filters*) is `result_too_large` in `sync` mode and a job in `auto` mode,
+whatever its limit.
+
+### Examples
+
+Equals, and a limit:
+
+```json
+{
+  "source": "users",
+  "select": ["username", "status"],
+  "where": { "op": "eq", "field": "status", "value": "locked" },
+  "limit": 100,
+  "format": "json",
+  "mode": "auto"
+}
+```
+
+Does not equal:
+
+```json
+{ "op": "ne", "field": "status", "value": "active" }
+```
+
+Contains, and starts with:
+
+```json
+{ "op": "contains", "field": "displayName", "value": "Ada" }
+```
+
+```json
+{ "op": "startsWith", "field": "username", "value": "a" }
+```
+
+`in` (API only; the form does not offer it):
+
+```json
+{ "op": "in", "field": "username", "value": ["ada", "bea"] }
+```
+
+Empty:
+
+```json
+{ "op": "isNull", "field": "mail" }
+```
+
+Number comparisons, on `groups.memberCount`:
+
+```json
+{ "op": "lt", "field": "memberCount", "value": 10 }
+```
+
+`le`, `gt` and `ge` are the same shape. A timestamp comparison uses the
+same four operators and `eq` / `ne`, with an ISO-8601 string or a number
+of epoch milliseconds.
+
+Boolean:
+
+```json
+{ "op": "eq", "field": "enabled", "value": true }
+```
+
+And, or, and not:
+
+```json
+{
+  "op": "and",
+  "args": [
+    { "op": "eq", "field": "status", "value": "active" },
+    { "op": "startsWith", "field": "username", "value": "a" }
+  ]
+}
+```
+
+```json
+{
+  "op": "or",
+  "args": [
+    { "op": "eq", "field": "protocol", "value": "saml2" },
+    { "op": "eq", "field": "protocol", "value": "oidc" }
+  ]
+}
+```
+
+```json
+{ "op": "not", "arg": { "op": "eq", "field": "enabled", "value": false } }
+```
+
+A count per day:
+
+```json
+{
+  "source": "authActivity",
+  "select": ["day"],
+  "aggregate": "count",
+  "groupBy": ["day"],
+  "orderBy": [{ "field": "day", "dir": "asc" }],
+  "limit": 31,
+  "format": "csv",
+  "mode": "async"
+}
+```
+
+A saved parameter. The document stores the name. The definition stores
+the default. A run may override it:
+
+```json
+{ "op": "eq", "field": "username", "param": "who" }
+```
+
+```json
+{ "who": "ada" }
+```
+
+## Running one now, and queueing one
+
+`POST /report-api/queries` with the document.
+
+A synchronous answer is HTTP 200. The body is the format you asked for.
+JSON is `application/json`. CSV is `text/csv`. PDF is `application/pdf`.
+The call is refused, whole, when the body would pass
+`report.syncMaxBytes` or the clock passes `report.syncMaxMs`. Nothing
+partial is sent. JSON always says `"truncated": false`.
+
+A job is HTTP 202 and `{ "job": { … } }`. That is what `mode: async`
+always does, and what `mode: auto` does when the limit does not fit the
+synchronous cap. `POST /report-api/jobs` is the same document, forced to
+a job even when it would have fit in one call. An ad hoc job does not
+mail the owner.
+
+Read it with `GET /report-api/jobs/{id}`. The states are `queued`,
+`running`, `completed`, `failed`, `cancelled` and `expired`. When
+`status` is `completed`, `GET /report-api/jobs/{id}/result` is the bytes,
+as an attachment. Before that the result is `job_not_ready` (HTTP 409).
+After `report.artifactRetentionS` it is `result_expired` (HTTP 410). A
+job that ran longer than `report.asyncMaxMs` is `failed`, with
+`result_too_large`. Nothing was stored in part.
+
+### Where a job is built
+
+A job's report is never held whole in memory. It is written, as it is
+rendered, to a file in `risk.uploadDirectory`, the directory risk dataset
+uploads use. It is then stored in the database in sealed pieces of 1 MiB,
+and the file is deleted when the job ends, however it ends. A download
+reads the pieces back one at a time.
+
+Before it writes anything, a job checks that the directory has room for
+`report.asyncMaxBytes` plus 16 MiB. A directory without room fails the job
+with `STS-REPORT-0049`. A directory that cannot be written, or a disk that
+fills while the file is written, fails it with `STS-REPORT-0050`. Neither
+leaves a file behind. A process that stops while it is building a report
+leaves its file, and the `report.build-cleanup` job, which runs in every
+process on `risk.uploadSweepS`, deletes it once nobody has touched it for
+`report.asyncMaxMs` plus fifteen minutes. On AWS the directory is the
+node's encrypted EBS volume ([A cluster in
+AWS](aws-cluster.md#where-a-risk-dataset-upload-goes)).
+
+A synchronous answer is at most `report.syncMaxBytes` (1 MB). It is
+written straight to the response and never stored.
+
+`GET /report-api/jobs` is newest first. `after` is the previous page's
+`next` id. `limit` is how many to return (1 to 200; omitted, 50). `next`
+is null on the last page. Listing a job id does not authorize a job the
+token cannot see.
+
+`POST /report-api/jobs/{id}/cancel` cancels a queued job. A running job
+is asked to stop and is not returned in part.
+
+The owner and `report:admin` also receive the query document on
+`GET /report-api/jobs/{id}`. Everyone else who can see the job receives
+the status without that document.
+
+## Saving and scheduling
+
+`POST /report-api/definitions` stores a document under a name.
+
+```json
+{
+  "name": "Locked accounts",
+  "document": { "source": "users", "select": ["username"], "limit": 100 },
+  "parameters": null,
+  "schedule": "",
+  "scheduleEnabled": false,
+  "notify": false
+}
+```
+
+`parameters` is the bag a schedule runs with: a plain object of at most
+32 keys. A key is 1 to 64 characters. A value is a string of at most
+200 characters, a finite number, a boolean, null, or an array of 1 to 32
+of those scalars (what `in` needs). Omit `parameters` on a later
+`POST /report-api/definitions/{id}` and the stored bag is kept. Send
+`null` and it is cleared. A missing value can still be type-checked at
+save time. The dummy used for that check is not stored, and the schedule
+will not run until the value is saved.
+
+`schedule` is a UTC cron expression, or empty. `scheduleEnabled` turns
+it on. When the minute comes due, the service runs the document as the
+owner, and only while that owner may still run reports. The stored
+parameter bag is what the run uses. A name the document asks for and the
+bag does not hold is written on the definition's failures, and that
+occurrence is not consumed: the next pass runs once the value exists.
+An owner who can no longer run reports, and a document that no longer
+validates, do consume the occurrence. A queue that is already full does
+not. A definition that already has a queued or running job of its own
+waits for the next occurrence.
+
+`POST /report-api/definitions/{id}/run` is always a job (HTTP 202). The
+body is the parameter object, not a query document: at most 32 keys,
+each key 1 to 64 characters and each value as above, the same bounds as
+the stored bag. A body outside them is refused, `invalid_query`
+"Parameters are names and values." A key overrides the stored default,
+and a key the document does not name is ignored. The run's parameters
+are not stored. An empty object, or an empty body, uses the stored
+defaults. The stored document already carries `locale`.
+
+`notify: true` mails the owner when a scheduled run finishes
+(`report-ready`). The message links to `/report/jobs/{id}`. It does not
+contain rows. If the notice cannot be sent, the job still stands as
+finished. Ad hoc queries do not notify. With no mail transport, or no
+`global.publicBaseUrl`, the notice is skipped.
+
+`GET /report-api/definitions` lists what you may see.
+`GET /report-api/definitions/{id}` is one. The document, the parameter
+bag, the groups and the recent failures are on the answer when you may
+edit it. `DELETE /report-api/definitions/{id}` removes it. A share cannot
+delete.
+
+## Formats
+
+All three formats are the same rows. Column names are the catalog field
+ids. An empty result is still a whole answer: JSON has `"rows": []`, CSV
+is the header line and nothing else, and PDF is one page with the header
+and no data rows.
+
+**JSON.** UTF-8. An object:
+
+```json
+{
+  "source": "users",
+  "fields": ["username"],
+  "rows": [{ "username": "ada" }],
+  "truncated": false
+}
+```
+
+A string stays a string. A number stays a number. A boolean stays a
+boolean. Null stays null. A timestamp is an ISO-8601 string.
+`truncated` is always false.
+
+**CSV.** UTF-8, CRLF, RFC 4180. The first line is the field ids. A null
+is an empty field. A field is quoted when it contains a comma, a
+quotation mark, CR or LF. A quotation mark inside a quoted field is
+doubled.
+
+A text value that a spreadsheet would read as a formula gets a single
+quote (`'`) in front of it: one whose first character is `=`, `+`, `-`,
+`@`, a tab, a carriage return or NUL. `=SUM(A1)` is written `'=SUM(A1)`,
+so Excel, LibreOffice and Google Sheets show it as text instead of
+running it. The quote is visible in the cell. A number is never
+prefixed: a negative count such as `-5` stays a number you can sum. The
+text `-5` (a name someone typed, say) is prefixed like any other text.
+The same rule applies to the passkey report's CSV export.
+
+**PDF.** PDF 1.4, Helvetica, WinAnsi, US Letter. A value wraps within
+its column: a long value takes as many lines as it needs, broken at a
+space where one falls within the line, and a line feed in a value starts
+a new line. A cell draws at most 256 bytes; a longer value is cut there
+and ends in `...`. A row is as tall as its tallest cell. Forty lines of
+data fit on a page, so forty single-line rows do; a row that does not
+fit in what is left of a page starts the next page, and a row taller
+than a whole page continues on the next. Past `report.pdfMaxRows`, or
+past `report.pdfMaxPages` for the pages the wrapped rows need, the call
+is refused and asked to use CSV. A character WinAnsi cannot draw is `?`.
+The page names the report, the realm, the language and the time. Those
+words are drawn in English, Spanish, French, German, Filipino and
+Swedish. Chinese is drawn in English, and the page adds
+`Requested language:` and the tag you asked for (`zh-Hans` or
+`zh-Hant`). A number is its decimal text. A boolean is `true` or
+`false`. Null is blank.
+
+## Errors
+
+The body is `{ "error", "error_description" }`. `error` is the public
+token. The description is one English sentence. The `STS-REPORT-` code
+is recorded and logged. It is not in the body. A refusal whose sentence is
+a catalog message also carries `messages: [{ key, params }]`, which the
+`/report` page draws in its own language.
+
+| Token | HTTP | When |
+|---|---|---|
+| `unknown_source` | 404 | The catalog has no such source. |
+| `unknown_field` | 400 | The source has no such field, including a credential id. |
+| `unsupported_operation` | 400 | The operator, the aggregate or the filter is not allowed on that field. |
+| `unsupported_format` | 400 | The format is not `json`, `csv` or `pdf`. |
+| `invalid_query` | 400 | The document, the parameter bag, the share list or the definition is the wrong shape. A SQL string, an offset and a second source land here. |
+| `result_too_large` | 400 | The row cap, the byte cap, the synchronous time cap, a PDF over its cap, or a synchronous `users` query that would have to read every person of a directory held in a database (see *Indexed filters*; in `auto` mode that query is a job instead). On a **job**, the same token means the job passed `report.asyncMaxMs` or could not store the bytes. The HTTP status of the original submission was already 202. |
+| `invalid_token` | 401 | No token, a token that did not verify, an expired token, a token that is not an access token, the wrong issuer, a revoked token, a disabled account, a session that has ended, or a certificate-bound token without that certificate. |
+| `invalid_dpop_proof` | 401 | A DPoP-bound token sent as Bearer, or a proof this service refused. |
+| `invalid_token` | 403 | The token is not audienced to this realm's `/report-api`. |
+| `insufficient_scope` | 403 | The token lacks `report:use` or `report:admin` (or, for a GET, `report:read`). |
+| `forbidden` | 403 | The token names no person, or this account may not use reports here, or the report's source is for report administrators and the caller does not hold `REPORT_ADMIN` (`STS-REPORT-0061`). |
+| `not_found` | 404 | No such definition, including one you may not see. |
+| `job_not_found` | 404 | No such job, including one you may not see. An unknown API path is answered the same way. |
+| `job_not_ready` | 409 | The result was asked for before the job completed. |
+| `result_expired` | 410 | The artifact aged out, or the job completed and the bytes are gone. |
+| `too_many_jobs` | 429 | This person or this realm already has as many queued and running jobs as the queue allows. |
+| `too_many_requests` | 429 | This caller has spent its budget of expensive acts: more queries or previews, jobs queued, definitions run and results downloaded than `report.actsPerSubject` allows in `report.actWindowS` (240 in ten minutes by default in product mode; off in development). `Retry-After` says how many seconds remain. Counted by the token's subject, so other callers are not affected, and the lists, definitions and a job's status can still be read (`STS-REPORT-0062`). |
+| `unavailable` | 400 | A report could not be completed. The code's own note says 500; this API answers 400. |
+
+`GET` or `HEAD` is the only method on `/report` itself. Anything else is
+HTTP 404.
+
+What to check when a schedule does nothing:
+
+- The definition's failures, visible to the owner and to `report:admin`.
+  "A saved parameter was not given" means the slot was kept. Save the
+  value and the next pass can run.
+- "The owner can no longer run reports" means `report:use` was lost.
+  That occurrence was consumed.
+- "The owner does not hold REPORT_ADMIN, which a report over … needs"
+  means the definition reads a source for report administrators and its
+  owner is not one. That occurrence was consumed.
+- "The owner's account is disabled." means the person who owns the
+  definition was disabled. Their schedules do not run until the account is
+  enabled again, and a job they had already queued fails as `forbidden`.
+  That occurrence was consumed.
+- A queue that answered `too_many_jobs` did not consume the occurrence.
+- The cron expression is UTC. `* * * * *` is every minute.
+- In a cluster, `STS_REPORT_NODE=true` on one service holds
+  `ops.reporting`. The other fronts leave the queue to it while that
+  stamp is live. The [compose stack](docker-compose.md) says how to pass
+  the variable. It is not set on the default `sts` service.
+
+## Security
+
+**A finished report is stored encrypted.** The result a job writes to the
+database is sealed under the realm's data key for reports, which is itself
+wrapped by the service's key-encryption key; the database never holds a
+report in the clear. A service with no key-encryption key does not store
+reports in a database at all: the job fails and says why. Each 1 MiB piece
+is sealed on its own and names its job and its place, so a piece moved to
+another job, or out of order, does not open as part of a report. A download
+whose piece fails, or whose digest does not match, is cut off rather than
+completed (`STS-REPORT-0051`). While a job runs, the file it is built in
+([Where a job is built](#where-a-job-is-built)) is on local disk in the
+clear, readable only by the service's own user. See
+[PostgreSQL schema](postgres-schema.md) for what else is sealed.
+
+Send `Authorization: DPoP` and the proof. The token is for `sts-report`,
+audienced to this realm's `/report-api`, with `report:use` or
+`report:admin`. An application's client-credentials token is sent as
+`Bearer` unless it is bound ([From another program](#from-another-program)).
+Paths sit after the realm prefix. The default realm has none.
+
+A job id, a definition id and a share are not credentials. Retrieving a
+result takes the same token the query took. Group share is run and
+retrieve. Edit and delete stay with the owner and with `report:admin`.
+
+The catalog does not publish credential attributes. Audit detail on a
+report action is the source, the field ids and the job id. The query
+document is not written on the audit row. An attribute-source report
+does not include the host, the account or the secret, and it does not
+open a connection.
+
+Completion mail is opt-in on the definition, goes to the owner's
+account address, and carries a link rather than rows. A mail failure
+does not fail the job.
+
+## Statistics that stay where they are
+
+`serviceMetrics` does not replace the console's counters. These
+endpoints stay, and a caller that needs what they show keeps calling
+them. The difference is the point of this section.
+
+**`GET /admin/metrics` and `GET /admin-api/metrics`** are the live
+picture the console draws. Calls by the route Express matched, with
+status classes, average and worst latency, and when each was last
+called. Tokens by `typ`, with valid, expired, revoked, not-yet-valid
+and DPoP-bound. Assertions, tickets and credentials the same way. A
+successful `GET` or `HEAD` of `/healthcheck` is not in the call total.
+Sessions are reported twice on purpose: sign-on sessions, and
+artifact-derived sessions. Within Kerberos a TGT counts as the session
+and a service ticket does not. The page is computed when it is drawn.
+[Metrics](admin-console.md#metrics--adminmetrics) is that page.
+
+`serviceMetrics` keeps a finite number sitting one level under a family
+in that snapshot, read with the user counts left out. A name looks like
+`calls.total` or `tokens.held`. It does not keep:
+
+- the top-level `startedAt`, `uptimeMs` and `now`
+- `calls.rows`, the per-route table, or `calls.byStatusClass`
+- `tokens.byKind` and `artifacts.byKind`
+- `sessions.families` (the per-family subject lists). `sessions.distinctSubjects`
+  is the one session number that is a leaf
+- the user counts a dashboard shows. The report asks for the snapshot
+  without walking people, so `users.known`, `users.authenticatedHere`,
+  `users.clients` and `users.authentications` are 0. `users.cap` and
+  `users.forgotten` are still the real counters. The directory itself is
+  the `users` source
+
+It is one moment, not a series. There is no latency column and no
+per-route row.
+
+**`GET /admin-api/status`** is the issuer, `startedAt` and the running
+totals. **`GET /admin-api/console/dashboard`** mirrors those totals.
+Neither is a report.
+
+**`GET /admin-api/database`** is whether PostgreSQL is there, and its
+statistics when it is. The answer is `available: false` when this
+process has no database. That is not `serviceMetrics`.
+
+**`GET /admin-api/risk/metrics`** is risk scoring. **`GET /admin-api/vc-status`**
+is credential status. Neither is a service counter, and neither moved.
+
+## A dedicated reporting node
+
+With the cluster off, the front process drains the queue, drops expired
+results and enqueues schedules that are due. Nothing else has to be set.
+
+In a cluster, set `STS_REPORT_NODE` to the string `true` on the service
+that should hold the lease `ops.reporting`. Leave it unset on the
+default `sts` service. While a reporting node is live, the other fronts
+leave the queue to it. The process that holds the lease drains, retains
+and schedules on its own.
+
+A running job's fence is held in the process that claimed it. If that
+process is gone, the job is failed. Another node does not finish it.
+
+## What a request may name
+
+Each operation takes the query parameters its entry in the OpenAPI document
+lists, and the headers it declares (`DPoP`, and `X-Requested-With`) or that a
+browser, proxy, CDN or tracing system adds. A query parameter it does not list,
+a value that does not fit a listed type, and any other custom header are each
+refused with a 400 and `error: invalid_query`, naming the parameter or header
+and never its value. An empty value counts as absent.

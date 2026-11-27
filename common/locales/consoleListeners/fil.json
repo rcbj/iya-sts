@@ -79,5 +79,7 @@
   "applicationsText": "Kung nasaan ang bawat hosted application: ang mga listener na sumasagot dito, at ang listener kung saan binubuo ang mga URL nito — ang issuer, metadata, mga redirect at mga link na ipinapadala sa email.",
   "tabDefaults": "Mga default ng buong serbisyo",
   "defaultsNote": "Ang minamana ng bawat TLS listener maliban kung iba ang sinasabi ng sarili nitong tab o depinisyon.",
+  "tabCertSignIn": "Pag-sign in gamit ang sertipiko",
+  "certSignInNote": "Ang mga profile ng pag-sign in gamit ang sertipiko, ang revocation na kailangan ng pag-sign in, ang paglipat sa isang custom listener na humihingi ng sertipiko, at isang proxy na nagtatapos ng TLS sa harap nito. Nasa Mga Protocol → PIV din ang parehong mga setting.",
   "customTabNote": "Itinakda sa depinisyon ng listener, sa tab na Mga custom listener."
 }

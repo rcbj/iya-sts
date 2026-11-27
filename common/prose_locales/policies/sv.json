@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "För den som har en konsolroll (Admin Read eller Admin Write) men ingen andra faktor. `offer`: hen visas steget som konfigurerar en, med en Ignorera-knapp, vid varje inloggning. `always`: hen måste konfigurera en innan hen loggas in — utom standardsfärens inbyggda administratör (admin.bootstrapUsername), som bara någonsin erbjuds en, så att en tjänst aldrig blir utan någon som kan logga in. `if-held`: som alla andra, enligt fältet ovan. SVAGARE ÄN `always`: en administratör med enbart ett lösenord är en administratör som vem som helst med lösenordet är."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Attesterad hårdvarutoken krävs"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: inget krav utöver mekanismraderna. `always`: en session startar bara där autentiseringsuppgiften som slutförde inloggningen (en passkey, en säkerhetsnyckel, ett certifikat eller ett smartkort) finns på en aktiv hårdvarutoken vars attestering registret har registrerat, samma test som en applikations `attested-hardware`-mekanism gör. Ett lösenord, en autentiseringsapp, en e-postad kod, en plånbok, en federationspartner eller en Kerberos-biljett ensam avvisas. Standardsfärens inbyggda administratör (admin.bootstrapUsername) är undantagen, så att en tjänst aldrig lämnas utan någon som kan logga in."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Lösenord — som första faktor"
@@ -314,6 +322,22 @@
   "authn.FIELDS.totpSecondFactor.what": {
     "en": "ea01b0588ad42047",
     "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
+  },
+  "authn.FIELDS.hotpSecondFactor.label": {
+    "en": "8884fbb478be14f1",
+    "text": "Engångskodstoken (HOTP) — som andra faktor"
+  },
+  "authn.FIELDS.hotpSecondFactor.what": {
+    "en": "33918856782d0904",
+    "text": "En RFC 4226-engångskod från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerat från en PSKC-fröfil. Aldrig en första faktor. AV SOM STANDARD, och den måste slås på för denna sfär innan någon kan registrera, göra anspråk på eller tilldelas en HOTP-token, så ingen HOTP-token används vid inloggning förrän dess. Av här kan ingen REGISTRERA eller göra anspråk på en; den som redan har en tillfrågas fortfarande om den, som innehavaren av en autentiseringsapp."
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.label": {
+    "en": "cba1439d0faf9aaf",
+    "text": "YubiKey-OTP — som andra faktor"
+  },
+  "authn.FIELDS.yubicoOtpSecondFactor.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "En YubiKey OTP (Yubicos publicerade modhex-engångslösenord, #1955). Aldrig en första faktor: denna tjänst har AES-nyckeln. AV SOM STANDARD, och den måste slås på för denna sfär (med yubiotp.offered) innan någon kan registrera, göra anspråk på eller tilldelas en YubiKey OTP, så ingen används vid inloggning förrän dess. Av här kan ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande om den."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -360,16 +384,40 @@
     "text": "TLS-klientcertifikat — som första faktor"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ett verifierat TLS-klientcertifikat som inte är ett smartkort: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningsskärmen. Ett smartkortscertifikat hör till smartkortsraden, som följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Smartkortscertifikat (PIV/CAC) — som första faktor"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ett smartkortscertifikat (PIV/CAC), vid GET /tls/sign-in eller Fortsätt med ditt certifikat: en attesterad PIV-nyckel, ett certifikat registrerat här under en PIV-platsprofil, ett externt kort mappat via sitt kort-UUID (piv.externalIssuers, stsPivCardUuid), eller ett under en certSignIn.profiles-profil märkt smartCard. SAKNAS det följer det stsAuthnCertificatePrimary, så en policy skriven före det behåller sin innebörd (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "PIV-kortautentiseringsnyckel (utan PIN) — som första faktor"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ett PIV-kortautentiseringscertifikat (plats 9e), vars nyckel fungerar utan PIN. Det är också ett smartkort, så smartkortsraden måste också vara på. SAKNAS det följer det inställningen piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — som första faktor"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego med en Kerberos-biljett."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego med en Kerberos-biljett, utom PKINIT med smartkort, som har en egen rad och följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT med smartkort — som första faktor"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego med en Kerberos-biljett som bär denna sfärs pkinit-smartcard-indikator: KDC utfärdade den via PKINIT från ett smartkort. SAKNAS det följer det stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -475,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "För den som har en konsolroll (Admin Read eller Admin Write) men ingen andra faktor. `offer`: hen visas steget som konfigurerar en, med en Ignorera-knapp, vid varje inloggning. `always`: hen måste konfigurera en innan hen loggas in — utom standardsfärens inbyggda administratör (admin.bootstrapUsername), som bara någonsin erbjuds en, så att en tjänst aldrig blir utan någon som kan logga in. `if-held`: som alla andra, enligt fältet ovan. SVAGARE ÄN `always`: en administratör med enbart ett lösenord är en administratör som vem som helst med lösenordet är."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: inget krav utöver mekanismraderna. `always`: en session startar bara där autentiseringsuppgiften som slutförde inloggningen (en passkey, en säkerhetsnyckel, ett certifikat eller ett smartkort) finns på en aktiv hårdvarutoken vars attestering registret har registrerat, samma test som en applikations `attested-hardware`-mekanism gör. Ett lösenord, en autentiseringsapp, en e-postad kod, en plånbok, en federationspartner eller en Kerberos-biljett ensam avvisas. Standardsfärens inbyggda administratör (admin.bootstrapUsername) är undantagen, så att en tjänst aldrig lämnas utan någon som kan logga in."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
@@ -494,6 +546,14 @@
   "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
     "en": "ea01b0588ad42047",
     "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
+    "en": "33918856782d0904",
+    "text": "En RFC 4226-engångskod från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerat från en PSKC-fröfil. Aldrig en första faktor. AV SOM STANDARD, och den måste slås på för denna sfär innan någon kan registrera, göra anspråk på eller tilldelas en HOTP-token, så ingen HOTP-token används vid inloggning förrän dess. Av här kan ingen REGISTRERA eller göra anspråk på en; den som redan har en tillfrågas fortfarande om den, som innehavaren av en autentiseringsapp."
+  },
+  "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "En YubiKey OTP (Yubicos publicerade modhex-engångslösenord, #1955). Aldrig en första faktor: denna tjänst har AES-nyckeln. AV SOM STANDARD, och den måste slås på för denna sfär (med yubiotp.offered) innan någon kan registrera, göra anspråk på eller tilldelas en YubiKey OTP, så ingen används vid inloggning förrän dess. Av här kan ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande om den."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -516,12 +576,24 @@
     "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ett verifierat TLS-klientcertifikat som inte är ett smartkort: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningsskärmen. Ett smartkortscertifikat hör till smartkortsraden, som följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ett smartkortscertifikat (PIV/CAC), vid GET /tls/sign-in eller Fortsätt med ditt certifikat: en attesterad PIV-nyckel, ett certifikat registrerat här under en PIV-platsprofil, ett externt kort mappat via sitt kort-UUID (piv.externalIssuers, stsPivCardUuid), eller ett under en certSignIn.profiles-profil märkt smartCard. SAKNAS det följer det stsAuthnCertificatePrimary, så en policy skriven före det behåller sin innebörd (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ett PIV-kortautentiseringscertifikat (plats 9e), vars nyckel fungerar utan PIN. Det är också ett smartkort, så smartkortsraden måste också vara på. SAKNAS det följer det inställningen piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego med en Kerberos-biljett."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego med en Kerberos-biljett, utom PKINIT med smartkort, som har en egen rad och följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego med en Kerberos-biljett som bär denna sfärs pkinit-smartcard-indikator: KDC utfärdade den via PKINIT från ett smartkort. SAKNAS det följer det stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -564,12 +636,12 @@
     "text": "Vad profilen är till för, för nästa person."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyMechanism.what": {
-    "en": "66db848b0bb1c58f",
-    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en förstafaktormekanism som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, password-mfa, webauthn, spnego, wallet eller federation, ett värde var. Ingen tillåter alla som sfären tillåter."
+    "en": "783db3d7da8c29c5",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en förstafaktormekanism som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, password-mfa, webauthn, attested-hardware (en nyckel eller ett certifikat på en maskinvarutoken bevisad genom attestering, #1955), spnego, wallet eller federation, ett värde var. Ingen tillåter alla som sfären tillåter."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicySecondFactor.what": {
-    "en": "7c8e4d8b4cce7c08",
-    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en andra faktor som en inloggning den gäller för tillåter — när applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta av de namngivna — password, securityKey, totp, recoveryCode, emailCode, emailLink eller wallet, ett värde var. Ingen lämnar sfärens autentiseringspolicy som den är."
+    "en": "9302ca05693fd970",
+    "text": "På en NAMNGIVEN autentiseringspolicy (#1148, #1237): en andra faktor som en inloggning den gäller för tillåter — där applikationen (appAuthnPolicy) eller en av personens grupper (stsAuthnPolicy) namnger den och dess prioritet är den lägsta namngivna — password, securityKey, totp, hotp, yubico-otp, recoveryCode, emailCode, emailLink eller wallet, ett värde vardera. Inget värde lämnar sfärens autentiseringspolicy som den är."
   },
   "authn.SCHEMA.attributes.stsAuthnPolicyPrecedence.what": {
     "en": "afff5dad656a9845",
@@ -615,6 +687,22 @@
     "en": "ea01b0588ad42047",
     "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
   },
+  "authn.MECHANISMS.hotp.label": {
+    "en": "f0e2ca73efb6f1c5",
+    "text": "Engångskodstoken (HOTP)"
+  },
+  "authn.MECHANISMS.hotp.what": {
+    "en": "33918856782d0904",
+    "text": "En RFC 4226-engångskod från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerat från en PSKC-fröfil. Aldrig en första faktor. AV SOM STANDARD, och den måste slås på för denna sfär innan någon kan registrera, göra anspråk på eller tilldelas en HOTP-token, så ingen HOTP-token används vid inloggning förrän dess. Av här kan ingen REGISTRERA eller göra anspråk på en; den som redan har en tillfrågas fortfarande om den, som innehavaren av en autentiseringsapp."
+  },
+  "authn.MECHANISMS.yubico-otp.label": {
+    "en": "01f8772904333b7b",
+    "text": "YubiKey-OTP"
+  },
+  "authn.MECHANISMS.yubico-otp.what": {
+    "en": "a5efe4af91b59cf2",
+    "text": "En YubiKey OTP (Yubicos publicerade modhex-engångslösenord, #1955). Aldrig en första faktor: denna tjänst har AES-nyckeln. AV SOM STANDARD, och den måste slås på för denna sfär (med yubiotp.offered) innan någon kan registrera, göra anspråk på eller tilldelas en YubiKey OTP, så ingen används vid inloggning förrän dess. Av här kan ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande om den."
+  },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
     "text": "Återställningskod"
@@ -644,16 +732,40 @@
     "text": "TLS-klientcertifikat"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ett verifierat TLS-klientcertifikat som inte är ett smartkort: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningsskärmen. Ett smartkortscertifikat hör till smartkortsraden, som följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Smartkortscertifikat (PIV/CAC)"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ett smartkortscertifikat (PIV/CAC), vid GET /tls/sign-in eller Fortsätt med ditt certifikat: en attesterad PIV-nyckel, ett certifikat registrerat här under en PIV-platsprofil, ett externt kort mappat via sitt kort-UUID (piv.externalIssuers, stsPivCardUuid), eller ett under en certSignIn.profiles-profil märkt smartCard. SAKNAS det följer det stsAuthnCertificatePrimary, så en policy skriven före det behåller sin innebörd (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "PIV-kortautentiseringsnyckel (utan PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ett PIV-kortautentiseringscertifikat (plats 9e), vars nyckel fungerar utan PIN. Det är också ett smartkort, så smartkortsraden måste också vara på. SAKNAS det följer det inställningen piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego med en Kerberos-biljett."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego med en Kerberos-biljett, utom PKINIT med smartkort, som har en egen rad och följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT med smartkort"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego med en Kerberos-biljett som bär denna sfärs pkinit-smartcard-indikator: KDC utfärdade den via PKINIT från ett smartkort. SAKNAS det följer det stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -714,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "en kod eller länk via e-post är giltig i {{n}} sekunder — INAKTIV: den här sfären kan inte skicka e-post"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "varje inloggning måste sluta med en autentiseringsuppgift på en attesterad hårdvarutoken (den inbyggda administratören undantagen)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",
@@ -1247,6 +1363,22 @@
     "en": "5098a9645fefe2ff",
     "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
   },
+  "passkey.FIELDS.credProtect.label": {
+    "en": "9a492f70e0e2aedd",
+    "text": "Skydd av autentiseringsuppgiften som en registrering begär av en säkerhetsnyckel"
+  },
+  "passkey.FIELDS.credProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` SOM STANDARD: en registrering begär inget skydd av autentiseringsuppgiften, och dess alternativ är vad de alltid har varit. Annars ber en registrering autentiseraren (CTAP 2.1 avsnitt 12.1, tillägget credProtect) att skydda den nya autentiseringsuppgiften på den nivån: `userVerificationOptional` (nivå 1, vad en autentiseringsuppgift har utan tillägget), `userVerificationOptionalWithCredentialIDList` (nivå 2: nyckeln varken avslöjar eller använder autentiseringsuppgiften utan användarverifiering om inte förlitande part nämner den i allowCredentials, så ingen som håller nyckeln kan hitta en upptäckbar autentiseringsuppgift på den) eller `userVerificationRequired` (nivå 3: nyckeln använder autentiseringsuppgiften bara efter en PIN-kod eller biometri). Nivån nyckeln rapporterar registreras på nyckeln. De flesta plattforms- och synkroniserade passkeys rapporterar ingenting. Utelämnad vid en sparning behålls den inbyggda standarden."
+  },
+  "passkey.FIELDS.enforceCredProtect.label": {
+    "en": "5cc78bfe52150545",
+    "text": "Avvisa en nyckel som inte tillämpar det skyddet"
+  },
+  "passkey.FIELDS.enforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "AV SOM STANDARD. På ombeds webbläsaren att genomdriva raden ovan (enforceCredentialProtectionPolicy), och en registrering vars autentiserare rapporterar en lägre nivå än raden ovan begär avvisas; en nyckel som inte rapporterar något är på nivå 1. Kräver att raden ovan är satt till en annan nivå än none. Utelämnad vid en sparning behålls den inbyggda standarden."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
@@ -1354,6 +1486,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
     "en": "5098a9645fefe2ff",
     "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredProtect.what": {
+    "en": "64640106a92f3111",
+    "text": "`none` SOM STANDARD: en registrering begär inget skydd av autentiseringsuppgiften, och dess alternativ är vad de alltid har varit. Annars ber en registrering autentiseraren (CTAP 2.1 avsnitt 12.1, tillägget credProtect) att skydda den nya autentiseringsuppgiften på den nivån: `userVerificationOptional` (nivå 1, vad en autentiseringsuppgift har utan tillägget), `userVerificationOptionalWithCredentialIDList` (nivå 2: nyckeln varken avslöjar eller använder autentiseringsuppgiften utan användarverifiering om inte förlitande part nämner den i allowCredentials, så ingen som håller nyckeln kan hitta en upptäckbar autentiseringsuppgift på den) eller `userVerificationRequired` (nivå 3: nyckeln använder autentiseringsuppgiften bara efter en PIN-kod eller biometri). Nivån nyckeln rapporterar registreras på nyckeln. De flesta plattforms- och synkroniserade passkeys rapporterar ingenting. Utelämnad vid en sparning behålls den inbyggda standarden."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceCredProtect.what": {
+    "en": "52a07dbeabc876c9",
+    "text": "AV SOM STANDARD. På ombeds webbläsaren att genomdriva raden ovan (enforceCredentialProtectionPolicy), och en registrering vars autentiserare rapporterar en lägre nivå än raden ovan begär avvisas; en nyckel som inte rapporterar något är på nivå 1. Kräver att raden ovan är satt till en annan nivå än none. Utelämnad vid en sparning behålls den inbyggda standarden."
   },
   "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
     "en": "cd02467de702ad24",
@@ -1847,6 +1987,134 @@
     "en": "4fa78beae92d0ce5",
     "text": "none: endast ML-DSA. classical: efter att en ML-DSA-registrering misslyckats på enheten erbjuds ett nytt försök med de klassiska algoritmerna (där nyckelpolicyn tillåter ett) — en klassisk nyckel är bättre än ett lösenord, och dess innehavare ombeds om migreringen senare precis som alla andra."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "Be om postkvantkryptering av e-post"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "AV SOM STANDARD. På ombeds varje person som profilen når och vars e-post krypteras till en klassisk nyckel — en OpenPGP-nyckel vars krypteringsnyckel inte är ML-KEM, eller ett S/MIME-certifikat vars nyckel inte är ML-KEM — efter inloggningen att registrera en postkvantnyckel (pqc-mail-encryption): det som i dag krypteras till en klassisk nyckel kan läsas när nyckeln faller. En namngiven profil med detta av undantar den den väljs för från aktiviteten."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "E-postkryptering: Hoppa över skjuter upp den i"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Hur länge Hoppa över skjuter upp e-postkrypteringsaktiviteten för personen."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "E-postkryptering: tilldelad tid"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Räknas från personens FÖRSTA inbjudan till e-postkrypteringsaktiviteten. När den har gått finns inget Hoppa över och inloggningen hålls tills en postkvantnyckel är registrerad. 0 är ingen tidsgräns."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "E-postkryptering: en person vars e-post inte krypteras"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "En person vars e-post inte krypteras alls (stsMailEncryption none eller saknas). leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: tillfrågas och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "E-postkryptering: vad som erbjuds"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Vad steget erbjuder. either: en OpenPGP-nyckel och ett S/MIME-certifikat, den sort personen använder nu först. openpgp: bara en OpenPGP-nyckel enligt RFC 9980. smime: bara ett ML-KEM-S/MIME-certifikat, uppladdat (sfären utfärdar inga). En sort sfären inte kan ta emot erbjuds aldrig, och ingen tillfrågas där ingen av dem går."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "E-postkryptering: behåll den klassiska OpenPGP-nyckeln i"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Hur många dagar en persons klassiska OpenPGP-nyckel ligger kvar på posten och i Web Key Directory bredvid postkvantnyckeln som ersatte den, så att en korrespondent som inte kan använda den nya ändå hittar den gamla. Ny e-post från tjänsten går till postkvantnyckeln direkt. Därefter tar ett schemalagt jobb bort den klassiska nyckeln från posten och Web Key Directory. 0 tar bort den direkt."
+  },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Be om nyutfärdande av PIV-certifikat"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "AV SOM STANDARD. På blir varje person som profilen når och som har ett PIV-platscertifikat som området utfärdat, på en plats som pivSlots anger, ombedd efter inloggning att registrera ett nytt (piv-reissue) när pivTrigger säger att det är dags: utfärdaren signerade det med en klassisk algoritm medan områdets EST-utfärdande CA är postkvantisk, eller så går det ut inom pivRenewDays. Det gamla certifikatet återkallas (superseded) när det nya används första gången vid en inloggning. En namngiven profil där detta är av undantar den den väljs för från aktiviteten."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "PIV-nyutfärdande: Hoppa över skjuter upp det i"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Hur länge Hoppa över skjuter upp PIV-nyutfärdandet för den personen."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "PIV-nyutfärdande: tilldelad tid"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Räknas från personens FÖRSTA inbjudan till PIV-nyutfärdandet. När den har gått försvinner Hoppa över och inloggningen hålls tills varje plats som är på tur har ett nytt certifikat. 0 betyder ingen tidsgräns."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "PIV-nyutfärdande: platser"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "De PIV-platser vars certifikat aktiviteten tittar på, kommaseparerade: 9a (PIV-autentisering), 9c (digital signatur), 9d (nyckelhantering), 9e (kortautentisering). En plats vars profil est.allowedProfiles utelämnar efterfrågas aldrig."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "PIV-nyutfärdande: vad som gör ett certifikat aktuellt"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Vad som gör en plats certifikat aktuellt. classical-issuer: utfärdaren signerade det med en klassisk algoritm och områdets EST-utfärdande CA är postkvantisk (ett certifikat utfärdat på nytt under en klassisk CA vore inte bättre). expiring: det går ut inom pivRenewDays. both: något av dem."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "PIV-nyutfärdande: förnya så här länge före utgång"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Hur många dagar innan ett PIV-platscertifikat går ut det är dags att förnya det, där pivTrigger är expiring eller both."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "PIV-nyutfärdande: vad som utfärdas"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Vad det nya certifikatet gäller. reissue: ett nytt certifikat över en nyckel som kortet skapar på nytt på samma plats, signerat av områdets EST-utfärdande CA. rekey: en postkvantisk nyckel på kortet, som inget PIV-kort kan skapa i dag, så en profil inställd på rekey frågar ingen."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "Den här tjänstens klass för en profil för aktivitet efter inloggning: vad en person ombeds göra efter inloggningen. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som en applikation eller en grupp namnger)."
@@ -1882,6 +2150,58 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none: endast ML-DSA. classical: efter att en ML-DSA-registrering misslyckats på enheten erbjuds ett nytt försök med de klassiska algoritmerna (där nyckelpolicyn tillåter ett) — en klassisk nyckel är bättre än ett lösenord, och dess innehavare ombeds om migreringen senare precis som alla andra."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "AV SOM STANDARD. På ombeds varje person som profilen når och vars e-post krypteras till en klassisk nyckel — en OpenPGP-nyckel vars krypteringsnyckel inte är ML-KEM, eller ett S/MIME-certifikat vars nyckel inte är ML-KEM — efter inloggningen att registrera en postkvantnyckel (pqc-mail-encryption): det som i dag krypteras till en klassisk nyckel kan läsas när nyckeln faller. En namngiven profil med detta av undantar den den väljs för från aktiviteten."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Hur länge Hoppa över skjuter upp e-postkrypteringsaktiviteten för personen."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Räknas från personens FÖRSTA inbjudan till e-postkrypteringsaktiviteten. När den har gått finns inget Hoppa över och inloggningen hålls tills en postkvantnyckel är registrerad. 0 är ingen tidsgräns."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "En person vars e-post inte krypteras alls (stsMailEncryption none eller saknas). leave: tillfrågas inte. invite: ombeds registrera en postkvantnyckel och får alltid hoppa över det. require: tillfrågas och får hoppa över det bara tills den tilldelade tiden har gått."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Vad steget erbjuder. either: en OpenPGP-nyckel och ett S/MIME-certifikat, den sort personen använder nu först. openpgp: bara en OpenPGP-nyckel enligt RFC 9980. smime: bara ett ML-KEM-S/MIME-certifikat, uppladdat (sfären utfärdar inga). En sort sfären inte kan ta emot erbjuds aldrig, och ingen tillfrågas där ingen av dem går."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Hur många dagar en persons klassiska OpenPGP-nyckel ligger kvar på posten och i Web Key Directory bredvid postkvantnyckeln som ersatte den, så att en korrespondent som inte kan använda den nya ändå hittar den gamla. Ny e-post från tjänsten går till postkvantnyckeln direkt. Därefter tar ett schemalagt jobb bort den klassiska nyckeln från posten och Web Key Directory. 0 tar bort den direkt."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "AV SOM STANDARD. På blir varje person som profilen når och som har ett PIV-platscertifikat som området utfärdat, på en plats som pivSlots anger, ombedd efter inloggning att registrera ett nytt (piv-reissue) när pivTrigger säger att det är dags: utfärdaren signerade det med en klassisk algoritm medan områdets EST-utfärdande CA är postkvantisk, eller så går det ut inom pivRenewDays. Det gamla certifikatet återkallas (superseded) när det nya används första gången vid en inloggning. En namngiven profil där detta är av undantar den den väljs för från aktiviteten."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Hur länge Hoppa över skjuter upp PIV-nyutfärdandet för den personen."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Räknas från personens FÖRSTA inbjudan till PIV-nyutfärdandet. När den har gått försvinner Hoppa över och inloggningen hålls tills varje plats som är på tur har ett nytt certifikat. 0 betyder ingen tidsgräns."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "De PIV-platser vars certifikat aktiviteten tittar på, kommaseparerade: 9a (PIV-autentisering), 9c (digital signatur), 9d (nyckelhantering), 9e (kortautentisering). En plats vars profil est.allowedProfiles utelämnar efterfrågas aldrig."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Vad som gör en plats certifikat aktuellt. classical-issuer: utfärdaren signerade det med en klassisk algoritm och områdets EST-utfärdande CA är postkvantisk (ett certifikat utfärdat på nytt under en klassisk CA vore inte bättre). expiring: det går ut inom pivRenewDays. both: något av dem."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Hur många dagar innan ett PIV-platscertifikat går ut det är dags att förnya det, där pivTrigger är expiring eller both."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Vad det nya certifikatet gäller. reissue: ett nytt certifikat över en nyckel som kortet skapar på nytt på samma plats, signerat av områdets EST-utfärdande CA. rekey: en postkvantisk nyckel på kortet, som inget PIV-kort kan skapa i dag, så en profil inställd på rekey frågar ingen."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -1954,6 +2274,66 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "en person utan nyckel ombeds registrera en postkvantnyckel, och får hoppa över det tills respitperioden är slut"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "en person vars e-post krypteras till en klassisk OpenPGP-nyckel eller ett klassiskt S/MIME-certifikat ombeds efter inloggningen att registrera en postkvantnyckel (ML-KEM)"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "hen kan registrera en OpenPGP-nyckel eller ladda upp ett S/MIME-certifikat"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "hen kan registrera en OpenPGP-nyckel"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "hen kan ladda upp ett S/MIME-certifikat"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "en person vars e-post inte krypteras tillfrågas inte"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "en person vars e-post inte krypteras bjuds in att registrera en postkvantnyckel och får alltid hoppa över det"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "en person vars e-post inte krypteras ombeds registrera en postkvantnyckel och får hoppa över det tills respitperioden tar slut"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "en klassisk OpenPGP-nyckel som en postkvantnyckel ersätter behålls bredvid den, och publiceras med den, i {{days}} dag(ar)"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "en klassisk OpenPGP-nyckel som en postkvantnyckel ersätter tas bort direkt"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "en person med ett PIV-platscertifikat ({{slots}}) ombeds efter inloggning att registrera ett nytt"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "ett certifikat är aktuellt när en klassisk CA signerade det och områdets EST-utfärdande CA är postkvantisk"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "ett certifikat är aktuellt {{days}} dag(ar) innan det går ut"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "ett certifikat är aktuellt när en klassisk CA signerade det och områdets EST-utfärdande CA är postkvantisk, eller {{days}} dag(ar) innan det går ut"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "en postkvantisk nyckel på kortet efterfrågas, som inget PIV-kort kan skapa i dag, så ingen tillfrågas"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "det gamla certifikatet återkallas när det nya används första gången för att logga in"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

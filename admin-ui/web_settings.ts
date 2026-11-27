@@ -49,6 +49,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import CertSignInEditors = require('./web_cert_sign_in');
 
 /**
  * Draws the Settings block a console page carries, from the `settings`
@@ -340,7 +341,13 @@ class SettingsForms {
     const hint = kit.tip(setting.description, Infinity);
     // AN ORDERED CHOICE (2026-10-01) is a checkbox and an order number per
     // value — `orderedChoiceControl()` — rather than a text box.
-    const input = setting.type === 'csv' && setting.ordered &&
+    // A STRUCTURED VALUE (#2080) — certificate sign-in profiles, listener
+    // definitions, the application mapping, a PEM list — is an editor over
+    // the box that still carries the value (`web_cert_sign_in.ts`).
+    const input = setting.editable &&
+                  CertSignInEditors.kindOf(String(setting.key))
+      ? CertSignInEditors.control(setting, id, t)
+      : setting.type === 'csv' && setting.ordered &&
                   Array.isArray(setting.csvValues)
       ? SettingsForms.orderedChoiceControl(setting, id, t)
       : setting.type === 'enum'
@@ -446,7 +453,7 @@ class SettingsForms {
     // rather than an oversight — see the paragraph in `admin-ui/CLAUDE.md` that
     // used to say the opposite. What pays for it is that a setting's
     // description is also on `/admin/config`'s own JSON view, in
-    // `GET /admin-api/config`, and in docs/v1.1.0/configuration.md's table, so
+    // `GET /admin-api/config`, and in docs/v1.2.0/configuration.md's table, so
     // the text has three other doors that a keyboard or a screen reader can
     // reach. A field whose prose has NO other door does not get this
     // treatment.

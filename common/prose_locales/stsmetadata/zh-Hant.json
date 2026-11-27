@@ -79,6 +79,10 @@
     "en": "22bf6b719bdeefc5",
     "text": "partial：每張票證都攜帶已簽署的 PAC——登入資訊（KERB_VALIDATION_INFO，NDR）、用戶端資訊、UPN/DNS 資訊、屬性與請求者 SID。依第 2.8.2／2.8.3 節，TGT 有兩個簽章，服務票證有四個。krb5.pacClaims 開啟時（#493）會產生「用戶端宣告」（PAC_CLIENT_CLAIMS_INFO，2.11），從不壓縮；在其他領域的 PAC 中抵達的宣告緩衝區會被解碼（包括 XPRESS Huffman）並攜帶。不產生裝置資訊與「裝置」宣告。跨信任抵達的 PAC 在重新簽署前依第 4.1.2.2 節針對該信任邊界的規定進行 SID 篩選——捨棄裝置資訊，除非信任允許，否則捨棄宣告集——轉介的 PAC 以領域間金鑰簽署。"
   },
+  "stsmetadata.specs.rfc4121.coverage": {
+    "en": "6bcf5543ff158544",
+    "text": "partial：情境建立。InitialContextToken 封裝（Kerberos 機制 OID 與兩位元組權杖 ID）可讀可寫；AP-REQ 的 0x8003 驗證器總和檢查碼由接受端讀取（其旗標、相互驗證與委派），並由用戶端寫入；在要求相互驗證時回傳 AP-REP。MIC 權杖（第 4.2.6.1 節）對 SPNEGO 的 mechListMIC 進行簽章與驗證，存在接受端子金鑰時使用該子金鑰。缺少：通道繫結僅被回報，不與 TLS 通道比對；情境建立後，沒有任何介面交換 Wrap 權杖。"
+  },
   "stsmetadata.specs.rfc4178.coverage": {
     "en": "4c1e4c4761e68531",
     "text": "full——就單一機制而言：NegTokenInit（附樂觀的 mechToken）與 NegTokenResp 的全部四種 negState、雙向的 mechListMIC 及第 5 節關於何時必須使用它的規則，並能解碼 [MS-SPNG] 的 NegTokenInit2。實際上只提供 Kerberos——NTLM 能在用戶端的 mechTypes 清單中被辨識但從不被選擇，因為提供本服務無法執行的機制是一種用戶端會據以行動的謊言。無法驗證的 mechListMIC 會被「拒絕」，而不是警告：它就是防範降級的全部。"
@@ -100,16 +104,32 @@
     "text": "partial：存取評估 API（第 6 節），由 XACML 引擎依據領域根原則、透過每個領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；存取批次評估 API（第 7 節）及其三種語意；PDP 中繼資料（第 9 節）的兩種形式，包括 signed_metadata；供宣告類型之 PEP 使用的 Obligations Profile 草案；以及針對本服務自有的人員、應用程式、API、委派關係與原則動作的三個搜尋 API（第 8 節），分頁且不具傳遞性。尚缺：搜尋中逐結果的 obligations，以及仍為草案的 OAuth 設定檔。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial：可請求的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域原則以 access-request advice 標記的 Deny，依值繫結，使用本領域簽署的 binding_token（內嵌宣告）；帶 Idempotency-Key 的提交，201 或 202 以及 Task Handle；帶 Retry-After 的工作狀態端點；透過 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式，approval.id 在可信狀態中解析，核准作為可信事實到達原則；next_action 及五種 reason；每種 problem 類型；中繼資料成員、jwks_uri 與能力。尚缺：以參照方式繫結的 evaluation_id、approval.state、雜湊繫結形式、機器可讀形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
+    "en": "196f261782bb4038",
+    "text": "partial：可申請的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域政策以 access-request 建議標記的 Deny，透過本領域簽署的 binding_token 依值綁定（內嵌宣告與 binding_hash），並透過拒絕記錄依參照綁定；帶 Idempotency-Key 的提交、201 或 202 及 Task Handle；帶 Retry-After 的任務狀態端點；以 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式、在受信任狀態中解析的 approval.id、簽發並驗證的 approval.state（仍須查找），以及以受信任事實送達政策的核准；next_action 與五種原因；每種問題類型；中繼資料成員、jwks_uri 與能力；可申請拒絕上的 request_schema_url，即同源的提交選用補充內容的 JSON Schema；在 authzen.accessRequestDisplay 開啟時，可申請拒絕與 Task Handle 上的 display，使用 advice 自己的措辭或服務以所請求語言給出的措辭。在 authzen.accessRequestForm 開啟時，提供 form_url（拒絕的主體在其中提交申請的入口網站託管表單）與 links.ticket。缺少：基礎設定檔無缺；各配套規範自己的說明寫明其所缺。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial：提交的回呼（endpoint、state、events），endpoint 限於管理員為請求端 PEP 註冊的 URL，為每個請求的終態事件傳送僅通知的回呼，由本領域簽署的短 JWT 驗證，並受對外政策約束。尚缺：partial 事件（BULK）與部署層級的事件訂閱；傳遞失敗不會重試。"
+    "en": "ca5109eae0e95b17",
+    "text": "partial：提交的回呼（endpoint、state、events），endpoint 限於管理員為請求端 PEP 註冊的 URL，為每個請求的終態事件傳送僅通知的回呼，由本領域簽署的短 JWT 驗證，並受對外政策約束。網路錯誤、逾時或 HTTP 5xx 會重試至嘗試上限；HTTP 4xx 或對外政策拒絕的 URL 不會重試。尚缺：partial 事件（BULK）與部署層級的事件訂閱。"
+  },
+  "stsmetadata.specs.authzen-arap-catalog.coverage": {
+    "en": "10acf494ad5f24ef",
+    "text": "partial：在 authzen.accessRequestCatalogs 開啟時，政策 advice 列出權限的已記錄可申請拒絕上的 request_catalogs_url；只有一個欄位 requested_access.entitlement 的 Catalogs Document；帶 q、cursor 與 limit 的 Catalog Endpoint，只回應該拒絕所回應的呼叫端；在提交時驗證、並作為核准的可信事實帶給政策的值。缺少：scope_params（單一目錄沒有可據以限定的內容）、granted、risk_level 與 owner，以及透過代理協定提供的目錄。"
+  },
+  "stsmetadata.specs.authzen-arap-actor.coverage": {
+    "en": "3b5295559cb3ed65",
+    "text": "partial：在 authzen.accessRequestActor 開啟時，client.actor（其 id、issuer、type 及巢狀的 act 鏈）依據呼叫端自己的憑證驗證（呼叫端本身這一環，或其自身存取權杖的 act 鏈，逐環比對），否則拒絕；client.source 作為稽核中繼資料記錄；兩者都顯示給核准人，且從不作為政策事實。缺少：依鏈中某個代理方路由核准，以及以簽署斷言或部署政策證明鏈。"
+  },
+  "stsmetadata.specs.authzen-arap-bulk.coverage": {
+    "en": "928b93533d6878b2",
+    "text": "partial：在 authzen.accessRequestBulk 開啟時，items（每一項都帶自己的拒絕，像單一提交一樣檢查，來自同一呼叫端、關於同一應用程式）；Task Handle 的 items，每項有自己的狀態與結果，彙總狀態含 partial，沒有頂層結果；取消待處理的項，所有項都結束後回應 409；每一項單獨核准、單獨重新評估；Idempotency-Key 涵蓋整個請求本文。缺少：捆綁拒絕與批次 binding_hash（本服務只簽發逐項拒絕）、逐項回呼與 partial 事件。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
     "text": "full——就請求與回應而言：簡寫類別名稱、簡短資料類型名稱、從 JSON 類型推斷資料類型（包括整數／雙精度的區別，這是從原始文字讀取的，因為 JSON.parse 已經把它丟棄了）、以陣列表示 bag、義務、建議與 PolicyIdentifierList。此設定檔未定義原則語法，因此原則仍為 XML。"
+  },
+  "stsmetadata.specs.alfa.coverage": {
+    "en": "3edd89a9430e9e67",
+    "text": "partial：原則集、原則與規則，連同其目標、條件、義務與建議，以與 XACML XML 相同的模型讀寫，因此無論原則以何種形式傳入，其決策結果皆相同。其他資料型別的常值寫為型別轉換（cast），屬性在使用前宣告，mustbepresent 與 issuer 依每次使用分別指定，高階函式以簡短名稱接收函式。可於 /admin/xacml 匯入，亦可透過 /admin-api/xacml 上的 import-alfa 匯入，且每個原則皆可以 ALFA 形式顯示。產生器寫出的內容，剖析器皆可讀取並作出相同的決策。缺少：巨集、命名空間範圍的建議以及跨檔案匯入會依名稱拒絕。ALFA 沒有一致性測試套件。"
   },
   "stsmetadata.specs.ssf.coverage": {
     "en": "f6086ea1ba40a4c3",
@@ -428,8 +448,12 @@
     "text": "full：每個授權回應都攜帶 iss，包括錯誤回應，且兩份探索文件都公告 authorization_response_iss_parameter_supported，讓用戶端知道可以要求它。"
   },
   "stsmetadata.specs.rfc8705.coverage": {
-    "en": "924a15881d40c04d",
-    "text": "full——第 2 至 5 節。「第 5 節」（#139）：在主連接埠會索取用戶端憑證的情況下，每個讀取憑證的端點都是自己的別名，因此 mtls_endpoint_aliases 以其自己的位址指名權杖、撤銷、內省、PAR 與 UserInfo 端點。「第 2 節」：tls_client_auth 驗證憑證鏈已驗證通過的憑證，該憑證須由此領域簽發給該應用程式（urn:sts:application:），或攜帶五個已註冊主體參數之一（subject_dn 以名稱比較、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 比對 jwks 的 x5c 或指紋；宣告的方法在每種模式下、於權杖與 PAR 端點都會被遵守。「第 3 節」：任何攜帶憑證的請求，其存取權杖與重新整理權杖上都有 cnf[\"x5t#S256\"]，在每個受保護端點與 /admin-api 檢查，並在內省時回報；註冊 tls_client_certificate_bound_access_tokens 的用戶端若沒有憑證會被拒絕。「第 4 與 7.1 節」：公開用戶端的重新整理權杖與憑證繫結，以憑證驗證的用戶端可使用新憑證重新整理。「未經驗證」的憑證仍會繫結，如第 3 節所允許。僅在主連接埠為 TLS 時（global.https），也只在那裡公告 tls_client_certificate_bound_access_tokens。從不從代理標頭讀取憑證。"
+    "en": "b53effdbb54d526a",
+    "text": "full——第 2 至 5 節。「第 5 節」（#139）：在主連接埠會索取用戶端憑證的情況下，每個讀取憑證的端點都是自己的別名，因此 mtls_endpoint_aliases 以其自己的位址指名權杖、撤銷、內省、PAR 與 UserInfo 端點。「第 2 節」：tls_client_auth 驗證憑證鏈已驗證通過的憑證，該憑證須由此領域簽發給該應用程式（urn:sts:application:），或攜帶五個已註冊主體參數之一（subject_dn 以名稱比較、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 比對 jwks 的 x5c 或指紋；宣告的方法在每種模式下、於權杖與 PAR 端點都會被遵守。「第 3 節」：任何攜帶憑證的請求，其存取權杖與重新整理權杖上都有 cnf[\"x5t#S256\"]，在每個受保護端點與 /admin-api 檢查，並在內省時回報；註冊 tls_client_certificate_bound_access_tokens 的用戶端若沒有憑證會被拒絕。「第 4 與 7.1 節」：公開用戶端的重新整理權杖與憑證繫結，以憑證驗證的用戶端可使用新憑證重新整理。「未經驗證」的憑證仍會繫結，如第 3 節所允許。僅在主連接埠為 TLS 時（global.https），也只在那裡公告 tls_client_certificate_bound_access_tokens。只有作為 RFC 9440 的憑證時，才會從標頭讀取憑證，且只來自依其憑證與位址指出的終止 TLS 之代理（#2012）。"
+  },
+  "stsmetadata.specs.rfc9440.coverage": {
+    "en": "b761bd646855719e",
+    "text": "partial: 來源伺服器的那一半，預設為關閉（#2012）。Client-Cert 與 Client-Cert-Chain 只從管理員「同時」依其連線所用的用戶端憑證與其位址指出的終止 TLS 之代理讀取（tls.trustedProxyCertificates、tls.trustedProxyAddresses）；轉送的憑證鏈在此處驗證至用戶端信任存放區，然後在每道門上代替交握中的憑證。來自任何其他傳送者時，這兩個標頭會被移除並記錄。此服務從不充當代理。"
   },
   "stsmetadata.specs.rfc8707.coverage": {
     "en": "bc07e530c0abe862",
@@ -480,12 +504,12 @@
     "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=1-advanced（依領域設定，或具名授權伺服器的 fapi 成員），即 Baseline 再加上更多（#139）：以值或以參照傳遞的 JWS 簽署請求物件（第 1 項），exp 與 nbf 在 60 分鐘內，aud 為簽發者（第 13、15、17 項）；response_type 為 code id_token，或 code 搭配 JARM（第 2 項）；ID Token 作為帶有 s_hash 的分離式簽章（5.2.2.1）；僅限受發送者約束的存取權杖——mTLS，或 DPoP（除非 oauth2.fapiRequireMtls）——並發布 mtls_endpoint_aliases（第 5、6 項）；tls_client_auth、self_signed_tls_client_auth 或 private_key_jwt，且沒有公開用戶端（第 14、16 項）；推送的請求使用 PKCE S256（第 18 項，並依該節所述放寬 Baseline 第 7 項）；雙向的每個簽章都使用 PS256 或 ES256，絕不使用 RSA1_5（8.6），此伺服器預設以 PS256 簽署。主控台、入口網站與偵錯工具皆符合：推送至 PAR 的已簽署請求物件、JARM，以及已繫結的權杖。「未」涵蓋：一致性測試套件（#176）。"
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-security（依領域設定，或具名授權伺服器的 fapi 成員），一個獨立的設定檔（#140）：開啟 RFC 9700 模式；僅限機密用戶端，透過 mTLS 或 private_key_jwt，斷言的 aud 為字串形式的簽發者（5.3.2.1 第 3、6、8 項）；僅限受發送者約束的權杖，透過 mTLS 或 DPoP（第 4-5 項）；不輪替重新整理權杖，除非 oauth2.refreshTokenRotation 強制輪替（第 9 項）；60 秒的授權碼（第 11 項）；超前 60 秒以上的 iat 或 nbf 會被拒絕（第 13 項）；僅限 code，必須使用 PAR 且需驗證用戶端，PKCE S256，redirect_uri 須推送，request_uri 少於 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 與 EC 224 位元（5.4.1）。TLS（5.2）：BCP 195 的加密套件是每個接聽程式的預設值，偏好 TLS 1.3。DPoP nonce 仍為選用，同意則遵循一般規則。Attacker Model 沒有規範性要求；docs/v1.1.0/oauth-security.md 將每種攻擊者類別對應到阻止它的機制。主控台、入口網站與偵錯工具皆符合。「未」涵蓋：一致性測試套件（#176）。"
+    "en": "01028f08fd980cb6",
+    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-security（依領域設定，或具名授權伺服器的 fapi 成員），一個獨立的設定檔（#140）：開啟 RFC 9700 模式；僅限機密用戶端，透過 mTLS 或 private_key_jwt，斷言的 aud 為字串形式的簽發者（5.3.2.1 第 3、6、8 項）；僅限受發送者約束的權杖，透過 mTLS 或 DPoP（第 4-5 項）；不輪替重新整理權杖，除非 oauth2.refreshTokenRotation 強制輪替（第 9 項）；60 秒的授權碼（第 11 項）；超前 60 秒以上的 iat 或 nbf 會被拒絕（第 13 項）；僅限 code，必須使用 PAR 且需驗證用戶端，PKCE S256，redirect_uri 須推送，request_uri 少於 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 與 EC 224 位元（5.4.1）。TLS（5.2）：BCP 195 的加密套件是每個接聽程式的預設值，偏好 TLS 1.3。DPoP nonce 仍為選用，同意則遵循一般規則。Attacker Model 沒有規範性要求；docs/v1.2.0/oauth-security.md 將每種攻擊者類別對應到阻止它的機制。主控台、入口網站與偵錯工具皆符合。「未」涵蓋：一致性測試套件（#176）。"
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-message-signing，即 Security Profile 加上全部三個元件（#141，rcbj 的決定）：PAR 上必須使用 JAR 簽署的請求物件，aud 為簽發者，exp 與 nbf 在 60 分鐘內（5.3）；必須使用 JARM，iss 位於 JWT 內（5.4）；RFC 9701 內省回應須簽署（5.5）。第 5.2 節的不可否認性屬於指引，於 docs/v1.1.0/oauth-security.md 中回應。主控台、入口網站與偵錯工具皆符合。RFC 9421 HTTP 簽章「不」屬於最終規格：它們是 FAPI 2.0 Http Signatures，即下一個項目（#178）。"
+    "en": "8aff442a2af8fd53",
+    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-message-signing，即 Security Profile 加上全部三個元件（#141，rcbj 的決定）：PAR 上必須使用 JAR 簽署的請求物件，aud 為簽發者，exp 與 nbf 在 60 分鐘內（5.3）；必須使用 JARM，iss 位於 JWT 內（5.4）；RFC 9701 內省回應須簽署（5.5）。第 5.2 節的不可否認性屬於指引，於 docs/v1.2.0/oauth-security.md 中回應。主控台、入口網站與偵錯工具皆符合。RFC 9421 HTTP 簽章「不」屬於最終規格：它們是 FAPI 2.0 Http Signatures，即下一個項目（#178）。"
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -520,16 +544,36 @@
     "text": "full，在每種模式下（#143，於 #139 中建置）：response_mode query.jwt、fragment.jwt、form_post.jwt 與 jwt（code 使用 query，其他使用 fragment）；回應參數附 iss、aud 與 exp（oauth2.jarmResponseLifetimeS），以用戶端的 authorization_signed_response_alg 簽署（RS256，或 FAPI 1.0 Advanced 下的 PS256），並在其註冊了 authorization_encrypted_response_alg 時加密；錯誤以相同方式回應；含明文權杖的 query.jwt 會被拒絕（2.3.1）；第 3 與 4 節的中繼資料與註冊成員。"
   },
   "stsmetadata.specs.webauthn.coverage": {
-    "en": "84ea7cdfbe803962",
-    "text": "partial，依賴方端：註冊（第 7.1 節）與斷言（第 7.2 節）都會驗證——挑戰、來源、RP ID 雜湊、使用者在場與使用者驗證旗標、BE/BS、認證的 alg 是否符合 pubKeyCredParams、1023 位元組的認證 id、簽章計數器，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章，支援 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 與 ML-DSA-44/65/87（RFC 9964）金鑰。自 #105 起，「證明陳述」會以第 8 節全部八種格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）在 webauthn.attestationPolicy 下驗證——by-mode 在產品模式下為 verify-if-present，在開發模式下為 off——其憑證鏈依已設定的錨點與 FIDO Metadata Service 的根憑證驗證，查詢其撤銷狀態，並拒絕 MDS 回報為遭入侵的型號。自 #643 起，可同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰（webauthn.pqcAlongsideClassical）：每個通道都有自己的使用者識別碼（第 5.4.3 節）、演算法清單與 excludeCredentials，Signal API（第 5.1.10 節）依通道各傳送一次。尚缺：企業證明（第 5.4.7 節）沒有 RP ID 允許清單，且不處理驗證延伸。與偵錯工具自己的解碼器獨立撰寫，讓兩者可以相互核對（tests/webauthn_cross_impl.js）。"
+    "en": "e293d58d8fdd5cd1",
+    "text": "partial，依賴方端：註冊（第 7.1 節）與斷言（第 7.2 節）都會驗證——挑戰、來源、RP ID 雜湊、使用者在場與使用者驗證旗標、BE/BS、認證的 alg 是否符合 pubKeyCredParams、1023 位元組的認證 id、簽章計數器，以及對 authenticatorData || SHA-256(clientDataJSON) 的簽章，支援 ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 與 ML-DSA-44/65/87（RFC 9964）金鑰。自 #105 起，「證明陳述」會以第 8 節全部八種格式（packed、tpm、android-key、android-safetynet、fido-u2f、none、apple、compound）在 webauthn.attestationPolicy 下驗證——by-mode 在產品模式下為 verify-if-present，在開發模式下為 off——其憑證鏈依已設定的錨點與 FIDO Metadata Service 的根憑證驗證，查詢其撤銷狀態，並拒絕 MDS 回報為遭入侵的型號。自 #643 起，可同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰（webauthn.pqcAlongsideClassical）：每個通道都有自己的使用者識別碼（第 5.4.3 節）、演算法清單與 excludeCredentials，Signal API（第 5.1.10 節）依通道各傳送一次。企業證明（第 5.4.7 節）只針對 webauthn.attestationEnterpriseRpIds 列出的 RP ID 請求。hints 成員（第 5.4.8 節）依通行金鑰原則傳送。延伸（第 10 節）：請求 credProps（10.1.3）並記錄其 rk；依通行金鑰原則請求 CTAP 2.1 的 credProtect 與 minPinLength，並從驗證器資料中讀取其輸出（見 CTAP 2.1）；appid（10.1.1）與 appidExclude（10.1.2）服務於管理員匯入到某人項目上的舊版 FIDO U2F 憑證，在 webauthn.u2fAppIds 列出其 AppID 之前處於關閉狀態：只有當用戶端傳回 appid true 時，判斷提示的 rpIdHash 才以 AppID 的 SHA-256 為準，這樣的金鑰只能用於第二因素步驟，註冊時會請求 appidExclude，以免同一金鑰被註冊兩次。尚缺：其他已註冊的延伸（largeBlob、prf 等）既不請求也不處理；AppID 只在其主機相同或互為尾碼的 RP ID 上使用——這裡既不取得也不提供 FIDO AppID and Facet Specification 的 TrustedFacets 清單。與偵錯工具自己的解碼器獨立撰寫，讓兩者可以相互核對（tests/webauthn_cross_impl.js）。"
+  },
+  "stsmetadata.specs.ctap21.coverage": {
+    "en": "4cc6ee6c2a81e46e",
+    "text": "minimal：兩個延伸中信賴方的那一半，因為本服務既不是用戶端也不是驗證器：credProtect（第 12.1 節）——通行金鑰原則的 credProtect 以 credentialProtectionPolicy 請求一個等級，enforceCredProtect 傳送 enforceCredentialProtectionPolicy，並拒絕驗證器資料回報較低等級的註冊（未回報即等級 1），該等級記錄在通行金鑰上；以及 minPinLength（第 12.4 節），在通行金鑰原則強制 PIN 長度時請求，並在註冊與登入時以其最小值約束。CTAP 的其餘部分一概不涉及：驗證器 API、PIN 協定、大型 blob 與憑證管理都屬於平台。"
+  },
+  "stsmetadata.specs.fido-u2f.coverage": {
+    "en": "83b7b87c52618414",
+    "text": "partial，透過 WebAuthn 實作，而非作為獨立協定：於註冊時驗證 fido-u2f 證明格式（WebAuthn 第 8.6 節）；由管理員匯入至某人項目中的舊版 U2F 認證資訊（其金鑰控制代碼、P-256 公開金鑰與計數器），在 webauthn.u2fAppIds 指定該 AppID 之後，透過 appid 擴充功能於其 AppID 下使用，且僅用於第二因素步驟。缺少：U2F JavaScript API 以及原始 U2F 註冊與驗證訊息（這些由瀏覽器與金鑰互動，而非本服務），以及 AppID 與 Facet 的受信任 facet 清單。"
   },
   "stsmetadata.specs.dbsc.coverage": {
     "en": "5eac46b3be2eaa5f",
     "text": "partial，每次登入一個限定於來源的工作階段的伺服器端：Secure-Session-Registration 提供 ES256 與 RS256，註冊時的 dbsc+jwt 證明（檢查其 jwk、typ、alg 與 jti 並驗證簽章）與重新整理時的證明（以綁定金鑰驗證），帶有一個綁定 cookie 的 JSON 工作階段指示，403 與 Secure-Session-Challenge 的交換，以及 Sec-Secure-Session-Id。每個挑戰在整個叢集中只消耗一次。缺少：聯合工作階段（provider_key、well-known 文件）、限定於網站的工作階段與範圍規則、authorization 參數，以及讀取 Secure-Session-Skipped。預設關閉（authn.deviceBoundSessions）。"
   },
   "stsmetadata.specs.rfc4226.coverage": {
-    "en": "ffd9d22cf4ecfd57",
-    "text": "full——就 RFC 6238 對它的需求而言：第 5.3 節基於 HMAC-SHA-1、SHA-256 或 SHA-512 的動態截斷，六至八位數，計數器為八位元組 big-endian 值。依規格自己的附錄 D 測試向量驗證（tests/totp.js），這正是自行實作而不採用函式庫的意義所在：該截斷的四個步驟每一個都曾有人做錯，而公布的測試向量是唯一能抓出錯誤的檢查。「未」涵蓋：以計數器為基礎的 HOTP 作為驗證機制——此處沒有任何東西持有會隨使用而遞增的計數器，因為唯一的呼叫端是下方以時間為基礎的建構方式。"
+    "en": "5ab7b9d048e74e7e",
+    "text": "full，驗證者端，「僅作為第二因素」（#1955 P4）：第 5.3 節以 HMAC-SHA-1、SHA-256 或 SHA-512 進行的動態截斷，六到八位數字，計數器為八位元組大端值，已對照附錄 D 本身的測試向量驗證（tests/totp.js、tests/hotp.js）；每個憑證一個計數器，具第 7.4 節的前瞻（hotp.window，預設 10，0 合法）以及由兩個連續驗證碼重新同步（hotp.resyncWindow）；第 7.2 節的重送拒絕，計數器在儲存區以 compare-and-set 推進，因此兩個節點或 worker 絕不會接受同一個驗證碼；透過登入的驗證碼額度實現第 7.3 節的節流。YubiKey OTP 插槽由入口網站的 otpauth://hotp 碼或 ykman 指令編程；供應商的權杖則以匯入方式取得（RFC 6030）。它取得 amr otp，僅匯入的權杖取得 hwk。未涵蓋：第 7.3 節的延遲機制本身（改由額度拒絕），以及 OCRA（RFC 6287）。"
+  },
+  "stsmetadata.specs.yubico-otp.coverage": {
+    "en": "57c44d60416042fb",
+    "text": "partial，驗證方（#1955 P5）：已發布的 OTP，一段 modhex 公開身分後接一個無填充的 AES-128-ECB 區塊，CRC-16 餘數 0xf0b8，使用計數器與工作階段計數器透過 compare-and-set 推進，使一個 OTP 只被接受一次。不檢查時間戳。註冊預設關閉（yubiotp.offered）。amr otp，從不為 hwk，因為本服務持有 AES 金鑰。未涵蓋：YubiCloud，以及對時間戳的任何檢查。"
+  },
+  "stsmetadata.specs.yk-val.coverage": {
+    "en": "0adaef8d27031f8f",
+    "text": "partial，作為驗證伺服器（#1955 P5）：帶有 id、otp、nonce 和 h 的 GET 與 POST /wsapi/2.0/verify，對排序後的參數做 HMAC-SHA1，以及狀態 OK、BAD_OTP、BAD_SIGNATURE、MISSING_PARAMETER、NO_SUCH_CLIENT、OPERATION_NOT_ALLOWED、BACKEND_ERROR、REPLAYED_OTP 和 REPLAYED_REQUEST。預設關閉（yubiotp.ykval）。開啟後，在每種模式下核對用戶端 id 與 HMAC。回應攜帶 sl=100。未涵蓋：YubiCloud 用戶端，以及不是 100 的同步百分比。"
+  },
+  "stsmetadata.specs.rfc6030.coverage": {
+    "en": "35ef81e9394eb5f5",
+    "text": "partial，作為接收方（#1955 P4）：版本 1.0 的 KeyContainer，含 HOTP 與 TOTP 金鑰，DeviceInfo 的 Manufacturer、SerialNo 與 Model，ResponseFormat（6 到 8 位十進位數字），一般 Counter、Time（僅 0）與 TimeInterval；明文（產品模式下拒絕，除非啟用 pskc.allowPlaintextImport）、預先共用金鑰（第 6.1 節：AES-128/192/256-CBC 與 KW-AES）與通關密語（第 6.2 節：PBKDF2），並先核對第 6.1.1 節的 ValueMAC（HMAC-SHA1 與 SHA-2 MAC）。已對照 RFC 本身的 Figures 2 到 7 驗證（tests/pskc.js）。未涵蓋：為憑證加密（6.3）、以參照提供的 MAC 金鑰、Triple DES 與 Camellia、加密的計數器或時間、PIN 金鑰與原則（略過）、容器上的簽章（第 7 節），以及產生此類檔案。"
   },
   "stsmetadata.specs.bcp47.coverage": {
     "en": "d682d3dd451a019d",
@@ -696,8 +740,16 @@
     "text": "minimal：僅 permanent-identifier 識別碼類型，在此指名帳戶自己的目錄項目，並成為其 urn:sts: subjectAltName。未實作 device-attest-01 挑戰與 WebAuthn 證明聲明。"
   },
   "stsmetadata.specs.lamps-csr-attestation.coverage": {
-    "en": "727a26e021b5f20f",
-    "text": "partial：透過 EST 與 SCEP 的裝置設定檔，PKCS#10 請求的 id-aa-attestation 屬性（至多一個，恰好一個 AttestationBundle，僅限憑證與其他選項）；唯一會驗證的聲明類型是 TCG 的 tcg-attest-tpm-certify，採用第 20 版附錄 A.2.3 的語法，此語法未被任何後續版本或 TCG 文件取代（#257）。不讀取 CRMF 擴充（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 提供。"
+    "en": "59b1734815ece664",
+    "text": "partial：PKCS#10 要求的 id-aa-attestation 屬性（最多一個，恰好一個 AttestationBundle，僅限 certificate 及其他選項），透過 EST、SCEP 與 ACME 提供。驗證兩種聲明類型：TCG 的 tcg-attest-tpm-certify（採用修訂版 20 附錄 A.2.3 的語法），用於裝置設定檔（#257）；以及適用於每個設定檔的 YubiKey PIV 證明（#1955），位於 1.3.6.1.4.1.41482.3.2 之下，以插槽憑證為 stmt、f9 憑證放在 certs 中——這是本服務選定的類型，因為草案未定義任何類型。不讀取 CRMF 延伸（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 實現，僅適用於 TPM 聲明：PIV 證明不攜帶 nonce。"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial：插槽證明憑證透過 f9 證明憑證驗證至 Yubico 的 PIV 根憑證（Serial 263751，以及適用於韌體 5.7.4 及更新版本、帶有其 PIV 中繼憑證的 Attestation Root 1，皆隨附並釘選）或某個領域自己的根憑證；其金鑰與要求中的金鑰比對；讀取韌體、序號、PIN 與觸碰原則以及外型規格延伸，並將這些原則與領域的原則比對。卡片本身從不受管理：不寫入 PIN、PUK 或插槽。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "d223f1239342ae1c",
+    "text": "partial: 四個金鑰插槽作為憑證設定檔（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，後者預設不讓任何人登入）；外部 PIV 或 CAC 卡片在宣告 PIV Authentication 原則時依其 urn:uuid subjectAltName 中的卡片 UUID 對應（預設為關閉）；第 6.2.3.1 節的 PKI-AUTH 作為憑證登入設定檔（#2012）：簽發者、keyUsage、extendedKeyUsage 以及 RFC 5280 原則處理沿路徑帶過的原則（包括對應），以及依簽發者與序號、簽發者與 SKI、金鑰、憑證或卡片 UUID 繫結至一個帳戶，在領域要求時附帶經驗證的撤銷狀態，如有需要可位於獨立的接聽程式上。不支援 FASC-N、CHUID、卡片管理或生物辨識。"
   },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
@@ -742,6 +794,54 @@
   "stsmetadata.specs.rfc6376.coverage": {
     "en": "95d0cca14dac35d3",
     "text": "partial：簽署，relaxed/relaxed，使用至少 2048 位元金鑰的 rsa-sha256（RFC 8301），位於 common/crypto.js，在設定了網域時套用於 SMTP 傳輸所送出的內容。未實作：simple 正規化、l= 以及驗證他人寄出的郵件——本服務不接收任何郵件。DKIM 尚未登錄任何後量子演算法。"
+  },
+  "stsmetadata.specs.rfc9580.coverage": {
+    "en": "a2930bdb8ffe747d",
+    "text": "partial：讀取 v6 與（RFC 4880）v4 可傳輸公開金鑰，驗證由其簽署金鑰作出的明文簽章，並將訊息加密至其加密金鑰，經典演算法透過 openpgp.js 完成。RFC 9980 複合金鑰在此讀取（見 rfc9980）。接受 Ed25519、Ed448、NIST 曲線上的 ECDSA 與 ECDH、X25519、X448 以及長度為 openpgp.minRsaBits 的 RSA；拒絕 DSA、ElGamal 與 Brainpool。缺少：簽署、解密、金鑰環、金鑰伺服器。"
+  },
+  "stsmetadata.specs.rfc4880.coverage": {
+    "en": "1ade09553537cdba",
+    "text": "partial，適用於 v4 金鑰（RFC 9580 已將其廢止，v6 金鑰遵循 rfc9580）：透過 openpgp.js 讀取附帶自我簽章的可傳輸公開金鑰，驗證由其簽章金鑰產生的明文簽章，並將訊息加密給其加密金鑰。簽章金鑰可為 Ed25519 上的 EdDSA，P-256、P-384 與 P-521 上的 ECDSA，或位元數達 openpgp.minRsaBits 的 RSA；加密金鑰可為 Curve25519 與 NIST 曲線上的 ECDH，或 RSA。DSA、ElGamal 與 Brainpool 會被拒絕。缺少：簽章、解密、金鑰環、金鑰伺服器。"
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial：登記時以及使用已儲存金鑰時的 ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 簽章，以及 ML-KEM-768+X25519 與 ML-KEM-1024+X448 加密。複合演算法計為後量子。openpgp.pqcOnly 只收窄登記。簽章的兩個部分由 common/crypto_impl/openpgp_pqc.js 核驗。缺少：SLH-DSA（演算法識別碼 32-34），且本服務不產生 RFC 9980 金鑰。openpgp.js 不解析這些金鑰。"
+  },
+  "stsmetadata.specs.rfc3156.coverage": {
+    "en": "aa799b14a54ace0f",
+    "text": "partial：multipart/encrypted，包含 application/pgp-encrypted 版本部分與封裝後的訊息，真正的郵件標頭受保護地置於其中。缺少：multipart/signed——本服務以 DKIM 而非 OpenPGP 簽署郵件。"
+  },
+  "stsmetadata.specs.rfc8551.coverage": {
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial：application/pkcs7-mime enveloped-data，即採 AES-256-CBC 內容加密的 CMS EnvelopedData。經典憑證使用 RSAES-OAEP（SHA-256）或 ECDH。ML-KEM 憑證（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：HKDF-SHA-256 與 AES-Wrap。無法封裝的執行環境不會改用經典演算法送出該訊息。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
+  },
+  "stsmetadata.specs.rfc9629.coverage": {
+    "en": "483e5a172a46c6c4",
+    "text": "partial，僅限傳送：寄往 ML-KEM 憑證（rfc9935）的 S/MIME 訊息在 KEMRecipientInfo（id-ori-kem 其他收件者資訊）中攜帶其內容加密金鑰：ML-KEM-512、ML-KEM-768 或 ML-KEM-1024，以 CMSORIforKEMOtherInfo 為輸入、使用 SHA-256 且不加鹽的 HKDF，以及 AES-128 或 AES-256 金鑰包裝，置於 AuthEnvelopedData（預設）或 EnvelopedData 中。缺少：解密 KEMRecipientInfo（本服務從不接收加密郵件）、ukm，以及任何其他 KEM 或金鑰衍生函式。"
+  },
+  "stsmetadata.specs.rfc9935.coverage": {
+    "en": "7d364b23fc952168",
+    "text": "partial：透過 id-alg-ml-kem 識別碼從 SubjectPublicKeyInfo 或憑證中讀取 ML-KEM-512、ML-KEM-768 或 ML-KEM-1024 公開金鑰，並要求參數省略、金鑰長度符合 FIPS 203 的規定。個人的金鑰由領域（realm）的 EST Issuing CA 簽發憑證，keyEncipherment 為其唯一的金鑰用途，簽發前須透過封裝完成只有私密金鑰才能回應的持有證明；該憑證作為 S/MIME 收件者憑證（rfc9629）。缺少：私密金鑰格式（本服務從不持有 ML-KEM 私密金鑰），以及用於本服務自身金鑰的 ML-KEM 憑證。"
+  },
+  "stsmetadata.specs.wkd.coverage": {
+    "en": "e1c6b9651ff1e58c",
+    "text": "partial：進階與直接兩種查詢方式（對轉為小寫的本機部分計算 SHA-1 並以 z-base-32 編碼，l 參數）以及政策檔案，僅為選擇發布者回應，依領域設定且預設關閉。缺少：Web Key Service（submission-address、提交協定）；CORS 採用本服務的允許清單，而非草案的 *。"
+  },
+  "stsmetadata.specs.pkcs11.coverage": {
+    "en": "81f248a40d5e180c",
+    "text": "partial，作為呼叫模組的應用程式（任何 PKCS #11 v2.40 或更新版本；已試用 YubiHSM 2 與 SoftHSM2）：一把不可匯出的 AES-256 金鑰加密金鑰，在權杖內部包裝與解除包裝每把資料金鑰（CKM_AES_GCM、CKM_AES_KEY_WRAP_PAD 或 CKM_YUBICO_AES_CCM_WRAP）；以及在權杖中產生並使用的領域簽章金鑰：RSA PKCS #1 v1.5 與 PSS，P-256、P-384、P-521 與 secp256k1 上的 ECDSA，以及 EdDSA，同一組金鑰亦用於 RSA-OAEP 解密與 ECDH 衍生。3.2 版的 CKM_ML_DSA 與 CKM_SLH_DSA 僅在權杖列出它們時使用；否則這些簽章仍在軟體中完成。工作階段依執行緒劃分，模組在中斷後會重新初始化一次。缺少：本服務本身並非模組，不會將任何金鑰匯入權杖，也不會從權杖匯出任何金鑰。"
+  },
+  "stsmetadata.specs.rfc7512.coverage": {
+    "en": "48b018ced913d384",
+    "text": "partial：URI 指定權杖與金鑰加密金鑰，或簽章金鑰所在的權杖。支援 token、object、id（百分比編碼的位元組）、serial 與 slot-id 路徑屬性，第 2.3 節的其他屬性會被接受但忽略，module-path 查詢屬性僅為該金鑰選擇模組。pin-value 與 pin-source 會被拒絕：PIN 由 keys.pkcs11PinProvider 提供，絕不放在 URI 中。缺少：type、manufacturer、model 與程式庫屬性不會縮小比對範圍，且不讀取 module-name。"
+  },
+  "stsmetadata.specs.openssh-certkeys.coverage": {
+    "en": "ee4e28514e80dc78",
+    "text": "partial：每個領域的使用者 CA 為 ssh-ed25519、ECDSA、RSA 以及兩種 sk- 安全金鑰類型簽發 -cert-v01@openssh.com 使用者憑證，依 pki.sshUserCaAlgorithms 指定的順序使用 ssh-ed25519、ecdsa-sha2-nistp256/384/521 或 rsa-sha2-256/512 簽章，主體名稱（principals）取自個人自己的項目，附帶領域的擴充且不含關鍵選項，僅在硬體證據經過驗證時才給予較長的有效期限。CA 金鑰發布於 /pki/ssh-user-ca/{scope}。主機憑證僅被讀取與檢查，不予簽發。ssh-mldsa-65 是本服務定義的金鑰類型，因為 OpenSSH 沒有此類類型，標準 OpenSSH 無法驗證它。缺少：主機憑證，以及 DSA 金鑰的憑證。"
+  },
+  "stsmetadata.specs.openssh-krl.coverage": {
+    "en": "89e94fab7d04def7",
+    "text": "partial：每個領域位於 /pki/ssh-user-krl/{scope} 的 KRL 在憑證遭撤銷或硬體權杖被回報遺失時由排程工作重建，其中為每把 CA 金鑰包含一個附序號清單的憑證區段，以及已撤銷金鑰的 SHA-256 指紋。它既會被寫入，也會被讀回。缺少：簽章區段（KRL 未經簽章，因此僅在主要連接埠上提供），以及 key-id 清單、序號範圍與點陣圖、明確金鑰與 SHA-1 指紋。"
   },
   "stsmetadata.specs.rfc8463.coverage": {
     "en": "d4ee4ea51927a6f7",
@@ -846,6 +946,18 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "提交一個被拒絕的評估的主體、資源、動作與內容，並附上其收到的拒絕（其 binding_token 與 expires_at，原樣回傳）；得到 202 與 Task Handle，或在立即作出決定時（原則允許的緊急存取）得到 201 及結果。只有被領域原則以 advice urn:sts:xacml:advice:access-request 標記的 Deny 才可請求。與評估相同的呼叫端入口與 AUTHZEN_PEPS；依呼叫端遵守 Idempotency-Key；回呼僅發往為該呼叫端註冊的 URL。每次拒絕都是 problem+json。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "fb06abe45104accd",
+    "text": "GET 提交可加入的補充內容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，後者須附理由。公開，與 access_request_endpoint 同源；可申請拒絕的 request_schema_url 指向它。在 authzen.accessRequestForm 開啟時，拒絕還會指明 form_url，即一個入口網站頁面。API 或該設定檔關閉時回應 501。在任務狀態路徑之前註冊，否則後者會把「schema」當作 id。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation.what": {
+    "en": "85bf86a2b7ad419f",
+    "text": "GET 可申請拒絕以 request_catalogs_url 指明的 Catalogs Document：唯一由目錄支撐的欄位 requested_access.entitlement 及其 Catalog Endpoint。僅針對政策 advice 列出權限的已記錄拒絕，並且只回應該拒絕所回應、仍限定於該應用程式的呼叫端。與提交相同的門與 AUTHZEN_PEPS。authzen.accessRequestCatalogs 關閉時回應 501。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation/entitlements.what": {
+    "en": "307d85d64e66c5d4",
+    "text": "GET 拒絕的政策 advice 所列的權限，作為 Catalog Item（value 與 label）：q 符合其中任一，cursor 繼續同一搜尋，limit 上限為 50。與 Catalogs Document 相同的呼叫端。提交的 requested_access.entitlement 必須是其中之一。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1043,6 +1155,14 @@
     "en": "6e82cd30ac736775",
     "text": "非規格端點，但仍刻意放在這裡：將用戶端指向這些端點的人需要知道這些位址「是」什麼，而用 `openssl x509 -text` 從憑證中讀出它們並不是好的第一步。每個授權單位一列，含其主體、已撤銷的憑證數量，以及兩種協定（http、ldap）的 CRL，旁邊是其 OCSP 與 caIssuers 位址。其中「沒有」序號——已撤銷清單就是 CRL，旁邊再放一份 JSON 複本就成了同一問題的第二個答案：會過時的那個，也是沒有人簽署的那個。它明白地說明本服務「發布」撤銷資訊，但無法讓任何人去查詢它，這對每個憑證授權單位都成立，也正是用戶端作者會將其堆疊指向這裡的原因。不設閘門，因為其中的一切早已包含在本服務發出的每張憑證中。"
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH 使用者 CA 金鑰，以 authorized-key 行發布，供 SSH 伺服器信任。帶 `?algorithm=ssh-mldsa-65` 時改為回傳該領域的 ML-DSA 簽發機構，標準 OpenSSH 目前尚無法驗證它。無閘控且 `no-store`，僅在主連接埠提供：明文 HTTP 撤銷監聽器拒絕它，因為該金鑰是信任錨。對應的 CA 私密金鑰從不離開本服務。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH KRL，在呼叫者撤銷憑證或回報硬體權杖遺失時更新。無閘控且 `no-store`，僅在主連接埠提供：KRL 未簽署，因此明文 HTTP 撤銷監聽器拒絕它。SSH 伺服器必須設定為查閱它，因為本服務無法讓依賴方這樣做。"
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "GET /admin/xacml 所繪製的內容，以資料形式提供。與 /admin-api 其他部分一樣不設閘門。"
@@ -1207,13 +1327,33 @@
     "en": "8899a7fad6b6b50c",
     "text": "第 3.11 節中對請求驗證所得主體的別名。GET、PUT、PATCH 與 DELETE 會將認證資訊解析為目錄項目，並委派給 /Users/{id} 使用的「同一組」User 處理常式，因此不會有第二條需要保持同步的讀寫路徑。過去它對每個方法都回應 501，因為這裡沒有任何驗證，而其中「兩個 501 至今仍然正確」並予以保留：「匿名」呼叫端沒有可作為別名的主體（別名無法使用，這與資源不存在不同），而 POST 會建立一個依定義早已存在的主體。指名某個沒有項目者的認證資訊——client_credentials 權杖、用戶端憑證——則改為得到 404。"
   },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/hu/:hash.what": {
+    "en": "0955037976aef471",
+    "text": "draft-koch-openpgp-webkey-service 第 3.1 節，進階方式，向 openpgpkey.<domain> 請求：回傳地址雜湊為 :hash（轉為小寫的本機部分之 SHA-1 的 z-base-32 編碼，l= 為本機部分）者的二進位 OpenPGP 公開金鑰，類型為 application/octet-stream，並帶 Cache-Control: no-store。只回應在 /portal/openpgp 上選擇發布者，且僅限領域已開啟 openpgp.wkd 並服務 :domain 時；其他情況一律為 404。不含領域區段的路徑由服務該網域的領域回應。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/:domain/policy.what": {
+    "en": "12d81a251721ac64",
+    "text": "進階方式的政策檔案：內容為空，text/plain，領域服務 :domain 時回傳 200，否則回傳 404。它的存在即告知用戶端該目錄存在；不提供 Web Key Service，因此沒有 submission-address。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/hu/:hash.what": {
+    "en": "ea1444452ebedcb6",
+    "text": "直接方式：與進階方式相同，網域為請求所送往的主機。"
+  },
+  "stsmetadata.endpoints./.well-known/openpgpkey/policy.what": {
+    "en": "701adaefad112fb7",
+    "text": "直接方式的政策檔案，針對請求所送往的主機。"
+  },
   "stsmetadata.endpoints./.well-known/hoba/register.what": {
     "en": "ea46481cdbde5a44",
     "text": "RFC 7486 第 7 節。以表單編碼的 POST 攜帶 pub=<PEM public key> 以及（本服務自己的參數）username=<who it is for>，以 201 與 Hobareg: regok 標頭回應。刻意「不需驗證」：這是呼叫端「取得」認證資訊的方式，若要求先有認證資訊才能存取，則沒有其他認證資訊的人將無法使用此機制。任何人都可以為任何名稱註冊任何金鑰——之後「簽章」會被真正驗證，這正是讓此機制值得實作的那一半。金鑰會以 hobaPublicKey 存放在該人位於 ou=users 下自己的項目上，因此 ldapsearch 與 /admin/users 都看得到。GET 會描述此端點，因為對瀏覽器回應 404 的 well-known 路徑，與沒有人實作的路徑無從區分。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "b9f18166e17e9c9d",
-    "text": "經驗證的用戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 用戶端身分的憑證、未儲存在本領域恰好一個項目之 userCertificate 中的外部憑證授權單位憑證（從不依一般名稱比對），以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。"
+    "en": "86c9267a55ef2564",
+    "text": "經驗證的用戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 用戶端身分的憑證、未儲存在本領域恰好一個項目之 userCertificate 中的外部憑證授權單位憑證（從不依一般名稱比對），以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。在管理員指定的 TLS 終止代理伺服器之後（tls.trustedProxyCertificates 與 tls.trustedProxyAddresses，預設關閉），憑證為 RFC 9440 的 Client-Cert 與 Client-Cert-Chain，在此以交握時的方式驗證；來自其他任何來源的這些標頭都會被移除。"
+  },
+  "stsmetadata.endpoints./authn/certificate/continue.what": {
+    "en": "7a42e6050c748fd8",
+    "text": "「憑證登入交接」（#2012，預設為關閉：certSignIn.handoff）。登入畫面連結到此處，位於 certificate-sign-in 應用程式所對應的接聽程式上——其 clientAuth 會要求憑證——因此只在這一個請求上要求智慧卡及其 PIN。憑證依畫面自身之憑證入口的要求檢查，繫結至待處理的登入與瀏覽器的登入工作階段（兩個請求都攜帶它），然後瀏覽器被送回畫面，畫面以其持有者的身分繼續。未知、已使用或已過期的交接以 400 回應，未攜帶發起瀏覽器之工作階段而到達的交接以 403 回應。"
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -1251,6 +1391,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC。瀏覽器在每個頁面上自行請求的圖示：標誌的方形標記（common/favicon.ico）。在每個接聽程式上提供；快取一天。"
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). 接收 CSP Level 3 和 Reporting API 規定瀏覽器傳送的內容:每個頁面的政策在 report-uri 和 report-to 中指向它,並附帶 Reporting-Endpoints 標頭。僅限 POST,無需憑證,每個位址每分鐘最多 60 份報告、每份最多 16 KiB;它記錄指令、不含查詢的頁面路徑和被封鎖的來源,記錄 STS-HTTP-0027 日誌,並以無本文的 204 回應。由前端處理程序回應(common/csp_reports.ts)。"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登入畫面卡片與語言選擇器的規則，合為一個樣式表，供靜態公開介面的外殼連結（common/web_card_css.ts）。在每個接聽程式上提供；帶有此組建 ?v= 的位址會被永久快取。"
@@ -1258,6 +1402,10 @@
   "stsmetadata.endpoints./web/footer.css.what": {
     "en": "32bce90003b1f15c",
     "text": "NON-SPEC（2026-11-14）。每個靜態介面的外殼所繪製的頁尾規則——文件、聯絡和關於連結、社群媒體圖示、版權和版本（common/web_footer.ts）。在每個監聽器上提供；帶有本建置 ?v= 的位址會被永久快取。"
+  },
+  "stsmetadata.endpoints./web/browser-check.js.what": {
+    "en": "c1a6e867c116f217",
+    "text": "NON-SPEC (#2220)。一個 ECMAScript 5 指令碼，在靜態介面的 bundle 之前執行，檢查瀏覽器是否具備 fetch、TextEncoder、URL 和 ECMAScript 2022；若不具備，則以讀者的語言顯示外殼隱藏繪製的提示（common/web_browser_check.ts）。在每個監聽器上回應，no-cache。"
   },
   "stsmetadata.endpoints./web/theme.css.what": {
     "en": "3f3b19caa8978c23",
@@ -1603,6 +1751,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "非規格端點。主控台自己的操作（#454）：apply-profile、generate-keys、generate-alt-keys 與 use-key 以設定檔、全新金鑰組或已儲存的金鑰組填入憑證表單，不寫入任何東西。它們所導向的簽發是 POST /admin-api/pki/issue-certificate。"
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "非規格端點。主控台自己的操作（#2080）：inspect 讀取提交的 PEM 憑證——主體、SHA-256、SubjectPublicKeyInfo 的 SHA-256——供憑證登入設定檔編輯器、PIV 的 PEM 清單與人員的綁定編輯器使用；帶 bindings 時還給出用來找到第一張憑證的 stsCertificateBinding 值。它不寫入也不保留任何東西；它所導向的是 POST /admin-api/config/set 或 /admin-api/users/add-attribute。"
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "非規格端點。主控台自己的操作（#454）：generate-secret 為即將送出的表單產生用戶端密碼，不寫入任何東西。建立則是 POST /admin-api/applications/create。"
@@ -1638,6 +1790,14 @@
   "stsmetadata.endpoints./admin-api/pki/trust/:action.what": {
     "en": "977d61c6037e8400",
     "text": "add | remove | recheck | set-row — /admin/pki/trust 上的控制項。add 接受 `certificates`（一個或多個 PEM 區塊，各自經過收納規則，並點名每項拒絕），並以 `purposes` 加以限制；remove 接受單一 `fingerprint`；recheck 立即執行稽核；set-row 接受 `pki.paranoid*` 的 `setting` 及其 `value`，透過一般的設定寫入。需要 admin:write。寫入 ou=signerTrustAnchors，因此變更在重新啟動後依然存在。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores.what": {
+    "en": "e674af016d258a79",
+    "text": "以 JSON 形式提供的 /admin/pki/trust 的「信任庫」「使用情境」和「系統信任庫」分頁（#2118）：此領域可以指名的每個信任庫（內建、檢視、設定、SPIFFE 套件或具名），附帶其內容計數和信任它的使用情境；每個使用情境目前信任的內容及其預設值；各項限制；以及逐一憑證描述（不含 PEM）的 node 預設儲存區。"
+  },
+  "stsmetadata.endpoints./admin-api/truststores/:action.what": {
+    "en": "dc9effe7fa9246a8",
+    "text": "show | create | delete | add | remove | assign | unassign——/admin/pki/trust 的「信任庫」和「使用情境」分頁上的控制項（#2118）。show 接受一個 `name`（及 `withPem`），不寫入任何內容；create 接受一個 `name` 和一個 `description`；只要有使用情境信任該信任庫，delete 就會被拒絕；add 接受 `certificates`，每個都經過准入規則，每次拒絕都會指明；remove 接受一個 `fingerprint`；assign 接受一個 `useCase` 及其有序的 `truststores`，unassign 將使用情境恢復為預設值。適用於整個服務的使用情境只能從預設領域指派。需要 admin:write。寫入 ou=truststores，因此變更在重新啟動後依然存在。"
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
     "en": "42a6f7a0abbc65c4",
@@ -1723,6 +1883,18 @@
     "en": "bcf806336009d1f4",
     "text": "將測試訊息排入佇列，或儲存或重設領域的措辭"
   },
+  "stsmetadata.endpoints./admin-api/openpgp.what": {
+    "en": "5d484bf76979cdee",
+    "text": "NON-SPEC（#1955）。「目錄 → OpenPGP 金鑰」頁面所顯示的內容：帶 ?user= 時，回傳該人員的 OpenPGP 金鑰、其尚未完成的註冊挑戰、其 Web 金鑰目錄發布狀態、其 S/MIME 憑證及其郵件的加密方式；以及領域的 Web 金鑰目錄開關與網域。對應 GET /admin/openpgp。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.what": {
+    "en": "b428c51bc9fdc3f1",
+    "text": "NON-SPEC（#1955）。challenge、register（publicKey、signed：本人以 gpg --clearsign 簽署的挑戰）、remove、publish、withdraw、mail-encryption（choice）與 smime（certificate），每項皆帶 { user }：即 /portal/openpgp 為本人提供的功能，由管理員代為操作。金鑰只有在本人提出證明後才會註冊。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp/:action.effect": {
+    "en": "a4485fe850562aab",
+    "text": "發出挑戰、註冊或移除 OpenPGP 金鑰、發布金鑰，或設定某人的郵件加密方式或 S/MIME 憑證"
+  },
   "stsmetadata.endpoints./admin-api/mail/outbox.what": {
     "en": "01316f4579428510",
     "text": "非規格端點（#63）。GET /admin/mail/outbox 所繪製的內容：此領域排入佇列的每則訊息、寄給誰以及結果如何，可依狀態與搜尋分頁及篩選——絕不含本文，唯一例外是透過 ?message= 取得的已擷取訊息（開發模式）。對應 GET /admin/mail/outbox。"
@@ -1803,6 +1975,30 @@
     "en": "b48aa4041763958e",
     "text": "非規格端點。各項 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、使用者驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 中繼資料一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "非規格端點（#2049）。Hardware tokens 群組：hardwareTokens.hardwareClaims，決定 PKINIT 推論與沒有可信證明的通行金鑰是否仍取得 hwk，旁邊說明權杖登錄冊是什麼，以及遺失的權杖會撤銷什麼。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/hardware-tokens-settings。"
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "非規格端點（#2049）。每個 piv.* 設定：證明根、PIV 設定檔是否要求證明、PIN 與觸碰原則、卡片驗證登入、金鑰託管，以及依卡片 UUID 對應的外部簽發者。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/piv。"
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "非規格端點（#2049）。每個 yubiotp.* 設定：註冊、YK-VAL 2.0 驗證端點與明文匯入。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/yubiotp。"
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "非規格端點（#2049）。hotp.* 設定與 pskc.allowPlaintextImport：代碼長度、兩個視窗，以及產品模式是否接受明文 PSKC 種子檔。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/oath-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "非規格端點（#2049）。領域 OpenSSH 使用者 CA 的每個 pki.ssh* 設定：其演算法、後量子規則、有與沒有硬體證據時最長的憑證、擴充與主體。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/ssh-user-ca。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "非規格端點（#2049）。每個 openpgp.* 設定：Web Key Directory、接受的演算法、最小的 RSA 金鑰、後量子規則、挑戰的有效期與簽章的時鐘偏差。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/openpgp-settings。"
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "非規格端點。每人一列：密碼、`mfa` 角色中的安全金鑰、是否已註冊驗證器應用程式，以及他們會被要求使用兩者中的哪一個。要找的是 `totpUsable: false` 那一列——此程序無法讀取的註冊，其持有者會在代碼步驟被「拒絕」，而不是只憑一個因素就放行。**它原本對應的主控台頁面已經不存在**：/admin/mfa 只存在了幾個小時，就拆分為機制頁面 /admin/totp 與 /admin/webauthn，以及現在成為 /admin/users 上欄位的名冊。此資源予以保留並「從該檢視」回答，因此只有一份統計而非兩次掃描。對應 GET /admin/users，而 GET /admin-api/users 在每一列的 `factors` 中攜帶相同事實。"
@@ -1826,6 +2022,18 @@
   "stsmetadata.endpoints./admin-api/rbac/:action.effect": {
     "en": "d4fe53d89f2efabd",
     "text": "授予或撤銷管理主控台的存取權"
+  },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5)。GET /admin/approvals 繪製的內容：此領域中雙人審批（admin.dualControl，預設關閉）是否開啟並生效、它暫緩的操作表，以及每項為第二位管理員而暫緩的管理員操作，待決的在前；?id= 指定其中一項。對應 GET /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166)。approve、refuse 和 withdraw，帶 { id, reason }。核准和拒絕由另一位持有該操作所需權限的不同人員進行；核准要求近期登入，並透過該操作自身的處理程式以提出者的操作身分執行所儲存的操作。撤回由提出者進行。對應 POST /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "執行、拒絕或撤回一項被暫緩的管理員操作"
   },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
@@ -1942,6 +2150,30 @@
   "stsmetadata.endpoints./admin-api/users/new.what": {
     "en": "ee45e233f511ee47",
     "text": "非規格端點。建立操作所接受的封閉屬性目錄，以 JSON 提供：此目錄中的人可被賦予的每個屬性，各自指名其在簽發的權杖或憑證中對應的宣告，以及其名稱的出處文件——這很重要，因為此目錄「沒有結構描述」，在任何地方都不會拒絕其中任何一個——加上新人員會放入的 ou=users 容器（「此領域的」容器，因為目錄是依領域區分的），以及可賦予他們進入方式的四種途徑。uid 不在清單上，因為它「就是」使用者名稱；userPassword 也不在，因為密碼要經由認證資訊選項處理，才會被雜湊而不是直接寫下。它不會建立任何人：建立是 POST /admin-api/users/create，而這是該呼叫據以驗證的清單——不在清單上的屬性名稱會被拒絕，整個建立都會失敗，因此先讀取此清單的呼叫端不會在事後才被告知它送出的內容有一半被忽略了。對應 GET /admin/users/new。"
+  },
+  "stsmetadata.endpoints./admin-api/groups/new.what": {
+    "en": "4ed04fc8ef1be664",
+    "text": "非規範。以 JSON 說明建立群組可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——cn 為必填，描述、地址和成員不是——以及新群組將落入的 ou=groups 容器，即本領域的容器。它不建立任何內容：建立是 POST /admin-api/groups/create。對應 GET /admin/groups/new。"
+  },
+  "stsmetadata.endpoints./admin-api/roles/new.what": {
+    "en": "3bf6af72cb520499",
+    "text": "非規範。以 JSON 說明建立角色可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——名稱為必填，其餘不是——以及儲存角色的容器和角色可以適用的應用程式。它不建立任何內容：建立是 POST /admin-api/roles/create-role。對應 GET /admin/roles/new。"
+  },
+  "stsmetadata.endpoints./admin-api/devices/new.what": {
+    "en": "97ebfb0c1410c335",
+    "text": "非規範。以 JSON 說明註冊裝置可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——擁有者為必填，其餘不是——以及其選項所來自的封閉集合。它不註冊任何內容：建立是 POST /admin-api/devices/create。對應 GET /admin/devices/new。"
+  },
+  "stsmetadata.endpoints./admin-api/attribute-sources/new.what": {
+    "en": "a0e98374461ed268",
+    "text": "非規範。以 JSON 說明新增屬性來源可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——id、主機、資料庫、使用者、資料表、其鍵欄以及至少一個欄位對應為必填，其餘有預設值——以及其選項所來自的封閉集合。它不新增任何內容：建立是 POST /admin-api/attribute-sources/add-source。對應 GET /admin/attribute-sources/new。"
+  },
+  "stsmetadata.endpoints./admin-api/secret-destinations/new.what": {
+    "en": "efff1aa20f1b29a1",
+    "text": "非規範。以 JSON 說明新增密鑰推送目標可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——識別碼和提供者一律必填，有些僅對某些提供者必填（requiredWhen）：除 file 外均需寫入憑證，aws 需區域，azure 和 vault 需端點，file 需目錄。它不新增任何內容：建立是 POST /admin-api/secret-destinations/add-destination。對應 GET /admin/secret-destinations/new。"
+  },
+  "stsmetadata.endpoints./admin-api/policies/new.what": {
+    "en": "76e1013ae3d82e5b",
+    "text": "非規範。可以建立具名原則的類型，以及對於所請求的類型，其儲存的每個欄位以及缺少它時儲存是否會被拒絕——名稱一律必填，因為沒有名稱的儲存會變更預設原則；以及儲存時不接受空值的每個欄位。它不儲存任何內容：具名原則是該類型在本領域尚未使用的名稱下的儲存操作。對應 GET /admin/policies/new。"
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
@@ -2127,6 +2359,34 @@
     "en": "0550e836ba364102",
     "text": "啟動、暫停、繼續或結束登入後活動"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens.what": {
+    "en": "fe8d3ba310ad762b",
+    "text": "NON-SPEC (#1955)。目錄 → 硬體權杖所顯示的內容：本領域記錄的實體安全金鑰與智慧卡，每個都依其本身的證明記錄，可分頁並依序號或人員搜尋，並列出每個權杖上的密碼金鑰與憑證。對應 GET /admin/hardware-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/oath.what": {
+    "en": "f149352fa2ac36d0",
+    "text": "NON-SPEC (#1955 P4)。管理員從供應商 PSKC 種子檔案匯入的 HOTP 與 TOTP 權杖，包括未指派、已指派或已停用者，可分頁並依序號或人員搜尋。絕不包含密鑰。對應 GET /admin/hardware-tokens（其 OATH 分頁）。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071)。管理員從 CSV 匯入的 YubiKey OTP，未指派、已指派或已停用，分頁並可依序號或人員搜尋；某人的權杖從其項目（主副本）讀取。從不包含金鑰。對應 GET /admin/hardware-tokens（其 YubiKey OTP 分頁）。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC（#1955）。lost，帶 { key }：權杖被標記為遺失，其上的每個通行金鑰被移除，其上的每張憑證因 keyCompromise 被撤銷，為每項傳送 CAEP credential-change，並結束它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人託管的 piv-key-management 金鑰，存取控制原則只允許 PIV_KEY_RECOVERY 在近期登入後取得。revoke-ssh，帶 { username, serial }：撤銷此人的 SSH 使用者憑證並將其列入領域的 KRL。issue-ssh，帶 { username, publicKey, principals?, lifetimeS? }：為此人簽發 SSH 使用者憑證，先寫入其項目（#2071）。該頁面上主控台的五個動作。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
+    "en": "38d7254e0ab72a00",
+    "text": "回報硬體權杖遺失並撤回其憑證資料、簽發 PIV 槽憑證、交出託管金鑰，或簽發或撤銷某人的 SSH 憑證"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC（#1955 審查）。簽發給某人且尚未到期的 OpenSSH 使用者憑證，已撤銷的有標記：序號、金鑰類型與指紋、主體、有效期以及是否有硬體證據涵蓋該金鑰。從不包含金鑰。對應 GET /admin/hardware-tokens（其 SSH 憑證分頁）。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)。某人的託管 piv-key-management 憑證（piv.keyEscrow）：序號、主體、有效期間以及每張憑證是否已被撤銷。絕不包含金鑰。與 GET /admin/hardware-tokens 對應。"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非規格端點（#552）。協定 → SCIM → 用戶端所繪製的內容：宣告為 scim-client 的應用程式項目——此領域將其人員與群組推送至的服務提供者——各附其佇列計數與退避暫停，指定 ?client= 時則為單一用戶端的重試與無法投遞佇列以及探索資訊。絕不含認證資訊。"
@@ -2142,6 +2402,10 @@
   "stsmetadata.endpoints./admin-api/roles/preview.what": {
     "en": "efc872210c98747b",
     "text": "非規格端點。做出一個簽發決策然後丟棄：不簽發任何東西，也不記錄任何東西。它經過九個簽發位置所使用的「同一個」呼叫——issuance_gate.check()、內嵌 PEP，以及依 xacml.issuancePolicy 所指名原則運作的 PDP——因此不可能出現只是碰巧與強制執行一致的預覽，這也是它存在的唯一理由。它「不是」POST /xacml/pdp，後者是針對存放庫「根」詢問同一個引擎：那份文件回答的是關於「他人」邊界的問題，而這個回答的是關於本服務的問題。`application` 與 `subject` 都是必要的，因為兩者皆未指名的簽發依定義（而非依原則）就是允許的。`kind` 會成為 XACML 的 action-id，因此原則可以允許存取權杖而拒絕重新整理權杖。`available: false` 表示此處未載入引擎。對應 /admin/roles 上的試運行。"
+  },
+  "stsmetadata.endpoints./admin-api/roles/eligibility.what": {
+    "en": "8d1e213c972caef4",
+    "text": "非規範（#1072）。一個可動態選擇角色自身的 XACML 資格政策，由 PDP 針對一個人依照登入 `application` 時的方式判定，而無需登入：是否具備資格、不具備時的代碼、決定和狀態（缺少的屬性會在其中註明）。只有 Permit 才具備資格。除 roles.eligibility 稽核列外不寫入任何內容，也從不顯示政策或此人的屬性。`role` 和 `user` 都是必需的；缺少任一項時回傳 `answered: false`。對應動態角色在 /admin/roles 頁面上的測試。"
   },
   "stsmetadata.endpoints./admin-api/roles/:action.what": {
     "en": "824b769ad7e2e401",
@@ -2176,8 +2440,8 @@
     "text": "規格行為之上的非規格介面。以 JSON 提供的已使用斷言歷史：此領域接受過且尚未到期的每個 RFC 7523 與 RFC 7522 斷言，附歷史保存位置（持久、跨程序不可分割）、相對於 oauth2.assertionReplayCacheSize 的即時計數，可依文字、格式、用途與狀態篩選，並以 ?page= 與 ?per= 分頁。任何資料列中都不含斷言與認證資訊。唯讀。對應 GET /admin/used-assertions。"
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "非規格端點。本服務可能產生之每種失敗狀況的中央表格，STS-<SUBSYSTEM>-<NNNN>，以 JSON 提供：每個代碼及其子系統、失敗的是什麼、以其協定自身詞彙告知「用戶端」的內容，以及此領域保存的稽核記錄中有多少資料列帶有它——可依子系統、文字與 ?seen=1 篩選，並以 ?page= 與 ?per= 分頁。代碼絕不會傳送給用戶端：它只出現在稽核資料列與記錄行中。唯讀——此表格就是原始碼。對應 GET /admin/error-codes；相同的表格即 docs/v1.1.0/error-codes.md。"
+    "en": "d4977def3313bbf1",
+    "text": "非規格端點。本服務可能產生之每種失敗狀況的中央表格，STS-<SUBSYSTEM>-<NNNN>，以 JSON 提供：每個代碼及其子系統、失敗的是什麼、以其協定自身詞彙告知「用戶端」的內容，以及此領域保存的稽核記錄中有多少資料列帶有它——可依子系統、文字與 ?seen=1 篩選，並以 ?page= 與 ?per= 分頁。代碼絕不會傳送給用戶端：它只出現在稽核資料列與記錄行中。唯讀——此表格就是原始碼。對應 GET /admin/error-codes；相同的表格即 docs/v1.2.0/error-codes.md。"
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -2230,6 +2494,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "非規格端點（#98 D11）。另一個儲存格居民的一頁清單，僅在該儲存格的釋出原則允許時由該儲存格回應。"
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). 以 JSON 形式提供 GET /admin/csp-reports:瀏覽器為本領域回報的內容安全政策違規,由本節點的前端處理程序依指令計數,以及轉送設定。不做任何變更。"
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",
@@ -2342,6 +2610,10 @@
   "stsmetadata.endpoints./admin-api/tls.what": {
     "en": "019419feb342ad45",
     "text": "以 JSON 提供的 GET /admin/tls：tls.* 設定，全部僅能在重新啟動時生效，因為憑證是在任何東西開始接聽之前產生、通訊端也在那時繫結。「主」連接埠是否使用 HTTPS 由 global.https 決定，它與程序本身的設定一起位於 /admin-api/config。唯讀。"
+  },
+  "stsmetadata.endpoints./admin-api/tls/key-exchange.what": {
+    "en": "bb28de7f1a4fcff2",
+    "text": "NON-SPEC (#2220)。自本節點前端程序啟動以來，其監聽器上每次完成的 TLS 交握協商出的金鑰交換群組，依監聽器與群組計數，以及其中有多少是後量子的（ML-KEM 群組）。顯示於 /admin/crypto-metadata。它不變更任何內容。"
   },
   "stsmetadata.endpoints./admin-api/tls/trust.what": {
     "en": "9a4194c66c51573f",
@@ -3027,6 +3299,22 @@
     "en": "9547cda6898c37a6",
     "text": "在登入後要求一個後量子密碼金鑰，然後建立其暫扣的單一登入工作階段"
   },
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
+    "en": "ff0550a4318594c6",
+    "text": "YUBICO 驗證協定 2.0（#1955 P5）。id、otp、nonce 和 h 的 GET 或 POST。預設關閉：路由回應 OPERATION_NOT_ALLOWED 且不簽章。開啟後，在包括開發模式在內的每種模式下核對用戶端 id 與 HMAC-SHA1；nonce 保留五分鐘；相符的 OTP 被消耗。Cache-Control: no-store。不向 YubiCloud 傳送任何內容。"
+  },
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+    "en": "bb2bc4011c8240ac",
+    "text": "為簽署了要求的用戶端核對 YubiKey OTP，或在 yubiotp.ykval 關閉時回應 OPERATION_NOT_ALLOWED"
+  },
+  "stsmetadata.endpoints./authn/roles.what": {
+    "en": "88814e89f81f8d86",
+    "text": "可動態選擇的角色（#1072）。完成所有驗證因素後，對於其領域定義了動態角色的應用程式（除非 roles.dynamicSelection 或應用程式的 appDynamicRoleSelection 將其關閉），登入會被暫停，同時為此人判定每個動態角色自身的 XACML 資格政策；只有 Permit 才會提供角色。如果此人勾選了「為此次登入選擇角色」，或者提供了必選角色，此頁面會列出可選的角色；「繼續」（/authn-api/mfa/{id}/roles）會將選擇與該步驟的提供內容以及政策再次核對，然後啟動工作階段，並將選擇記錄在工作階段記錄中，絕不寫入目錄。之後該應用程式的權杖會攜帶所選角色，每次簽發時都會再次依其政策判定。需要由被暫停的登入產生的 ?mfa= 識別碼；直接造訪會回傳 400。"
+  },
+  "stsmetadata.endpoints./authn/roles.effect": {
+    "en": "fc2116e31d3ead37",
+    "text": "詢問此次登入要使用哪些可動態選擇的角色，然後以該選擇啟動被暫停的工作階段"
+  },
   "stsmetadata.endpoints./authn/totp.what": {
     "en": "b62d7bad9442ea5c",
     "text": "「第二種第二要素」（2026-09-10）。對於已註冊驗證器應用程式的人，成功的密碼步驟會來到這裡，此端點會要求輸入其應用程式所顯示的六位數字。成功時工作階段記錄 amr [\"pwd\",\"otp\"]——RFC 8176 的值，其登錄項目指名 RFC 4226 與 RFC 6238——以及 acr \"mfa\"，這是本服務能誠實宣稱兩個要素的唯一情況。**代碼在兩種模式下都會真正檢查**，與其前面的密碼不同：一個接受任意六位數字的一次性密碼驗證器不是寬鬆，而是故障，這是 SPNEGO 論證的再次應用。依身分「以及」依位址進行速率限制，因為六位數字只有一百萬個值，是本服務中最小的搜尋空間。「GET 是安全金鑰畫面上的 *use a code instead* 連結」，不會建立任何東西——它為已存在的步驟繪製頁面，並對沒有註冊的人拒絕。**它不為任何人註冊**，這正是它與旁邊的 /authn/webauthn 的全部差異：註冊意味著會看到共用密鑰，因此它發生在 /portal/mfa 或使用啟用連結時，絕不在登入畫面上。自 #572 起是登入介面的一個頁面：代碼傳送至 /authn-api/mfa/{id}/totp。"
@@ -3207,6 +3495,18 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC（#1096）。依設定檔的 snoozeDays 延後；給定期限已過即遭拒絕。遭暫扣的工作階段隨即開始。"
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC（#2009 P2）。pqc-mail-encryption 活動：一個 OpenPGP 挑戰與金鑰，或一個 S/MIME 憑證，其加密金鑰為 ML-KEM；註冊後被暫扣的工作階段隨即開始。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC（#2009 P3）。piv-reissue 活動：某個插槽的憑證請求及其證明，以重新簽發的憑證作答；寫入後被暫扣的工作階段隨即開始。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
+    "en": "26fc9f7a66659a20",
+    "text": "非規範（#1072）。角色步驟的選擇，依該步驟的提供內容和每個角色的資格政策核對；被暫停的工作階段隨之啟動。"
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": {
     "en": "7b9faf3a24fd710d",
     "text": "NON-SPEC（#573）。僅寄往已驗證地址；重新寄送會取代上一次。"
@@ -3326,6 +3626,14 @@
   "stsmetadata.endpoints./oauth2/userinfo.effect": {
     "en": "20eeca53c18916c1",
     "text": "直接開啟時以 WWW-Authenticate 挑戰回應 401——它是受保護資源，需要來自 OIDC 流程的存取權杖"
+  },
+  "stsmetadata.endpoints./oauth2/groups.what": {
+    "en": "8b530084c5ca07b6",
+    "text": "超出上限的 groups 宣告的分散式來源（#2247）。groups 宣告會超過 groups.claimMaxBytes 的存取權杖或 ID Token 改為攜帶 OpenID Connect Core 第 5.6.2 節的 _claim_names 與 _claim_sources，指向這裡，此端點針對所出示存取權杖的主體以簽章的 application/jwt（iss、sub、aud、iat、exp 與該宣告）回傳清單，正如該節對分散式來源的要求。權杖的檢查方式與 UserInfo 相同 —— 簽章、簽發者、傳送者約束、typ、撤銷 —— 但不檢查其對象與 openid 範圍，因為資源伺服器的權杖正是其宣告指向這裡的那一個。只有自身攜帶該參照的權杖才能兌現它，得到的正是它在上限以下本會攜帶的內容，經過其自身用戶端的群組設定與發布篩選，僅此而已。client_credentials 權杖背後沒有人，會被拒絕。"
+  },
+  "stsmetadata.endpoints./oauth2/groups.effect": {
+    "en": "490723e4d089f6b2",
+    "text": "直接存取時以 401 與 WWW-Authenticate 挑戰回應 —— 它需要本服務簽發的存取權杖"
   },
   "stsmetadata.endpoints./oauth2/introspect.what": {
     "en": "a2d3e5f8766239a6",
@@ -3883,6 +4191,10 @@
     "en": "835d40e9ff6eaabb",
     "text": "「不是協定」，它之所以有一張卡片，是因為此頁面會回報沒有任何卡片認領的端點群組——這條規則讓新的系列無法悄悄出現，在這裡付出代價比讓規則附帶條件更值得。「本服務中第一個屬於正在看它的那個人的介面」：此處每個其他瀏覽器頁面都是為別人準備的——登入畫面是另一個協定流程中的一個步驟，同意畫面問一個問題就離開，/admin 是給營運者的，並以兩個角色管控。這裡是一個人查看此身分識別提供者對其所知、並變更其驗證方式的地方：其密碼、其安全金鑰，以及每把金鑰是主要認證還是第二要素。它是與管理主控台「分開的應用程式」，兩者除了本服務授權伺服器上的單一登入工作階段之外不共用任何東西：各自都是公開 OAuth 用戶端（此處為 sts-user-portal），在記憶體中持有自己的 DPoP 繫結權杖。/portal/activate 是其不需驗證的那一半，透過 /admin-api 或 SCIM 佈建的人在這裡使用一次性、有時效的啟用連結來設定認證——靜態時如密碼般雜湊保存、有速率限制、在設定完成時才用掉而非開啟連結時，且絕不讓任何人登入。「自 #568 起，它是建立在 /account-api 之上的靜態應用程式」，即下方的 Account API 群組：每個頁面與每個表單各一個作業，該人永遠是權杖的主體，並由其自己的 OpenAPI 文件描述。"
   },
+  "stsmetadata.protocols.OpenPGP.what": {
+    "en": "f2e7f0580b98e867",
+    "text": "個人的 OpenPGP 金鑰（#1955），在入口網站上或由管理員憑持有證明註冊——本人以 gpg --clearsign 簽署挑戰，在 YubiKey 的 OpenPGP 卡上由卡片簽署——並存放在其項目上；若本人選擇且領域已開啟，則在 Web 金鑰目錄中發布；它也是其郵件加密所用的金鑰（PGP/MIME），或依本人選擇使用其 S/MIME 憑證（S/MIME）。領域可以要求特定郵件必須加密（mail.encryptionRequired），這些郵件絕不以明文寄送。不會將任何金鑰記錄為綁定硬體：伺服器無法看到卡片。不支援以 OpenPGP 登入。"
+  },
   "stsmetadata.protocols.Reporting.what": {
     "en": "66663fd63a35a287",
     "text": "NOT A PROTOCOL。報表應用程式（#956）：位於 /report、建構在 /report-api 之上的靜態頁面，使用公用用戶端 sts-report，以及此領域自身記錄的目錄。它在瀏覽器中登入，持有繫結 DPoP 的權杖，且從不接受 SQL 字串。已儲存的定義屬於其擁有者；與目錄群組共用授予的是執行與讀取，而不是編輯。"
@@ -4012,8 +4324,12 @@
     "text": "此處每個協定都會將人送往的登入畫面上的第二要素：以真實安全金鑰進行的註冊與判斷提示儀式，證明與驗證器資料都會經過檢查，而不只是剖析。"
   },
   "stsmetadata.protocols.One-time passwords (TOTP).what": {
-    "en": "20b73dffc821e4a2",
-    "text": "此處每個協定都會將人送往的登入畫面上的另一種第二要素，也是除 Kerberos 票證外，本服務唯一真正「檢查」的認證：代碼由共用密鑰與時鐘計算並比較，在兩種模式下皆然，並強制執行 RFC 6238 section 5.2 的只接受一次規則。註冊是本伺服器繪製的 QR code，於 /portal/mfa 或使用啟用連結時進行；營運者在 /admin/users 上該人自己的列中清除註冊，而 /admin/totp 是設定此機制的地方。"
+    "en": "54893544268bf168",
+    "text": "此處每個協定都會把使用者送往的登入畫面上的另一種第二因素，也是除 Kerberos 票證外本服務唯一真正檢查的憑證：驗證碼由共用密鑰與時鐘計算並比較，兩種模式下都執行 RFC 6238 第 5.2 節的僅接受一次規則。註冊是本伺服器繪製的 QR 碼，在 /portal/mfa 或使用啟用連結時進行；操作員在 /admin/users 上此人自己的那一列清除它，/admin/totp 則是設定此機制之處。自 #1955 P4 起還包括其以計數器為基礎的同類：RFC 4226 HOTP 權杖（YubiKey OTP 插槽，在 /portal/mfa 註冊；或供應商的權杖，在 目錄 → 硬體權杖 從其 RFC 6030 種子檔案匯入，並依序號指派或認領），其計數器以 compare-and-set 推進，在每個接受驗證碼的入口都會被接受。"
+  },
+  "stsmetadata.protocols.Yubico OTP.what": {
+    "en": "462bb8049dda11d0",
+    "text": "在本服務上核對的 YubiKey OTP 槽位（#1955 P5）。AES-128 金鑰留在這裡，因此登入為 amr otp，從不為 hwk。在 yubiotp.offered 開啟之前，註冊、指派和認領保持關閉；已持有的憑證仍會在一次性驗證碼步驟被核對。GET 與 POST /wsapi/2.0/verify 是 YK-VAL 2.0，在 yubiotp.ykval 開啟之前保持 OPERATION_NOT_ALLOWED。不向 YubiCloud 傳送任何要求。"
   },
   "stsmetadata.protocols.Recovery codes.what": {
     "en": "b7c9347c7ac4a2b7",

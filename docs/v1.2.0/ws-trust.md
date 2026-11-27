@@ -1,0 +1,1214 @@
+---
+title: WS-Trust
+---
+
+# WS-Trust
+
+iya-sts is a **WS-Trust security token service**: a SOAP
+`RequestSecurityToken` endpoint that speaks
+[WS-Trust 1.4](https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html),
+[1.3](https://docs.oasis-open.org/ws-sx/ws-trust/200512/ws-trust-1.3-os.html)
+and the pre-standard 1.0 (2004/04) and February 2005 namespaces, issuing SAML
+2.0 assertions and JWTs. Every trust realm has its own STS, with its own token
+issuer and signing key.
+
+One parser answers all four versions: the elements are read by local name with
+the namespace ignored, and the response is written in whatever trust namespace
+the request used.
+
+## Features
+
+### Endpoints
+
+| Path | What it is |
+|---|---|
+| `POST /sts` | the `RequestSecurityToken` endpoint, SOAP 1.1 or SOAP 1.2 |
+| `GET /sts` | what the endpoint is, and the issuer every token it issues names: the realm's OAuth 2.0 issuer (#523) |
+| `GET /sts/metadata` | WSDL 1.1 with WS-SecurityPolicy: a port type for each of the four versions, with the operations and actions each defines, and every credential the running service accepts |
+| `GET /sts/metadata/capabilities` | the token capability document: every credential, every issued token type and each pair as supported, conditional or unsupported |
+| `GET /sts/metadata/capabilities.xsd` | the XML Schema of that document |
+| `POST /sts/mex` | WS-MetadataExchange (2004/09): the three documents above as one `mex:Metadata` |
+| `GET /sts/cert` | the signing certificate, the key a relying party verifies an assertion with |
+
+In a trust realm every path is under `/realm/{id}`. The full, current list is
+at `/admin/sts-metadata`.
+
+The SOAP version is taken from the envelope's namespace (or, failing that, the
+content type: `text/xml` is SOAP 1.1) and the response uses the same one.
+
+### The metadata document
+
+`GET /sts/metadata` is the machine-readable description of the security token
+service. It is WSDL 1.1, `Content-Type: application/wsdl+xml`, with
+`Cache-Control: no-store` because the address is the request's own base. The
+document is not signed and does not carry the signing certificate; that stays
+at `GET /sts/cert`. `GET /sts` stays the plain-text description it has
+always been.
+
+**Each version is a contract of its own.** The document has a port type per
+version. Its messages are that version's own `RequestSecurityToken`,
+`RequestSecurityTokenResponse` and (except May 2004)
+`RequestSecurityTokenResponseCollection`, declared in a schema per trust
+namespace. Its operations are the ones that version defines. Each input and
+output carries the `wsam:Action` WS-Trust gives it, and an output's is the
+action this service writes on the answer:
+
+| Port type | Namespace | Operations | Issue answers |
+|---|---|---|---|
+| `TrustMay2004` | `http://schemas.xmlsoap.org/ws/2004/04/trust` | Issue, Renew, Validate (May 2004 has no Cancel, which is refused as `wst:InvalidRequest`) | one `RequestSecurityTokenResponse`, action `…/RSTR/Issue` |
+| `TrustFeb2005` | `http://schemas.xmlsoap.org/ws/2005/02/trust` | Issue, Renew, Validate, Cancel | one `RequestSecurityTokenResponse`, action `…/RSTR/Issue` |
+| `Trust13` | `http://docs.oasis-open.org/ws-sx/ws-trust/200512` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
+| `Trust14` | 1.3's namespace, with `ActAs` in `http://docs.oasis-open.org/ws-sx/ws-trust/200802` | Issue, Renew, Validate, Cancel | a collection, action `…/RSTRC/IssueFinal` |
+
+In WS-Trust 1.3 and 1.4, Renew, Validate and Cancel answer
+`…/RSTR/RenewFinal`, `…/RSTR/ValidateFinal` and `…/RSTR/CancelFinal`. The two
+earlier versions, May 2004 and February 2005, answer with the operation's own
+action, `…/RSTR/Renew`, `…/RSTR/Validate` and `…/RSTR/Cancel`, as those
+specifications define them. Each answer is in the request's namespace. An
+input's action is `{namespace}/RST/{operation}`. Until November 2026, February
+2005 answered with 1.3's actions and an Issue collection; a client of that
+version now receives what its specification names.
+
+The WSDL is checked against the published schemas: WSDL 1.1, its SOAP 1.1 and
+1.2 bindings, WS-Policy, WS-SecurityPolicy 1.2 and each version's WS-Trust
+schema. Its policy assertions are in WS-SecurityPolicy 1.2's namespace,
+`http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702`.
+
+Each version has a SOAP 1.1 and a SOAP 1.2 binding and port, eight ports in
+all, and every one gives the RequestSecurityToken address as `{base}/sts`:
+the service reads the version from the request's own namespace. The
+document's own URL is not that address. A SOAP 1.1 binding's `soapAction` is
+the input action, but the service dispatches on `wst:RequestType`, not on
+SOAPAction or `wsa:Action`, so a client may send either or neither. A request
+type that is none of the four is answered as Issue. Key Exchange Token and
+BatchIssue are not implemented.
+
+The credentials are one `wsp:ExactlyOne`. An alternative is present only
+while the running service accepts it, in the order the endpoint looks:
+
+1. a WS-Security signature over the SOAP Body and the `wsu:Timestamp`: an
+   `sp:AsymmetricBinding` (below) with `sp:SignedParts` naming the Body and
+   the Timestamp. The certificate is named by a Reference to an X.509 v3
+   BinarySecurityToken, a ThumbprintSHA1 KeyIdentifier, an
+   X509SubjectKeyIdentifier, or an X509IssuerSerial (`sp:Wss11`). A
+   signature made with a Kerberos token's session key (HMAC-SHA256,
+   HMAC-SHA384 or HMAC-SHA512) is that check's other branch;
+2. a UsernameToken (`sp:WssUsernameToken11`), a person or a service account,
+   or else an application's identifier or client_id with one of its client
+   secrets. A person who must hold a second factor presents an application
+   password. The fault does not say whether the name was unknown or the
+   password was wrong;
+3. a SAML 2.0 assertion (`sp:WssSamlV20Token11`);
+4. a SAML 1.1 assertion (`sp:WssSamlV11Token11`). An older client may name
+   the token type as `urn:oasis:names:tc:SAML:1.0:assertion`. There is no
+   SAML 1.2;
+5. a JWT (`sp:IssuedToken` whose `wst:TokenType` is
+   `urn:ietf:params:oauth:token-type:jwt`);
+6. a Kerberos token of the Web Services Security Kerberos Token Profile 1.1,
+   one of its six AP-REQ ValueTypes, for this service's own service
+   principal (`sp:KerberosToken` / `sp:WssKerberosV5ApReqToken11`). The
+   alternative is omitted while `wstrust.acceptKerberos` is off. The six
+   ValueTypes are still named in the documentation;
+7. the TLS client certificate on the connection
+   (`sp:HttpsToken` / `sp:RequireClientCertificate`), and only when the
+   message carries none of the above. Omitted while
+   `wstrust.acceptClientCertificate` is off;
+8. no credential at all, an empty alternative, only while credentials are
+   not verified. Product mode refuses a request with no credential, and the
+   document then has no empty alternative.
+
+The issued types are a second policy: SAML 2.0 (what an omitted TokenType
+issues), SAML 1.1 and JWT. A SAML or JWT proof is Bearer. Each Kerberos
+ValueType is an issued type only while `wstrust.issueKerberos` is on, and
+issuing one also needs a Kerberos AppliesTo and TLS; the proof key is then a
+SymmetricKey `BinarySecret`. A Kerberos token cannot be renewed or cancelled
+here. SAML 2.0, SAML 1.1 and JWT may each be the requester's credential, the
+token inside OnBehalfOf or ActAs, and the issued TokenType. A UsernameToken,
+a TLS client certificate and a message signature are credentials, not types
+this service issues. A Kerberos token inside OnBehalfOf or ActAs must have
+been obtained by delegation for this service's own service principal. Both
+elements in one request are refused.
+
+**The signature's binding.** The first alternative is an
+`sp:AsymmetricBinding`:
+
+* the `InitiatorToken` is the requester's X.509 v3 certificate, always sent
+  to the recipient;
+* the `RecipientToken` is this realm's XML Encryption certificate, never
+  included in a message. A request is encrypted to it. See
+  [The encryption certificate](#the-encryption-certificate) for where a
+  client gets it;
+* `sp:Lax` layout and `sp:OnlySignEntireHeadersAndBody`: parts are signed
+  whole, by `wsu:Id`.
+
+#### The encryption certificate
+
+The certificate a request is encrypted to is the realm's XML Encryption
+certificate, the same for every application of the realm, unless the
+application holds a decryption key pair of its own (see
+[XML Encryption](#an-applications-own-decryption-key-pair)). Where a client
+gets the realm's certificate depends on `wstrust.advertiseEndpointIdentity`.
+The WSDL is one document per realm and never names an application's own
+certificate, so that one is always configured out of band.
+
+**Off, the default.** The WSDL names no certificate. Configure the client
+with it out of band. It is published at:
+
+* `GET /saml2/metadata` (under the realm's prefix), as the first
+  `md:KeyDescriptor use="encryption"` of the `IDPSSODescriptor`. This is
+  the exact certificate: both come from the same list.
+* `GET /sts/cert`, the XML signing certificate. It is the same certificate
+  while `saml.signatureAlgorithm` is an RSA algorithm, which is the default.
+  Under an ECDSA or ML-DSA XML signature algorithm it is not, so use
+  `/saml2/metadata`.
+
+**On.** Every one of the sixteen ports also carries the certificate as its
+endpoint identity, where WCF reads it:
+
+```xml
+<wsdl:port name="Trust13Soap12" binding="tns:Trust13Soap12">
+  <soap12:address location="https://sts.example/sts"/>
+  <wsa10:EndpointReference xmlns:wsa10="http://www.w3.org/2005/08/addressing">
+    <wsa10:Address>https://sts.example/sts</wsa10:Address>
+    <wsid:Identity xmlns:wsid="http://schemas.xmlsoap.org/ws/2006/02/addressingidentity">
+      <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+        <ds:X509Data><ds:X509Certificate>MIIE…</ds:X509Certificate></ds:X509Data>
+      </ds:KeyInfo>
+    </wsid:Identity>
+  </wsa10:EndpointReference>
+</wsdl:port>
+```
+
+`wsid:Identity` is from WS-AddressingIdentity, a Microsoft specification
+that was never standardised. WCF and the toolkits that copy it read it. It
+is off by default for that reason. Turn it on for a realm whose clients
+expect it:
+
+```bash
+api config/set '{"key":"wstrust.advertiseEndpointIdentity","value":true}'
+```
+
+The WSDL is drawn for each request and served `no-store`, so a rotated or
+regenerated key is in the next copy, in either mode. In development mode
+the key is regenerated on every start, so a client configured out of band
+must fetch the certificate again after a restart.
+
+The setting changes only what the WSDL says. What a request may encrypt is
+still `wstrust.acceptEncryptedElements` and the application's request map
+([XML Encryption](#xml-encryption)).
+
+**Two algorithm suites, on separate ports.** The eight ports a client reads
+first (each version over SOAP 1.1 and 1.2) name `sp:Basic256Sha256` in
+`RequesterAuthentication`. Its signature half, RSA-SHA256 over SHA-256 under
+exclusive canonicalization, is what both modes verify. Its encryption half,
+AES-256-CBC and RSA-OAEP with MGF1-SHA-1, is read only where broken
+algorithms and legacy hashes are allowed: never in product mode.
+
+Eight more ports, the same names with the suffix `IyaSuite`, carry the
+IYA-STS algorithm suite in `RequesterAuthenticationIyaSuite`. It is this
+service's own assertion under `sp:AlgorithmSuite`, the extension WS-SecurityPolicy
+leaves open, because no WS-SecurityPolicy 1.2 or 1.3 suite names AES-GCM:
+
+* namespace `urn:iya-sts:ws-securitypolicy:algorithm-suite:1`, assertion
+  `Basic256GcmRsaOaepSha256`;
+* digest SHA-256, `http://www.w3.org/2001/04/xmlenc#sha256`;
+* encryption AES-256-GCM, `http://www.w3.org/2009/xmlenc11#aes256-gcm`;
+* key transport RSA-OAEP, `http://www.w3.org/2009/xmlenc11#rsa-oaep`, with
+  `DigestMethod` SHA-256 and `MGF` `http://www.w3.org/2009/xmlenc11#mgf1sha256`;
+* signature RSA-SHA256, `http://www.w3.org/2001/04/xmldsig-more#rsa-sha256`;
+* canonicalization `http://www.w3.org/2001/10/xml-exc-c14n#`.
+
+Both modes read and write that suite. It has ports of its own because a
+client that has no loader for it cannot build any policy that names it.
+Apache CXF 4.0.5 logs "Failed to build the policy
+'RequesterAuthenticationIyaSuite'" and uses the other eight ports
+unchanged. A CXF client that registers an `AlgorithmSuiteLoader` for the
+namespace, the way CXF reads its own GCM suites, uses the `IyaSuite` ports.
+
+`sp:IncludeTimestamp` is in the binding only while the realm signs its
+answers (`wstrust.signResponse`). WS-SecurityPolicy 1.3 section 6.2 makes it
+apply to every message under the binding, including the answer, and requires
+that Timestamp to be signed, which a signed answer's is. While answers are
+signed, `wstrust.responseProtectionOrder` of `encrypt-then-sign` adds
+`sp:EncryptBeforeSigning`, and `wstrust.encryptSignature` adds
+`sp:EncryptSignature`. The request's Timestamp is required either way, by
+`sp:SignedParts`. The WSDL is one document per realm, so an application
+that overrides one of these settings tells its clients out of band. See
+[Message integrity](#message-integrity).
+
+**What a message may protect beyond that.** Every binding operation's
+`wsdl:input` names `RequestProtection`, or `RequestProtectionIyaSuite` on
+the suite's ports:
+
+* **Signing.** A request may sign every header and the Body (an empty
+  `sp:SignedParts`). The endpoint verifies every Reference a signature
+  carries, by `wsu:Id` under exclusive canonicalization. Only the Body and
+  the Timestamp are required.
+* **Encryption**, only where this realm would accept it under the port's
+  suite: `wstrust.acceptEncryptedElements` is on (it is off by default), the
+  encryption certificate holds an RSA key, and the suite's ciphers are
+  read. In product that is the `IyaSuite` ports only. Where it is offered, a
+  request may encrypt the Body's content and the WS-Addressing headers
+  (`sp:EncryptedParts`), or the Body's content, any other header and a
+  UsernameToken in the security header (`sp:EncryptedElements`, XPath 1.0).
+
+Every `wsdl:output` names `ResponseProtection` (or
+`ResponseProtectionIyaSuite`) only when the service-wide response cipher is
+that port's suite's: `aes256-cbc` with `rsa-oaep-mgf1p` for
+`sp:Basic256Sha256`, `aes256-gcm` with `rsa-oaep` for the IYA-STS suite,
+which is product's default. It offers encryption of the Body's content and
+the WS-Addressing header, and never signing. The answer is encrypted to the
+`InitiatorToken`, the signer's certificate, unless the application names
+another recipient (see [XML Encryption](#xml-encryption)). One document
+serves every application, so an application's own cipher or map is not in
+it.
+
+Each choice is optional. It is written as a `wsp:ExactlyOne` whose first
+alternative is empty, not as `wsp:Optional="true"`. The two are the same
+policy, but a WCF or Metro client takes the first alternative it supports,
+and an Apache CXF client the one with the fewest assertions. Written this
+way, every one of them sends the message as it is sent today, and protects
+more only when it is configured to.
+
+### Which credential gets which token: the capability document
+
+WS-SecurityPolicy can list what is accepted and what is issued, but it cannot
+say which credential can be exchanged for which token type. So
+`GET /sts/metadata/capabilities` answers that as an IYA-STS extension, not a
+WS-* standard: `application/xml`, `Cache-Control: no-store`, namespace
+`urn:iya-sts:metadata:token-capabilities:1`, validated by the schema at
+`GET /sts/metadata/capabilities.xsd`. The WSDL names both in an optional
+`iya:TokenCapabilitiesReference` element, which a WSDL tool that does not
+know it ignores. The document is built from the same settings the endpoint
+runs with, so it changes when they do.
+
+```xml
+<iya:TokenCapabilities xmlns:iya="urn:iya-sts:metadata:token-capabilities:1"
+    version="1" endpoint="https://sts.example/sts" issuer="https://sts.example">
+  <iya:InputTokens>
+    <iya:InputToken id="username-token" enabled="true">
+      <iya:Name>WS-Security UsernameToken</iya:Name>
+      <iya:TokenType>http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#UsernameToken</iya:TokenType>
+      <iya:PolicyAssertion>sp:UsernameToken/sp:WssUsernameToken11</iya:PolicyAssertion>
+      <iya:Condition kind="subject">A person or service account …</iya:Condition>
+    </iya:InputToken>
+    …
+  </iya:InputTokens>
+  <iya:OutputTokens>
+    <iya:OutputToken id="kerberos" enabled="true" default="false">
+      …
+      <iya:ProofKey>SymmetricKey</iya:ProofKey>
+      <iya:Operations>Issue Validate</iya:Operations>
+      <iya:Condition kind="setting" setting="wstrust.issueKerberos">…</iya:Condition>
+      <iya:Condition kind="transport">Over TLS …</iya:Condition>
+      <iya:Condition kind="target">The AppliesTo is …</iya:Condition>
+    </iya:OutputToken>
+    …
+  </iya:OutputTokens>
+  <iya:Combinations>
+    <iya:Combination input="username-token" output="saml2" support="supported"/>
+    <iya:Combination input="username-token" output="kerberos" support="conditional">
+      <iya:Condition kind="transport">…</iya:Condition>
+      <iya:Condition kind="target">…</iya:Condition>
+    </iya:Combination>
+    …
+  </iya:Combinations>
+  <iya:DelegationTokens><iya:Token ref="saml2"/> …</iya:DelegationTokens>
+</iya:TokenCapabilities>
+```
+
+* **The credentials** (`InputToken`) are `x509-signature`, `username-token`,
+  `saml2`, `saml11`, `jwt`, `kerberos`, `tls-client-certificate` and `none`,
+  in the order the endpoint reads them. **The issued types** (`OutputToken`)
+  are `saml2` (the default), `saml11`, `jwt` and `kerberos`. Each row carries
+  its standard token type URIs; the `id` is only this document's name for the
+  row. `enabled="false"` is a row the running settings turn off.
+* **Every pair is written out** in `Combinations`, as `supported`,
+  `conditional` (with the conditions that decide it) or `unsupported` (with
+  the setting that turns it off). Today SAML 2.0, SAML 1.1 and JWT are
+  supported from every enabled credential, and Kerberos is conditional from
+  every one on TLS and a Kerberos AppliesTo, because the token issued depends
+  on who the requester is and not on which credential proved it. Do not
+  infer the matrix: read it. The issuance policy decides every issuance and is
+  not a condition of a pair, so a supported pair can still be refused for a
+  particular person or AppliesTo.
+* **`DelegationTokens`** are the token types accepted inside `OnBehalfOf` or
+  `ActAs`.
+* **A condition's `kind`** is `setting`, `mode`, `issuer`, `subject`,
+  `signature`, `carrier`, `target`, `transport` or `precedence`.
+
+**Versioning.** The version is in the namespace (`:1`) and on the root's
+`version`. A later version 1 document may add elements, attributes and
+condition kinds, and nothing else. A client ignores an element or attribute
+it does not know (the schema has an extension point in every element). It
+treats a pair carrying a condition `kind` it does not know as conditional,
+because it cannot check that condition. A change of meaning gets a new
+namespace.
+
+### WS-MetadataExchange
+
+`POST /sts/mex` answers WS-MetadataExchange as the 2004/09 submission
+defines it, which is what WS-Trust clients send (WCF's `svcutil`, Metro,
+CXF):
+
+* a WS-Transfer **Get**, action
+  `http://schemas.xmlsoap.org/ws/2004/09/transfer/Get` with an empty Body, is
+  answered with action `…/transfer/GetResponse` and every section;
+* a **GetMetadata**, action
+  `http://schemas.xmlsoap.org/ws/2004/09/mex/GetMetadata/Request`, is answered
+  with action `…/GetMetadata/Response` and the sections its `mex:Dialect` and
+  `mex:Identifier` select. A dialect this service has nothing in gets an
+  empty `mex:Metadata`, not a fault.
+
+The answer is in the request's SOAP version and WS-Addressing namespace (1.0
+or the 2004/08 submission), with `wsa:RelatesTo` naming the request's
+`wsa:MessageID`. The `mex:Metadata` holds three embedded sections: the WSDL
+(dialect `http://schemas.xmlsoap.org/wsdl/`), the token capability document
+(dialect and identifier its namespace) and its schema (dialect
+`http://www.w3.org/2001/XMLSchema`). A body that is not a SOAP envelope, or
+an action that is neither request, is a SOAP Client (SOAP 1.2: Sender)
+fault. WS-MEX is an address of its own: a Get sent to `POST /sts` is answered
+as `/sts` always answered it. Not implemented: a `MetadataReference` or
+`Location` section, and the namespace of the W3C WS-MetadataExchange 1.1
+Recommendation.
+
+### The four operations
+
+The operation is the last path segment of `wst:RequestType`, so any version's
+namespace works:
+
+| `RequestType` | Answer |
+|---|---|
+| `Issue` | an RSTR Collection carrying a freshly minted, signed token, its `wst:Lifetime`, `KeyType` Bearer for a SAML assertion or a JWT, and a reference to the token. A Kerberos ticket's proof is a SymmetricKey `BinarySecret` |
+| `Renew` | an RSTR carrying a fresh token for the subject of the `RenewTarget` |
+| `Validate` | an RSTR carrying `wst:Status` — `valid` when the `ValidateTarget` holds a token, `invalid` when it holds none |
+| `Cancel` | an RSTR carrying `wst:RequestedTokenCancelled` |
+
+**Each version is answered in its own schema's elements.** The 2004/04
+namespace has no collection of one response, no `RequestedAttachedReference`
+and no Cancel, so there an `Issue` is answered with the RSTR itself, the
+reference is `wst:RequestedTokenReference`, and a `Cancel` is refused with a
+`wst:InvalidRequest` fault. Every answer, in every version, validates against
+its version's published OASIS schema.
+
+**Every operation authenticates the requester first**, above the choice of
+operation, so a credential refused for an Issue is refused for a Validate or a
+Cancel too.
+
+### Token types
+
+| `TokenType` | What is issued |
+|---|---|
+| `urn:ietf:params:oauth:token-type:jwt` | a JWT signed with `wstrust.jwtAlgorithm` |
+| `http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1` or `urn:oasis:names:tc:SAML:1.0:assertion` | a signed SAML 1.1 assertion, from the SAML 1.1 builder, with the application's SAML 1.1 attributes (#487). An ActAs in SAML 1.1 names who acted in a `delegates` attribute (namespace `urn:iya:sts:delegation`, one value per party, earliest first), because SAML 1.1 has no Delegation Restriction |
+| one of the [Kerberos Token Profile 1.1](#kerberos-tokens)'s six ValueTypes (`…#GSS_Kerberosv5_AP_REQ` and the others) | a Kerberos token: an AP-REQ carrying a service ticket for the `AppliesTo`'s Kerberos service, with its session key as the proof token. Off by default (`wstrust.issueKerberos`) |
+| anything else, or none | a signed SAML 2.0 assertion, the default |
+
+**The SAML assertion** comes from the same builder the
+[SAML 2.0 identity provider](saml2-sso.md) uses; its issuer is the realm's OAuth
+2.0 issuer, the `iss` a JWT from the same request carries (#523),
+its audience is the `AppliesTo`, its validity window is widened by
+`saml.clockSkewS`, and it carries the SAML 2.0
+[custom SAML attributes](saml2-sso.md#custom-saml-attributes). Its
+`AuthnContextClassRef` names the credential that was presented:
+`PasswordProtectedTransport` for a UsernameToken, `PreviousSession` for an
+assertion or a JWT, `TLSClient` for a TLS client certificate, `X509` for a
+WS-Security signature over the request, `Kerberos` for a Kerberos token,
+`unspecified` for a
+delegation or nothing. The `wsu:Lifetime` around
+it states the lifetime without the skew.
+
+**The JWT** has `iss` the realm's OAuth 2.0 issuer, the one
+`/.well-known/oauth-authorization-server` publishes and `GET /sts` names as
+`JWT issuer:`. It also has a `jti`, and the realm key's `kid` in its header
+(published at `/oauth2/jwks`). Its `sub` is the person's stable
+subject, `urn:uuid:<entryUUID>`; a JWT for somebody the directory does not hold
+is refused with a SOAP Fault rather than issued with a bare name. By default the
+header also carries `x5u`, the address of the signing key's certificate chain
+(`wstrust.jwtCertificateHeader`).
+
+The JWT's structure and claims follow
+[RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) and
+[RFC 8693](https://www.rfc-editor.org/rfc/rfc8693):
+
+* its header carries `typ: at+jwt`;
+* it carries `iss`, `sub`, `aud` (the `AppliesTo`), `iat`, `exp` (the
+  lifetime the RSTR's `wst:Lifetime` states) and `jti`;
+* `client_id` is the application the requester authenticated as;
+* `act` (for `ActAs`) has the shape this service's OAuth tokens give it:
+  * the current actor outermost;
+  * each entry with `iss`;
+  * an application named `urn:sts:client:<client_id>` in RFC 9700 mode and
+    by its bare client_id otherwise.
+
+Some claims are left out on purpose:
+
+* **No `client_id` for a person's own token.** A person who asks for a token
+  about themselves with their own UsernameToken has no client.
+* **No `scope` unless the application configures it.** An RST asks for
+  none. The AppliesTo's application may list OAuth 2.0 scopes on
+  `wstrustJwtScope` (Configuration → WS-Trust). They are judged as an
+  access token's are, with the application as the client: its
+  `oauthAllowedScope` in product, and the issuance policy. What is left off
+  is audited.
+* **No `auth_time` or `acr`.** RFC 9068 makes them optional. **`amr`** is
+  carried on a token about the requester itself (#1046): `["pwd"]` for a
+  UsernameToken, `["swk"]` for a TLS client certificate or a signed request
+  (#521). A delegated token,
+  and one issued on an assertion or a JWT, carries none.
+
+`iss` is the realm's OAuth issuer, so RFC 9068 section 4's check against the
+authorization server's metadata holds (#480). The RST and RSTR are unchanged: the `wst:TokenType` answered is still
+`urn:ietf:params:oauth:token-type:jwt`.
+
+### Lifetime
+
+With no `wst:Lifetime` the token lives `wstrust.tokenLifetimeMin`. A requested
+lifetime is honoured up to `wstrust.maxTokenLifetimeMin` and **clamped** beyond
+it, in both modes; the RSTR's own `wst:Lifetime` states what was actually
+issued.
+
+### Credentials
+
+The requester's credential is looked for in `wsse:Security`, never inside an
+element that holds somebody else's token:
+
+* a **WS-Security UsernameToken** — a username and a password. The username
+  is a person's (a service account is a person), or, where no person has that
+  name, an **application's** identifier or client_id, with one of the
+  application's client secrets as the password;
+* a **SAML assertion** (SAML 2.0 or SAML 1.1) in the security header;
+* a **JWT** this service issued, in the `wsse:BinarySecurityToken` an RSTR
+  hands one back in (ValueType `urn:ietf:params:oauth:token-type:jwt`);
+* a **WS-Security signature over the request** (#521), made with a
+  message-signing certificate — see below. It is asked first;
+* a **Kerberos token** for this service's own SPN, alone or with a signature
+  made with its session key — see [Kerberos tokens](#kerberos-tokens);
+* the **TLS client certificate** on the connection, when `wsse:Security`
+  carries none of the above (#1046) — see below;
+* a request with **no credential** (development only — see below).
+
+#### The TLS client certificate
+
+On the main port with `global.https` on, a client may present a TLS client
+certificate at the handshake. It is the requester's credential, in both
+modes, when all of these hold:
+
+* it verified against the client truststore;
+* this realm issued it to a person or an application — a TLS client
+  certificate from the user portal (*Signing key*) or an application's
+  *Credentials* section, or one enrolled over [ACME, EST or SCEP](pki.md);
+  the person or application it names is the requester — **or** it is from an
+  outside certificate authority in the truststore and is stored byte for
+  byte in `userCertificate` on exactly one person's or application's entry,
+  which is the requester ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority));
+* it is not revoked, and its holder's record still lists it;
+* for a person, the account is not disabled.
+
+A certificate that verified and fails one of these is refused with
+`wst:FailedAuthentication` (`STS-WSTRUST-0034` to `0037`) rather than
+treated as no credential, and so is one from an anchor somebody added at
+`/admin/tls/trust` that is stored on no entry (`STS-WSTRUST-0038`) or on
+more than one (`STS-WSTRUST-0039`); its common name and subject are never
+read. One that did not verify is ignored. A UsernameToken, an assertion or a JWT in the message
+always wins: the certificate is asked only when the message carries none.
+
+The token issued says a certificate was used: `TLSClient` as a SAML 2.0
+assertion's `AuthnContextClassRef`, `urn:ietf:rfc:2246` as a SAML 1.1
+`AuthenticationMethod`, and `amr` `["swk"]` in a JWT. A person's certificate
+starts a session with method `swk`, as `GET /tls/sign-in` does; an
+application's starts none. `wstrust.acceptClientCertificate` turns the
+credential off.
+
+```bash
+curl --cert alice.pem --key alice-key.pem --cacert root.pem \
+  -H 'Content-Type: application/soap+xml' --data @rst.xml \
+  https://sts.example.com:8081/sts
+```
+
+where `rst.xml` is an `Issue` with an empty `wsse:Security` header (or none).
+
+#### A signed request
+
+A requester may sign its RST instead of presenting a password or a token
+(WS-Security 1.1 with the X.509 Token Profile 1.1, #521). The `ds:Signature`
+is a child of the one `wsse:Security` header and must cover, by `wsu:Id`,
+**the** SOAP `Body` (the Envelope's own child) and **the** `wsu:Timestamp` of
+that header. The certificate is named by the signature's
+`wsse:SecurityTokenReference`, in any of four forms:
+
+* a `wsse:Reference` to an X.509 v3 `wsse:BinarySecurityToken` in the same
+  header, which carries the certificate;
+* a `wsse:KeyIdentifier` with the certificate's SHA-1 thumbprint
+  (`#ThumbprintSHA1`);
+* a `wsse:KeyIdentifier` with its Subject Key Identifier
+  (`#X509SubjectKeyIdentifier`);
+* an `ds:X509IssuerSerial`.
+
+The last three find a certificate this realm's **message-signing** Issuing CA
+issued; a certificate stored on an entry is sent in a BinarySecurityToken.
+
+**Which certificates count.** Each authenticates exactly one person or
+application, and nothing else does:
+
+* a **message-signing certificate** this realm issued — from the realm's
+  `message-signing` Issuing CA ([PKI](pki.md)), `digitalSignature` only, the
+  holder's `urn:sts:person:`, `urn:sts:sa:` (a service account) or
+  `urn:sts:application:` name. An administrator
+  issues one to a person on `/admin/users` or to an application on
+  `/admin/applications` (and through `/admin-api`); the private key is handed
+  over once;
+* a certificate from **any other authority stored byte for byte in
+  `userCertificate`** on exactly one person's or application's entry
+  ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority) says how
+  to store one), whose key usage includes `digitalSignature`.
+
+A TLS client certificate is **not** a message-signing credential, and a
+message-signing certificate signs nobody in over TLS. A certificate nobody
+holds authenticates nobody: its common name and subject are never read.
+
+**What product mode checks**, each refusal with its own
+[error code](error-codes.md):
+
+| Check | Refused as |
+|---|---|
+| One signature; unique ids; exclusive XML canonicalization; the Body and the Timestamp covered; an algorithm this service verifies (SHA-1 only with `saml.allowSha1Signatures`, never in product); a key reference it reads | `STS-WSTRUST-0040`, `wst:FailedAuthentication` (`wst:AuthenticationBadElements` when the Body or the Timestamp is not covered) |
+| The reference finds a certificate | `0041` |
+| The certificate is a message-signing identity of this realm, valid now; stored on exactly one entry | `0042`; `0043` stored on none; `0044` on two |
+| The signature verifies with that certificate, and no signed part was altered | `0045` |
+| Every part of the request (the `RequestSecurityToken`, its `RequestType`, `AppliesTo`, `OnBehalfOf` and the rest) is inside the signed Body | `0046` |
+| The Timestamp has a `Created` and an `Expires`; `Created` is not ahead of the clock and `Expires` not behind it, each by `oauth2.clockSkewS` | `0047`; `0048`, `wst:ExpiredData`, when expired |
+| The certificate is not revoked: the register for one this realm issued, the certificate's own OCSP responder and CRL for a stored one, under `pki.revocationCheck` | `0049` |
+| The request was not accepted before: its signature is spent once in the [used-assertion history](oauth-oidc.md) until the Timestamp expires | `0050`; `0051`, `wst:RequestFailed`, when the history cannot be asked |
+| A person's account is not disabled | `0052` |
+
+A replay is refused only after a request is answered: a request refused for
+some other reason may be signed again and sent.
+
+**Beside another credential.** The signature authenticates. A UsernameToken,
+an assertion or a JWT in the same header is still checked (a password is
+verified in product) and must name the same person or application, or the
+request is refused (`STS-WSTRUST-0053`) in every mode.
+
+**What the token says.** `X509` as a SAML 2.0 `AuthnContextClassRef`,
+`urn:oasis:names:tc:SAML:1.0:am:X509-PKI` as a SAML 1.1
+`AuthenticationMethod`, and `amr` `["swk"]` in a JWT. A person's signature
+starts a session; an application's starts none. With `OnBehalfOf` or `ActAs`
+the signer is the requester the [delegation policy](delegation.md) asks about.
+
+**In development** the certificate is read and believed, as a UsernameToken
+is: the signature's structure and its certificate reference are still read,
+and the holder is whoever the certificate maps to, else the name in its
+`urn:sts:` subjectAltName, else its common name. The signature value, the
+Timestamp, revocation and replay are not checked, and the authentication
+row says so.
+
+A client builds the request with any WS-Security 1.1 stack (Apache WSS4J,
+Metro, .NET's `SecurityBindingElement`), configured to sign the Body and the
+Timestamp with exclusive canonicalization and an X.509 token. The key and
+certificate come from the PKCS#12 the console hands over.
+
+Any of the three token types can be the credential, the token inside
+`OnBehalfOf` / `ActAs`, and the token issued, in any combination. So a
+middle tier that has no person entry can first ask, with its application's
+client secret, for a token about itself (with its own identifier as the
+`AppliesTo`), and then present that token as its credential when it asks
+for a token about somebody else. A token issued to an application is about
+the application: a JWT's `sub` is `urn:sts:client:<client_id>` where the
+token endpoint names clients that way (RFC 9700 mode, which product mode
+implies), and the bare client_id otherwise.
+
+In product mode a token presented as the credential must be addressed to
+its holder — an audience the holder's application registers, which is what
+a token a tier asked for itself carries — or to this identity provider: the
+WS-Trust issuer name `GET /sts` reports, the realm's SAML entityID, the
+realm's OAuth issuer, or the `/sts` address. A person who wants a token to
+present as their own credential asks for one with one of those names as the
+`AppliesTo`; product issues for them as it does for a registered
+application.
+
+The reserved password `invalid` is always refused, so a negative test has
+something to fail on. A successful authentication is recorded like any other
+sign-in — the audit log, the person's directory entry — and starts a session in
+the shared session store; an assertion credential's session carries no `pwd`
+method.
+
+### Delegation: `OnBehalfOf` and `ActAs`
+
+* **`wst:OnBehalfOf`** (WS-Trust 1.3) asks for a token **about** the named
+  subject: impersonation, where the relying party sees an ordinary sign-in.
+* **`wst14:ActAs`** (WS-Trust 1.4) asks for a token about the subject with the
+  requester **acting**: delegation.
+
+The token inside either element is one this STS issued: a SAML 2.0
+assertion, or a JWT in the `wsse:BinarySecurityToken` an RSTR carries one
+in. In product it must verify with this realm's key, be unexpired, carry
+this STS's issuer and name a person in the directory. Its audience is S, and
+a JWT's `act` supplies the earlier delegates.
+
+Both are recorded as such on `/admin/delegation`, with the requester as the
+intermediary and the application registered for the `AppliesTo` as the target,
+so a chain of hops (a web application, then an ESB, then a back end) draws as
+one chain. The token inside `OnBehalfOf` is recorded as consumed, so
+`/admin/tokens` can follow a lineage from one exchange to the next. A request
+carrying both elements is attributed to `OnBehalfOf`. **A delegation starts no
+session** — the person named was not there.
+
+**Who may act for whom, and as what**, is decided by the issuance policy, with
+the same controls as the OAuth 2.0 token exchange and Kerberos — see
+[Delegation and impersonation](delegation.md). The requester is the actor, the
+delegated assertion's `Audience` is the application it was issued for, and the
+`AppliesTo` is the target; `ActAs` asks for delegation and `OnBehalfOf` for
+impersonation, and both in one request is `wst:InvalidRequest` in every mode.
+In **product** mode a refusal is a SOAP Fault whose code is WS-Trust 1.4
+section 11's `wst:RequestFailed` — the SOAP 1.2 Subcode under `soap:Sender`, or
+the SOAP 1.1 `faultcode`. In **development** the token is issued and the act on
+`/admin/delegation` says what would have been refused.
+The policy is listed at `GET /admin-api/delegation/policy`. An `ActAs` token
+does not state in the assertion that a middle tier acted.
+
+### Kerberos tokens
+
+A Kerberos ticket is a WS-Trust token in each place a token goes, in the
+form the [Web Services Security Kerberos Token Profile 1.1](https://docs.oasis-open.org/wss-m/wss/v1.1.1/os/wss-KerberosTokenProfile-v1.1.1-os.html)
+defines: a `wsse:BinarySecurityToken` (`EncodingType` `…#Base64Binary`)
+holding an RFC 4120 AP-REQ. The `ValueType` says which form, and all six are
+accepted (prefix `http://docs.oasis-open.org/wss/oasis-wss-kerberos-token-profile-1.1`):
+
+| ValueType | The bytes |
+|---|---|
+| `#GSS_Kerberosv5_AP_REQ` (also `…1510`, `…4120`) | the RFC 4121 GSS `InitialContextToken` around the AP-REQ, as SPNEGO carries one |
+| `#Kerberosv5_AP_REQ` (also `…1510`, `…4120`) | the AP-REQ alone |
+
+A token whose bytes are the other form from the one its `ValueType` names is
+refused. A token is named elsewhere in a request by its key identifier,
+`#Kerberosv5APREQSHA1`: the base64 SHA-1 of the token's bytes.
+
+**A ticket presented here is for THIS service's own SPN**, the acceptor's
+`krb5.servicePrincipal` (`GET /admin-api/kerberos/principals` names it). It is
+checked by the same acceptor as the [Kerberos sign-in](kerberos.md), in both
+modes, and it is good once: presenting the same AP-REQ again is a replay.
+`wstrust.acceptKerberos` (on by default) turns Kerberos input off.
+
+**As the requester's credential**, the ticket's client is the requester:
+
+* a person by their name, the local Kerberos realm left off
+  (`alice@EXAMPLE.COM` is `alice`);
+* a service principal (`HTTP/front.example.com@EXAMPLE.COM`) as the
+  application whose identifier is that name. It gets a token about the
+  application and starts no session;
+* a principal of a [trusted Kerberos realm](configure-kerberos.md) by its whole
+  name, holding only the roles granted to that name.
+
+The issued token says how the KDC authenticated them: `amr` and the SAML
+authentication class are read from the ticket's flags, exactly as the
+Kerberos sign-in reads them (`pwd` for pre-authentication, `otp`, `hwk`,
+`swk` for PKINIT). A person's Kerberos token starts a session.
+
+**A signature made with the token's session key** is also a credential: an
+HMAC (`xmldsig-more#hmac-sha256`, `-sha384`, `-sha512`; `xmldsig#hmac-sha1`
+only while `saml.allowSha1Signatures` allows SHA-1) over the SOAP Body and
+the `wsu:Timestamp`. Its `KeyInfo` names the Kerberos token in the same
+header, by a `wsse:Reference` to the BinarySecurityToken or by the
+`#Kerberosv5APREQSHA1` key identifier. The key is the Authenticator's subkey,
+or the ticket's session key when the Authenticator carries none. The signing
+rules of [A signed request](#a-signed-request) apply: what is read must be
+inside the signed Body, the Timestamp must be fresh, and an
+`HMACOutputLength` is refused.
+
+**Inside `OnBehalfOf` or `ActAs`**, the ticket's client is the subject, and
+the ticket must have been obtained by **Kerberos delegation** for this
+service:
+
+| How the requester obtained it | What it carries | Accepted when |
+|---|---|---|
+| S4U2Proxy to this service's SPN (after S4U2Self, or with the user's own ticket as evidence) | `S4U_DELEGATION_INFO` in its PAC | the requester is the last service the PAC names. The services before it are the earlier delegates |
+| a TGT the user forwarded to the requester | the `FORWARDED` flag | the requester's application has `krb5TrustedForDelegation` |
+| neither | | never: a ticket the user made for this service and handed over is refused |
+
+The application the delegated token was issued for (S, to the
+[delegation policy](delegation.md)) is the requester's own, and the
+`AppliesTo` is the target, as for any other delegated token.
+
+**Issued**, with `wst:TokenType` naming one of the six ValueTypes and
+`wstrust.issueKerberos` on (it is off by default):
+
+* the `AppliesTo` must be an application that is a Kerberos service: one
+  whose identifier is `SPN@REALM`, or that carries `krb5ServicePrincipalName`;
+* the ticket is this realm's KDC's, for the subject, with the PAC this KDC
+  builds for anybody (a subject from another Kerberos realm keeps the PAC
+  their own realm wrote);
+* an `ActAs` ticket names every party that acted in its PAC's
+  `S4U_DELEGATION_INFO`, the requester last: a Kerberos service by
+  `SPN@REALM`, an application with no SPN by its identifier. An
+  `OnBehalfOf` ticket adds nobody;
+* the Authenticator's subkey is returned in `wst:RequestedProofToken` as a
+  `wst:BinarySecret`, so the request must arrive over TLS;
+* `wst:Lifetime` is the AP-REQ's own window: it is good once, within
+  `krb5.clockSkew` of when it was made. The ticket inside lives for the KDC's
+  ticket lifetime;
+* `wst:Forwardable` (default true) makes the ticket forwardable, never for a
+  person who may not be delegated. `wst:Delegatable` set to `true` puts a
+  forwarded TGT for the subject in the Authenticator (a KRB-CRED with
+  `GSS_C_DELEG_FLAG`), only to a target with `krb5TrustedForDelegation`;
+* a target in another Kerberos realm is reached through the
+  [trusts](configure-kerberos.md): the service walks the referral path itself,
+  through the KDCs of the trust realms of this service, with their path
+  checks and SID filtering. A realm that no trust realm here serves is
+  refused: no trust record carries a KDC's address.
+
+`Validate` of a Kerberos token for this service answers `valid` when the
+acceptor accepts it. A Kerberos token is never renewed or cancelled through
+WS-Trust: its ticket is renewed at the KDC.
+
+### The `AppliesTo`
+
+The `AppliesTo` address is the token's audience, and it is resolved through the
+application registry (`wstrustAppliesTo`, then `samlEntityId`) so that the
+console names an application rather than a URL. In **development** that is a
+lookup, not a permission: an unregistered address, and a request with no
+`AppliesTo` at all, are still answered, and the address is filed in the
+register. In **product** a token is issued only for a **registered**
+application — one an administrator, RFC 7591, an OpenID Federation or this
+service's own seeding put in the register; an address the register merely
+recorded from an earlier request is not one. An `AppliesTo` that resolves to
+no registered application is refused with `wst:InvalidScope`, and a request
+with no `AppliesTo` with `wst:InvalidRequest`, for every token type and for
+`OnBehalfOf` / `ActAs`, before the requester is authenticated or anything is
+recorded (#496). The issuance policy — XACML, where it is configured — can
+refuse a token for a subject and audience with a SOAP Fault.
+
+### XML Encryption
+
+XML Encryption of a request, and of the response, is chosen per application.
+Each direction is a checkbox and an XPath expression map. Both checkboxes
+default to off. `wstrustEncryptRequest` and `wstrustEncryptResponse` on the
+application override `wstrust.encryptRequest` and `wstrust.encryptResponse`.
+
+A selected response element is replaced by `xenc:EncryptedData` with
+`Type` `http://www.w3.org/2001/04/xmlenc#Element`, and the answer announces
+it as WS-Security 1.1 section 9 has a sender do. Its `xenc:EncryptedKey`
+goes into a `wsse:Security` header, with an `Id`, a `ReferenceList` naming
+the `EncryptedData`, and a `KeyInfo` that is a `SecurityTokenReference`
+holding the recipient certificate's `#ThumbprintSHA1` KeyIdentifier (Basic
+Security Profile R5426). The `EncryptedData`'s `KeyInfo` is a
+`SecurityTokenReference` to that key. A selected SOAP header is wrapped in
+a WS-Security 1.1 `EncryptedHeader`. Apache WSS4J decrypts such an answer
+in its own security processing.
+The response is not wrapped in `saml:EncryptedAssertion`. The SAML settings
+`saml2.encryptAssertion`, `saml2.encryptionAlgorithm`,
+`saml2.keyTransportAlgorithm` and `samlEncryptionCertificate` stay SAML-only.
+
+**A request or a response that does not match its map stops processing and
+returns a fault.** Nothing is issued, and the clear response is not sent.
+The fault itself stays in the clear, in both modes. Development no longer
+answers in clear when encryption was required and could not be done.
+
+* **How a request's key may be wrapped.** RSA-OAEP over SHA-256
+  (`http://www.w3.org/2009/xmlenc11#rsa-oaep` with a SHA-256 digest and
+  MGF1-SHA-256) is opened in every mode. A key wrapped with OAEP over SHA-1
+  — `rsa-oaep-mgf1p`, Apache WSS4J's default — is refused unless
+  `crypto.allowLegacyHashes` is on (`wsse:FailedCheck`,
+  `STS-WSTRUST-0075`), so configure the client for SHA-256.
+* **Which ciphertext a request may carry.** The shapes opened are an
+  `xenc:EncryptedData` of type Element or Content, or a WS-Security 1.1
+  `EncryptedHeader`, its key in its own `KeyInfo` or in an
+  `xenc:EncryptedKey` in the security header whose `ReferenceList` names
+  it, the way WSS4J, WCF and Metro send it. Where they may be is
+  `wstrust.acceptEncryptedElements` (the application's
+  `wstrustAcceptEncryptedElements`):
+  * **on**, ciphertext anywhere is opened without a map;
+  * **off**, the default in both modes, ciphertext is accepted only where
+    `wstrustEncryptRequestElements` names it: every element restored from it
+    must be one an expression selects, or inside one. Ciphertext with no
+    map, or one the map does not name, is `wst:InvalidRequest`
+    (`STS-WSTRUST-0080`). Where the `AppliesTo` is in the clear, that
+    application decides before anything is opened.
+
+  Either way a ciphertext that will not open with this realm's keys is
+  `wsse:FailedCheck` (`STS-WSTRUST-0075`), and so are more than 64
+  ciphertexts. "This realm's keys" are the realm's XML Encryption key and
+  the applications' own decryption keys, chosen as the next section says.
+* **Encryption required.** `wstrustEncryptRequest` makes the map required:
+  each expression of `wstrustEncryptRequestElements` must match an element
+  that arrived encrypted. An empty map, an expression that matches an
+  element that arrived in the clear, or one that matches nothing restored
+  from ciphertext is `wsse:FailedCheck` (`STS-WSTRUST-0075`).
+* **The signature and the encryption.** A WS-Security signature is read in
+  the order the security header gives. An `EncryptedKey`, a
+  `ReferenceList` or an `EncryptedData` ahead of the `ds:Signature`, or no
+  signature in the clear, means it was made before the encryption
+  (WS-SecurityPolicy's default, SignBeforeEncrypting): it is verified over
+  the opened request. Otherwise it is verified over the message as it
+  arrived, and the other order is tried when that one does not verify.
+  Whatever opens is then held to the signed Body, before any encryption
+  setting is read: a header that opens to a `RequestSecurityToken` or an
+  `AppliesTo` outside the signed Body is `wst:FailedAuthentication`
+  (`STS-WSTRUST-0046`) in product, so a smuggled `AppliesTo` never chooses
+  whose settings apply.
+* **The response.** The response is built in the clear, then every match of
+  `wstrustEncryptResponseElements` is replaced. An empty map, or an
+  expression that selects nothing, is `wst:RequestFailed`
+  (`STS-WSTRUST-0077`). A successful issue is recorded only after that seal
+  succeeds.
+* **Which application.** The `AppliesTo` is read from the opened request,
+  so an encrypted Body names its application as a clear one does. Until it
+  is open, the service-wide settings stand for it.
+
+#### An application's own decryption key pair
+
+An application may hold a decryption key pair of its own (#1668), issued from
+the realm's certificate authority or uploaded, on its page and through
+`/admin-api` ([Configuring WS-Trust](configure-ws-trust.md#an-applications-own-decryption-key-pair)).
+Its four attributes are `wstrustDecryptionCertificate`,
+`wstrustDecryptionCertificateChain`, `wstrustDecryptionPrivateKey` (sealed
+where keys persist, and withheld from every page, answer and directory read)
+and `wstrustDecryptionKeySource` (`issued` or `uploaded`). None is editable
+by hand.
+
+* **Which key opens a ciphertext.** The recipient its `EncryptedKey` names
+  in its `KeyInfo`: the certificate in an `X509Data`, a
+  `SecurityTokenReference` to an `#X509v3` `BinarySecurityToken`, a
+  `#ThumbprintSHA1` or `#X509SubjectKeyIdentifier` `KeyIdentifier`, an
+  `X509SKI`, or an `X509IssuerSerial`; for ECDH-ES, the same inside the
+  `RecipientKeyInfo`. A recipient that is an application's certificate
+  chooses that application's key. Anything else, or no recipient, is
+  opened with the realm's keys, as before. The `AppliesTo` may be inside
+  the ciphertext: the key is chosen before it is read.
+* **Whose request it is.** After the request is open, the application its
+  `AppliesTo` names must be the one whose key opened it. Ciphertext opened
+  with an application's key in a request for another application, for no
+  application, or alongside another application's key, is
+  `wsse:FailedCheck` (`STS-WSTRUST-0082`). A request for an application
+  that holds its own key, any of whose ciphertext was opened with the
+  realm's key, is `wsse:FailedCheck` (`STS-WSTRUST-0083`). Nothing is
+  issued, and neither fault says more than that the request was encrypted
+  to a key it may not be opened with.
+* **The response is unchanged.** It is still encrypted to the recipient
+  the list below chooses, not to the application's own certificate.
+
+An expression is a stated subset of XPath: `/` and `//`, `*`, an element
+name, `prefix:local`, a union with `|`, and the predicates `local-name()`,
+`namespace-uri()` and `@attr`, joined by `and`. Anything else, or a prefix
+this service does not bind, is `wst:RequestFailed` (`STS-WSTRUST-0079`).
+Write `local-name()` and `namespace-uri()` when one expression should match
+SOAP 1.1 and SOAP 1.2.
+
+**A prefix is this service's, never the request's.** As XPath 1.0 has it, an
+expression's prefixes come from its context, and a declaration in the
+request is ignored, so a request cannot bind `wst` to a namespace of its
+own and offer a decoy. The prefixes are `soap` and `soap11` (SOAP 1.1),
+`soap12`, `wsse`, `wsse11`, `wsu`, `wst` (1.3), `wst14`, `wst2005`,
+`wst2004`, `wsa` (WS-Addressing 1.0), `wsa2004`, `wsp` (2004/09), `saml`
+(2.0), `saml11`, `ds` and `xenc`.
+
+The algorithms are `wstrust.encryptionAlgorithm`
+(`wstrustEncryptionAlgorithm`), `aes256-gcm` by default, and
+`wstrust.keyTransportAlgorithm` (`wstrustKeyTransportAlgorithm`),
+`rsa-oaep-mgf1p` by default. `aes128-gcm` and `rsa-oaep` are also available.
+`aes256-cbc`, `aes128-cbc` and `rsa-1_5` are available only where broken
+algorithms are allowed, and product mode ignores `rsa-1_5` and uses
+`rsa-oaep-mgf1p`. Where legacy hashes are not allowed, `rsa-oaep-mgf1p` is
+used as `rsa-oaep`. An elliptic-curve recipient uses ECDH-ES whatever the
+key transport says. `wst:EncryptionAlgorithm` and `wst:EncryptWith` may name
+the configured cipher, by its short name or its XML Encryption URI, only
+while response encryption is on. Anything else is `wst:InvalidRequest`
+(`STS-WSTRUST-0078`).
+
+The response is encrypted to one recipient. A configured step that cannot
+be used does not fall through to the next:
+
+1. `wstrustEncryptionCertificate`, when it is set: base64 DER or PEM. A
+   value that is not a certificate this process can read is
+   `STS-WSTRUST-0077`.
+2. Otherwise `wstrustResponseRecipientXPath`: the first
+   `ds:X509Certificate` (the XML Signature namespace, or no namespace) or
+   `#X509v3` `BinarySecurityToken` that expression selects. No nodes, or an
+   element that is not one of those two, is `wst:InvalidRequest`
+   (`STS-WSTRUST-0076`). **The certificate must be one the request's
+   accepted WS-Security signature vouches for**: the `BinarySecurityToken`
+   its key reference names, or an element inside a part it references by
+   `wsu:Id`. Anything else, and anything in an unsigned request, is
+   `wst:InvalidRequest` (`STS-WSTRUST-0081`): a certificate no signature
+   covers is one a party on the path could have put there. A certificate
+   element whose text is not a certificate is `STS-WSTRUST-0077`. The next
+   source is not tried.
+3. Otherwise the first signer certificate element the request's WS-Security
+   signature names, and only when that signature is present and verifies:
+   the `#X509v3` `BinarySecurityToken` the signature's reference points at,
+   or a `ds:X509Certificate` in that signature's `KeyInfo`.
+
+A thumbprint, a Subject Key Identifier or an issuer and serial is not a
+recipient. A certificate inside an assertion, or inside `OnBehalfOf` or
+`ActAs`, is not the signer's. With response encryption on and no recipient,
+the fault is `wst:InvalidRequest` (`STS-WSTRUST-0076`) in both modes. A
+cipher failure, or a certificate the encryption-recipient check refuses, is
+`wst:RequestFailed` (`STS-WSTRUST-0077`). Under
+[paranoid PKI mode](pki.md#paranoid-pki-mode) the certificate must permit
+`keyEncipherment` or `keyAgreement`. A message-signing certificate permits
+`digitalSignature` only, so product mode refuses it once it has been found.
+A certificate with no `keyUsage` may encrypt (RFC 5280). When the signer's
+certificate cannot be an encryption recipient, either set
+`wstrustEncryptionCertificate`, or set `wstrustRecipientIgnoresKeyUsage` to
+`true` (the realm's `wstrust.recipientIgnoresKeyUsage`, off by default) to
+encrypt to that certificate whatever its `keyUsage` says. That waives the
+`keyUsage` check alone: the certificate's validity, its path and its
+revocation are checked as before. It is the one paranoid-PKI check an
+application may waive. A requester whose own certificate permits both
+`digitalSignature` and `keyEncipherment`, stored on its entry, needs no
+waiver.
+
+To encrypt the issued SAML 2.0 assertion, set `wstrustEncryptResponse` to
+`true` and add this as one value of `wstrustEncryptResponseElements`:
+
+```
+//*[local-name()='Assertion' and namespace-uri()='urn:oasis:names:tc:SAML:2.0:assertion']
+```
+
+Callers that looked for `EncryptedAssertion` find `EncryptedData`.
+
+### Message integrity
+
+An application may require its requests signed, and may have its answers
+signed. Both are off until it turns them on, and both are XPath maps in the
+subset [XML Encryption](#xml-encryption) uses, with the same prefixes.
+
+**A signed request.** With `wstrustSignRequest` on (the realm's
+`wstrust.signRequest`), a request for the application must carry a
+WS-Security signature this service accepted
+([A signed request](#a-signed-request)); without one the fault is
+`wsse:FailedCheck` (`STS-WSTRUST-0084`). Every element
+`wstrustSignRequestElements` selects must be one that signature references,
+or inside one. An expression that matches nothing, or an element it does
+not cover, is `wsse:FailedCheck` (`STS-WSTRUST-0085`); a map that selects
+more than 256 elements is `STS-WSTRUST-0087`. What a signature made over
+ciphertext covers is the ciphertext it references, and the element that
+ciphertext opens to. An empty map is the
+SOAP Body, which a signature always covers. Development believes a
+signature, as it always has, and still holds the map to what it references.
+
+**A signed answer.** With `wstrustSignResponse` on (`wstrust.signResponse`),
+an answer to Issue, Renew, Validate or Cancel carries, in its
+`wsse:Security` header, a `wsu:Timestamp` that expires five minutes after
+it was created, a `BinarySecurityToken` holding the realm's XML signing
+certificate, and a `ds:Signature` made with that key. The signature
+references the Timestamp and each element `wstrustSignResponseElements`
+selects (the Body when the map is empty) by `wsu:Id` under exclusive
+canonicalization, and its `KeyInfo` is a `SecurityTokenReference` to the
+token. A fault is never signed. An expression that matches nothing, or one
+that selects the `wsse:Security` header itself, is `wst:RequestFailed`
+(`STS-WSTRUST-0086`), and the token is not sent. The algorithm is
+`saml.signatureAlgorithm`'s. A post-quantum XML signer has no certificate to
+reference, so an answer it would sign is `STS-WSTRUST-0086` too.
+
+**Signed and encrypted.** With both on, `wstrustResponseProtectionOrder`
+(`wstrust.responseProtectionOrder`) decides the order:
+
+* `sign-then-encrypt`, the default and WS-SecurityPolicy's: the signature's
+  digests are of the plaintext. The header holds the encrypted keys first,
+  then the Timestamp, the token and the signature, so a receiver decrypts
+  and then verifies. `wstrustEncryptSignature` (`wstrust.encryptSignature`)
+  encrypts the `ds:Signature` too.
+* `encrypt-then-sign`: the digests are of the ciphertext. The Timestamp,
+  the token and the signature come first, ahead of the keys, so a receiver
+  verifies and then decrypts.
+
+**The presets.** The console's *Body* and *Header* checkboxes on an
+application's WS-Trust tab write these expressions into the maps. Ticking a
+box replaces the map with the presets of the boxes ticked; unticking the
+map's last box puts back what it held before, while the page is open, and
+otherwise takes out only that box's expressions. Putting a map to use (a box
+ticked, the XPath builder's list added, a value typed into an empty map)
+turns its switch on, and giving it back turns the switch back. The boxes
+store nothing of their own: a box is ticked exactly when its expressions are
+in the map. [Configuring WS-Trust](configure-ws-trust.md#message-protection-in-the-console)
+describes the tab.
+
+| Preset | Encryption maps | Signing maps |
+|---|---|---|
+| Body | `/soap11:Envelope/soap11:Body/* \| /soap12:Envelope/soap12:Body/*` (the Body's content, as `sp:EncryptedParts/sp:Body` means it) | `/soap11:Envelope/soap11:Body \| /soap12:Envelope/soap12:Body` |
+| Header | every header block but `wsse:Security`: `/soap11:Envelope/soap11:Header/*[not(local-name()='Security' and namespace-uri()='…secext-1.0.xsd')]`, and the SOAP 1.2 twin | the same |
+
+**Checked against Apache WSS4J.** WSS4J 4.0.3 verifies a signed answer
+against `/sts/cert`, decrypts and verifies it in both orders and with the
+signature encrypted, and its signed requests (with or without its
+`InclusiveNamespaces` prefix list) are accepted and held to the presets.
+Requests WSS4J signs and encrypts are accepted in either order: AES-256-GCM,
+RSA-OAEP over SHA-256, a header block as an `EncryptedHeader`, the
+recipient named by issuer and serial, a direct reference, its SKI or its
+thumbprint. Every combination of the eight Body and Header boxes, under
+SOAP 1.1 and 1.2, and custom expressions in all five fields are exchanged
+with WSS4J and opened and verified by it, in product mode
+(`tests/wstrust_protection_matrix.js`).
+While answers are signed, each output's `ResponseProtection` offers
+`sp:SignedParts` and `sp:SignedElements`, both optional.
+
+The XPath subset includes `not(…)` over its other predicates, which is what
+the Header preset needs. A `not()` inside a `not()` is `STS-WSTRUST-0079`.
+The console's *XPath builder*, opened from the card of each field that holds
+expressions, writes an expression for an element you click in a sample
+message, with these prefixes, and adds the list you build to that field.
+
+### Not implemented
+
+A signed request's certificate is found by thumbprint, issuer and serial or
+Subject Key Identifier only among the certificates this realm issued; a
+stored one is sent in a `BinarySecurityToken`. Those references authenticate
+the requester. They are not an encryption recipient: a response is encrypted
+only to a certificate element, as [XML Encryption](#xml-encryption) says.
+`wst:UseKey` and `wst:ProofEncryption` are not implemented, because the
+tokens issued here are bearer tokens. `Validate` reports whether a token is
+**present**, not whether it verifies, except for a Kerberos token, which it
+accepts; `Cancel` recalls nothing already issued;
+and a SAML assertion presented as a credential is trusted only when **this**
+STS signed it — there is no register of foreign issuers.
+
+### Faults
+
+Every refusal is a SOAP Fault carrying one of WS-Trust 1.4 section 11's fault
+codes, in the request's own trust namespace: on SOAP 1.1 it is the
+`faultcode`, and on SOAP 1.2 it is the `Subcode` under `soap:Sender`.
+
+| Refusal | Fault code |
+|---|---|
+| The body is not well-formed XML | `wst:InvalidRequest` |
+| An `AppliesTo` that resolves to no registered application (product) | `wst:InvalidScope` |
+| No `AppliesTo`, or an empty one, on a request that issues (product) | `wst:InvalidRequest` |
+| The requester's credential is incomplete, wrong, or an assertion or JWT that does not verify, is not yet valid, names nobody or is addressed neither to its holder nor to this IdP (product); no credential at all (product); a delegation with no requester credential (product); a signed request refused for its signature, certificate or a replay (see [A signed request](#a-signed-request)) | `wst:FailedAuthentication` |
+| A signed request whose signature does not cover the Body or the Timestamp | `wst:AuthenticationBadElements` |
+| An assertion or a JWT, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired; a signed request whose Timestamp has expired (product) | `wst:ExpiredData` |
+| The token inside `OnBehalfOf` / `ActAs` is not an assertion or a JWT this STS issued, or does not verify, is not yet valid or names nobody (product) | `wst:InvalidRequest` |
+| A Kerberos token refused by the acceptor, turned off, or (inside `OnBehalfOf` / `ActAs`) not obtained by delegation or not delegated to the requester | `wst:FailedAuthentication` as the credential, `wst:InvalidRequest` inside an element |
+| A Kerberos token asked for while `wstrust.issueKerberos` is off, or for an `AppliesTo` that is no Kerberos service | `wst:BadRequest` |
+| A Kerberos token asked for without TLS; a Renew or Cancel of a Kerberos token | `wst:InvalidRequest` |
+| A forwarded Kerberos ticket from a requester not trusted for delegation; `wst:Delegatable` to a target not trusted for it; the KDC could not issue the ticket | `wst:RequestFailed` |
+| Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; response encryption on and the request names no recipient certificate element, or the recipient expression selects one no accepted signature covers (`STS-WSTRUST-0081`); ciphertext no request map names while arbitrary encrypted elements are off (`STS-WSTRUST-0080`); `wst:EncryptionAlgorithm` or `wst:EncryptWith` while response encryption is off, or naming a cipher other than the one configured | `wst:InvalidRequest` |
+| Request encryption on and the request does not match its map — the map is empty, or an expression matches an element that arrived in the clear or nothing restored; or, either way, a ciphertext will not open (`STS-WSTRUST-0075`). Ciphertext opened with an application's own key in a request that is not that application's (`STS-WSTRUST-0082`), or a request for an application with its own key encrypted to the realm's (`STS-WSTRUST-0083`). Processing stops | `wsse:FailedCheck` (WS-Security 1.1 section 12) |
+| The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; response encryption that cannot be completed (an empty map, an expression that matches nothing, a certificate element or the application's encryption certificate that is not readable, a recipient the encryption check refuses, a cipher that failed); an XPath expression outside the subset this service evaluates; a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
+
+A failure of the service itself, not of the request, is `soap:Receiver` (SOAP
+1.2) or `soap:Server` (SOAP 1.1), with no `wst:` code. `Validate` with no token
+to validate is not a fault: it answers `wst:Status` `invalid`. The fault never
+says whether a username or a password was wrong. Each refusal's error code is
+in [Error codes](error-codes.md).
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a certificate stored on exactly one entry was named by whoever provisioned that entry, so it needs no chain to anything. Its validity, keyUsage and revocation still count. A certificate stored nowhere, or on two entries, is refused as it is outside this mode. See the `wss-x509-token` row of the [use cases](pki-use-cases.md).
+
+## Development and product mode
+
+| | Development | Product |
+|---|---|---|
+| The `AppliesTo` | any address, or none; the address is filed in the register | a registered application only, or a `wst:InvalidScope` fault; none is a `wst:InvalidRequest` fault |
+| A request with no credential | a token for the literal subject `anonymous` (a Renew for whoever its `RenewTarget` names) | refused, with a SOAP Fault naming what to present |
+| A UsernameToken password | any password but `invalid` | verified against the person's stored `userPassword`; a person who holds or must hold a second factor is refused their own password with the same fault a wrong one gets, and presents an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `wstrust` |
+| A UsernameToken naming an application | any password but `invalid` | one of the application's unexpired client secrets |
+| A SAML assertion as the credential | believed | must verify against this realm's own signing certificate (`/sts/cert`) and be inside its `Conditions` |
+| A TLS client certificate as the credential | the same as product: it must verify and be this realm's, for a person or an application; a refused one is a fault | as development |
+| A signed request | its structure and certificate reference are read and the certificate's holder believed; the signature, Timestamp, revocation and replay are not checked | every check in [A signed request](#a-signed-request) |
+| A JWT as the credential | believed | must verify with this realm's own key (`/oauth2/jwks`), be within its `exp`, carry the realm's OAuth issuer, and name a person or an application this realm holds. A Logout Token, a Security Event Token or a refresh token this realm signed is not a credential (`STS-WSTRUST-0026`), in either seat |
+| `OnBehalfOf` / `ActAs` | needs no requester credential | needs the requester's own credential, and the inner token must be an assertion or a JWT this STS signed, or a delegated Kerberos ticket |
+| A Kerberos token, anywhere | checked by the acceptor, the same as product | checked by the acceptor: the ticket under this service's key, the Authenticator, the clock and the replay cache |
+| Who may act for whom | the issuance policy is asked and the act says what would have been refused; the token is issued | the policy must allow the act ([Delegation and impersonation](delegation.md)), or a `wst:RequestFailed` fault |
+| An assertion with no NameID | subjects such as `saml-subject` are invented | refused |
+| XML Encryption the application requires, when the message does not match its map or the response cannot be sealed | a fault, and the clear token is not sent | a fault, and the clear token is not sent |
+
+The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
+"a delegation starts no session" hold in **both** modes. See
+[What is not checked](what-is-not-checked.md).
+
+## Configuration
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `wstrust.tokenLifetimeMin` | `STS_WSTRUST_TOKEN_LIFETIME_MIN` | `60` | yes | Token lifetime when the RST carries no `wst:Lifetime`. |
+| `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling a requested `wst:Lifetime` is clamped to, in both modes. |
+| `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The JWT's `alg`: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`. |
+| `wstrust.jwtCertificateHeader` | `STS_WSTRUST_JWT_CERTIFICATE_HEADER` | `x5u` | yes | Whether a JWT names its signing chain: `x5u` (an address), `x5c` (inline), `both` or `none`. |
+| `wstrust.acceptClientCertificate` | `STS_WSTRUST_ACCEPT_CLIENT_CERTIFICATE` | `true` | yes | Whether the verified TLS client certificate on the connection authenticates a requester whose `wsse:Security` carries no credential (see [Credentials](#credentials)). |
+| `wstrust.acceptKerberos` | `STS_WSTRUST_ACCEPT_KERBEROS` | `true` | yes | Whether a [Kerberos token](#kerberos-tokens) is accepted as the requester's credential and inside `OnBehalfOf` / `ActAs`. |
+| `wstrust.issueKerberos` | `STS_WSTRUST_ISSUE_KERBEROS` | `false` | yes | Whether a `wst:TokenType` naming a Kerberos token is answered with one (see [Kerberos tokens](#kerberos-tokens)). |
+| `wstrust.encryptRequest` | `STS_WSTRUST_ENCRYPT_REQUEST` | `false` | yes | Whether a request whose `AppliesTo` names no application of its own must arrive with `wstrustEncryptRequestElements` encrypted. An application's `wstrustEncryptRequest` overrides it. On, a map mismatch stops processing (`STS-WSTRUST-0075`). |
+| `wstrust.advertiseEndpointIdentity` | `STS_WSTRUST_ADVERTISE_ENDPOINT_IDENTITY` | `false` | yes | Whether every WSDL port carries the encryption certificate as a `wsa:EndpointReference/wsid:Identity` (WS-AddressingIdentity, a Microsoft specification never standardised). Off, a client takes the certificate from `/saml2/metadata` (see [The encryption certificate](#the-encryption-certificate)). |
+| `wstrust.encryptResponse` | `STS_WSTRUST_ENCRYPT_RESPONSE` | `false` | yes | Whether a response has `wstrustEncryptResponseElements` replaced by `xenc:EncryptedData`. An application's `wstrustEncryptResponse` overrides it. On, and the encryption cannot be completed, the request is a fault in both modes and the clear response is not sent. |
+| `wstrust.encryptionAlgorithm` | `STS_WSTRUST_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher those elements use. `aes128-gcm` is also available; `aes256-cbc` and `aes128-cbc` only where broken algorithms are allowed. An application's `wstrustEncryptionAlgorithm` overrides it. |
+| `wstrust.keyTransportAlgorithm` | `STS_WSTRUST_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | How the content key is wrapped to an RSA recipient. `rsa-oaep` is also available; `rsa-1_5` only where broken algorithms are allowed, and product mode ignores it. An EC recipient uses ECDH-ES. An application's `wstrustKeyTransportAlgorithm` overrides it. |
+| `wstrust.signRequest` | `STS_WSTRUST_SIGN_REQUEST` | `false` | yes | Whether a request must carry an accepted WS-Security signature, covering what the application's `wstrustSignRequestElements` names. An application's `wstrustSignRequest` overrides it (see [Message integrity](#message-integrity)). |
+| `wstrust.signResponse` | `STS_WSTRUST_SIGN_RESPONSE` | `false` | yes | Whether an answer carries a signed `wsu:Timestamp` and a signature over it and the Body, or what `wstrustSignResponseElements` names. An application's `wstrustSignResponse` overrides it. |
+| `wstrust.responseProtectionOrder` | `STS_WSTRUST_RESPONSE_PROTECTION_ORDER` | `sign-then-encrypt` | yes | The order of signing and encryption when both are on; `encrypt-then-sign` is the other. An application's `wstrustResponseProtectionOrder` overrides it. |
+| `wstrust.encryptSignature` | `STS_WSTRUST_ENCRYPT_SIGNATURE` | `false` | yes | Whether a signed-then-encrypted answer's `ds:Signature` is encrypted too. An application's `wstrustEncryptSignature` overrides it. |
+| `wstrust.recipientIgnoresKeyUsage` | `STS_WSTRUST_RECIPIENT_IGNORES_KEY_USAGE` | `false` | yes | Whether an answer may be encrypted to a certificate whose `keyUsage` permits neither `keyEncipherment` nor `keyAgreement`, such as the request's signing certificate. Only that check is waived. An application's `wstrustRecipientIgnoresKeyUsage` overrides it. |
+
+A SAML token is shaped by the shared `saml.*` settings and the SAML 2.0
+assertion settings — see the
+[SAML 2.0 configuration](saml2-sso.md#configuration) and
+[the assertion settings](saml2-sso.md#the-assertion-settings-every-application-inherits).
+XML Encryption of the WS-Trust message uses the encryption settings above and the
+application's own attributes, not `saml2.encryptionAlgorithm` or
+`saml2.keyTransportAlgorithm`. This table is a copy; the live source is
+`/admin/wstrust` and `GET /admin-api/config`. See
+[Configuration](configuration.md) for how a value is resolved; a setting is
+changed on `/admin/wstrust` or with `POST /admin-api/config/set`.
+
+## Design decisions
+
+* **One parser for every version.** Matching elements by local name lets one
+  `RequestSecurityToken` reader serve 1.0 through 1.4, and the response echoes
+  the request's namespace so a client of any version is answered in its own.
+* **Authenticate before choosing the operation.** Validate and Cancel once
+  answered without authenticating anybody; every operation now authenticates
+  first, so every requester is recorded and `invalid` is refused everywhere.
+* **A credential is read only from the requester's own place.** A document
+  carrying an `OnBehalfOf` token holds several identities, and the one inside
+  somebody else's token is not the requester.
+* **`OnBehalfOf` and `ActAs` are two mechanisms.** The token issued is the same,
+  but impersonation and delegation are different facts, and the delegation page
+  draws them differently.
+* **A requested lifetime is a request.** WS-Trust 1.4 section 4.1 makes the
+  issued lifetime the STS's decision; an unbounded honour would let a caller
+  mint a year-long bearer token in any mode.
+* **The authentication context names the real credential.** Calling every
+  token a password sign-in, including an anonymous one, misled relying parties
+  that read it.
+* **A delegation starts no session**, because the session would be in the name
+  of somebody who was not there.
+* **The smallest honest answer to "which issuer is trusted".** In product a
+  SAML credential must be one this STS signed — the key it already publishes —
+  rather than any assertion at all.
+* **One issuer, in every token** (#523). A SAML 2.0 or SAML 1.1 assertion's
+  Issuer and a JWT's `iss` are the realm's OAuth 2.0 issuer, for every
+  AppliesTo — the name SAML SSO and WS-Federation publish as their entityID.
+  Who asked is named by the delegation itself (the last `del:Delegate`, the
+  SAML 1.1 `delegates` attribute, the JWT's `act`), never by the Issuer. The
+  issuer settings (`wstrust.issuer`, `saml.issuer`) are retired.
+* **A JWT needs a directory entry.** A bare name as `sub` would be inherited by
+  a person created later under that name.
+
+## In the running service
+
+* **Protocols → WS-Trust** (`/admin/wstrust`): the STS's endpoint and its own
+  settings. What an assertion contains is on the SAML pages —
+  [SAML assertions](saml2-sso.md#the-assertion-settings-every-application-inherits)
+  and [Custom SAML attributes](saml2-sso.md#custom-saml-attributes).
+* **`/admin/delegation`** draws `OnBehalfOf` and `ActAs` chains;
+  **`/admin/tokens`** follows what one exchange produced into the next.
+* `GET /admin-api/wstrust` returns the same settings; the full API is in
+  `/admin-api/openapi.json`.
+* `GET /sts` describes the endpoint live, in plain text. `GET /sts/metadata`
+  is the WSDL, `GET /sts/metadata/capabilities` the credential and token-type
+  pairs, and `POST /sts/mex` both over WS-MetadataExchange. Failures
+  are recorded under `STS-WSTRUST-NNNN` codes — see
+  [Error codes](error-codes.md).
+
+## Related
+
+* [SAML 2.0 Web Browser SSO](saml2-sso.md) — the assertion builder, assertion
+  settings and custom attributes WS-Trust shares
+* [WS-Federation](ws-federation.md), the browser profile that carries an RSTR
+* [SAML 1.1 browser profiles](saml11.md)
+* [SAML 2.0 assertions](saml-assertions.md) — presenting an assertion at the
+  OAuth token endpoint (RFC 7522)
+* [OAuth 2.0 and OpenID Connect](oauth-oidc.md) — RFC 8693 token exchange, the
+  other way this service exchanges one token for another
+* [Accepted tokens](accepted-tokens.md), [PKI](pki.md),
+  [Trust realms](trust-realms.md), [What is not checked](what-is-not-checked.md),
+  [Configuration](configuration.md)

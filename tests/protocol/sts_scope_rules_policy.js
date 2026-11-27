@@ -59,6 +59,9 @@
 // OWNED HERE (local: true): the issuance policy is this repository's own.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const K = require("./oauth_wire_kit.js").kit("sts_scope_rules_policy");
 const log = K.log;
@@ -150,7 +153,7 @@ async function authorize(id, b, params, username) {
     r = await K.signIn(id, b, r, username, PASSWORD);
   }
   for (let hops = 0; hops < 8 && (r.status === 302 || r.status === 303) &&
-       (/^\//.test(r.location) || r.location.indexOf(K.base) === 0);
+       (/^\//.test(r.location) || urls.isUnder(r.location, K.base));
        hops++) {
     last = r.location;
     r = await b.go(r.location);
@@ -287,12 +290,10 @@ async function everyOtherScope(dev, prod) {
           function () {
     issued(free, "anything:custom");
   });
-  const defaults = await cc(prod, "sp-bare", "profile email");
-  K.check("B. product, no list: the OpenID Connect scopes are the default " +
-          "set", function () {
-    issued(defaults, "profile email");
-  });
-  for (const one of ["anything:custom", "ssf:write"]) {
+  // #1589: the default set is `oauth2.undeclaredClientScopes`, `openid`
+  // alone by default since 1.2.0 — so `profile` is refused like any other
+  // undeclared scope. (`legacy`, the old set, is tests/scope_policy.js's.)
+  for (const one of ["profile email", "anything:custom", "ssf:write"]) {
     const out = await asked(prod, "STS-OAUTH-0578", function () {
       return cc(prod, "sp-bare", one);
     });

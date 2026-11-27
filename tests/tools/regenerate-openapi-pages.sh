@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: BUSL-1.1
 #
-# tests/tools/regenerate-openapi-pages.sh — WRITES docs/v1.1.0/openapi/ FROM
+# tests/tools/regenerate-openapi-pages.sh — WRITES docs/v1.2.0/openapi/ FROM
 # THE CODE.
 #
 # A changed operation or response model owes this, in the same commit:
@@ -19,7 +19,7 @@ docker build -q $(tests/tools/mirror-contexts.sh) -f tests/Dockerfile \
   -t "${TAG}" . > /dev/null
 # The latest documentation version's folder only: a frozen release's pages
 # are never regenerated (docs/CLAUDE.md, *The versioned site*).
-DOCS_LATEST=docs/v1.1.0
+DOCS_LATEST=docs/v1.2.0
 mkdir -p "${DOCS_LATEST}/openapi"
 docker run --rm --label com.docker.compose.project=none \
   -v "${PWD}/${DOCS_LATEST}/openapi:/out" "${TAG}" bash -c \

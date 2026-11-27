@@ -16,6 +16,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const fs = require('fs');
 const path = require('path');
 
@@ -26,10 +29,10 @@ const ROOT = path.join(__dirname, '..');
 // The latest documentation version: its pages, and its sidebar in
 // docs/_data/navigation/. A frozen release is never checked (docs/CLAUDE.md,
 // *The versioned site*).
-const DOCS = path.join(ROOT, 'docs', 'v1.1.0');
+const DOCS = path.join(ROOT, 'docs', 'v1.2.0');
 const NAVIGATION = path.join(ROOT, 'docs', '_data', 'navigation',
-                             'v1-1-0.yml');
-const ORIGIN = 'https://rcbj.github.io/iya-sts/v1.1.0/';
+                             'v1-2-0.yml');
+const ORIGIN = 'https://rcbj.github.io/iya-sts/v1.2.0/';
 
 const SKIP_IDS = { 'logout-signout': true, 'logout-details': true };
 
@@ -221,7 +224,7 @@ async function run(t) {
       problems.push('console page ' + row.path + ' has no documentation');
       return;
     }
-    if (url.indexOf(ORIGIN) !== 0) {
+    if (!urls.isUnder(url, ORIGIN)) {
       problems.push('console page ' + row.path + ' is not absolute');
     }
     checkTarget(url.slice(ORIGIN.length), row.path, problems, cache);
@@ -230,8 +233,7 @@ async function run(t) {
     problems.push('the cert-issuance page was not in the page table');
   }
   const cluster = DocLinks.forConsolePage('/admin/cluster');
-  if (!cluster || cluster.indexOf(ORIGIN + 'cluster-concepts.html')
-      !== 0) {
+  if (!cluster || !urls.isAt(cluster, ORIGIN + 'cluster-concepts.html')) {
     problems.push('/admin/cluster');
   }
 
@@ -265,7 +267,7 @@ async function run(t) {
       problems.push('portal page ' + row.path);
       return;
     }
-    if (url.indexOf(ORIGIN) !== 0) {
+    if (!urls.isUnder(url, ORIGIN)) {
       problems.push('portal page ' + row.path + ' is not absolute');
     }
     checkTarget(url.slice(ORIGIN.length), row.path, problems, cache);

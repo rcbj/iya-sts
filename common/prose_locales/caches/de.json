@@ -351,6 +351,22 @@
     "en": "1d89a0731fc525e7",
     "text": "eine bereits gesehene Signatur, sodass die Anfrage abgelehnt wurde"
   },
+  "caches.store.hardware_tokens.register.title": {
+    "en": "f1c8d3f653154823",
+    "text": "Hardware-Token-Register"
+  },
+  "caches.store.hardware_tokens.register.description": {
+    "en": "5efc16810cb7f48e",
+    "text": "Eine Zeile pro physischem Hardware-Token (ein YubiKey, eine Smartcard) in diesem Bereich, nach Hersteller und Seriennummer geschlüsselt: wer es besitzt, sein Modell und die Anmeldedaten darauf. Eine Seriennummer wird nur aus einer Attestierung erfasst. Nie ein Geheimnis."
+  },
+  "caches.store.hardware_tokens.register.bound": {
+    "en": "b2eadcf654a8cb28",
+    "text": "Erzwungen: die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Vertrauensbereich; die ältesten werden verworfen und beim nächsten Abruf erneut aus dem Speicher gelesen; das Register selbst ist durch die Anmeldedaten begrenzt, die es aufführt (webauthn.maxKeysPerPerson für FIDO)."
+  },
+  "caches.store.hardware_tokens.register.lifetime": {
+    "en": "c18bfda6fa452b2b",
+    "text": "Bis das Token entfernt wird; ein verlorenes Token bleibt erhalten, als verloren markiert."
+  },
   "caches.store.jose.kid-thumbprint-uris.title": {
     "en": "336e569778455530",
     "text": "Schlüsselbezeichner nach RFC 9278"
@@ -702,6 +718,22 @@
   "caches.store.mail.outbox.hitMeaning": {
     "en": "cdfb417042891812",
     "text": "eine Nachricht, unterdrückt als Duplikat einer bereits für dieselbe Aktion innerhalb von mail.dedupWindowS eingereihten"
+  },
+  "caches.store.oath_tokens.inventory.title": {
+    "en": "52f9d22caf2dc03d",
+    "text": "OATH-Token-Bestand"
+  },
+  "caches.store.oath_tokens.inventory.description": {
+    "en": "7e1f6a1cdbd27667",
+    "text": "Eine Zeile je HOTP- oder TOTP-Schlüssel, den ein Administrator aus der PSKC-Seed-Datei eines Herstellers (RFC 6030) importiert hat, geschlüsselt nach Hersteller, Seriennummer und Schlüssel-ID: nicht zugewiesen (sein Geheimnis versiegelt), einer Person zugewiesen (das Geheimnis entfernt, jetzt auf ihrem Eintrag) oder außer Betrieb."
+  },
+  "caches.store.oath_tokens.inventory.bound": {
+    "en": "c93f702fb2bd8e60",
+    "text": "Erzwungen: die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Vertrauensbereich; die ältesten werden verworfen und beim nächsten Abruf erneut aus dem Speicher gelesen; der Bestand ist durch das begrenzt, was Administratoren importieren, höchstens 2.000 Schlüssel je Datei."
+  },
+  "caches.store.oath_tokens.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Bis ein nicht zugewiesenes Token entfernt wird; ein zugewiesenes oder außer Betrieb genommenes Token bleibt erhalten."
   },
   "caches.store.oauth2.access-token-status.title": {
     "en": "510d919c0bffd0a8",
@@ -1106,6 +1138,34 @@
   "caches.store.oidfed.resolutions.lifetime": {
     "en": "ce6f4a649ea6af77",
     "text": "Bis die Kette abläuft (ihr kleinstes exp, 10.4), und höchstens oidfed.resolveCacheS."
+  },
+  "caches.store.openpgp.challenges.title": {
+    "en": "c0c95c44e5f3835e",
+    "text": "OpenPGP-Registrierungs-Challenges"
+  },
+  "caches.store.openpgp.challenges.description": {
+    "en": "be9e39edb5fb9e44",
+    "text": "Eine Challenge je Person, die einen OpenPGP-Schlüssel registriert: der Text, den sie mit gpg --clearsign signiert, seine Nonce und sein Ablaufzeitpunkt. Wird einmal verbraucht, durch einen clusterweiten Claim auf die Nonce."
+  },
+  "caches.store.openpgp.challenges.bound": {
+    "en": "bcb019b421b3e33e",
+    "text": "Erzwungen: die Challenges, die ein Prozess hält, sind ein Cache von 5.000 pro Vertrauensbereich; die ältesten werden verworfen und beim nächsten Abruf erneut aus dem Speicher gelesen; der Speicher hält eine je Person (nach entryUUID geschlüsselt), jede für openpgp.challengeLifetimeS."
+  },
+  "caches.store.openpgp.wkd.title": {
+    "en": "dc47d455d5283de5",
+    "text": "Veröffentlichungen im Web Key Directory"
+  },
+  "caches.store.openpgp.wkd.description": {
+    "en": "f79c85531015261b",
+    "text": "Welchen OpenPGP-Schlüssel das Web Key Directory für jede gehashte Adresse liefert: den Inhaber (eine entryUUID) und den von ihm veröffentlichten Fingerabdruck. Ein Verweis: Der Schlüssel selbst wird aus dem Eintrag gelesen. Nie ein Geheimnis."
+  },
+  "caches.store.openpgp.wkd.bound": {
+    "en": "67c6603e0b96fd95",
+    "text": "Erzwungen: die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Vertrauensbereich; die ältesten werden verworfen und beim nächsten Abruf erneut aus dem Speicher gelesen; das Register hält eine Zeile je Person, die sich dafür entschieden hat."
+  },
+  "caches.store.openpgp.wkd.lifetime": {
+    "en": "06861887c7e6c8f1",
+    "text": "Bis die Person die Veröffentlichung beendet oder den Schlüssel entfernt."
   },
   "caches.store.passwords.breach-ranges.title": {
     "en": "5746db291bee19b3",
@@ -1623,6 +1683,22 @@
     "en": "484401484f6f539d",
     "text": "ein Ticket wurde über seinen Digest gefunden"
   },
+  "caches.store.yubiotp.inventory.title": {
+    "en": "f2915b8ab9e4a37c",
+    "text": "Yubico-OTP-Bestand"
+  },
+  "caches.store.yubiotp.inventory.description": {
+    "en": "c58db5407fb1dcbe",
+    "text": "Eine Zeile je YubiKey-OTP, das ein Administrator aus einer CSV importiert hat, geschlüsselt nach Seriennummer: nicht zugewiesen (sein AES-Schlüssel versiegelt), einer Person zugewiesen (das Geheimnis entfernt, jetzt auf ihrem Eintrag) oder außer Betrieb."
+  },
+  "caches.store.yubiotp.inventory.bound": {
+    "en": "1b2409611ca2ae53",
+    "text": "Erzwungen: die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 pro Vertrauensbereich; die ältesten werden verworfen und beim nächsten Abruf erneut aus dem Speicher gelesen."
+  },
+  "caches.store.yubiotp.inventory.lifetime": {
+    "en": "4f13467dac65d62f",
+    "text": "Bis ein nicht zugewiesenes Token entfernt wird; ein zugewiesenes oder außer Betrieb genommenes Token bleibt erhalten."
+  },
   "caches.lru.default.description": {
     "en": "777e71be96460478",
     "text": "Ein begrenzter Cache in der Reihenfolge der längsten Nichtverwendung."
@@ -1710,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "veraltet: die Anmeldedaten wurden aberkannt"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "Ausgestellte SSH-Benutzerzertifikate"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "Eine Zeile je OpenSSH-Benutzerzertifikat, das die SSH-Benutzer-CA dieses Realms ausgestellt hat, nach Seriennummer: wem es gehört (urn:uuid), der Schlüssel-Fingerabdruck, seine Principals, seine Laufzeit und ob es widerrufen wurde. Niemals ein Schlüssel."
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "e9eaf8f07040a227",
+    "text": "Durchgesetzt: Die Zeilen, die ein Prozess hält, sind ein bei Bedarf gefülltes Fenster von 5.000 je Realm; eine Zeile verlässt den Speicher, wenn ihr Zertifikat abläuft."
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "Bis das Zertifikat abläuft."
   }
 }

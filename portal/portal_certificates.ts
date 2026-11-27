@@ -254,9 +254,10 @@ class PortalCertificates {
                       core.FAMILY_LABELS[family] +
                       ' is turned off in this realm.');
       }
-      // One budget for the cluster (#46): `attemptShared()`.
+      // One budget for the cluster (#46): `attemptShared()`; per realm
+      // (#2093): account-api/ssh_user_ca.ts argues it.
       const allowed = await ctx.websecurity.attemptShared(
-        'portal-enrollment', req, entry.id, {
+        'portal-enrollment@' + caller.realm, req, entry.id, {
           identity: ctx.config.value('pki.personSelfServicePerIdentity'),
           address: ctx.config.value('pki.personSelfServicePerAddress')
         });

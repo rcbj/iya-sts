@@ -68,6 +68,8 @@
 
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
+// The emailed factor's refusals and end pages as catalog sentences (#2006).
+import Sentence = require('../common/sentence');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
@@ -262,7 +264,8 @@ class EmailFactor {
   // which could say whether an address exists.
   // -------------------------------------------------------------------------
   private async arm(req: any, res: any, mfaId: string, step: any,
-                    kind: Kind): Promise<{ ok: boolean; why?: string;
+                    kind: Kind): Promise<{ ok: boolean;
+                                           why?: string | Sentence;
                                            code?: string }> {
     const { log, authnPolicy, mailFactor, errorCodes, audit, now } =
       this.deps;
@@ -274,16 +277,14 @@ class EmailFactor {
       if (held.sends >= settings.maxSends) {
         log.debug("Leaving EmailFactor.arm(). Sent enough.");
         return { ok: false, code: 'STS-AUTHN-0257',
-                 why: 'No more ' + (kind === 'code' ? 'codes' : 'links') +
-                      ' can be sent for this sign-in. Start again from the ' +
-                      'application that sent you here.' };
+                 why: Sentence.say('refusals.authn.emailNoMoreSends',
+                                   { kind: kind }) };
       }
       if (at - held.sentAt < settings.resendS * 1000) {
         log.debug("Leaving EmailFactor.arm(). Too soon.");
         return { ok: false, code: 'STS-AUTHN-0258',
-                 why: 'One was sent less than ' + settings.resendS +
-                      ' seconds ago. Check your mail, or wait a moment ' +
-                      'and ask again.' };
+                 why: Sentence.say('refusals.authn.emailTooSoon',
+                                   { seconds: settings.resendS }) };
       }
     }
     const secret = kind === 'code' ? mailFactor.mintCode()
@@ -343,7 +344,7 @@ class EmailFactor {
                ((sent && sent.error) || 'the mail channel refused it'));
       log.debug("Leaving EmailFactor.arm(). Not sent.");
       return { ok: false, code: 'STS-AUTHN-0259',
-               why: 'The message could not be sent just now.' };
+               why: Sentence.say('refusals.authn.emailNotSent') };
     }
     log.debug("Leaving EmailFactor.arm(). Sent.");
     return { ok: true };
@@ -363,8 +364,9 @@ class EmailFactor {
   // `<meta>` refresh the page had — until the step is spent), `elsewhere`
   // (the waiting tab after the link was opened: the sign-in went on in the
   // tab the link opened, D3), `open` (where the mailed link lands, with a
-  // Continue button — a GET spends nothing) and `end` (a refusal: English,
-  // every word, #539, with a title and a sentence — what `endPage()` drew).
+  // Continue button — a GET spends nothing) and `end` (a refusal, with a
+  // title and a sentence — what `endPage()` drew — each in English and as
+  // a catalog message the page draws in its own language, #2006).
   //
   // THE LANGUAGE (#539): a SECOND factor's view names the person's own
   // `preferredLanguage`; a FIRST factor's never does — the page is the
@@ -425,12 +427,36 @@ class EmailFactor {
     return out;
   }
 
-  // A refusal's view: English, every word of it (#539).
-  private endView(title: string, sentence: string): any {
+  // A refusal's view: the title and the sentence, English, and each as an
+  // answer carries a catalog message (#2006: `titleRefusal`, `refusal`),
+  // which the page draws in its own language.
+  private endView(title: string | Sentence, sentence: string | Sentence): any {
     const { log } = this.deps;
     log.debug("Entering EmailFactor.endView().");
+    const out: any = { state: 'end', title: String(title),
+                       sentence: String(sentence) };
+    const said = this.refusalOf(sentence);
+    if (said) {
+      out.refusal = said;
+    }
+    const heading = this.refusalOf(title);
+    if (heading) {
+      out.titleRefusal = heading;
+    }
     log.debug("Leaving EmailFactor.endView().");
-    return { state: 'end', title: title, sentence: sentence };
+    return out;
+  }
+
+  // A sentence as an answer carries it (#2006): `{ errors, messages }`
+  // where it is a catalog message, null for text.
+  private refusalOf(value: unknown): any {
+    const { log } = this.deps;
+    log.debug("Entering EmailFactor.refusalOf().");
+    const out = Sentence.is(value)
+      ? { errors: [String(value)], messages: Sentence.messagesOf([value]) }
+      : null;
+    log.debug("Leaving EmailFactor.refusalOf().");
+    return out;
   }
 
   /**
@@ -464,18 +490,18 @@ class EmailFactor {
     if (!live) {
       log.debug("Leaving EmailFactor.view(). No step.");
       return Object.assign({ status: 400, code: 'STS-AUTHN-0019',
-        view: this.endView('This sign-in has expired', 'There is no ' +
-          'sign-in waiting for an emailed ' + kind + ' here. It may have ' +
-          'finished, or run out of time.') }, lang);
+        view: this.endView(Sentence.say('refusals.authn.emailEndExpired'),
+          Sentence.say('refusals.authn.emailNoStep', { kind: kind })) },
+        lang);
     }
     const armed = !!step.emailState && step.emailState.kind === kind;
     if (page === 'email-link-open') {
       if (!this.boundHere(req, step)) {
         log.debug("Leaving EmailFactor.view(). Another browser.");
         return Object.assign({ status: 400, code: 'STS-AUTHN-0266',
-          view: this.endView('Open it where you started', 'This link works ' +
-            'only in the browser where you started signing in. Copy it ' +
-            'into that browser, or start again here.') }, lang);
+          view: this.endView(
+            Sentence.say('refusals.authn.emailEndElsewhere'),
+            Sentence.say('refusals.authn.emailOtherBrowserCopy')) }, lang);
       }
       log.debug("Leaving EmailFactor.view(). The link opened.");
       return Object.assign({ status: 200, view: { state: 'open',
@@ -504,25 +530,42 @@ class EmailFactor {
   }
 
   // A refusal that ends the page (what `endPage()` drew): the title and the
-  // sentence, English, for the browser to draw; never an error code.
+  // sentence, English, with their catalog messages (#2006) for the browser
+  // to draw in the page's language; never an error code.
   private endAnswer(res: IyaApi.AuthnAnswering<'sendEmailedFactor' |
                       'checkEmailedCode' | 'spendEmailedLink'>, status: number,
-                    title: string,
-                    sentence: string): void {
+                    title: string | Sentence,
+                    sentence: string | Sentence): void {
     const { log, authn } = this.deps;
     log.debug("Entering EmailFactor.endAnswer(). " + status);
-    authn.answerJson(res, status, { ok: false, next: 'refused',
-      errors: [String(sentence)], end: { title: String(title) } });
+    const end: any = { title: String(title) };
+    const heading = this.refusalOf(title);
+    if (heading) {
+      end.titleRefusal = heading;
+    }
+    const body: any = { ok: false, next: 'refused',
+                        errors: [String(sentence)], end: end };
+    const messages = Sentence.messagesOf([sentence]);
+    if (messages) {
+      body.messages = messages;
+    }
+    authn.answerJson(res, status, body);
     log.debug("Leaving EmailFactor.endAnswer().");
   }
 
   // A refusal the page draws over itself, the step kept: a wrong code, a
   // rate limit, a message that could not be sent.
-  private stayRefused(res: any, status: number, sentence: string): void {
+  private stayRefused(res: any, status: number,
+                      sentence: string | Sentence): void {
     const { log, authn } = this.deps;
     log.debug("Entering EmailFactor.stayRefused(). " + status);
-    authn.answerJson(res, status, { ok: false, next: 'refused',
-                                    errors: [String(sentence)] });
+    const body: any = { ok: false, next: 'refused',
+                        errors: [String(sentence)] };
+    const messages = Sentence.messagesOf([sentence]);
+    if (messages) {
+      body.messages = messages;
+    }
+    authn.answerJson(res, status, body);
     log.debug("Leaving EmailFactor.stayRefused().");
   }
 
@@ -604,23 +647,23 @@ class EmailFactor {
       log.info('authn: an emailed ' + kind + ' was asked for as a first ' +
                'factor and this realm does not offer one.');
       errorCodes.mark(res, 'STS-AUTHN-0260');
-      authn.refuseAtScreen(res, record, 'This realm does not offer ' +
-        'an emailed ' + kind + ' as a way to sign in.');
+      authn.refuseAtScreen(res, record,
+        Sentence.say('refusals.authn.emailNotOffered', { kind: kind }));
       log.debug("Leaving EmailFactor.beginFirstFactor(). Not offered.");
       return;
     }
     if (record.forceKey || record.forcePasswordless || record.lockedUsername) {
       errorCodes.mark(res, 'STS-AUTHN-0260');
-      authn.refuseAtScreen(res, record, 'This sign-in asks for a ' +
-        'security key or a password, and an emailed ' + kind + ' answers ' +
-        'neither.');
+      authn.refuseAtScreen(res, record,
+        Sentence.say('refusals.authn.emailAnswersNeither', { kind: kind }));
       log.debug("Leaving EmailFactor.beginFirstFactor(). Demanded else.");
       return;
     }
     const allowed = await websecurity.attemptShared('sign-in', req, username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0008');
-      authn.refuseAtScreen(res, record, allowed.detail, 429);
+      authn.refuseAtScreen(res, record, allowed.said || allowed.detail,
+                           429);
       log.debug("Leaving EmailFactor.beginFirstFactor(). Rate limited.");
       return;
     }
@@ -681,9 +724,10 @@ class EmailFactor {
                '" was already used (' + (claimed.reason || 'store') + ').');
       errorCodes.mark(res, claimed.reason === 'used' ? 'STS-AUTHN-0262'
                                                      : 'STS-AUTHN-0263');
-      this.endAnswer(res, 400, 'Already used', claimed.reason === 'used'
-        ? 'That ' + kind + ' has already been used.'
-        : 'That ' + kind + ' could not be checked just now.');
+      this.endAnswer(res, 400, Sentence.say('refusals.authn.emailEndUsed'),
+        claimed.reason === 'used'
+          ? Sentence.say('refusals.authn.emailUsed', { kind: kind })
+          : Sentence.say('refusals.authn.emailUnchecked', { kind: kind }));
       log.debug("Leaving EmailFactor.spend(). Not claimed.");
       return false;
     }
@@ -700,7 +744,8 @@ class EmailFactor {
       const done = await authn.finishEmailFirstFactor(req, res, step, kind);
       if (done && done.refused) {
         errorCodes.mark(res, done.errorCode || 'STS-AUTHN-0009');
-        this.endAnswer(res, 403, 'Not signed in', done.why);
+        this.endAnswer(res, 403,
+          Sentence.say('refusals.authn.emailEndNotSignedIn'), done.why);
       }
       log.debug("Leaving EmailFactor.spend(). First factor.");
       return true;
@@ -713,7 +758,7 @@ class EmailFactor {
   // A wrong secret: counted on the step and — for a real account holding the
   // factor or using it first — on the entry.
   private async countWrong(res: any, mfaId: string, step: any,
-                       kind: Kind): Promise<string> {
+                       kind: Kind): Promise<'ended' | Sentence> {
     const { log, authn, authnPolicy, mailFactor, audit, errorCodes } =
       this.deps;
     log.debug("Entering EmailFactor.countWrong(). " + kind);
@@ -737,8 +782,8 @@ class EmailFactor {
     authn.saveMfaStep(mfaId, step);
     log.debug("Leaving EmailFactor.countWrong(). " + state.attempts + " of " +
               limit + ".");
-    return 'That ' + kind + ' is not right. ' + (limit - state.attempts) +
-           ' more attempt(s) before this sign-in ends.';
+    return Sentence.say('refusals.authn.emailWrong',
+                        { kind: kind, left: limit - state.attempts });
   }
 
   // The step behind an act, if it is live and may be answered with this
@@ -749,9 +794,10 @@ class EmailFactor {
     const step = authn.mfaStepFor(mfaId);
     if (!step || !this.kindAllowedOn(step, kind)) {
       errorCodes.mark(res, 'STS-AUTHN-0019');
-      this.endAnswer(res, 400, 'This sign-in has expired',
-                     'There is no sign-in waiting for an emailed ' + kind +
-                     ' here. It may have finished, or run out of time.');
+      this.endAnswer(res, 400,
+                     Sentence.say('refusals.authn.emailEndExpired'),
+                     Sentence.say('refusals.authn.emailNoStep',
+                                  { kind: kind }));
       log.debug("Leaving EmailFactor.liveStep(). None.");
       return null;
     }
@@ -791,7 +837,7 @@ class EmailFactor {
     const armed = await this.arm(req, res, mfaId, step, kind);
     if (!armed.ok) {
       errorCodes.mark(res, armed.code);
-      this.stayRefused(res, 400, String(armed.why));
+      this.stayRefused(res, 400, armed.why);
       log.debug("Leaving EmailFactor.sendAct(). Not sent.");
       return;
     }
@@ -823,8 +869,8 @@ class EmailFactor {
     const state = step.emailState;
     if (!state || state.kind !== 'code') {
       errorCodes.mark(res, 'STS-AUTHN-0039');
-      this.stayRefused(res, 400, 'No code has been sent for this sign-in ' +
-                                 'yet.');
+      this.stayRefused(res, 400,
+                       Sentence.say('refusals.authn.emailNoCodeYet'));
       log.debug("Leaving EmailFactor.codeAct(). Nothing sent.");
       return;
     }
@@ -832,13 +878,14 @@ class EmailFactor {
                                                     step.username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0040');
-      this.stayRefused(res, 429, allowed.detail);
+      this.stayRefused(res, 429, allowed.said || allowed.detail);
       log.debug("Leaving EmailFactor.codeAct(). Rate limited.");
       return;
     }
     if (now() > state.expiresAt) {
       errorCodes.mark(res, 'STS-AUTHN-0265');
-      this.stayRefused(res, 400, 'That code has expired. Send a new one.');
+      this.stayRefused(res, 400,
+                       Sentence.say('refusals.authn.emailCodeExpired'));
       log.debug("Leaving EmailFactor.codeAct(). Expired.");
       return;
     }
@@ -848,8 +895,9 @@ class EmailFactor {
     if (!right) {
       const said = await this.countWrong(res, mfaId, step, 'code');
       if (said === 'ended') {
-        this.endAnswer(res, 400, 'Too many wrong codes', 'This sign-in has ' +
-                       'ended.');
+        this.endAnswer(res, 400,
+                       Sentence.say('refusals.authn.emailEndTooManyWrong'),
+                       Sentence.say('refusals.authn.emailEnded'));
       } else {
         this.stayRefused(res, 400, said);
       }
@@ -884,8 +932,9 @@ class EmailFactor {
     const state = step.emailState || {};
     if (!this.boundHere(req, step)) {
       errorCodes.mark(res, 'STS-AUTHN-0266');
-      this.endAnswer(res, 400, 'Open it where you started', 'This link ' +
-        'works only in the browser where you started signing in.');
+      this.endAnswer(res, 400,
+        Sentence.say('refusals.authn.emailEndElsewhere'),
+        Sentence.say('refusals.authn.emailOtherBrowser'));
       log.debug("Leaving EmailFactor.openAct(). Another browser.");
       return;
     }
@@ -893,14 +942,17 @@ class EmailFactor {
                                                     step.username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0040');
-      this.endAnswer(res, 429, 'Too many attempts', allowed.detail);
+      this.endAnswer(res, 429,
+        Sentence.say('refusals.authn.emailEndTooManyAttempts'),
+        allowed.said || allowed.detail);
       log.debug("Leaving EmailFactor.openAct(). Rate limited.");
       return;
     }
     if (state.kind !== 'link' || now() > state.expiresAt) {
       errorCodes.mark(res, 'STS-AUTHN-0265');
-      this.endAnswer(res, 400, 'That link has expired', 'Ask for a new one ' +
-        'on the page where you started signing in.');
+      this.endAnswer(res, 400,
+        Sentence.say('refusals.authn.emailEndLinkExpired'),
+        Sentence.say('refusals.authn.emailAskNewLink'));
       log.debug("Leaving EmailFactor.openAct(). Expired.");
       return;
     }
@@ -908,9 +960,10 @@ class EmailFactor {
                   await mailFactor.matches(String(token), state.hash);
     if (!right) {
       const said = await this.countWrong(res, mfaId, step, 'link');
-      this.endAnswer(res, 400, 'That link is not right', said === 'ended'
-        ? 'This sign-in has ended.' : 'That link is not the latest one ' +
-          'sent. Use the newest message.');
+      this.endAnswer(res, 400,
+        Sentence.say('refusals.authn.emailEndLinkWrong'), said === 'ended'
+          ? Sentence.say('refusals.authn.emailEnded')
+          : Sentence.say('refusals.authn.emailLinkNotLatest'));
       log.debug("Leaving EmailFactor.openAct(). Wrong.");
       return;
     }

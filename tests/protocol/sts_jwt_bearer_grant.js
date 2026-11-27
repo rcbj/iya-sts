@@ -54,6 +54,9 @@
 // realm afterwards; see *No job removes a realm* in `tests/CLAUDE.md`.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -112,6 +115,8 @@ var OTHER_ISS = "https://other-issuer.example.test/jwtbearer";
 // for an authorization grant, and adding it to every request would change the
 // grant under test (a request that authenticates CLIENT is judged partly by who
 // CLIENT is). That is a decision for this job's author rather than a sweep.
+// The one exception is section 8 (#2169), which must ask for more than
+// `openid` and so names the client that declares it.
 // ---------------------------------------------------------------------------
 var ASSERTED_PERSON = usernameFor("asserted");
 var MAIL_DOMAIN = "jwt-bearer-grant.test";
@@ -324,7 +329,14 @@ async function test() {
            { identifier: CLIENT, protocols: ["oauth2", "oidc"],
              fields: { oauthClientId: CLIENT,
                        oauthClientSecret: CLIENT + "-secret-" + REALM,
-                       oauthTokenEndpointAuthMethod: "client_secret_post" } },
+                       oauthTokenEndpointAuthMethod: "client_secret_post",
+                       // What section 8 asks for AS this client (#2169):
+                       // in product a client is issued only the scopes it
+                       // declares, `openid` alone when it declares none
+                       // (#1589), and held to the grants it declares.
+                       oauthGrantType:
+                         ["urn:ietf:params:oauth:grant-type:jwt-bearer"],
+                       oauthAllowedScope: ["openid", "profile", "email"] } },
            "created the asserting application");
   await ok(realmApi + "/applications/create",
            { identifier: OTHER_CLIENT, protocols: ["oauth2", "oidc"],
@@ -464,8 +476,11 @@ async function test() {
     { iss: ISS, sub: person, aud: TOKEN_ENDPOINT, iat: now(),
       exp: now() + 120, jti: goodJti, department: "engineering",
       employee_number: 4711 }, privateKeyPem);
+  // `openid` alone (#2169): this request names no client, and in product
+  // a request that names none may be issued nothing more (#1589). Which
+  // scope it carries is not what this section is about.
   const granted = await tokenRequest({ grant_type: GRANT, assertion: assertion,
-                                       scope: "openid profile" });
+                                       scope: "openid" });
   check("THE SAME ASSERTION IS NOW ACCEPTED — one attribute on a directory " +
         "entry is the whole difference, which is what makes section 3 a gate " +
         "rather than a service refusing for some other reason", function () {
@@ -737,11 +752,15 @@ async function test() {
   // 8. RFC 7521 SECTION 4.1 — THE SCOPE IS NARROWED AND NEVER WIDENED.
   // -------------------------------------------------------------------------
   log.info("=== 8. the requested scope ===");
-  // The extra scope is `profile` — one every client may ask for — and not a
-  // word of the job's own: in product mode an undeclared scope is refused
-  // invalid_scope before the grant is read (#110), and what this section is
-  // about is the ASSERTION narrowing a request, not the client's list.
+  // The extra scope is `profile`, and not a word of the job's own: in
+  // product mode an undeclared scope is refused invalid_scope before the
+  // grant is read (#110), and what this section is about is the ASSERTION
+  // narrowing a request, not the client's list. So the request AUTHENTICATES
+  // the asserting application, which declares all three (#2169): a request
+  // naming no client is issued `openid` alone in product (#1589), which
+  // leaves nothing to narrow.
   const scoped = await tokenRequest({ grant_type: GRANT,
+    client_id: CLIENT, client_secret: CLIENT + "-secret-" + REALM,
     scope: "openid email profile",
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: ISS, sub: person, aud: TOKEN_ENDPOINT, iat: now(),
@@ -781,7 +800,7 @@ async function test() {
         "the token themselves", function () {
           const row = acts[0];
           const text = JSON.stringify(row);
-          assert.ok(text.indexOf(ISS) >= 0,
+          assert.ok(urls.namesAddress(text, ISS),
             "the issuer is not on the row: " + text.slice(0, 400));
         });
 

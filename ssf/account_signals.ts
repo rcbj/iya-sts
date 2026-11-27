@@ -97,6 +97,10 @@ interface CredentialChange {
   changeType?: string;
   friendlyName?: string;
   initiatingEntity?: string;
+  // CAEP's `event_timestamp`, in epoch seconds, where the change happened
+  // before it was reported (#2236: Kerberos keys derived after the password
+  // act they follow); now when absent.
+  eventTimestamp?: number;
   reasonAdmin?: string;
   reasonUser?: string;
   via?: string;
@@ -165,6 +169,19 @@ class AccountSignals {
    */
   static readonly EMAIL_OTP_CREDENTIAL_TYPE =
     'urn:iya:sts:credential-type:email-otp';
+  /**
+   * This service's credential type for a one-time code token (RFC 4226
+   * HOTP, #1955 P4): a YubiKey's OTP slot or a vendor's token, which is
+   * not an `app`.
+   */
+  static readonly HOTP_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:hotp-token';
+  /**
+   * This service's credential type for a YubiKey OTP (#1955 P5). The
+   * AES key stays on this service, so it is not an `hwk` and not an `app`.
+   */
+  static readonly YUBIOTP_CREDENTIAL_TYPE =
+    'urn:iya:sts:credential-type:yubikey-otp';
   /**
    * This service's credential type for a SIOPv2 self-issued key.
    */
@@ -292,7 +309,8 @@ class AccountSignals {
   }
 
   // THE SAME ACT, TOLD TO THE PERSON BY MAIL (#63, 2026-09-22). Every door
-  // that changes a password, marks a credential compromised or starts
+  // that changes a password or (#2163) adds or removes any other credential
+  // of a person, marks a credential compromised or starts
   // recovery already reports it here, so this is the one place the mail
   // channel's security notices hear of it — whether or not Shared Signals is
   // loaded. Lazily required (`common/mail_uses.ts` reaches the credential
@@ -324,6 +342,39 @@ class AccountSignals {
     return record && record.attachment === 'platform'
       ? AccountSignals.PLATFORM_KEY_CREDENTIAL_TYPE
       : AccountSignals.KEY_CREDENTIAL_TYPE;
+  }
+
+  // ONE ACT, ONE MAIL (#2163): a door that changes several credentials of a
+  // person at once — an administrator removing every factor, a lost token's
+  // retirement, an import — runs its work through this, and the person is
+  // mailed one notice listing every change rather than one per change. The
+  // CAEP and RISC events are each still sent. `common/mail_uses.ts`'s
+  // `batch()`, required at the moment of use; a process where it cannot be
+  // loaded runs the act as it is.
+  /**
+   * Runs a door's act as one batch of credential changes, so the person is
+   * mailed one notice for all of them.
+   *
+   * @param fn - the act
+   * @returns what `fn` returns
+   */
+  batch<T>(fn: () => T): T {
+    const { log } = this.deps;
+    log.debug('Entering AccountSignals.batch().');
+    let uses: { batch?: (f: () => T) => T } | null = null;
+    try {
+      uses = require('../common/mail_uses');
+    } catch (e) {
+      log.debug('Caught in AccountSignals.batch(): ' +
+                ((e && e.message) || e));
+      uses = null;
+    }
+    if (!uses || typeof uses.batch !== 'function') {
+      log.debug('Leaving AccountSignals.batch(). No mail uses.');
+      return fn();
+    }
+    log.debug('Leaving AccountSignals.batch().');
+    return uses.batch(fn);
   }
 
   // CAEP credential-change.
@@ -658,6 +709,11 @@ class AccountSignals {
   recoveryInformationChanged(notice?: object): Promise<Delivery> {
     const { log } = this.deps;
     log.debug('Entering AccountSignals.recoveryInformationChanged().');
+    // A SET GENERATED OR REMOVED IS MAILED (#2163): the door says which with
+    // `changeType` (`create`, `delete`); a code spent names none, and is not.
+    if ((notice as { changeType?: string } | undefined)?.changeType) {
+      this.mailNotice('recoveryInformationChanged', notice || {});
+    }
     log.debug('Leaving AccountSignals.recoveryInformationChanged().');
     return this.deliver('a RISC recovery-information-changed',
                         'emitRiscAccountAct',
@@ -703,6 +759,7 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   credentialChanged: slot.forward('credentialChanged'),
+  batch: slot.forward('batch'),
   certificateChanged: slot.forward('certificateChanged'),
   credentialChangeRequired: slot.forward('credentialChangeRequired'),
   recoveryInformationChanged: slot.forward('recoveryInformationChanged'),
@@ -724,6 +781,8 @@ export = {
   keyCredentialType: AccountSignals.keyCredentialType,
   TOTP_CREDENTIAL_TYPE: AccountSignals.TOTP_CREDENTIAL_TYPE,
   EMAIL_OTP_CREDENTIAL_TYPE: AccountSignals.EMAIL_OTP_CREDENTIAL_TYPE,
+  HOTP_CREDENTIAL_TYPE: AccountSignals.HOTP_CREDENTIAL_TYPE,
+  YUBIOTP_CREDENTIAL_TYPE: AccountSignals.YUBIOTP_CREDENTIAL_TYPE,
   SELF_ISSUED_KEY_CREDENTIAL_TYPE:
     AccountSignals.SELF_ISSUED_KEY_CREDENTIAL_TYPE,
   ACME_EAB_KEY_CREDENTIAL_TYPE: AccountSignals.ACME_EAB_KEY_CREDENTIAL_TYPE,

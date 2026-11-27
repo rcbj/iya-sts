@@ -450,14 +450,18 @@ function childMain() {
     note(/fileRoots/.test(namedRefusal) && namedRefusal.indexOf('passwd') < 0,
          'product: a named file outside the directories is refused, and the ' +
          'sentence does not repeat the path', namedRefusal);
-    ['spiffe/spiffe_sigstore.ts', 'spiffe/spiffe_sigstore_tuf.ts',
+    // The TUF root is read through the truststores since #2152, whose
+    // readNamedFile() asks the rule for every setting's file.
+    ['spiffe/spiffe_sigstore.ts', 'common/truststores.ts',
       'spiffe/spiffe_attestor_k8s_psat.ts',
       'spiffe/spiffe_workload_attestor_k8s.ts',
       'spiffe/spiffe_attestor_azure_imds.ts',
       'spiffe/spiffe_attestor_gcp_iit.ts', 'common/mail_transports.ts',
       'common/revocation_status.js'].forEach(function (file) {
-      note(fs.readFileSync(ROOT_DIR + '/' + file, 'utf8')
-        .indexOf('assertNamedFile') >= 0, file + ' asks the rule');
+      // Since #2247 a reader asks it through readNamedFile(), which checks
+      // the descriptor it reads through.
+      note(/assertNamedFile|readNamedFile/.test(fs.readFileSync(ROOT_DIR +
+        '/' + file, 'utf8')), file + ' asks the rule');
     });
 
     // --- 17. L2: the push dialer, the issuance gate, PKCE, LDAP (#1492-#1496) -
@@ -510,6 +514,10 @@ function childMain() {
          fs.readFileSync(held, 'utf8') === 'first-admin:the-secret\n',
          'the bootstrap password goes to a file only this service can read',
          held);
+    const later = bootCreds.bootstrap();
+    note(later.ran === false && !fs.existsSync(held),
+         'a later start removes the bootstrap password file',
+         JSON.stringify({ ran: later.ran, why: later.why }));
     bootLog = true;
     note(bootCreds.writeBootstrapPassword('a', 'b') === '',
          'and the opt-out returns to the log');

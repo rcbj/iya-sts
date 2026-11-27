@@ -29,8 +29,12 @@
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -214,7 +218,7 @@ function atClient(r, redirect) {
   log.debug("Entering atClient().");
   const target = redirect || REDIRECT;
   if (!(r.status === 302 || r.status === 303) ||
-      String(r.location).indexOf(target) !== 0) {
+      !urls.isAt(r.location, target)) {
     log.debug("Leaving atClient(). Not at the client.");
     return null;
   }
@@ -351,7 +355,12 @@ async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " and a poll stream ===");
   await ok(base + "/admin-api/realms/create", { id: REALM,
-    domain: REALM + ".example.net", name: "CAEP 145 " + STAMP },
+    domain: REALM + ".example.net", name: "CAEP 145 " + STAMP,
+    // EVERY PERSON'S EVENTS ON AN APPLICATION'S STREAM, AS BEFORE #2234:
+    // this job's receivers hear about people never signed in to them
+    // (`ssf.applicationStreamScope`; the scope itself is
+    // `sts_ssf_application_sessions.js`'s).
+    overrides: { "ssf.applicationStreamScope": "all" } },
     "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
     kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "oidc", "ssf"],
@@ -382,19 +391,27 @@ async function test() {
         "session-established", function () {
     assert.strictEqual(created.status, 201, created.raw.slice(0, 400));
     const delivered = created.body.events_delivered || [];
-    assert.ok(delivered.indexOf(CAEP + "token-claims-change") >= 0 &&
-              delivered.indexOf(CAEP + "credential-change") >= 0,
+    assert.ok(urls.holds(delivered, CAEP + "token-claims-change") &&
+              urls.holds(delivered, CAEP + "credential-change"),
               JSON.stringify(delivered));
   });
   const streamId = created.body.stream_id;
 
   log.info("=== a. a person created with a password ===");
+  // Temporary, then alice's own (#2160, `own_password.js`): she signs in
+  // with PASSWORD below. Bob never signs in, so his stays as typed.
   for (const who of [ALICE, BOB]) {
     await ok(realmApi + "/users/create", { username: who, invent: false,
-      credential: "password", password: PASSWORD,
+      credential: "password",
+      password: who === ALICE ? ownPassword.temporaryFor(PASSWORD) : PASSWORD,
       attributes: { cn: "CAEP " + who, givenName: "CAEP", sn: "Before",
                     mail: who + "@caep145.test" } }, "created " + who);
   }
+  await ownPassword.ownPassword(realmBase, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(realmApi + "/users/set-password",
+                      { user: who, password: value });
+    });
   const scimToken = await tokenFor("scim:read scim:write");
   const scimAuth = { Authorization: "Bearer " + scimToken };
   for (const who of [ALICE, BOB]) {
@@ -441,9 +458,12 @@ async function test() {
   });
   const fingerprint = nodeCrypto.createHash("sha256").update(AGENT, "utf8")
     .digest("base64url");
+  // THIS BROWSER'S session (its fp_ua): in product the sign-in that made
+  // PASSWORD alice's own (#2160) established one with another User-Agent.
   found = await waitFor(token, streamId, "session-established",
     function (set) {
-      return !!eventOf(set, "session-established") && aboutUser(set, ALICE);
+      const ev = eventOf(set, "session-established");
+      return !!ev && aboutUser(set, ALICE) && ev.fp_ua === fingerprint;
     });
   check("session-established carries fp_ua, the SHA-256 of the " +
         "User-Agent, not the header", function () {

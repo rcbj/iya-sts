@@ -427,6 +427,7 @@ function revoke(scopeId, caId, spec) {
            'A RELYING PARTY CHECK** — what changed is that one which does ' +
            'will see it.');
   publishSoon(id, caId);
+  statusChanged(id, caId, serialHex);
   log.debug('Leaving revoke(). Revoked.');
   return { ok: true, entry: describeEntry(entry),
            why: 'That certificate is revoked. It is on the ' + caId +
@@ -435,6 +436,48 @@ function revoke(scopeId, caId, spec) {
                 'service publishes the claim and cannot make anybody consult ' +
                 'it, which is true of every certificate authority and is the ' +
                 'whole reason a client author would point their stack here.' };
+}
+
+// ---------------------------------------------------------------------------
+// A STATUS CHANGED IN THIS PROCESS, TOLD (#2254).
+//
+// The OCSP staple a listener sends (`tls/ocsp_stapling.ts`) is made from this
+// register and kept until shortly before its nextUpdate, so a revocation made
+// in the process holding the socket re-makes it at once rather than at the
+// next run of `tls.ocsp-staple-refresh`. An OBSERVER, not a rule-3e slot: the
+// stapling module requires this library in the ordinary direction. A
+// revocation made in another process (a request worker, another node) reaches
+// the staple at that job's next run, which reads the store's copy of the row.
+// ---------------------------------------------------------------------------
+const statusObservers = [];
+
+/**
+ * Registers a function told `(scopeId, caId, serialHex)` after a revocation
+ * or a released hold in this process. A function that throws is logged and
+ * the others are still told.
+ *
+ * @param fn - the observer
+ */
+function onStatusChange(fn) {
+  log.debug("Entering onStatusChange().");
+  if (typeof fn === 'function' && statusObservers.indexOf(fn) < 0) {
+    statusObservers.push(fn);
+  }
+  log.debug("Leaving onStatusChange().");
+}
+
+function statusChanged(scopeId, caId, serialHex) {
+  log.debug("Entering statusChanged().");
+  statusObservers.forEach(function (fn) {
+    try {
+      fn(scopeId, caId, serialHex);
+    } catch (e) {
+      // An observer's failure is its own: the revocation is recorded and
+      // published whatever it does.
+      log.debug("Caught in statusChanged(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving statusChanged().");
 }
 
 // Undo a hold. **ONLY a hold**, because `certificateHold` is the one reason
@@ -486,6 +529,7 @@ function release(scopeId, caId, serialHex) {
   log.info('pki: the hold on certificate ' + normalSerial(serialHex) +
            ' (' + caId + ', "' + (id || 'default') + '") was RELEASED.');
   publishSoon(id, caId);
+  statusChanged(id, caId, normalSerial(serialHex));
   log.debug('Leaving release(). Released.');
   return { ok: true,
            why: 'The hold is released and that certificate is no longer on ' +
@@ -900,6 +944,8 @@ module.exports = {
   keepDirectoryCurrent: keepDirectoryCurrent,
   agreedCrlNumber: agreedCrlNumber,
   answerOcsp: answerOcsp,
+  stapleFor: stapleFor,
+  onStatusChange: onStatusChange,
   issuedHere: issuedHere,
   issuedList: issuedList
 };
@@ -2207,6 +2253,93 @@ async function answerOcsp(scopeId, caId, requestDer) {
            nonce: !!nonce };
 }
 
+// ---------------------------------------------------------------------------
+// THE STAPLE: AN OCSP RESPONSE FOR THE CERTIFICATES A LISTENER PRESENTS
+// (#2254, ASVS 5.0.0 12.1.4).
+//
+// **IT IS THE RESPONDER'S OWN ANSWER, ASKED IN PROCESS.** A request is built
+// here for the listener's leaves — one CertID each, SHA-1 as RFC 5019 section
+// 2.1.1 has every client send and OpenSSL's `OCSP_cert_to_id()` defaults to —
+// and handed to `answerOcsp()`, the function `/pki/ocsp/{scope}/{ca}`
+// answers with. So the signer, the status, the register it is read from, the
+// store catch-up, thisUpdate and nextUpdate are the endpoint's, byte for
+// byte the answer a client fetching it would have got, and nothing dials.
+//
+// **SEVERAL LEAVES, ONE RESPONSE.** node's `OCSPRequest` event names the LAST
+// certificate of the secure context whichever one OpenSSL then selects
+// (`tls.certificateAlgorithms` = `rsa,ml-dsa-65` serves RSA or ML-DSA per
+// client), so the staple carries a SingleResponse for every leaf the caller
+// names, and a client finds the one about the certificate it got by CertID
+// (RFC 6960 section 4.2.1 allows any number). They must share the issuer:
+// one response has one signer.
+//
+// **AN ISSUER THAT IS NOT ONE OF THIS SERVICE'S AUTHORITIES ANSWERS null** —
+// an operator's certificate from an outside CA, which the caller does not
+// staple (`tls/ocsp_stapling.ts` argues why it does not fetch one).
+// ---------------------------------------------------------------------------
+/**
+ * Makes the OCSP response a listener staples for its certificates.
+ *
+ * @param leafPems - the leaf certificates (PEM), all issued by `issuerPem`
+ * @param issuerPem - the issuing CA's certificate (PEM or DER)
+ * @returns a promise of `answerOcsp()`'s result with `scope` and `ca` added,
+ *   or null when no authority of this service is that issuer
+ */
+async function stapleFor(leafPems, issuerPem) {
+  log.debug("Entering stapleFor().");
+  const issuer = stsCrypto.parseCertificate(issuerPem);
+  const issuerSpki = issuer.publicKey
+    .export({ type: 'spki', format: 'der' });
+  const authority = authorities(pki.knownScopes()).filter(function (one) {
+    if (!one.tier || !one.tier.certificatePem) {
+      return false;
+    }
+    let held = null;
+    try {
+      held = stsCrypto.parseCertificate(one.tier.certificatePem);
+    } catch (e) {
+      log.debug("Caught in a callback in stapleFor(): " +
+                ((e && e.message) || e));
+      return false;
+    }
+    // THE SAME SUBJECT AND THE SAME KEY, not the same bytes: a CA renewed
+    // over its key (#2220) signs with the key the leaf names, and the
+    // response is signed by that key whichever certificate is current.
+    return held.subject === issuer.subject &&
+           held.publicKey.export({ type: 'spki', format: 'der' })
+             .equals(issuerSpki);
+  })[0];
+  if (!authority) {
+    log.debug("Leaving stapleFor(). Not an issuer of this service.");
+    return null;
+  }
+  const issuerCert = pkijs.Certificate.fromBER(derFromPem(issuer.toString()));
+  const nameHash = stsCrypto.ocspCertIdHash('SHA-1',
+    issuerCert.subject.toSchema().toBER(false));
+  const keyHash = stsCrypto.ocspCertIdHash('SHA-1',
+    issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
+      .valueHexView);
+  const request = new pkijs.OCSPRequest();
+  request.tbsRequest.requestList = (leafPems || []).map(function (pem) {
+    const leaf = pkijs.Certificate.fromBER(derFromPem(
+      stsCrypto.parseCertificate(pem).toString()));
+    return new pkijs.Request({ reqCert: new pkijs.CertID({
+      hashAlgorithm: new pkijs.AlgorithmIdentifier({
+        algorithmId: '1.3.14.3.2.26', algorithmParams: new asn1js.Null() }),
+      issuerNameHash: new asn1js.OctetString({
+        valueHex: new Uint8Array(nameHash).buffer }),
+      issuerKeyHash: new asn1js.OctetString({
+        valueHex: new Uint8Array(keyHash).buffer }),
+      serialNumber: leaf.serialNumber
+    }) });
+  });
+  const der = Buffer.from(/** @type {any} */ (request).toSchema(true)
+    .toBER(false));
+  const made = await answerOcsp(authority.scope, authority.ca, der);
+  log.debug("Leaving stapleFor(). " + made.status + ".");
+  return Object.assign(made, { scope: authority.scope, ca: authority.ca });
+}
+
 // Did this authority issue that serial? The certificate register knows the
 // leaves, and `pki.js`'s own tiers know the authorities — so the two are asked
 // in turn, which is also why a certificate removed from the register reports
@@ -2276,8 +2409,15 @@ function issuedList(scopeId, caId) {
   if (id === 'intermediate' && row) {
     Object.keys(row.issuing || {}).forEach(function (useCaseId) {
       const tier = row.issuing[useCaseId];
-      add(tier.serialHex, tier.subject, tier.notAfter, 'issuing-ca',
-          ((pki.useCase(useCaseId) || {}).label || useCaseId) + ' Issuing CA');
+      const label = ((pki.useCase(useCaseId) || {}).label || useCaseId) +
+                    ' Issuing CA';
+      add(tier.serialHex, tier.subject, tier.notAfter, 'issuing-ca', label);
+      // AND EACH CERTIFICATE A RENEWAL REPLACED OVER THE SAME KEY (#2220):
+      // a client may still hold a chain carrying it, and a responder with
+      // no record of the serial would answer `unknown` about it.
+      (tier.previous || []).forEach(function (one) {
+        add(one.serialHex, one.subject, one.notAfter, 'issuing-ca', label);
+      });
     });
   }
 
@@ -2287,10 +2427,16 @@ function issuedList(scopeId, caId) {
     pki.knownScopes().concat([pki.PROCESS_SCOPE]).forEach(function (one) {
       const held = pki.rawRowFor(one);
       if (held && held.intermediate) {
+        const label = (one === pki.PROCESS_SCOPE ? 'process'
+                                                 : (one || 'default')) +
+                      ' Intermediate CA';
         add(held.intermediate.serialHex, held.intermediate.subject,
-            held.intermediate.notAfter, 'intermediate-ca',
-            (one === pki.PROCESS_SCOPE ? 'process' : (one || 'default')) +
-            ' Intermediate CA');
+            held.intermediate.notAfter, 'intermediate-ca', label);
+        // The renewed-away certificates of it too (#2220), as above.
+        (held.intermediate.previous || []).forEach(function (old) {
+          add(old.serialHex, old.subject, old.notAfter, 'intermediate-ca',
+              label);
+        });
       }
     });
   }

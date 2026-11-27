@@ -2405,6 +2405,22 @@ the index. `tests/ldap_filter_matching.js` holds the matcher and both modes;
 reverting the handler to `req.filter.matches()` turns 22 of its assertions
 red.
 
+**A substring is never the library's, in either case (#2137, 2026-11-24).**
+Both this class and `@ldapjs/filter` matched one with
+`^initial.*any1.*...final$`, and a chain of `.*` backtracks: `(cn=*a*a*…*b)`
+against a long value was O(n^k) on the event loop (ASVS 5.0.0 1.3.12). Every
+substring assertion, exact-rule ones included, is now `substringMatches()`'s
+left-to-right `indexOf` scan, which answers as RFC 4517 section 4.2.29 does
+(the one difference from the regular expression: `.` did not cross a line
+break, and the scan does). The search handler refuses an assertion of more
+than `MAX_SUBSTRING_COMPONENTS` (32, a constant argued in the module) with
+adminLimitExceeded and `STS-LDAP-0226`, before any entry is read.
+`tests/ldap_substring_matching.js` holds the equivalence, the timing and the
+cap. **Not fixed, and the library's:** `parseFilter()` of a filter STRING
+keeps a substring's escaped characters escaped (`(cn=é*)` holds `\c3\a9`),
+so a search re-parsed in a request worker does not match a non-ASCII
+substring that the same search decoded from BER does.
+
 ### node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork
 
 **The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —
@@ -3651,6 +3667,22 @@ server emits later — a client's malformed BindRequest is enough — is logged 
 `STS-LDAP-0028` "could not bind" and sets `tlsListening` false on a listener that
 is still answering.
 
+**THE MESSAGE SIZE GUARD (#2220, ASVS L3).** ldapjs's parser buffers a
+connection's bytes until the length a message's BER header declares has
+arrived, so one unauthenticated connection could make the process hold
+whatever it declared. `ldap/ldap_message_guard.ts` reads each message's tag
+and length from the stream and closes the connection (`STS-LDAP-0227`, one
+line a minute) when it is over `ldap.maxMessageBytesBeforeBind` (128 KiB)
+before a bind or `ldap.maxMessageBytes` (5 MiB) after, or uses the indefinite
+length. **It is done here, not in the fork, and patches nothing**: the
+`connection`/`secureConnection` handler that holds the socket runs after
+ldapjs's own (registered when `createServer()` ran), finds the `data` listener
+ldapjs added, and moves it behind the guard (`guardMessages()`). The raw
+socket under the TLS server has no `parser` and is skipped; the TLS socket
+gets the guard after the handshake. A PROXY header is read before ldapjs's
+handler runs, so it is not counted. The numbers are argued on the two rows in
+`common/config.js`; `tests/ldap_message_guard.js` holds it.
+
 ## `ou=kerberosTrusts`, THE KERBEROS TRUST REGISTER (#430, 2026-10-19)
 
 **One entry per partner Kerberos realm**, of this service's class
@@ -3822,6 +3854,18 @@ early return in `passwordWriteRefusal()` used to hide.
 tool forces a change; setting it (not already TRUE) now sends RISC
 `account-credential-change-required`, as the console's reset does
 (`notePasswordChangeRequired()`). `ssf/CLAUDE.md` has the whole #237 table.
+
+**SINCE #2160 (ASVS 5.0.0 6.4.6, rcbj 2026-11-24) A PASSWORD SOMEBODY ELSE
+WRITES IS TEMPORARY.** An LDAP modify of another person's `userPassword`, or
+an add of a person carrying one, also sets `pwdReset` in the SAME write
+(`adminWrittenPasswordIsTemporary()`), so the modify's RISC notice above goes
+out with it. It does not apply in four cases. In development, no door checks
+a password. A person writing their OWN entry is making their own change. A
+service account's password is a program's. A pre-hashed value is a hash the
+writer sent, not a password it knows, and product refuses one anyway. This
+is the socket's half of `admin-core/admin_actions.ts`'s
+`typedPasswordIsTemporary()`, which `set-password` and `create` ask.
+`tests/admin_typed_password_temporary.js` holds both halves.
 
 ## A REFUSAL'S TEXT REACHES THE CLIENT (#261, 2026-09-26)
 
@@ -4564,6 +4608,43 @@ this directory's:
   holds a policy reference set at a create to its closed set (STS-LDAP-0106),
   as `update()` does an edit.
 
+## `stsCertificateBinding`: A CERTIFICATE SIGN-IN BINDING (#2012, 2026-11-23)
+
+The rule is `common/CLAUDE.md` 3dh. A person attribute (OID 950, `own`
+names), multi-valued, one canonical binding per value —
+`certificate-sha256:`, `issuer-serial:`, `issuer-ski:`, `spki-sha256:`,
+`issuer-subject:` or `subject:`, issuer-scoped values naming the issuing CA by
+its SubjectPublicKeyInfo's SHA-256. This file owns:
+
+* **THE WRITE GUARD, AT `stsPivCardUuid`'S THREE DOORS** (`putEntry()`,
+  `writePersonAttribute()`, the LDAP modify): `certificateBindingRefusal()`
+  canonicalises each value through `certificate_binding.bindingValueOf()` and
+  refuses one outside the grammar (STS-TLS-0069) or one another entry of the
+  realm holds (STS-TLS-0070) — the resolution refuses two holders anyway, but
+  the write that makes them is the mistake. On the person page beside the card
+  UUIDs (`person_editor.ts`), never the portal's: a person writing one would
+  choose whose certificate signs them in.
+* **FOUND BY THE `certificatebinding` INDEX** (`certificateBindingHolders()`,
+  on certificate enrollment's slot, people only, at most three):
+  `directory_codec.js` derives one key per stored value, lower-cased, and one
+  `upn:<lower-cased>` per `userPrincipalName`, so the `upn` method is the
+  same probe; the `email` method is `peopleByMail()`. A windowed process asks
+  the store's index alone (a person is always windowed); a process with no
+  window holds the directory as a Map and walks it, reading memory and never
+  the store — `peopleByMail()`'s arrangement, and a BARRIER of
+  `tests/no_full_directory_walk_in_jobs.js` for that reason. The uniqueness
+  check that calls it returns before any lookup when the entry written
+  carries no binding, so the CRL and federation jobs' writes never reach it
+  (run 45236493306's walk guards found that they did). It is NOT
+  `eachHolderOfAny()`: without a window that is the same walk, and every
+  name it is given must be in the store's asked index
+  (`tests/directory_asked_names.js`, run 45269202825), which the windowed
+  question here does not use. No schema moves. Recording a binding is a write, so it is keyed; a
+  `userPrincipalName` stored before #2012 is keyed by
+  `persistence/granting_index_backfill.js`'s second walk, which re-keys every
+  entry naming one of `directory_codec.BACKFILL_ATTRIBUTES` once
+  (`persistence/CLAUDE.md`).
+
 ## `userCertificate`: WHAT AN OUTSIDE CERTIFICATE IS STORED IN, AND HOW IT IS FOUND (#1061, 2026-10-27)
 
 The rule is `common/CLAUDE.md` 3ag. This file owns where the certificate is
@@ -4624,6 +4705,28 @@ and how a presented one finds it:
   `sts_certificate_holder_rename` 2b.
 
 
+
+**`stsPivCardUuid` (#1955 P2, D8, rcbj 2026-11-20)** is the second thing an
+outside certificate may be found by: an outside PIV or CAC card's FIPS 201
+card UUID, lower case, no `urn:uuid:` prefix, one value per card (multi).
+`pivCardHolders(uuid)` answers who holds one, on the same certificate
+enrollment slot as `certificateHolders` and for the same reason. It is found
+the way a DID is (`entryByDidSubject()`): the store's `byAttribute` index in a
+windowed process (`stspivcarduuid` is in the codec's `VALUE_INDEXED`, a key
+the service writes, so no schema moves; an entry written before carries no key
+until it is next written, and recording the UUID is that write), and the
+resident entries walked. It is asked only for a certificate from a configured
+outside PIV issuer that no entry stores, so not on every handshake. The value
+is compared lower-cased, and EVERY WRITE NORMALISES AND CHECKS IT
+(`pivCardUuidRefusal()`): `putEntry()` (creates, replaces, SCIM, the import),
+`writePersonAttribute()` (the console's editor, where `ldap/person_editor.ts`
+offers it to administrators and never to the portal) and the LDAP modify,
+which commits onto the entry itself. A `urn:uuid:` prefix comes off, the value
+is lower-cased, and one that is not RFC 9562's form, the nil UUID
+(STS-PIV-0034) or one another entry holds (STS-PIV-0035) is refused before
+anything is written, so the windowed index, which compares as written, always
+holds the lower-case form. OID 790 under
+the register's attribute arc. `common/CLAUDE.md` 3ag argues the mapping.
 ## A GROUP OR A PERSON NAMES ITS POLICY (#1235, 2026-10-30; `common/CLAUDE.md` 3cx)
 
 rcbj on #1234: what a named policy covers names it, and the policy lists
@@ -4680,3 +4783,18 @@ only through `writeProfilePhoto()`, which sets `pictureUrl` in the same act so a
 claim never names a photo the record does not. `noteAccountChange()` removes the
 row when the entry is deleted. `common/CLAUDE.md` (3db) argues the rest.
 
+
+## `stsOpenPgpKey` AND `userSMIMECertificate`: WHAT MAIL IS ENCRYPTED TO (#1955 P6, 2026-11-20)
+
+`common/openpgp_keys.ts`'s slot (`openpgpKeys.setDirectory()`, beside the
+mail channel's): `locate` hands one person's entry and the values of
+`userSMIMECertificate` under BOTH RFC 4522 spellings (an LDAP client writes
+`;binary`), read here by name because this is the store; `write` replaces in
+place (`writePersonAttribute()`) only `stsOpenPgpKey`,
+`stsOpenPgpFingerprint`, `stsOpenPgpKeyInfo`, `stsMailEncryption` and
+`userSMIMECertificate`, so the account observer is told as for any edit;
+`personByMail` is `personNameByMail()`, the forgot-password lookup made a
+named function so the Web Key Directory's `l` parameter asks the same index.
+In a whole-directory process that lookup walks the people, as the
+forgot-password one always has; it is reached only when the publication
+register misses and `l` hashes to the asked name.

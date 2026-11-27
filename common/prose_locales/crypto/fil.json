@@ -448,12 +448,20 @@
     "text": "Isang public-key token na kayang i-attenuate ng holder nang OFFLINE, gaya ng macaroon, pero mave-verify ng sinumang may hawak ng root public key. Ang authorization logic nito ay Datalog na dala sa loob ng token, kaya LAGING tumatakbo ang verifier nang may limit sa oras at iteration."
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial: SignedData na may isang signer at signed attributes, vine-verify sa mga attribute byte gaya ng natanggap at isinusulat nang DER-sorted; EnvelopedData na may KeyTransRecipientInfo (RSA PKCS#1 v1.5 at OAEP) at AES-CBC na nilalaman; degenerate na certs-only SignedData na may mga certificate at CRL. Walang KeyAgreeRecipientInfo, walang authenticated o compressed data, walang countersignature."
+    "en": "f750e6cf7ac566b2",
+    "text": "partial: SignedData na may isang signer at signed attributes, vine-verify sa attribute bytes gaya ng pagkatanggap at isinusulat nang DER-sorted; EnvelopedData na may KeyTransRecipientInfo (RSA PKCS#1 v1.5 at OAEP) at AES-CBC na nilalaman; degenerate certs-only SignedData na may mga certificate at CRL; para sa S/MIME mail (#1955) isang EnvelopedData na isinulat gamit ang OAEP SHA-256 KeyTransRecipientInfo, ECDH KeyAgreeRecipientInfo, o, para sa sertipiko ng ML-KEM, isang KEMRecipientInfo. Walang authenticated o compressed data, walang countersignature."
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "Ang sobreng binabasa at isinusulat ng SCEP (scep/scep_cms.ts): isang request na pinirmahan ng requester at naka-encrypt para sa RA, at isang CertRep na pinirmahan ng RA na ang certificate ay naka-encrypt para sa requester."
+    "en": "05b9f7ff9bec76df",
+    "text": "Ang envelope na binabasa at isinusulat ng SCEP (scep/scep_cms.ts): isang request na pinirmahan ng requester at naka-encrypt sa RA, at isang CertRep na pinirmahan ng RA na ang certificate ay naka-encrypt sa requester. Mula #1955, pati ang S/MIME EnvelopedData kung saan naka-encrypt ang mail, na nagdaragdag ng KeyAgreeRecipientInfo para sa EC recipient (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) at OAEP SHA-256 KeyTransRecipientInfo para sa RSA recipient, at KEMRecipientInfo para sa sertipiko ng ML-KEM. Ang runtime na hindi makapag-encapsulate ay hindi bumabalik sa RSA o ECDH."
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "d27e08a2f317c75c",
+    "text": "partial: pagbasa ng v4 at v6 na transferable public key, pag-verify ng cleartext signature, at pag-encrypt ng PGP/MIME na mensahe, sa pamamagitan ng openpgp.js; ang composite key ng RFC 9980 ay binabasa rito at parehong hati ay sinusuri. Ang advanced at direct lookup at ang policy file ng Web Key Directory. Walang pagpirma, walang decryption, walang pagsusumite sa Web Key Service, walang keyserver, at walang SLH-DSA."
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "Ang sariling public key ng isang tao, nakarehistro batay sa proof of possession at nakalathala sa Web Key Directory kung pipiliin niya; ang key kung saan naka-encrypt ang kanyang mail."
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256, itinatago kasama ng artifact at sinusuri sa pagbasa"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "Wala. Ang pagrehistro ay pirma ng TAO, at hindi pinipirmahan ang naka-encrypt na mensahe (pinipirmahan ng DKIM ang panlabas na mensahe, gaya ng pagpirma nito sa bawat mensahe)."
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "e571039950254fa8",
+    "text": "Isang PROOF OF POSSESSION sa pagrehistro: isang cleartext signature (gpg --clearsign) sa eksaktong challenge na in-issue ng serbisyong ito sa tao, gawa ng key na kayang pumirma sa loob ng key na nirerehistro, ginawa pagkatapos ma-issue ang challenge (openpgp.signatureSkewS) at valid noon; ang key mismo ay hindi revoked at hindi expired, na may valid na user id na naglalaman ng address ng entry. Mga key na RFC 9580 v6 at RFC 4880 v4, binabasa ng openpgp.js. Ang S/MIME certificate ay sinusuri para sa validity, key at usage, pero hindi chinechain: pumipili lang ito kung kanino naka-encrypt ang isang mensahe. Ang mga composite key ng RFC 9980 ay binabasa ng sariling reader ng serbisyong ito, na nagve-verify ng parehong hati; hindi sila binibigyang-kahulugan ng openpgp.js."
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "92940be7441a9817",
+    "text": "MAIL, kung saan pinili ito ng tao o hinihingi ito ng realm (mail.encryptionRequired): PGP/MIME (RFC 3156) sa encryption key ng key, ayon sa pinipili ng openpgp.js (SEIPD na may AES para sa v4 key, AEAD para sa v6); S/MIME (RFC 8551) bilang CMS EnvelopedData, AES-256-CBC na content encryption, ang content key sa ilalim ng RSAES-OAEP na may SHA-256 o ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap). Ang sertipiko ng ML-KEM (RFC 9935) ay isang KEMRecipientInfo (RFC 9629): nananatiling AES-256-CBC ang content cipher, at ang runtime na hindi makapag-encapsulate ay hindi bumabalik sa RSA o ECDH."
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "SHA-1 ng local part na naka-lowercase, sa z-base-32, gaya ng pagpapangalan ng Web Key Directory sa isang address (isang pangalang itinakda ng draft, hindi kailanman pinagkakatiwalaan para sa integrity). Ang fingerprint ng key ay ang ayon sa RFC 9580 (SHA-256 para sa v6, SHA-1 para sa v4)."
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "Walang sarili. Ang public key ng tao ay nasa kanyang entry (stsOpenPgpKey), hindi kailanman secret key, na tinatanggihan ng pagrehistro; ang key sa YubiKey OpenPGP card ay hindi naiiba sa key na nasa file, kaya walang itinatalang hardware-bound."
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "Nakarehistrong key, pagpirma"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519, ML-DSA-87+Ed448 (RFC 9980), pagkatapos ay Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA na hindi bababa sa openpgp.minRsaBits (3072 man lang)"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "Nakarehistrong key, encryption"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519, ML-KEM-1024+X448 (RFC 9980), pagkatapos ay X25519, X448, ECDH Curve25519 at P-256/P-384/P-521, RSA na hindi bababa sa openpgp.minRsaBits"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "Tinatanggihan"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "4c8437ead9bd7364",
+    "text": "DSA, ElGamal, mga kurba ng Brainpool, SLH-DSA"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "Nilalaman ng S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC (CMS EnvelopedData)"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "Key transport ng S/MIME"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 wrap; ML-KEM (RFC 9935) bilang KEMRecipientInfo, HKDF-SHA-256 at AES-Wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Pangalan sa Web Key Directory"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1, z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1388,24 +1468,24 @@
     "text": "Walang lumalabas sa serbisyong ito. Ang isang HOTP value AY isang pinutol na HMAC — RFC 4226 section 5.3 — kaya kumukuwenta ang family na ito ng keyed MAC at saka ikinukumpara ito, kaya nasa common/crypto.js ang primitive katabi ng bawat iba pang signature dito sa halip na sa module na nagpapasya ng policy."
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "Isang ipinakitang code, sa pamamagitan ng pagkuwenta ng HMAC para sa bawat time step sa skew window at paghahambing nang constant-time. Kinukuwenta ang BAWAT step kahit may tugma na, nang sadya: ang maagang pagbalik ay magpapaasa sa oras na ginugol sa KUNG ALING step ang tumugma, na mas mahusay na oracle kaysa sa paghahambing ng digit na pinag-aabalahang gawing constant-time."
+    "en": "302891e951b96222",
+    "text": "Isang ipinakitang code, sa pamamagitan ng pagkalkula ng HMAC para sa bawat time step sa skew window at paghahambing sa constant time. Kinakalkula ang BAWAT step kahit may tumugma na, sadya: ang maagang pagbalik ay gagawing nakadepende ang tagal sa KUNG ALING step ang tumugma, na mas mahusay na oracle kaysa sa paghahambing ng digit na sinadyang gawing constant-time. Isang HOTP code (RFC 4226, #1955) sa parehong paraan sa look-ahead window mula sa counter nito, na pagkatapos ay isinusulong sa pamamagitan ng compare-and-set sa store. Ang ValueMAC ng isang PSKC seed file (RFC 6030 section 6.1.1: HMAC-SHA1 o isang SHA-2 MAC sa ciphertext) bago i-decrypt ang secret nito."
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "Ang shared secret at rest, sa PRODUCT mode — AES-256-GCM sa ilalim ng parehong key-encryption key na nagpoprotekta sa mga signing key, sa pamamagitan ng common/keystore.js. Sa DEVELOPMENT mode, naka-store ito bilang base32, dahil ginagawa bawat run ang key-encryption key doon at ang pag-seal ay mangangahulugan ng authenticator na tahimik na titigil gumana sa susunod na restart."
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "Ang parehong secret, para mag-verify ng code. **ITO ANG NAG-IISANG CREDENTIAL SA SERBISYONG ITO NA MABABASA PABALIK** — ang password ay isang scrypt hash at maihahambing lang, at ang pag-verify ng one-time code ay nangangahulugang KUWENTAHIN ito. Hindi iyon kahinaan ng RFC 6238; iyon ang ibig sabihin ng \"shared secret\", at eksakto iyon ang dahilan kung bakit SECOND factor ang mekanismong ito rito at hindi kailanman magagawang first factor."
+    "en": "f197370676038df3",
+    "text": "Ang PSKC seed file ng isang vendor (RFC 6030): AES-CBC o AES Key Wrap sa ilalim ng pre-shared key na ibinigay kasama ng upload, o sa ilalim ng key na hinango ng PBKDF2 mula sa password nito, at walang alinman ang itinatabi. Ang parehong secret, para i-verify ang isang code. **ITO ANG NAG-IISANG CREDENTIAL SA SERBISYONG ITO NA MABABASA PABALIK** — ang password ay isang scrypt hash at maihahambing lamang, at ang pag-verify ng one-time code ay nangangahulugang KALKULAHIN ito. Hindi iyon kahinaan ng RFC 6238; iyon ang ibig sabihin ng \"shared secret\", at iyon mismo ang dahilan kung bakit IKALAWANG factor ang mekanismong ito rito at hindi kailanman magagawang una."
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1, SHA-256 o SHA-512, sa loob ng HMAC at wala nang iba."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "Hindi nito kailanman sinasabi kaninuman kung ano ang kasalukuyang code, at hindi kailanman nag-e-enrol ng sinuman sa sign-in screen — ang enrolment ay nangangahulugang ipakita ang isang secret, kaya nangyayari ito kung saan naka-authenticate na ang tao o may hawak siyang activation link. Walang counter-based na HOTP bilang authentication mechanism, at walang resynchronisation protocol: ang skew window lang ang inaalok para sa orasang lumilihis."
+    "en": "313115cd82b83d1b",
+    "text": "Hindi nito kailanman sinasabi sa sinuman kung ano ang kasalukuyang code, at hindi ito kailanman nag-e-enroll ng sinuman sa sign-in screen — ang pag-enroll ay nangangahulugang pagpapakita ng secret, kaya nangyayari ito kung saan authenticated na ang tao o may hawak na activation link. Ang lumilihis na TOTP clock ay binibigyan ng skew window at wala nang iba. Ang counter-based (HOTP) na token ay nire-resynchronize mula sa dalawang magkasunod na code, hindi kailanman mula sa isa. Hindi nito kailanman itinatabi ang key o password ng seed file, at hindi kailanman nagbubukas ng file na naka-encrypt sa isang sertipiko. Walang post-quantum na MAC ang HOTP (RFC 4226) at ang PSKC seed (RFC 6030): ang MAC ay HMAC-SHA-1, SHA-256 o SHA-512."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1422,6 +1502,50 @@
   "crypto.families.one-time-passwords-totp.algorithms.3.what": {
     "en": "e08e19def21e22b2",
     "text": "Mga live setting"
+  },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "Walang lumalabas sa serbisyong ito, maliban sa HMAC-SHA1 na sinusuri ng isang YK-VAL client sa /wsapi/2.0/verify. Ang OTP mismo ay AES-128-ECB ng isang 16-byte block, ikinukumpara pagkatapos itong i-decrypt, kaya nasa common/crypto.js ang primitive."
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "Isang iniharap na OTP: pinipili ng public identity ang credential, dina-decrypt ang block sa ilalim ng AES-128 key nito, ang CRC-16 residual ay 0xf0b8, at tumutugma ang private identity. Ang use counter at ang session-use counter, bilang isang value, ay dapat na mahigpit na mas mataas kaysa sa huling tinanggap. Hindi sinusuri ang timestamp. Ang HMAC-SHA1 ng isang YK-VAL request, sa bawat mode, kapag naka-on ang yubiotp.ykval."
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "Ang AES key at ang private identity sa pagpapahinga, bilang isang sealed JSON value, sa ilalim ng key-encryption key, sa product mode. Sa development mode ang key-encryption key ay ginagawa bawat pagtakbo, kaya naka-store ang value nang malinaw at sinasabi iyon."
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "Ang sealed value na iyon, para suriin ang isang OTP. Hawak ng server ang AES key, kaya ang pag-sign in ay amr otp at hindi kailanman hwk."
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "Wala. Ang CRC ay CRC-16, polynomial 0x8408. Ang lagda ng YK-VAL ay HMAC-SHA1."
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "f93ab78e99cd9d8d",
+    "text": "Hindi ito kailanman tumatawag sa YubiCloud. Hindi nito kailanman sinusuri ang timestamp. Hindi ito kailanman nag-e-enrol ng slot habang naka-off ang yubiotp.offered, at hindi nito kailanman sinasagot ang YK-VAL habang naka-off ang yubiotp.ykval. Hindi nito kailanman nilo-log ang programming line o ang HMAC key ng isang client. Wala itong post-quantum na parameter: ang OTP ay AES-128-ECB ng isang 16-byte na bloke."
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "Alpabeto"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "Pag-uulit"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
   },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
@@ -1596,12 +1720,12 @@
     "text": "Bawat certificate na ibinibigay nito, gamit ang EST Issuing CA key ng realm na ito, sa pamamagitan ng issueEnrolled() ng common/pki.js — ang parehong encoder na pinagmumulan ng bawat ibang certificate dito. DEGENERATE ang mga certs-only CMS message na ibinabalik nito: SignedData na may mga certificate at walang signer, kaya wala silang sariling signature at pinagkakatiwalaan dahil sa mga certificate sa loob nila."
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "Ang PKCS#10 proof of possession — ang signature ng request gamit ang sarili nitong public key, classical at post-quantum, sa common/cert_enrollment.ts — at, para sa certificate authentication, ang path ng client certificate patungo sa Intermediate ng realm na ito at sa service Root, na kinokonsulta ang revocation. Hindi vine-verify ang /serverkeygen template: pinapalitan ang key nito."
+    "en": "6b27c8877d509c46",
+    "text": "Ang PKCS#10 proof of possession — ang pirma ng kahilingan gamit ang sarili nitong public key, classical at post-quantum, sa common/cert_enrollment.ts — at, para sa certificate authentication, ang path ng client certificate patungo sa Intermediate ng realm na ito at sa Root ng serbisyo na may sinangguning revocation. Hindi vine-verify ang /serverkeygen template: pinapalitan ang key nito. Isang YubiKey PIV key attestation sa kahilingan (#1955, dito at sa ACME at SCEP): ang ECDSA o RSA na pirma ng slot certificate ng f9 certificate, at ang path ng f9 certificate patungo sa mga PIV attestation anchor ng realm, sa pamamagitan ng validation door."
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "Ang private key ng server-generated na key pair, na na-seal gamit ang AES-256-GCM sa ilalim ng key-encryption key sa entry, saanman mas tumatagal ang key na iyon kaysa sa process. HINDI ito naka-encrypt para sa client (RFC 7030 section 4.4.1.2): tinatanggihan ang request na humihingi niyon, at sa loob lang ng TLS naglalakbay ang key."
+    "en": "a18df4311029b728",
+    "text": "Ang private key ng isang key pair na binuo ng server, selyado gamit ang AES-256-GCM sa ilalim ng key-encryption key sa entry, saanman tumatagal ang key na iyon nang lampas sa proseso; isang naka-escrow na piv-key-management key (#1955) sa bawat mode, o hindi ito binubuo kailanman. HINDI ito ine-encrypt para sa client (RFC 7030 section 4.4.1.2): tinatanggihan ang kahilingang humihingi nito, at sa loob lamang ng TLS naglalakbay ang key."
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +2030,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32, walang padding, gaya ng inaasahan ng otpauth Key Uri Format."
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "Mga PIV attestation signature na vine-verify"
   }
 }

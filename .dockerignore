@@ -38,7 +38,7 @@ node-ldapjs/.github
 # whatever) edits this repository. They are excluded because the Dockerfile now
 # copies the context whole — before that they were left out by not being named.
 # `docs` WAS HERE until 2026-09-14 and went the way of the three files below:
-# tests/error_codes.js asserts that docs/v1.1.0/error-codes.md is what the
+# tests/error_codes.js asserts that docs/v1.2.0/error-codes.md is what the
 # error-code table generates and that docs/_config.yml lists it, so the
 # directory is the subject of a test that runs in the TESTS image. The service
 # Dockerfile removes it.
@@ -56,6 +56,9 @@ node-ldapjs/.github
 !.github/image-mirror.txt
 !.github/scripts/stack-images.sh
 !.github/workflows/build-container.yml
+# AND THE DAILY ADVISORY RUN (#2219): tests/sdk_lockfile.js holds that it runs
+# the advisory windows alone, the 90-day update review only on a dispatch.
+!.github/workflows/dependency-windows.yml
 # ./run-jsdoc.sh's output, never read by an image.
 apidocs
 CLAUDE.md
@@ -73,6 +76,14 @@ clean.sh
 # that are not this one. .git/info/exclude keeps it out of `git status`, which
 # is why nothing else noticed.
 .claude
+
+# A second checkout placed IN this repository, named `wt-iya-sts-*`, is the
+# same second service and is not under `.claude`, so the line above does not
+# cover it. On 2026-11-21 `docker compose build` reached the typescript stage
+# and stopped: `build-typescript.sh` requires a `.js` beside every `.ts` it
+# finds, the nested tree's 753 sources have none, and `tsconfig.build.json`'s
+# `*/*.ts` also names that tree's `sts_metadata.ts`, one directory down.
+wt-iya-sts-*
 
 # ---------------------------------------------------------------------------
 # THREE OF THEM CAME BACK ON 2026-09-09, AND THE REASON IS THE SAME ONE THE
@@ -193,6 +204,8 @@ portal/portal-spa.js*
 # And the front door's (#579), for the same reason.
 home/home.bundle.js
 home/home-spa.js*
+# And the browser check every shell runs first (#2220), for the same reason.
+common/browser-check.js
 # And the sign-in screen's (#571), for the same reason.
 authn/authn.bundle.js
 authn/authn-spa.js*
@@ -221,3 +234,9 @@ utilities
 # launchers run with the image's copy of the tree, MOCK_STS_DIR).
 !utilities/register-remote-pep.js
 !utilities/pep-assertion-request.js
+
+# models/generated/ is written by the image build itself (build-typescript.sh
+# runs models/tools/generate.mjs). A host copy, from a run of the generator or
+# common/model_emit.js, could carry a file the model no longer generates into
+# the image, so the build context never includes one (2026-11-23).
+models/generated/

@@ -22,7 +22,7 @@
 //      `streamCoversSubject()` — the single function every CAEP, RISC and
 //      by-hand delivery already asks — and this file fills it.
 //   3. **Grant and token revocation emit CAEP.** This REVERSES a documented
-//      rule — docs/v1.1.0/caep-events.md said revoking a token emits nothing —
+//      rule — docs/v1.2.0/caep-events.md said revoking a token emits nothing —
 //      for GNAP only, and the reason it is not a contradiction is the shape of
 //      a GNAP grant: it is a DELEGATED SESSION between a client instance and a
 //      resource owner (RFC 9767 section 2.1.13 calls it the grant's current
@@ -106,6 +106,8 @@ interface GnapSignalsDeps {
   loadSsfStreams(): any;
   // The token and grant records an RS stream's scope reads (#432).
   loadStore(): any;
+  // The subject library, for the application a subject names (#2028).
+  loadSsfSubjects(): any;
 }
 
 // WHO APPROVED WHICH APPLICATION, for the scope. The durable record is the
@@ -415,6 +417,36 @@ class GnapSignals {
   }
 
   /**
+   * Whether a subject names exactly this application (its `application`
+   * member, format `opaque`) and no person.
+   *
+   * @param subjectValue - the subject identifier
+   * @param identifier - the stream owner's application identifier
+   * @returns true only for a subject about that application alone
+   */
+  namesOnlyItself(subjectValue: any, identifier: string): boolean {
+    const { log, loadSsfSubjects } = this.deps;
+    log.debug("Entering GnapSignals.namesOnlyItself().");
+    if (!identifier || !subjectValue || typeof subjectValue !== 'object' ||
+        subjectValue.user) {
+      log.debug("Leaving GnapSignals.namesOnlyItself(). No.");
+      return false;
+    }
+    let named = '';
+    try {
+      named = String(loadSsfSubjects().applicationIdOf(subjectValue) || '');
+    } catch (e) {
+      log.debug("Caught in GnapSignals.namesOnlyItself(): " +
+                ((e && e.message) || e));
+      // No subject library: not proven to be about the application.
+      named = '';
+    }
+    log.debug("Leaving GnapSignals.namesOnlyItself(). " +
+              String(named === identifier));
+    return named === identifier;
+  }
+
+  /**
    * The subject scope filled into `ssf/ssf_streams.ts`: whether a stream owned
    * by a GNAP web application covers a subject.
    *
@@ -451,6 +483,18 @@ class GnapSignals {
     if (String(fields.gnapScopedSignals || '').toUpperCase() === 'FALSE') {
       log.debug("Leaving GnapSignals.scope().");
       return undefined;
+    }
+    // AN EVENT ABOUT THE STREAM'S OWN APPLICATION, AND NOBODY ELSE (#2028):
+    // `pep-policies-changed` names the application its embedded PEP is
+    // bound to, with no `user` member, and is sent only to the streams that
+    // application owns. Both rules below are about PEOPLE (who approved,
+    // whose tokens), so neither can say yes to it, and the event was refused
+    // on every GNAP-owned stream: a local PEP embedded in a GNAP client
+    // never heard of a policy change. A subject naming this very entry and
+    // no person widens nothing — it tells the application about itself.
+    if (this.namesOnlyItself(subjectValue, String(app.identifier || ''))) {
+      log.debug("Leaving GnapSignals.scope(). About the application itself.");
+      return true;
     }
     // A WEB APPLICATION is the population the user named: a client that
     // finishes an interaction in a browser or by push has a finish URI on its
@@ -609,6 +653,9 @@ class GnapSignals {
       },
       loadStore: function () {
         return require('./gnap_store');
+      },
+      loadSsfSubjects: function () {
+        return require('../ssf/ssf_subjects');
       }
     };
   }

@@ -34,8 +34,12 @@
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -236,7 +240,7 @@ async function follow(b, path, stopAt) {
   let at = path;
   let r = await b.go("GET", path);
   for (let n = 0; n < 16; n += 1) {
-    if (stopAt && r.location.indexOf(stopAt) === 0) {
+    if (stopAt && urls.isAt(r.location, stopAt)) {
       break;
     }
     // THE SIGN-IN SCREEN'S SHELL (#571): signed in over `/authn-api`
@@ -272,7 +276,7 @@ async function codeGrant(b) {
       .digest("base64url"), code_challenge_method: "S256" };
   const r = await follow(b, R + "/oauth2/authorize?" + form(params),
                          REDIRECT);
-  const code = r.location.indexOf(REDIRECT) === 0
+  const code = urls.isAt(r.location, REDIRECT)
     ? new URL(r.location).searchParams.get("code") : "";
   assert.ok(code, "the code flow reaches the client: " + r.status + " " +
             r.location + " " + r.text.slice(0, 300));
@@ -426,10 +430,17 @@ async function test() {
     await ok(api + "/consent/grant-global-consent",
              { client: CLIENT, scope: one }, "consented " + one);
   }
+  // Temporary, then the person's own (#2160, `own_password.js`), before
+  // the stream exists: the sign-ins below use PASSWORD.
   await ok(api + "/users/create", { username: ALICE, invent: false,
-    credential: "password", password: PASSWORD,
+    credential: "password", password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "CAEP " + ALICE, givenName: "CAEP", sn: "Grants",
                   mail: ALICE + "@caep239.test" } }, "created " + ALICE);
+  await ownPassword.ownPassword(base, ALICE, PASSWORD,
+    function (who, value) {
+      return postJson(api + "/users/set-password",
+                      { user: who, password: value });
+    });
   const token = await tokenFor("ssf.read ssf.manage");
   const created = await send(base + "/ssf/stream", { method: "POST",
     headers: { "Content-Type": "application/json",
@@ -588,10 +599,28 @@ async function test() {
   check("the person's sign-on session is listed", function () {
     assert.ok(rows.length >= 1, sessions.raw.slice(0, 800));
   });
-  const sessionId = String(rows[0].sessionId ||
-                           String(rows[0].id).slice("session:".length));
-  const under = await send(api + "/tokens?session=" +
-                           encodeURIComponent(sessionId));
+  // ALICE HAS TWO SIGN-ON SESSIONS SINCE #2238: the one `own_password.js`
+  // left when she chose her own password at the screen, and `b`'s. The
+  // first row was the former in the cells and mariadb runs of 2026-11-25,
+  // with no tokens under it. So each listed session is asked, and the one
+  // whose tokens are the CIBA ones is the session the approval rested on —
+  // which `b` holds and nothing else could, the code-grant tokens of a. and
+  // b. being under it too.
+  let approving = null;
+  let under = null;
+  for (const row of rows) {
+    const sid = String(row.sessionId ||
+                       String(row.id).slice("session:".length));
+    const listed = await send(api + "/tokens?session=" +
+                              encodeURIComponent(sid));
+    if (!under || (listed.status === 200 && /ciba/i.test(listed.raw))) {
+      under = listed;
+      approving = row;
+    }
+    if (listed.status === 200 && /ciba/i.test(listed.raw)) {
+      break;
+    }
+  }
   check("the CIBA tokens are listed UNDER that sign-on session", function () {
     assert.strictEqual(under.status, 200, under.raw.slice(0, 300));
     assert.ok(/ciba/i.test(under.raw), under.raw.slice(0, 1200));
@@ -620,8 +649,8 @@ async function test() {
   });
 
   log.info("=== d, continued. the approving session ends ===");
-  await ok(api + "/sessions/revoke", { key: rows[0].key,
-    select: rows[0].id }, "ended the sign-on session");
+  await ok(api + "/sessions/revoke", { key: approving.key,
+    select: approving.id }, "ended the sign-on session");
   const introspected = await postForm(base + "/oauth2/introspect", {
     token: cibaTokens.body.refresh_token, client_id: CLIENT,
     client_secret: SECRET });

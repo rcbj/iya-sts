@@ -63,6 +63,9 @@
 // it; it owns no plan.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urlMatch = require("./url_match.js");
 const fs = require("fs");
 const nodeCrypto = require("crypto");
 const bunyan = require("bunyan");
@@ -78,6 +81,9 @@ const log = bunyan.createLogger({ name: "conformance_browser",
 const SETTLE_MS = Number(process.env.CONFORMANCE_BROWSER_SETTLE_MS) || 4000;
 
 let shared = null;
+// The chromedriver process behind `shared` (#2258), held so that a browser
+// thrown away can be ENDED rather than asked to end — see `closeBrowser()`.
+let sharedService = null;
 // How many Chromes this process has opened with a network log (one file each).
 let netlogCount = 0;
 let queue = Promise.resolve();
@@ -114,6 +120,62 @@ function pinOf(file) {
 // the suite's (conformance-tls's certificate) are trusted by pin, in ONE
 // flag — Chrome keeps only the last occurrence of a switch
 // (browser_flags.js says so at length).
+// A CHROMEDRIVER THIS PROCESS CAN KILL (#2258). selenium-webdriver ends the
+// chromedriver it started only AFTER its QUIT command settles
+// (`WebDriver.quit()` runs the service's `kill()` in its `finally`), so a
+// chromedriver that has stopped answering is never ended — and a child
+// process, with the WebDriver request still open on its socket, holds this
+// process's event loop for ever. That is how sts_oidcc_conformance logged
+// "Test completed successfully." and then ran until it was killed at 16200 s
+// (run 45608374617): one visit was abandoned at its deadline at 12:57, the
+// QUIT sent to its hung chromedriver never came back, and nothing else was
+// left to keep the job alive. The builder is the library's own, and keeps
+// the service it builds so `closeBrowser()` can end it whatever QUIT does.
+class HeldService extends chrome.ServiceBuilder {
+  build() {
+    log.debug("Entering HeldService.build().");
+    this.held = super.build();
+    log.debug("Leaving HeldService.build().");
+    return this.held;
+  }
+}
+
+// How long QUIT is given before the chromedriver is ended anyway (#2258).
+const QUIT_MS = Number(process.env.CONFORMANCE_BROWSER_QUIT_MS) || 15000;
+
+// Ends one browser: QUIT, bounded, and then its chromedriver, which the
+// library would have ended had QUIT come back. Ending a chromedriver that
+// has already gone is nothing (`DriverService.kill()` answers at once when
+// no process is running), so the normal path pays one comparison.
+async function closeBrowser(driver, service) {
+  log.debug("Entering closeBrowser().");
+  let timer = null;
+  const bound = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      log.warn("The browser did not quit within " + QUIT_MS + " ms; " +
+               "ending its chromedriver.");
+      resolve(null);
+    }, QUIT_MS);
+  });
+  try {
+    await Promise.race([driver.quit(), bound]);
+  } catch (e) {
+    log.debug("Caught in closeBrowser(): " + ((e && e.message) || e));
+    // Already gone, or stuck and refusing: either way it is ended below.
+  } finally {
+    clearTimeout(timer);
+  }
+  if (service && service.held) {
+    try {
+      await service.held.kill();
+    } catch (e) {
+      log.debug("Caught ending a chromedriver: " + ((e && e.message) || e));
+      // A process that is already gone cannot be ended twice.
+    }
+  }
+  log.debug("Leaving closeBrowser().");
+}
+
 async function browser(serviceBase) {
   log.debug("Entering browser().");
   if (shared) {
@@ -180,8 +242,14 @@ async function browser(serviceBase) {
                          "--net-log-capture-mode=Default");
     log.info("Chrome's network log: " + file);
   }
+  // CONFORMANCE_CHROMEDRIVER names the chromedriver to start, for a run
+  // that pins one (and for tests/conformance_browser_close.js, whose fake
+  // stops answering); unset, the library finds it as it always did.
+  const service = new HeldService(
+    String(process.env.CONFORMANCE_CHROMEDRIVER || "").trim() || undefined);
   shared = await new Builder().forBrowser("chrome")
-    .setChromeOptions(options).build();
+    .setChromeOptions(options).setChromeService(service).build();
+  sharedService = service;
   log.info("Opened the person's browser (headless Chrome) for the " +
            "conformance suite's sign-in steps.");
   await keepWarm(shared, serviceBase);
@@ -236,13 +304,10 @@ async function quit() {
   log.debug("Entering quit().");
   if (shared) {
     const was = shared;
+    const service = sharedService;
     shared = null;
-    try {
-      await was.quit();
-    } catch (e) {
-      log.debug("Caught in quit(): " + ((e && e.message) || e));
-      // Already gone: nothing to close.
-    }
+    sharedService = null;
+    await closeBrowser(was, service);
   }
   log.debug("Leaving quit().");
 }
@@ -265,9 +330,14 @@ function withDeadline(work) {
       log.warn("A browser visit ran past " + VISIT_MS + " ms; abandoning " +
                "it and replacing the browser.");
       const was = shared;
+      const service = sharedService;
       shared = null;
+      sharedService = null;
       if (was) {
-        was.quit().catch(function (e) {
+        // Not awaited: the next visit opens a fresh browser now. The close
+        // is bounded and ends the chromedriver at its bound (#2258), so a
+        // QUIT that hangs can no longer keep this process alive.
+        closeBrowser(was, service).catch(function (e) {
           log.debug("Caught closing a stuck browser: " +
                     ((e && e.message) || e));
           // Gone or stuck: either way it is no longer the browser.
@@ -857,7 +927,7 @@ async function follow(o, driver, id, action, suiteBase) {
     const here = await currentUrl(driver);
     // CHROME'S OWN ERROR PAGE, for an address of this service: loaded again
     // (see `networkError()`), and the step counted against nothing.
-    const failed = here && here.indexOf(suiteBase) !== 0
+    const failed = here && !urlMatch.isUnder(here, suiteBase)
       ? await networkError(driver) : "";
     if (failed && reloads < NETWORK_RETRIES) {
       reloads += 1;
@@ -882,7 +952,7 @@ async function follow(o, driver, id, action, suiteBase) {
       // No address yet (a navigation in flight): taken as no page.
       path = "";
     }
-    if (here.indexOf(suiteBase) === 0) {
+    if (urlMatch.isUnder(here, suiteBase)) {
       // THE SUITE'S OWN PAGE: its callback reports to the suite once its
       // script has run (`submission_complete`); a check page (Session
       // Management's) moves on by itself, to a result page of the suite.

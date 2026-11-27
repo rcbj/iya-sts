@@ -181,8 +181,11 @@ async function run(t) {
   problems = [];
   // A page's translator is called `t`, always — the convention that makes
   // this scan possible without parsing the program.
-  const named =
-    /\bt\.(?:html|text)\(\s*'([a-z][a-zA-Z0-9]*)\.([a-zA-Z0-9_.-]+)'/g;
+  // A refusal's sentence (#2006) is named by many doors — `Sentence.say(`,
+  // a runtime's `refusal(`, a message object's `key:` — so every literal
+  // `'refusals.…'` in the source is held, wherever it stands.
+  const named = new RegExp('(?:\\bt\\.(?:html|text)\\(\\s*|(?=\'refusals\\.))' +
+    '\'([a-z][a-zA-Z0-9]*)\\.([a-zA-Z0-9_-][a-zA-Z0-9_.-]*[a-zA-Z0-9_-])\'', 'g');
   sourceFiles().forEach(function (file) {
     const body = fs.readFileSync(file, 'utf8');
     let m;

@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "Der Anmeldedienst mit seinen zweiten Faktoren, die Wallet, Anmeldungen per SPNEGO und Zertifikat sowie die Abmeldung."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "Zertifikatsanmeldung"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "Der Listener, an den eine Zertifikatsanmeldung übergeben wird: die eine Anfrage, die nach einer Smartcard oder einem Zertifikat fragt."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "Benutzerportal"
@@ -312,8 +320,8 @@
     "text": "Zertifizierungsstelle"
   },
   "listeners.applications.pki.what": {
-    "en": "8b280b2baedbdfe6",
-    "text": "CRLs, OCSP, die Zertifikate und Ketten der CA sowie die kryptografischen Metadatendokumente."
+    "en": "227bec56922b2292",
+    "text": "CRLs, OCSP, die Zertifikate und Ketten der CA, die kryptografischen Metadatendokumente und die OpenPGP-Schlüssel des Web Key Directory."
   },
   "listeners.applications.kerberos.label": {
     "en": "43c19a093b34b581",

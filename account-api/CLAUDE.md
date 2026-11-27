@@ -78,8 +78,24 @@ and DN only, and says `more` instead of paging. It is audited
 (`portal.delegation.search`) and has a rate limit of its own:
 `websecurity.attemptShared()`, thirty a person and 120 an address in each
 `security.rateLimitWindowS` window, across the cluster (`STS-PORTAL-0621`).
-This API has no limit of its own apart from that. The other limits are
-per door: the reset, the TOTP code, an app password. It answers nothing a
+The other limits are per door: the reset, the TOTP code, an app password.
+
+**EVERY WRITE COUNTS AGAINST ITS PERSON'S BUDGET (#2167, ASVS 5.0.0
+2.4.2).** `run()` counts each `person` operation that is not a `GET`, after
+the gate and the recent-sign-in step-up and before the request's shape is
+checked, in `websecurity.subjectActShared('account-write', …)`, keyed by
+the realm and the token's `sub` — never the address, so an office behind
+one NAT shares nothing — at `account.writesPerSubject` in
+`account.writeWindowS` (300 in 600 s in product, 0 = off, the development
+default, as the per-address ceiling is). Past it: 429, `Retry-After`,
+`STS-ACCOUNT-0024`, `{ ok: false, errors, messages }` with
+`refusals.limits.tooManyActs`, which the portal draws in its own language:
+`localeData()` ships the `refusals.limits.*` keys beside the portal's
+catalogs (not the whole namespace), and the runtime's generic refusal flash
+reads `messages` through `WebSaid`. Reads are not counted. Every write
+counts, refused or not, because what is bounded is work, not guesses. A
+door with its own tighter limit (the delegate search, the signing key)
+keeps it; this budget is beside it. `tests/subject_act_budgets.js`. It answers nothing a
 person could not already name by typing a DN. `portal/CLAUDE.md` has the
 rest.
 
@@ -106,8 +122,13 @@ but not for this:
    wants one (`0011`); and `sender_constraints.js`'s rule that the portal's
    client, public, is DPoP-bound always, beside #34's two settings;
 6. a PERSON's token, never a client's own (`0012`); carrying `account:manage`
-   (`0013`); issued to a client that STILL declares it (`0014`, #110's rule
-   asked on every call);
+   — or, on a GET or HEAD only, `account:read` (#2168: what the portal signs
+   in with; it changes nothing, and `account:manage` still reaches every
+   operation, so an old token or client is answered as before) — (`0013`,
+   whose `insufficient_scope` challenge names what this method takes, which
+   is how the portal knows to ask a second authorization for
+   `account:manage`); issued to a client that STILL declares it (`0014`,
+   #110's rule asked on every call);
 7. the access policy, as the portal's pages asked it: `user-portal`, `read` for
    a GET and `manage-own` otherwise, the owner the subject (`0015`).
 

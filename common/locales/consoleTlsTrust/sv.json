@@ -36,5 +36,6 @@
   "linkJson": "den här sidan som JSON",
   "linkApi": "samma sak via hanterings-API:t",
   "linkSettings": "inställningarna för TLS-lyssnarna",
-  "linkPki": "tjänstens egen certifikatutfärdare"
+  "linkPki": "tjänstens egen certifikatutfärdare",
+  "shadowedBy": "Delar subjekt med ett annat ankare ({fingerprint}). Ett certifikat som något av dem har utfärdat kanske inte verifieras så länge båda är installerade. Att visa detta certifikat själv verifieras ändå."
 }

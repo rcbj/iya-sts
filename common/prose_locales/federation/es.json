@@ -111,6 +111,14 @@
     "en": "0f52a102d4c01229",
     "text": "AUTENTICACIÓN INTEGRADA. Se envía a la persona a /authn/spnego, que responde 401 con WWW-Authenticate: Negotiate e inicia su sesión con el ticket de servicio que devuelve su cliente (RFC 4559 sobre RFC 4178 sobre RFC 4121). No se escribe nada y no se dibuja ninguna pantalla. Como una llave de seguridad o una billetera, se basa en una credencial que este servicio verifica en todos los modos — la contraseña de la pantalla de inicio de sesión solo se verifica en modo producto — y lo que la sesión afirma luego se lee de los propios indicadores del TICKET: amr [\"pwd\"] para pre-authent, [\"hwk\"] para hw-authent, ambos para ambos, y NADA en absoluto para un ticket que no afirma ninguno. Un cliente que no puede obtener un ticket se encuentra con una página que enlaza la pantalla de inicio de sesión, porque un 401 Negotiate a secas es un callejón sin salida en todo navegador que no esté configurado para este host."
   },
+  "fed.mechanisms.attested-hardware.label": {
+    "en": "a133b83617b8359b",
+    "text": "Llave de hardware atestada"
+  },
+  "fed.mechanisms.attested-hardware.what": {
+    "en": "2fc5a571514106a4",
+    "text": "Una llave de acceso o un certificado de tarjeta inteligente en un token de hardware que este dominio registró a partir de su propia atestación (common/hardware_tokens.ts): una llave de seguridad con atestación empresarial, o una tarjeta PIV. La pantalla de inicio de sesión ofrece una llave de acceso y, donde la política de autenticación acepta uno, un certificado, y ninguna contraseña. En una lista permitida solo la satisface una credencial así, de modo que a una aplicación cuya política de autenticación solo nombra attested-hardware solo se llega con una llave de hardware probada."
+  },
   "fed.mechanisms.wallet.label": {
     "en": "a6a3e498bac9d4f6",
     "text": "Billetera (OpenID4VP)"
@@ -488,8 +496,8 @@
     "text": "EL PUNTERO, y todo lo que este lado guarda sobre el socio: el identificador de su entrada en ou=applications. Su entityID, su servicio consumidor de aserciones, sus URI de redirección y su certificado viven ALLÍ, donde ya los lee cada módulo de protocolo. Copiar cualquiera de ellos aquí sería el fallo de los dos almacenes que este repositorio está organizado para evitar."
   },
   "fed.schema.attributes.fedAuthnMechanism.what": {
-    "en": "10e91a734e1d74b3",
-    "text": "CÓMO AUTENTICA ESTE SERVICIO A LA PERSONA cuando este socio se lo pide: password, password-mfa, webauthn, spnego — un ticket Kerberos que el navegador ya tiene, sin ninguna pantalla —, wallet — una credencial que este dominio emitió, presentada desde la billetera de la persona — o federation, que la envía a otra relación y es lo que convierte a este servicio en un PUENTE de identidad entre dos protocolos. VACÍO SIGNIFICA QUE ESTA RELACIÓN NO DICE NADA, lo cual no es lo mismo que password: recurre a appFederationRelationship en la entrada de la aplicación y luego a la pantalla de inicio de sesión, que es exactamente lo que hacía toda relación antes de que existiera este atributo."
+    "en": "cbb25dba52aecc9f",
+    "text": "CÓMO AUTENTICA ESTE SERVICIO A LA PERSONA cuando este socio se lo pide: password, password-mfa, webauthn, attested-hardware — una llave de acceso en un token de hardware probado por atestación — spnego — un ticket Kerberos que el navegador ya tiene, sin ninguna pantalla —, wallet — una credencial que este dominio emitió, presentada desde la billetera de la persona — o federation, que la envía a otra relación y es lo que convierte a este servicio en un PUENTE de identidad entre dos protocolos. VACÍO SIGNIFICA QUE ESTA RELACIÓN NO DICE NADA, lo cual no es lo mismo que password: recurre a appFederationRelationship en la entrada de la aplicación y luego a la pantalla de inicio de sesión, que es exactamente lo que hacía toda relación antes de que existiera este atributo."
   },
   "fed.schema.attributes.fedAuthnRelationship.what": {
     "en": "e67f3ec502c8b6b8",

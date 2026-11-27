@@ -93,5 +93,11 @@
   "mail.link": "Mail",
   "mail.noneAfter": "), so {what} is shown to you to pass on.",
   "mail.box": "mail {what} to the address on their entry, and do not show it to me",
-  "grid.required": " &middot; required"
+  "grid.required": " &middot; required",
+  "create.requiredFields": "Required: {list}. Each is outlined in red and marked *; every other field is optional.",
+  "create.nothingRequired": "Nothing on this form is required.",
+  "create.requiredWhen": " &middot; required when {field} is {values}",
+  "create.requiredWhenFilled": " &middot; required when {field} is filled in",
+  "create.yes": "yes",
+  "create.no": "no"
 }

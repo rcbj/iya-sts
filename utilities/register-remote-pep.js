@@ -10,7 +10,7 @@
 // register a new remote pep").
 //
 // Every step is a management API call an operator could make by hand, in
-// the order docs/v1.1.0/remote-pep.md's *Registering a new remote PEP, step
+// the order docs/v1.2.0/remote-pep.md's *Registering a new remote PEP, step
 // by step* gives them, and nothing here is a door of its own:
 //
 //   1. the PEP's entry, a person whose username is PEP_NAME
@@ -30,7 +30,22 @@
 //      first run it is planned (the environment names the two paths) and a
 //      second run, after the container has started, issues it;
 //   7. the container's environment (<out>/pep.env) and a compose service
-//      (<out>/docker-compose.pep.yml), printed as well.
+//      (<out>/docker-compose.pep.yml). With --cluster that compose is the
+//      whole cluster: every member recorded under the same parent directory,
+//      one load balancer in front, published on 127.0.0.1 only, and the
+//      companion container (hostname companion, upstream of /pep-app).
+//      There is no TCP forwarder. A PEP_PDP_URL of https://localhost:<port>
+//      is the service a browser opens; the compose points that name at the
+//      sts container;
+//   8. the companion's /pep-app on that cluster's reverse proxy: a
+//      confidential client and one role on both read and write. A --cluster
+//      run does this. --pep-app is the same switch, and it is refused
+//      without --cluster. A run without a public https origin cannot save
+//      a session route;
+//   9. with --cluster, and not on --dry-run, `docker compose up -d` of that
+//      file: the members, the load balancer and the companion. It does not
+//      start or recreate the identity service. The tests image has no
+//      Docker daemon, so the suite sets REGISTER_PEP_NO_START.
 //
 // **IT IS IDEMPOTENT, AND EACH STEP SAYS HOW.** A door that answers a repeat
 // with a 400 is never asked twice: the entry and the cluster membership are
@@ -39,8 +54,10 @@
 // they are simply called. `issue-pep-credential` ADDS a key every time it is
 // called, so it is called only when the certificate in --out is not a valid
 // key on the entry; the listener pair is issued only when --out holds none
-// (`--reissue-https` replaces it). `--dry-run` makes no write anywhere and
-// says what each step would do.
+// (`--reissue-https` replaces it). The companion path is saved only when
+// that route is not already the one role's, and an application already in
+// the registry keeps the client secret it has. `--dry-run` makes no write
+// anywhere and says what each step would do.
 //
 // TLS: the service's certificate is verified. `--ca` (or
 // NODE_EXTRA_CA_CERTS) names the anchor; `--insecure` turns verification
@@ -59,8 +76,10 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const https = require('https');
+const net = require('net');
 const tls = require('tls');
 const crypto = require('crypto');
+const childProcess = require('child_process');
 
 const log = {
   debug: function (message) {
@@ -79,6 +98,38 @@ const SERVER_KEY = path.join('server', 'pep-server.key');
 const SERVICE_CA = 'service-ca.pem';
 const ENV_FILE = 'pep.env';
 const COMPOSE_FILE = 'docker-compose.pep.yml';
+// The companion demonstration (--pep-app). One prefix covers every page
+// companion/pep_app.js serves under /pep-app, including POST of an item.
+const PEP_APP_SCOPES = ['openid', 'profile', 'email', 'offline_access'];
+// THE ROUTE ASKS FOR SIGNALS (`signals: true`, pepAppRoute()), so the proxy
+// runs a CAEP/RISC receiver for this client, and the receiver needs a
+// client-credentials token for the realm's transmitter with these two
+// scopes (docs/v1.2.0/remote-pep.md, *the `session` mechanism*, step 4).
+// Without them it does not start (STS-XPEP-0094) and the proxy falls back to
+// asking POST /xacml/pep/session: found on AWS on 2026-11-23 (#1284).
+// Declared on the client only, NOT given global consent: a client-credentials
+// grant has no person to consent.
+const PEP_APP_SIGNAL_SCOPES = ['ssf.read', 'ssf.manage'];
+// AND THE ROLES THAT CONFER THEM: a declared scope is issued to a client only
+// when it also holds the role that confers its permission, or the token
+// endpoint answers invalid_scope ("the application 'pep-app' is not a member
+// of the role SSF_MANAGE"). Found the same day, the step after the scopes.
+const PEP_APP_SIGNAL_ROLES = ['SSF_READ', 'SSF_MANAGE'];
+const PEP_APP_GRANTS = ['authorization_code', 'refresh_token',
+  'client_credentials'];
+const PEP_APP_AUTH = ['client_secret_basic', 'client_secret_post'];
+const PEP_APP_METHODS = ['GET', 'HEAD', 'POST'];
+const PEP_APP_CALLBACK = '/.iya-pep/callback';
+// What companion/pep_app.js's whoami page reads off the forwarded request.
+const PEP_APP_HEADERS = [
+  { name: 'X-Remote-User', claim: 'username' },
+  { name: 'X-Iya-User', claim: 'sub' },
+  { name: 'X-Iya-Email', claim: 'email' },
+  { name: 'X-Iya-Name', claim: 'name' },
+  { name: 'X-Iya-Groups', claim: 'groups' },
+  { name: 'X-Iya-Auth', claim: 'mechanism' },
+  { name: 'X-Iya-Amr', claim: 'amr' }
+];
 
 const USAGE = `Usage: register-remote-pep.js --url=URL --name=NAME --out=DIR [options]
 
@@ -93,8 +144,30 @@ again: what is already there is reported and skipped.
                      default realm)
   --name NAME        The PEP's username, which is its PEP_NAME
   --out DIR          Where the key, the certificates and the environment go
-  --cluster NAME     Make it a member of this remote PEP cluster
+  --cluster NAME     Make it a member of this remote PEP cluster, register
+                     /pep-app in front of the companion, and start the
+                     containers: the members, one load balancer on
+                     127.0.0.1 at a free port, and the companion. No TCP
+                     forwarder. Put every member's --out in one directory
+                     so one compose lists them all. Does not start the
+                     identity service
   --create-cluster   Create --cluster, empty, when it does not exist
+  --pep-app          Register /pep-app. Implied by --cluster. Refused
+                     without it. Defaults: application pep-app, role
+                     pep-app (read and write), path /pep-app, upstream
+                     http://companion:9700, public base the load
+                     balancer's origin (https://localhost:9543 when
+                     that port is free)
+  --app ID           That path's application (default pep-app)
+  --role NAME        The one role that may read and write it (default
+                     pep-app). Created empty; grant it to people yourself
+  --path PATH        The path prefix (default /pep-app)
+  --upstream URL     Where the proxy forwards it (default
+                     http://companion:9700)
+  --public-base URL  The https origin a browser reaches the proxy at
+                     (default https://localhost:9543, or the free port
+                     the cluster's load balancer took). The client's
+                     redirect URI is this origin plus /.iya-pep/callback
   --key-alg ALG      ec-p256 (default) or rsa-2048
   --owner WHO        Who owns the entry as a service account: a group's cn,
                      a username or a DN; repeat or separate with commas.
@@ -132,13 +205,16 @@ const VALUED = {
   '--cluster': 'cluster', '--key-alg': 'keyAlg', '--owner': 'owner',
   '--owner-group': 'owner', '--group': 'group', '--pdp-url': 'pdpUrl',
   '--mount': 'mount', '--https-dns': 'httpsDns', '--https-ip': 'httpsIp',
-  '--ca': 'ca', '--client': 'client', '--secret-file': 'secretFile'
+  '--ca': 'ca', '--client': 'client', '--secret-file': 'secretFile',
+  '--app': 'app', '--role': 'role', '--path': 'path',
+  '--upstream': 'upstream', '--public-base': 'publicBase'
 };
 const FLAGS = {
   '--create-cluster': 'createCluster', '--reissue-https': 'reissueHttps',
   '--new-key': 'newKey', '--revoke-previous': 'revokePrevious',
   '--insecure': 'insecure', '--dry-run': 'dryRun',
-  '--realm-client': 'realmClient', '--help': 'help', '-h': 'help'
+  '--realm-client': 'realmClient', '--pep-app': 'pepApp',
+  '--help': 'help', '-h': 'help'
 };
 // The options that may be given more than once, gathered into a list.
 const LISTS = ['owner', 'httpsDns', 'httpsIp'];
@@ -401,7 +477,7 @@ async function findToken(opts, origin, prefix, tlsOptions) {
       'there is no STS_ADMIN_API_TOKEN and no client secret',
       'Set STS_ADMIN_API_TOKEN to an admin:read admin:write token for ' +
       origin + '/admin-api, or ADMIN_API_CLIENT_SECRET(_FILE) for --client ' +
-      '(docs/v1.1.0/management-api.md, Getting a token).');
+      '(docs/v1.2.0/management-api.md, Getting a token).');
   }
   const base = origin + (opts.realmClient ? prefix : '');
   const client = opts.client || 'sts-api-client';
@@ -426,7 +502,7 @@ async function findToken(opts, origin, prefix, tlsOptions) {
     throw new StepError('Getting a management API token',
       'the token endpoint refused ' + client + ': ' + refusalOf(answer),
       'Check the client and its secret, and that it holds ADMIN_READ and ' +
-      'ADMIN_WRITE (docs/v1.1.0/management-api.md, An application of your ' +
+      'ADMIN_WRITE (docs/v1.2.0/management-api.md, An application of your ' +
       'own).');
   }
   log.debug("Leaving findToken(). Minted.");
@@ -596,7 +672,7 @@ async function preflight(api, opts, where) {
     throw new StepError(step, refusalOf(peps), 'Give a management API ' +
       'token carrying admin:read and admin:write, audienced to ' +
       where.origin + '/admin-api (a default-realm token works under every ' +
-      'realm\'s prefix): docs/v1.1.0/management-api.md, Getting a token.');
+      'realm\'s prefix): docs/v1.2.0/management-api.md, Getting a token.');
   }
   if (peps.status === 404) {
     log.debug("Leaving preflight(). No such realm.");
@@ -931,6 +1007,624 @@ async function ensureCluster(api, opts) {
 }
 
 /**
+ * The companion path's options, with the demonstration's defaults.
+ *
+ * @param opts - the options
+ * @returns `{ app, role, path, upstream, publicBase, routeId }`
+ */
+function pepAppSpec(opts) {
+  log.debug("Entering pepAppSpec().");
+  const pathName = opts.path || '/pep-app';
+  const routeId = pathName.replace(/^\/+|\/+$/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-') || 'pep-app';
+  let publicBase = opts.publicBase || 'https://localhost:9543';
+  try {
+    publicBase = new URL(publicBase).origin;
+  } catch (e) {
+    // pepAppProblem() refuses a value that is not a URL; the raw text is
+    // what that sentence quotes.
+    log.debug("Caught in pepAppSpec(): " + ((e && e.message) || e));
+  }
+  const spec = {
+    app: opts.app || 'pep-app',
+    role: opts.role || 'pep-app',
+    path: pathName,
+    upstream: opts.upstream || 'http://companion:9700',
+    publicBase: publicBase,
+    routeId: routeId
+  };
+  log.debug("Leaving pepAppSpec().");
+  return spec;
+}
+
+/**
+ * What is wrong with --pep-app's options, or '' when they can be saved.
+ *
+ * @param opts - the options
+ * @returns a sentence, or ''
+ */
+function pepAppProblem(opts) {
+  log.debug("Entering pepAppProblem().");
+  const spec = pepAppSpec(opts);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(spec.app)) {
+    log.debug("Leaving pepAppProblem(). The application.");
+    return '--app is the application\'s identifier: letters, digits, ".", ' +
+      '"_" and "-", at most 64, starting with a letter or a digit.';
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9 ._:@-]{0,63}$/.test(spec.role)) {
+    log.debug("Leaving pepAppProblem(). The role.");
+    return '--role is a role name: up to 64 characters of letters, digits, ' +
+      'and . _ : @ - or a space, starting with a letter or a digit.';
+  }
+  const dotted = spec.path.split('/').some(function (segment) {
+    return segment === '.' || segment === '..';
+  });
+  if (spec.path.charAt(0) !== '/' || spec.path.length > 1024 ||
+      spec.path.indexOf('//') >= 0 || /[%\\?#\s\u0000-\u001f\u007f]/.test(
+        spec.path) || dotted || spec.path === '/.iya-pep' ||
+      spec.path.indexOf('/.iya-pep/') === 0) {
+    log.debug("Leaving pepAppProblem(). The path.");
+    return '--path is an absolute path the proxy may forward (default ' +
+      '/pep-app). It may not be /.iya-pep or under it, which the proxy ' +
+      'keeps for its callback and sign-out.';
+  }
+  let base = null;
+  try {
+    base = new URL(opts.publicBase || 'https://localhost:9543');
+  } catch (e) {
+    log.debug("Caught in pepAppProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving pepAppProblem(). The public base.");
+    return '--public-base is not a URL: ' +
+      (opts.publicBase || 'https://localhost:9543');
+  }
+  if (base.protocol !== 'https:' || base.pathname !== '/' || base.search ||
+      base.hash) {
+    log.debug("Leaving pepAppProblem(). The public base is not an origin.");
+    return '--public-base is the https origin a browser reaches the proxy ' +
+      'at — scheme, host and port, no path (default ' +
+      'https://localhost:9543). A session route\'s callback is ' +
+      PEP_APP_CALLBACK + ' at that origin, and it is refused over http.';
+  }
+  let upstream = null;
+  try {
+    upstream = new URL(spec.upstream);
+  } catch (e) {
+    log.debug("Caught in pepAppProblem(): " + ((e && e.message) || e));
+    log.debug("Leaving pepAppProblem(). The upstream.");
+    return '--upstream is not a URL: ' + spec.upstream;
+  }
+  if ((upstream.protocol !== 'http:' && upstream.protocol !== 'https:') ||
+      upstream.username || upstream.password || upstream.search ||
+      upstream.hash) {
+    log.debug("Leaving pepAppProblem(). The upstream's shape.");
+    return '--upstream is an http or https URL with no user name, ' +
+      'password, query or fragment (default http://companion:9700).';
+  }
+  log.debug("Leaving pepAppProblem().");
+  return '';
+}
+
+/**
+ * One attribute's values off an application reply. `attributes` is the
+ * whole entry; `fields` is the editable subset.
+ *
+ * @param entry - the reply
+ * @param attribute - the attribute's name
+ * @returns the values, as strings
+ */
+function attributeValues(entry, attribute) {
+  log.debug("Entering attributeValues(). " + attribute);
+  const fields = (entry && (entry.attributes || entry.fields)) || {};
+  const held = fields[attribute];
+  let out = [];
+  if (Array.isArray(held)) {
+    out = held.map(String);
+  } else if (held !== undefined && held !== null && held !== '') {
+    out = [String(held)];
+  }
+  log.debug("Leaving attributeValues(). " + out.length);
+  return out;
+}
+
+/**
+ * Throws the step's refusal unless the answer succeeded.
+ *
+ * @param step - the step's title
+ * @param answer - `{ status, body, text }`
+ * @param next - what the operator does about a refusal
+ */
+function requireOk(step, answer, next) {
+  log.debug("Entering requireOk().");
+  if (!answer || answer.status !== 200 || !answer.body ||
+      answer.body.ok === false) {
+    log.debug("Leaving requireOk(). Refused.");
+    throw new StepError(step, refusalOf(answer), next);
+  }
+  log.debug("Leaving requireOk().");
+}
+
+/**
+ * Whether two lists of strings are the same, in order.
+ *
+ * @param left - one list
+ * @param right - the other
+ * @returns true when they are
+ */
+function sameStrings(left, right) {
+  log.debug("Entering sameStrings().");
+  const ok = Array.isArray(left) && Array.isArray(right) &&
+    left.length === right.length && left.every(function (one, index) {
+      return one === right[index];
+    });
+  log.debug("Leaving sameStrings(). " + ok);
+  return ok;
+}
+
+/**
+ * The route --pep-app saves: one prefix, the session mechanism, and one
+ * role for both actions of the read-write model.
+ *
+ * @param spec - `pepAppSpec()`'s answer
+ * @returns the route
+ */
+function pepAppRoute(spec) {
+  log.debug("Entering pepAppRoute().");
+  const route = {
+    id: spec.routeId,
+    path: spec.path,
+    match: 'prefix',
+    methods: PEP_APP_METHODS.slice(),
+    mechanisms: ['session'],
+    application: spec.app,
+    authorization: {
+      kind: 'simple',
+      actionModel: 'read-write',
+      roles: { read: [spec.role], write: [spec.role] }
+    },
+    identity: {
+      mode: 'headers',
+      headers: PEP_APP_HEADERS.map(function (one) {
+        return { name: one.name, claim: one.claim };
+      }),
+      separator: ','
+    },
+    signals: true,
+    multipleAccounts: false,
+    forwardCredentials: false
+  };
+  log.debug("Leaving pepAppRoute().");
+  return route;
+}
+
+/**
+ * Whether the stored route is already the one this command would save.
+ *
+ * @param route - a route from the cluster's proxy document
+ * @param spec - `pepAppSpec()`'s answer
+ * @returns true when a second run should skip it
+ */
+function routeReady(route, spec) {
+  log.debug("Entering routeReady().");
+  const auth = (route && route.authorization) || {};
+  const roles = auth.roles || {};
+  const identity = (route && route.identity) || {};
+  const headers = identity.headers || [];
+  const headersOk = headers.length === PEP_APP_HEADERS.length &&
+    PEP_APP_HEADERS.every(function (one, index) {
+      return headers[index] && headers[index].name === one.name &&
+        headers[index].claim === one.claim;
+    });
+  const ok = !!route && route.path === spec.path &&
+    route.match === 'prefix' &&
+    sameStrings(route.methods, PEP_APP_METHODS) &&
+    sameStrings(route.mechanisms, ['session']) &&
+    route.application === spec.app &&
+    auth.kind === 'simple' && auth.actionModel === 'read-write' &&
+    sameStrings(roles.read, [spec.role]) &&
+    sameStrings(roles.write, [spec.role]) &&
+    route.signals === true && route.multipleAccounts === false &&
+    route.forwardCredentials === false &&
+    identity.mode === 'headers' && identity.separator === ',' && headersOk;
+  log.debug("Leaving routeReady(). " + ok);
+  return ok;
+}
+
+/**
+ * The redirect URIs the session route needs: the cluster's public base,
+ * and any member that publishes an address of its own.
+ *
+ * @param spec - `pepAppSpec()`'s answer
+ * @param cluster - the cluster's view, or null
+ * @returns the callback URIs
+ */
+function callbacksFor(spec, cluster) {
+  log.debug("Entering callbacksFor().");
+  const list = [spec.publicBase + PEP_APP_CALLBACK];
+  ((cluster && cluster.members) || []).forEach(function (member) {
+    const own = member && member.publicBaseUrl;
+    if (!own || own === spec.publicBase) {
+      return;
+    }
+    const uri = String(own).replace(/\/+$/, '') + PEP_APP_CALLBACK;
+    if (list.indexOf(uri) < 0) {
+      list.push(uri);
+    }
+  });
+  log.debug("Leaving callbacksFor().");
+  return list;
+}
+
+/**
+ * The role, created when the realm does not have it. A repeat is a skip:
+ * create-role refuses a name that exists.
+ *
+ * @param api - the API client
+ * @param step - the step's title
+ * @param spec - `pepAppSpec()`'s answer
+ * @param dryRun - whether to write nothing
+ * @returns a promise of `created`, `exists` or `would`
+ */
+async function ensurePepRole(api, step, spec, dryRun) {
+  log.debug("Entering ensurePepRole().");
+  const listed = await api.get('/roles?role=' +
+                                encodeURIComponent(spec.role));
+  if (listed.status !== 200 || !listed.body) {
+    log.debug("Leaving ensurePepRole(). Unread.");
+    throw new StepError(step, refusalOf(listed), 'GET /admin-api/roles ' +
+      'must answer for this token.');
+  }
+  if (listed.body.role && listed.body.role.found) {
+    log.debug("Leaving ensurePepRole(). It exists.");
+    return 'exists';
+  }
+  if (dryRun) {
+    log.debug("Leaving ensurePepRole(). Dry run.");
+    return 'would';
+  }
+  const made = await api.post('/roles/create-role', {
+    role: spec.role,
+    displayName: spec.role,
+    description: 'May use ' + spec.app + ' through the remote PEP ' +
+      '(read and write).'
+  });
+  requireOk(step, made, 'Create the role on the console (Directory -> ' +
+    'Roles) and run this again. A simple route is refused until the role ' +
+    'exists (STS-XACML-0266).');
+  log.debug("Leaving ensurePepRole(). Created.");
+  return 'created';
+}
+
+/**
+ * The confidential client, created when it is not in the registry. An
+ * existing one is given the callback, the code grant and the two secret
+ * methods it lacks, and keeps the secret it already holds.
+ *
+ * @param api - the API client
+ * @param step - the step's title
+ * @param spec - `pepAppSpec()`'s answer
+ * @param callbacks - the redirect URIs to register
+ * @param dryRun - whether to write nothing
+ * @returns a promise of `{ state, secret }`. `secret` is set only when one
+ *   was generated on this run
+ */
+async function ensurePepApplication(api, step, spec, callbacks, dryRun) {
+  log.debug("Entering ensurePepApplication().");
+  const got = await api.get('/applications?application=' +
+                             encodeURIComponent(spec.app));
+  if (got.status !== 200 || !got.body) {
+    log.debug("Leaving ensurePepApplication(). Unread.");
+    throw new StepError(step, refusalOf(got), 'GET /admin-api/' +
+      'applications must answer for this token.');
+  }
+  const next = 'Fix what the refusal names and run this again. The ' +
+    'application is not forgotten, so a secret already issued is kept.';
+  if (!got.body.found) {
+    if (dryRun) {
+      log.debug("Leaving ensurePepApplication(). Dry run.");
+      return { state: 'would', secret: '' };
+    }
+    const secret = crypto.randomBytes(48).toString('base64')
+      .replace(/[^A-Za-z0-9]/g, '').slice(0, 48);
+    const made = await api.post('/applications/create', {
+      identifier: spec.app,
+      name: spec.app,
+      protocols: ['oauth2', 'oidc'],
+      fields: {
+        oauthClientId: spec.app,
+        oauthClientSecret: secret,
+        oauthConfidential: 'TRUE',
+        oauthTokenEndpointAuthMethod: PEP_APP_AUTH.slice(),
+        oauthRedirectUri: callbacks.slice(),
+        oauthGrantType: PEP_APP_GRANTS.slice(),
+        oauthResponseType: ['code'],
+        oauthAllowedScope: PEP_APP_SCOPES.concat(PEP_APP_SIGNAL_SCOPES)
+      }
+    });
+    requireOk(step, made, next);
+    await grantPepConsent(api, step, spec, []);
+    await grantPepSignalRoles(api, step, spec);
+    log.debug("Leaving ensurePepApplication(). Created.");
+    return { state: 'created', secret: secret };
+  }
+  if (dryRun) {
+    log.debug("Leaving ensurePepApplication(). Dry run, it exists.");
+    return { state: 'exists', secret: '' };
+  }
+  const have = function (attribute) {
+    log.debug("Entering have(). " + attribute);
+    log.debug("Leaving have().");
+    return attributeValues(got.body, attribute);
+  };
+  const confidential = have('oauthConfidential').some(function (one) {
+    return String(one).toUpperCase() === 'TRUE';
+  });
+  if (!confidential) {
+    const set = await api.post('/applications/set', {
+      application: spec.app, attribute: 'oauthConfidential', value: 'TRUE'
+    });
+    requireOk(step, set, next);
+  }
+  const missing = [
+    ['oauthRedirectUri', callbacks],
+    ['oauthGrantType', PEP_APP_GRANTS],
+    ['oauthTokenEndpointAuthMethod', PEP_APP_AUTH],
+    ['oauthResponseType', ['code']],
+    ['oauthAllowedScope', PEP_APP_SCOPES.concat(PEP_APP_SIGNAL_SCOPES)]
+  ];
+  for (let i = 0; i < missing.length; i++) {
+    const attribute = missing[i][0];
+    const wanted = missing[i][1];
+    const held = have(attribute);
+    for (let j = 0; j < wanted.length; j++) {
+      if (held.indexOf(wanted[j]) >= 0) {
+        continue;
+      }
+      const added = await api.post('/applications/add', {
+        application: spec.app, attribute: attribute, value: wanted[j]
+      });
+      requireOk(step, added, next);
+    }
+  }
+  let secret = '';
+  if (!have('oauthClientSecret').length) {
+    const added = await api.post('/applications/add-secret', {
+      application: spec.app, lifetimeDays: 0,
+      description: 'remote PEP session client'
+    });
+    requireOk(step, added, next);
+    secret = String((added.body && added.body.clientSecret) || '');
+  }
+  await grantPepConsent(api, step, spec, have('oauthGlobalConsent'));
+  await grantPepSignalRoles(api, step, spec);
+  log.debug("Leaving ensurePepApplication().");
+  return { state: secret ? 'secret' : 'exists', secret: secret };
+}
+
+/**
+ * The application in the roles that confer the signal scopes
+ * (PEP_APP_SIGNAL_ROLES). `roles/add-member` refuses a member the role
+ * already holds, so each role is read first and a holder is skipped.
+ *
+ * @param api - the API client
+ * @param step - the step's title
+ * @param spec - `pepAppSpec()`'s answer
+ * @returns a promise of nothing
+ */
+async function grantPepSignalRoles(api, step, spec) {
+  log.debug("Entering grantPepSignalRoles().");
+  for (let r = 0; r < PEP_APP_SIGNAL_ROLES.length; r++) {
+    const name = PEP_APP_SIGNAL_ROLES[r];
+    const listed = await api.get('/roles?role=' + encodeURIComponent(name));
+    if (listed.status !== 200 || !listed.body || !listed.body.role ||
+        !listed.body.role.found) {
+      log.debug("Leaving grantPepSignalRoles(). No role " + name + ".");
+      throw new StepError(step, refusalOf(listed), 'The realm has no role ' +
+        name + ', which confers the scope the route\'s signals receiver ' +
+        'needs. Check the realm\'s roles on the console (Directory -> Roles).');
+    }
+    if ((listed.body.role.applications || []).indexOf(spec.app) >= 0) {
+      continue;
+    }
+    const added = await api.post('/roles/add-member', {
+      role: name, kind: 'application', member: spec.app
+    });
+    if (!added || added.status !== 200 || !added.body ||
+        added.body.ok === false) {
+      log.debug("Leaving grantPepSignalRoles(). Not added to " + name + ".");
+    }
+    requireOk(step, added, 'Add the application to ' + name + ' on the ' +
+      'console (Directory -> Roles) and run this again. Without it the ' +
+      'proxy\'s CAEP/RISC receiver does not start (STS-XPEP-0094).');
+  }
+  log.debug("Leaving grantPepSignalRoles().");
+}
+
+/**
+ * Global consent for the scopes the session route asks for, so a sign-in
+ * does not stop on the consent screen. A scope already consented is kept.
+ *
+ * @param api - the API client
+ * @param step - the step's title
+ * @param spec - `pepAppSpec()`'s answer
+ * @param consented - the scopes the application already consents globally
+ * @returns a promise of nothing
+ */
+async function grantPepConsent(api, step, spec, consented) {
+  log.debug("Entering grantPepConsent().");
+  const held = consented || [];
+  for (let k = 0; k < PEP_APP_SCOPES.length; k++) {
+    if (held.indexOf(PEP_APP_SCOPES[k]) >= 0) {
+      continue;
+    }
+    const grant = await api.post('/consent/grant-global-consent', {
+      client: spec.app, scope: PEP_APP_SCOPES[k]
+    });
+    requireOk(step, grant, 'Grant it on the application\'s consent tab, ' +
+      'or with POST /admin-api/consent/grant-global-consent, and run this ' +
+      'again. Without it a sign-in stops on the consent screen.');
+  }
+  log.debug("Leaving grantPepConsent().");
+}
+
+/**
+ * The cluster's proxy document, with this route on it and the public base
+ * filled in. An existing document is kept: only this route, the upstream
+ * and the public base change.
+ *
+ * @param api - the API client
+ * @param step - the step's title
+ * @param opts - the options
+ * @param spec - `pepAppSpec()`'s answer
+ * @param cluster - the cluster's view
+ * @returns a promise of `added`, `updated` or `skipped`
+ */
+async function ensurePepRoute(api, step, opts, spec, cluster) {
+  log.debug("Entering ensurePepRoute().");
+  const proxy = cluster && cluster.proxy;
+  const wanted = pepAppRoute(spec);
+  const where = 'Save it on the cluster\'s Reverse proxy tab, or fix what ' +
+    'the refusal names and run this again.';
+  if (!proxy) {
+    const made = await api.post('/xacml/set-pep-cluster-proxy', {
+      cluster: opts.cluster,
+      proxy: {
+        upstream: spec.upstream,
+        publicBaseUrl: spec.publicBase,
+        routes: [wanted]
+      }
+    });
+    requireOk(step, made, where);
+    log.debug("Leaving ensurePepRoute(). Added.");
+    return 'added';
+  }
+  const routes = proxy.routes || [];
+  const existing = routes.filter(function (one) {
+    return one.path === spec.path || one.id === wanted.id;
+  })[0];
+  const placed = proxy.publicBaseUrl === spec.publicBase &&
+    proxy.upstream === spec.upstream && routeReady(existing, spec);
+  if (placed) {
+    log.debug("Leaving ensurePepRoute(). Already there.");
+    return 'skipped';
+  }
+  if (existing) {
+    wanted.id = existing.id;
+  }
+  if (proxy.publicBaseUrl === spec.publicBase &&
+      proxy.upstream === spec.upstream) {
+    const one = await api.post('/xacml/set-pep-cluster-route', {
+      cluster: opts.cluster, route: wanted
+    });
+    requireOk(step, one, where);
+    log.debug("Leaving ensurePepRoute(). " + (existing ? 'Updated.'
+                                                        : 'Added.'));
+    return existing ? 'updated' : 'added';
+  }
+  const kept = routes.filter(function (one) {
+    return one !== existing;
+  });
+  kept.push(wanted);
+  const replaced = await api.post('/xacml/set-pep-cluster-proxy', {
+    cluster: opts.cluster,
+    proxy: Object.assign({}, proxy, {
+      upstream: spec.upstream,
+      publicBaseUrl: spec.publicBase,
+      routes: kept
+    })
+  });
+  requireOk(step, replaced, where);
+  log.debug("Leaving ensurePepRoute(). Replaced the document.");
+  return existing ? 'updated' : 'added';
+}
+
+/**
+ * Step 8: the companion container's path, on the cluster's shared proxy,
+ * protected by one role. Asked only with --pep-app.
+ *
+ * @param api - the API client
+ * @param opts - the options
+ * @returns a promise of nothing
+ */
+async function ensurePepApp(api, opts) {
+  log.debug("Entering ensurePepApp().");
+  const spec = pepAppSpec(opts);
+  const step = '8. The ' + spec.path + ' path';
+  const listed = await api.get('/xacml/pep-clusters?cluster=' +
+                                encodeURIComponent(opts.cluster));
+  if (listed.status !== 200 || !listed.body) {
+    log.debug("Leaving ensurePepApp(). Unread.");
+    throw new StepError(step, refusalOf(listed), 'GET /admin-api/xacml/' +
+      'pep-clusters must answer for this token.');
+  }
+  const cluster = (listed.body.clusters || []).filter(function (one) {
+    return one.name === opts.cluster;
+  })[0] || null;
+  if (!opts.dryRun && !cluster) {
+    log.debug("Leaving ensurePepApp(). No cluster.");
+    throw new StepError(step, 'this realm has no cluster "' + opts.cluster +
+      '"', 'Step 5 creates it. Pass --create-cluster, or check the name.');
+  }
+  if (cluster && cluster.proxyProblem) {
+    log.debug("Leaving ensurePepApp(). The proxy does not validate.");
+    throw new StepError(step, 'cluster "' + opts.cluster + '" holds a ' +
+      'reverse-proxy document this service will not read: ' +
+      cluster.proxyProblem, 'Correct it on the cluster\'s Reverse proxy ' +
+      'tab, or clear it (POST /admin-api/xacml/clear-pep-proxy) and run ' +
+      'this again. This command does not replace a document it cannot read.');
+  }
+  const callbacks = callbacksFor(spec, cluster);
+  if (opts.dryRun) {
+    const role = await ensurePepRole(api, step, spec, true);
+    const app = await ensurePepApplication(api, step, spec, callbacks, true);
+    const proxy = cluster && cluster.proxy;
+    const existing = proxy && (proxy.routes || []).filter(function (one) {
+      return one.path === spec.path;
+    })[0];
+    const ready = !!(proxy && proxy.publicBaseUrl === spec.publicBase &&
+      proxy.upstream === spec.upstream && routeReady(existing, spec));
+    const secretWords = app.state === 'exists' ? ''
+      : ' A new client secret would be printed once.';
+    report(step, ready
+      ? 'already registered; would be skipped.' + secretWords
+      : 'would ' + (role === 'exists' ? 'keep' : 'create') + ' role "' +
+        spec.role + '", ' + (app.state === 'exists' ? 'keep' : 'create') +
+        ' application "' + spec.app + '", and register ' + spec.path +
+        ' on cluster "' + opts.cluster + '" to ' + spec.upstream + ' at ' +
+        spec.publicBase + ', protected by that one role for read and write.' +
+        secretWords);
+    log.debug("Leaving ensurePepApp(). Dry run.");
+    return;
+  }
+  const role = await ensurePepRole(api, step, spec, false);
+  const app = await ensurePepApplication(api, step, spec, callbacks, false);
+  const route = await ensurePepRoute(api, step, opts, spec, cluster);
+  const parts = [];
+  parts.push('role "' + spec.role + '" ' +
+    (role === 'created' ? 'created' : 'already there'));
+  if (app.state === 'created') {
+    parts.push('application "' + spec.app + '" created');
+  } else if (app.secret) {
+    parts.push('application "' + spec.app + '" given a client secret');
+  } else {
+    parts.push('application "' + spec.app + '" already there');
+  }
+  if (route === 'skipped') {
+    parts.push('route ' + spec.path + ' already protected by that role; ' +
+               'skipped');
+  } else {
+    parts.push('route ' + spec.path + ' ' + route + ' on cluster "' +
+      opts.cluster + '" (' + spec.upstream + ', ' + spec.publicBase +
+      '), one role for read and write');
+  }
+  report(step, parts.join('; ') + '.');
+  if (app.secret) {
+    console.log('  Client secret for "' + spec.app + '" (shown once): ' +
+                app.secret);
+  }
+  log.debug("Leaving ensurePepApp().");
+}
+
+/**
  * Step 6: the HTTPS listener pair, which needs the PEP registered.
  *
  * @param api - the API client
@@ -983,11 +1677,480 @@ async function ensureListener(api, opts, row) {
 }
 
 /**
- * Step 7: the container's environment and a compose service.
+ * The directory every member of one cluster shares: the parent of --out.
+ * A second member is another directory beside this one.
  *
  * @param opts - the options
- * @param where - the target: `pdpUrl`, `caPem`
- * @returns the environment's lines
+ * @returns the absolute directory
+ */
+function clusterDir(opts) {
+  log.debug("Entering clusterDir().");
+  const dir = path.dirname(path.resolve(opts.out));
+  log.debug("Leaving clusterDir().");
+  return dir;
+}
+
+/**
+ * Where the cluster's saved port and member directories live.
+ *
+ * @param opts - the options
+ * @returns the absolute path
+ */
+function clusterPlanPath(opts) {
+  log.debug("Entering clusterPlanPath().");
+  const safe = String(opts.cluster).replace(/[^A-Za-z0-9._-]/g, '_');
+  const file = path.join(clusterDir(opts), 'pep-cluster-' + safe + '.json');
+  log.debug("Leaving clusterPlanPath().");
+  return file;
+}
+
+/**
+ * The cluster compose, the balancer's configuration and the reach script,
+ * all in the directory the members share.
+ *
+ * @param opts - the options
+ * @param kind - `compose`, `haproxy` or `reach`
+ * @returns the absolute path
+ */
+function clusterFile(opts, kind) {
+  log.debug("Entering clusterFile(). " + kind);
+  const name = kind === 'haproxy' ? 'pep-cluster-haproxy.cfg'
+    : kind === 'reach' ? 'pep-cluster-reach-sts.sh'
+      : kind === 'ca' ? 'pep-cluster-' + SERVICE_CA
+        : 'docker-compose.pep-cluster.yml';
+  const file = path.join(clusterDir(opts), name);
+  log.debug("Leaving clusterFile().");
+  return file;
+}
+
+/**
+ * The port and the member directories recorded for this cluster, if a
+ * previous run wrote them.
+ *
+ * @param opts - the options
+ * @returns `{ hostPort, members }`
+ */
+function readClusterPlan(opts) {
+  log.debug("Entering readClusterPlan().");
+  const empty = { hostPort: 0, members: {} };
+  const file = clusterPlanPath(opts);
+  if (!fs.existsSync(file)) {
+    log.debug("Leaving readClusterPlan(). None.");
+    return empty;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const members = parsed.members && typeof parsed.members === 'object'
+      ? parsed.members : {};
+    log.debug("Leaving readClusterPlan().");
+    return { hostPort: Number(parsed.hostPort) || 0, members: members };
+  } catch (e) {
+    // A half-written plan is ignored: this run records the members again.
+    log.debug("Caught in readClusterPlan(): " + ((e && e.message) || e));
+    log.debug("Leaving readClusterPlan(). Unreadable.");
+    return empty;
+  }
+}
+
+/**
+ * Whether 127.0.0.1:<port> can be bound. The listen is closed before the
+ * answer, so the check does not hold the port.
+ *
+ * @param port - the port
+ * @returns a promise of true when the bind succeeds
+ */
+function portIsFree(port) {
+  log.debug("Entering portIsFree(). " + port);
+  return new Promise(function (resolve) {
+    const server = net.createServer();
+    server.once('error', function () {
+      log.debug("Leaving portIsFree(). Busy.");
+      resolve(false);
+    });
+    server.listen({ host: '127.0.0.1', port: port, exclusive: true },
+      function () {
+        server.close(function () {
+          log.debug("Leaving portIsFree(). Free.");
+          resolve(true);
+        });
+      });
+  });
+}
+
+/**
+ * A free TCP port on 127.0.0.1. 9543 first, then 18443 upward.
+ *
+ * @param preferred - the port to try first
+ * @returns a promise of the port, or 0 when none in the range is free
+ */
+async function chooseHostPort(preferred) {
+  log.debug("Entering chooseHostPort().");
+  const first = preferred || 9543;
+  if (await portIsFree(first)) {
+    log.debug("Leaving chooseHostPort(). " + first);
+    return first;
+  }
+  let port = 18443;
+  while (port <= 18543) {
+    if (port !== first && await portIsFree(port)) {
+      log.debug("Leaving chooseHostPort(). " + port);
+      return port;
+    }
+    port = port + 1;
+  }
+  log.debug("Leaving chooseHostPort(). None.");
+  return 0;
+}
+
+/**
+ * The load balancer's host port, and the public origin a browser uses when
+ * --pep-app did not name one. An origin the operator named wins. A port
+ * saved for this cluster is reused, so a later member does not move it.
+ *
+ * @param opts - the options
+ * @returns a promise of nothing
+ */
+async function prepareClusterPublish(opts) {
+  log.debug("Entering prepareClusterPublish().");
+  if (!opts.cluster) {
+    log.debug("Leaving prepareClusterPublish(). Not a cluster.");
+    return;
+  }
+  const plan = readClusterPlan(opts);
+  let port = 0;
+  if (opts.publicBase) {
+    try {
+      const url = new URL(opts.publicBase);
+      port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+    } catch (e) {
+      // pepAppProblem() reports a public base that is not a URL.
+      log.debug("Caught in prepareClusterPublish(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving prepareClusterPublish(). Bad public base.");
+      return;
+    }
+  } else if (plan.hostPort) {
+    port = plan.hostPort;
+  } else {
+    port = await chooseHostPort(9543);
+  }
+  if (!port) {
+    log.debug("Leaving prepareClusterPublish(). No port.");
+    throw new StepError('7. The container\'s environment',
+      'no free TCP port on 127.0.0.1 for the load balancer ' +
+      '(tried 9543 and 18443-18543)',
+      'Stop what holds those ports, or pass --public-base ' +
+      'https://localhost:<port> with a free port.');
+  }
+  opts.clusterHostPort = port;
+  if (opts.pepApp && !opts.publicBase) {
+    opts.publicBase = 'https://localhost:' + port;
+  }
+  log.debug("Leaving prepareClusterPublish(). " + port);
+}
+
+/**
+ * The host of a PDP URL, or ''.
+ *
+ * @param pdpUrl - PEP_PDP_URL
+ * @returns the hostname
+ */
+function pdpHost(pdpUrl) {
+  log.debug("Entering pdpHost().");
+  let host = '';
+  try {
+    host = new URL(pdpUrl).hostname;
+  } catch (e) {
+    log.debug("Caught in pdpHost(): " + ((e && e.message) || e));
+    host = '';
+  }
+  log.debug("Leaving pdpHost().");
+  return host;
+}
+
+/**
+ * PEP_PDP_URL from a member's environment file.
+ *
+ * @param outDir - the member's --out
+ * @param fallback - the URL when the file has none
+ * @returns the URL
+ */
+function memberPdpUrl(outDir, fallback) {
+  log.debug("Entering memberPdpUrl(). " + outDir);
+  const file = path.join(outDir, ENV_FILE);
+  if (!fs.existsSync(file)) {
+    log.debug("Leaving memberPdpUrl(). No file.");
+    return fallback;
+  }
+  const line = fs.readFileSync(file, 'utf8').split('\n').filter(
+    function (one) {
+      return one.indexOf('PEP_PDP_URL=') === 0;
+    })[0];
+  log.debug("Leaving memberPdpUrl().");
+  return line ? line.slice('PEP_PDP_URL='.length) : fallback;
+}
+
+/**
+ * A path relative to `fromDir`, with forward slashes, quoted for YAML.
+ *
+ * @param fromDir - the compose file's directory
+ * @param target - the file or directory
+ * @returns a quoted relative path
+ */
+function yamlPath(fromDir, target) {
+  log.debug("Entering yamlPath().");
+  let rel = path.relative(fromDir, target);
+  if (!rel) {
+    rel = '.';
+  }
+  rel = rel.split(path.sep).join('/');
+  const quoted = '"' + rel.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  log.debug("Leaving yamlPath().");
+  return quoted;
+}
+
+/**
+ * A compose volume, the whole `source:target` quoted so the colon stays
+ * inside one YAML string.
+ *
+ * @param fromDir - the compose file's directory
+ * @param source - the host file or directory
+ * @param target - the container path, including a `:ro` suffix
+ * @returns a quoted volume
+ */
+function yamlVolume(fromDir, source, target) {
+  log.debug("Entering yamlVolume().");
+  let rel = path.relative(fromDir, source);
+  if (!rel) {
+    rel = '.';
+  }
+  rel = rel.split(path.sep).join('/');
+  // A source that does not start with "." or "/" is a named volume.
+  // "./pep-certs" is the bind mount of the directory beside the compose file.
+  if (rel.charAt(0) !== '.' && !path.isAbsolute(rel)) {
+    rel = './' + rel;
+  }
+  const spec = rel + ':' + target;
+  const quoted = '"' + spec.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+  log.debug("Leaving yamlVolume().");
+  return quoted;
+}
+
+/**
+ * The script that points the name localhost at the sts container. 127.0.0.1
+ * stays the PEP, which is what its healthcheck dials.
+ *
+ * @returns the script
+ */
+function reachStsScript() {
+  log.debug("Entering reachStsScript().");
+  const text = [
+    '#!/bin/sh',
+    '# Points the name localhost at the sts container so PEP_PDP_URL',
+    '# https://localhost:<port> is the service a browser opens, and the',
+    '# issuer the service derives from the Host header stays that URL.',
+    '# There is no TCP forwarder. 127.0.0.1 stays this container.',
+    'set -e',
+    'ip=$(getent ahostsv4 sts | head -n 1 | cut -d " " -f 1)',
+    'if [ -z "$ip" ]; then',
+    '  echo "sts has no address; refusing to start" >&2',
+    '  exit 1',
+    'fi',
+    'grep -v localhost /etc/hosts > /tmp/hosts.new',
+    'printf "%s localhost\\n" "$ip" >> /tmp/hosts.new',
+    'cat /tmp/hosts.new > /etc/hosts',
+    'exec xacml-pep',
+    ''
+  ].join('\n');
+  log.debug("Leaving reachStsScript().");
+  return text;
+}
+
+/**
+ * HAProxy in front of the members. TLS passes through. The proxy listener
+ * sticks to the source address; the decision API is round robin and is not
+ * published on the host.
+ *
+ * @param names - the members' PEP names, in order
+ * @returns the configuration
+ */
+function haproxyConfig(names) {
+  log.debug("Entering haproxyConfig().");
+  const lines = [
+    '# Load balancer in front of this remote PEP cluster.',
+    '# The host publishes 127.0.0.1 only, onto the proxy listener.',
+    '# No TCP forwarder. PROXY protocol stays off.',
+    'global',
+    '  log stdout format raw local0 info',
+    '  nbthread 2',
+    '',
+    'resolvers docker',
+    '  nameserver dns 127.0.0.11:53',
+    '  hold valid 5s',
+    '',
+    'defaults',
+    '  mode tcp',
+    '  log global',
+    '  option tcplog',
+    '  option dontlognull',
+    '  balance roundrobin',
+    '  timeout connect 5s',
+    '  timeout client 30m',
+    '  timeout server 30m',
+    '  default-server check inter 2s fall 3 rise 2 resolvers docker ' +
+      'init-addr last,libc,none',
+    '',
+    'listen proxy_https',
+    '  bind :9543',
+    '  balance source'
+  ];
+  names.forEach(function (name) {
+    lines.push('  server ' + name + ' ' + name + ':9543');
+  });
+  lines.push('');
+  lines.push('listen decision_https');
+  lines.push('  bind :9443');
+  names.forEach(function (name) {
+    lines.push('  server ' + name + ' ' + name + ':9443');
+  });
+  lines.push('');
+  log.debug("Leaving haproxyConfig().");
+  return lines.join('\n');
+}
+
+/**
+ * One compose file for the cluster, with paths relative to `baseDir`.
+ *
+ * @param baseDir - the directory the compose file is written in
+ * @param opts - the options
+ * @param plan - `{ hostPort, members, ca }`, each member's reach flag, and
+ *   whether the cluster directory holds the service's CA
+ * @returns the YAML
+ */
+function clusterComposeText(baseDir, opts, plan) {
+  log.debug("Entering clusterComposeText().");
+  const names = Object.keys(plan.members).sort();
+  const lines = [
+    '# Remote PEP cluster "' + opts.cluster + '".',
+    '# The load balancer listens on 127.0.0.1:' + plan.hostPort +
+      ' only, in front of the members.',
+    '# The companion serves /pep-app on the cluster network.',
+    '# No TCP forwarder. A member whose PEP_PDP_URL names localhost',
+    '# points that name at the sts container before it starts.',
+    '# This file does not define the identity service.',
+    '# STS_NETWORK is the network that service is already on.',
+    'services:'
+  ];
+  names.forEach(function (name) {
+    const member = plan.members[name];
+    lines.push('  ' + name + ':');
+    lines.push('    image: ${XACML_PEP_IMAGE:-iyasec/iya-sts-xacml-pep}');
+    lines.push('    container_name: ' + name);
+    lines.push('    hostname: ' + name);
+    lines.push('    restart: unless-stopped');
+    lines.push('    env_file: ' +
+      yamlPath(baseDir, path.join(member.out, ENV_FILE)));
+    lines.push('    volumes:');
+    lines.push('      - ' + yamlVolume(baseDir, member.out, '/certs:ro'));
+    if (member.reach) {
+      lines.push('      - ' + yamlVolume(baseDir, clusterFile(opts, 'reach'),
+        '/usr/local/bin/pep-reach-sts.sh:ro'));
+      lines.push('    entrypoint: ["/bin/sh", ' +
+        '"/usr/local/bin/pep-reach-sts.sh"]');
+    }
+  });
+  lines.push('  pep-lb:');
+  lines.push('    image: ${PEP_LB_IMAGE:-ghcr.io/rcbj/iya-sts/mirror/' +
+    'haproxy:3.2.23-alpine}');
+  lines.push('    container_name: pep-lb-' + opts.cluster);
+  lines.push('    hostname: pep-lb');
+  lines.push('    restart: unless-stopped');
+  lines.push('    ports:');
+  lines.push('      - "127.0.0.1:' + plan.hostPort + ':9543"');
+  lines.push('    volumes:');
+  lines.push('      - ' + yamlVolume(baseDir, clusterFile(opts, 'haproxy'),
+    '/usr/local/etc/haproxy/haproxy.cfg:ro'));
+  lines.push('    depends_on:');
+  names.forEach(function (name) {
+    lines.push('      - ' + name);
+  });
+  lines.push('  companion:');
+  lines.push('    image: ${STS_COMPANION_IMAGE:-iya-sts-companion}');
+  lines.push('    container_name: companion-' + opts.cluster);
+  lines.push('    hostname: companion');
+  lines.push('    restart: unless-stopped');
+  // NO HOST PORT (#1972). The companion is reached only as the upstream of
+  // the members' reverse proxy, http://companion:9700 on this network, and
+  // that route takes the person from identity HEADERS the proxy sets. A
+  // port published on the host, even on 127.0.0.1, let any local process
+  // send those headers straight to the companion and be whoever it named.
+  // Nothing the registrar writes or starts dials it from the host.
+  // THE SERVICE'S CERTIFICATE IS VERIFIED, against the anchor --ca gave
+  // (copied beside this file), and never turned off: without --ca the
+  // companion verifies against the roots in its image.
+  if (plan.ca) {
+    lines.push('    volumes:');
+    lines.push('      - ' + yamlVolume(baseDir, clusterFile(opts, 'ca'),
+      '/certs/' + SERVICE_CA + ':ro'));
+  }
+  lines.push('    environment:');
+  lines.push('      COMPANION_PORT: "9700"');
+  lines.push('      COMPANION_PUBLIC_URL: "http://127.0.0.1:9700"');
+  lines.push('      COMPANION_STS_URL: "https://sts:8081"');
+  lines.push('      COMPANION_STS_PUBLIC_URL: "https://localhost:8081"');
+  lines.push('      COMPANION_KRB5_SERVICE_PORT: "off"');
+  if (plan.ca) {
+    lines.push('      COMPANION_STS_CA_FILE: "/certs/' + SERVICE_CA + '"');
+  }
+  lines.push('networks:');
+  lines.push('  default:');
+  lines.push('    name: ${STS_NETWORK:-iya-sts_default}');
+  lines.push('    external: true');
+  lines.push('');
+  log.debug("Leaving clusterComposeText().");
+  return lines.join('\n');
+}
+
+/**
+ * The one-PEP compose, for a run that is not joining a cluster.
+ *
+ * @param opts - the options
+ * @param mount - the container path of --out
+ * @returns the YAML
+ */
+function singleComposeText(opts, mount) {
+  log.debug("Entering singleComposeText().");
+  const text = [
+    '# ' + opts.name + ': docker compose -f ' + COMPOSE_FILE + ' up -d, ' +
+      'run in this directory.',
+    'services:',
+    '  ' + opts.name + ':',
+    '    image: ${XACML_PEP_IMAGE:-iyasec/iya-sts-xacml-pep}',
+    '    container_name: ' + opts.name,
+    '    hostname: ' + opts.name,
+    '    env_file: ./' + ENV_FILE,
+    '    volumes:',
+    '      - ./:' + mount + ':ro',
+    // On 127.0.0.1 only (#1972), as the cluster's load balancer is: a
+    // listener another host must reach is published by editing this line.
+    '    ports:',
+    '      - "127.0.0.1:9444:9443"',
+    '      - "127.0.0.1:9543:9543"',
+    '    restart: unless-stopped',
+    ''
+  ].join('\n');
+  log.debug("Leaving singleComposeText().");
+  return text;
+}
+
+/**
+ * Writes pep.env and the compose file. A cluster run writes the shared
+ * balancer files as well, and rewrites every member's compose so a member
+ * added later is in front of the same load balancer.
+ *
+ * @param opts - the options
+ * @param where - `{ pdpUrl, caPem }`
+ * @returns the environment lines
  */
 function writeEnvironment(opts, where) {
   log.debug("Entering writeEnvironment().");
@@ -1010,23 +2173,50 @@ function writeEnvironment(opts, where) {
   }
   lines.push('PEP_TLS_INSECURE=false');
   const text = lines.join('\n') + '\n';
-  const compose = [
-    '# ' + opts.name + ': docker compose -f ' + COMPOSE_FILE + ' up -d, ' +
-    'run in this directory.',
-    'services:',
-    '  ' + opts.name + ':',
-    '    image: ${XACML_PEP_IMAGE:-iyasec/iya-sts-xacml-pep}',
-    '    container_name: ' + opts.name,
-    '    hostname: ' + opts.name,
-    '    env_file: ./' + ENV_FILE,
-    '    volumes:',
-    '      - ./:' + mount + ':ro',
-    '    ports:',
-    '      - "9444:9443"',
-    '      - "9543:9543"',
-    '    restart: unless-stopped',
-    ''
-  ].join('\n');
+  let compose = singleComposeText(opts, mount);
+  let extra = '';
+  if (opts.cluster) {
+    const plan = readClusterPlan(opts);
+    plan.hostPort = opts.clusterHostPort || plan.hostPort || 9543;
+    plan.members[opts.name] = path.resolve(opts.out);
+    const described = {};
+    Object.keys(plan.members).sort().forEach(function (name) {
+      const outDir = plan.members[name];
+      const pdp = name === opts.name ? where.pdpUrl
+        : memberPdpUrl(outDir, where.pdpUrl);
+      described[name] = { out: outDir, reach: pdpHost(pdp) === 'localhost' };
+    });
+    const full = { hostPort: plan.hostPort, members: described,
+                   ca: !!where.caPem ||
+                       fs.existsSync(clusterFile(opts, 'ca')) };
+    compose = clusterComposeText(path.resolve(opts.out), opts, full);
+    extra = ' The cluster compose is ' + clusterFile(opts, 'compose') +
+      ', load balancer 127.0.0.1:' + plan.hostPort + ' only.';
+    if (!opts.dryRun) {
+      writeOut(clusterPlanPath(opts), JSON.stringify({
+        hostPort: plan.hostPort, members: plan.members
+      }, null, 2) + '\n', false);
+      writeOut(clusterFile(opts, 'haproxy'),
+               haproxyConfig(Object.keys(described)), false);
+      if (where.caPem) {
+        writeOut(clusterFile(opts, 'ca'), where.caPem, false);
+      }
+      if (Object.keys(described).some(function (name) {
+        return described[name].reach;
+      })) {
+        writeOut(clusterFile(opts, 'reach'), reachStsScript(), false);
+      }
+      writeOut(clusterFile(opts, 'compose'),
+               clusterComposeText(clusterDir(opts), opts, full), false);
+      Object.keys(described).forEach(function (name) {
+        if (name === opts.name) {
+          return;
+        }
+        writeOut(path.join(described[name].out, COMPOSE_FILE),
+                 clusterComposeText(described[name].out, opts, full), false);
+      });
+    }
+  }
   if (!opts.dryRun) {
     if (where.caPem) {
       writeOut(path.join(opts.out, SERVICE_CA), where.caPem, false);
@@ -1037,11 +2227,59 @@ function writeEnvironment(opts, where) {
   }
   report('7. The container\'s environment', opts.dryRun
     ? 'would be written to ' + path.join(opts.out, ENV_FILE) + ' and ' +
-      path.join(opts.out, COMPOSE_FILE) + '.'
+      path.join(opts.out, COMPOSE_FILE) + '.' + extra
     : 'written to ' + path.join(opts.out, ENV_FILE) + ' and ' +
-      path.join(opts.out, COMPOSE_FILE) + '.');
+      path.join(opts.out, COMPOSE_FILE) + '.' + extra);
   log.debug("Leaving writeEnvironment().");
   return lines;
+}
+
+/**
+ * Starts the cluster compose: the members, the load balancer and the
+ * companion. The identity service is not in that file, so this does not
+ * recreate it.
+ *
+ * @param opts - the options
+ * @returns nothing
+ */
+function startCluster(opts) {
+  log.debug("Entering startCluster().");
+  if (!opts.cluster) {
+    log.debug("Leaving startCluster(). Not a cluster.");
+    return;
+  }
+  const file = clusterFile(opts, 'compose');
+  const command = 'docker compose -f ' + file +
+    ' up -d --no-build --pull never';
+  if (opts.dryRun) {
+    report('9. The containers', 'would start with ' + command + '.');
+    log.debug("Leaving startCluster(). Dry run.");
+    return;
+  }
+  if (process.env.REGISTER_PEP_NO_START) {
+    // The in-process suite has no Docker daemon. An operator does not set
+    // this: a cluster run starts the containers.
+    report('9. The containers', 'not started (REGISTER_PEP_NO_START). ' +
+      command);
+    log.debug("Leaving startCluster(). Skipped.");
+    return;
+  }
+  const result = childProcess.spawnSync('docker',
+    ['compose', '-f', file, 'up', '-d', '--no-build', '--pull', 'never'],
+    { encoding: 'utf8' });
+  if (result.error || result.status !== 0) {
+    const said = (result.error && result.error.message) ||
+      String(result.stderr || result.stdout || '').trim();
+    log.debug("Leaving startCluster(). Compose failed.");
+    throw new StepError('9. The containers',
+      'docker compose up failed: ' + said,
+      'The registration and the files are already written. Fix what ' +
+      'Docker printed, then run: ' + command);
+  }
+  report('9. The containers', 'started from ' + file +
+    ': the members, the load balancer on 127.0.0.1:' +
+    opts.clusterHostPort + ', and the companion.');
+  log.debug("Leaving startCluster().");
 }
 
 /**
@@ -1077,6 +2315,42 @@ async function main(argv) {
     console.error('--key-alg must be ec-p256 or rsa-2048.');
     log.debug("Leaving main(). A bad key algorithm.");
     return 2;
+  }
+  if (opts.pepApp && !opts.cluster) {
+    console.error('--pep-app registers one path on the cluster\'s shared ' +
+      'reverse proxy, so it needs --cluster.');
+    log.debug("Leaving main(). --pep-app without --cluster.");
+    return 2;
+  }
+  if (opts.cluster) {
+    opts.pepApp = true;
+  }
+  try {
+    await prepareClusterPublish(opts);
+  } catch (e) {
+    // No registration yet: a missing port must not look like a half-done run.
+    log.debug("Caught in main(): " + ((e && e.message) || e));
+    if (e instanceof StepError) {
+      console.error('\nFAILED at ' + e.step + ':\n  ' + e.said +
+        (e.next ? '\nWhat to do: ' + e.next : ''));
+      log.debug("Leaving main(). No load-balancer port.");
+      return 1;
+    }
+    throw e;
+  }
+  if (opts.cluster && opts.publicBase && !opts.clusterHostPort &&
+      !opts.pepApp) {
+    console.error('--public-base is not a URL: ' + opts.publicBase);
+    log.debug("Leaving main(). A bad public base.");
+    return 2;
+  }
+  if (opts.pepApp) {
+    const problem = pepAppProblem(opts);
+    if (problem) {
+      console.error(problem);
+      log.debug("Leaving main(). The companion path.");
+      return 2;
+    }
   }
   let target = null;
   try {
@@ -1118,11 +2392,15 @@ async function main(argv) {
     const entry = await ensureIdentity(api, opts, facts);
     await ensureCredential(api, opts, entry);
     await ensureCluster(api, opts);
+    if (opts.pepApp) {
+      await ensurePepApp(api, opts);
+    }
     const row = facts.peps.found && (facts.peps.peps || [])[0]
       ? facts.peps.peps[0] : null;
     const listener = await ensureListener(api, opts, row);
     const lines = writeEnvironment(opts, { pdpUrl: pdpUrl,
                                            caPem: tlsSet.caPem });
+    startCluster(opts);
     console.log('\nThe container\'s environment (' +
                 path.join(opts.out, ENV_FILE) + '):\n');
     console.log(lines.filter(function (line) {
@@ -1130,19 +2408,34 @@ async function main(argv) {
     }).map(function (line) {
       return '  ' + line;
     }).join('\n'));
-    if (/^(localhost|127\.|\[::1\])/.test(new URL(pdpUrl).hostname)) {
-      console.log('\nNOTE: PEP_PDP_URL names ' + new URL(pdpUrl).host +
+    const dialHost = pdpHost(pdpUrl);
+    if (opts.cluster && dialHost === 'localhost') {
+      console.log('\nNOTE: PEP_PDP_URL names localhost. The compose ' +
+        'points that name at the sts container before the PEP starts, ' +
+        'so a browser is sent to ' + pdpUrl + '. There is no TCP ' +
+        'forwarder. 127.0.0.1 stays the PEP.');
+    } else if (dialHost === 'localhost' || dialHost === '127.0.0.1' ||
+               dialHost === '::1') {
+      console.log('\nNOTE: PEP_PDP_URL names ' + dialHost +
         ', which inside a container is the container itself. Pass ' +
         '--pdp-url with the address the container dials (on the compose ' +
         'network, https://sts:8081' + prefix + ').');
     }
-    console.log('\nStart it:\n  docker run -d --name ' + opts.name +
-      ' --hostname ' + opts.name + ' --env-file ' +
-      path.join(opts.out, ENV_FILE) + ' \\\n    -v "' +
-      path.resolve(opts.out) + ':' + (opts.mount || '/certs') + ':ro" ' +
-      '-p 9444:9443 iyasec/iya-sts-xacml-pep\n' +
-      'or: (cd ' + opts.out + ' && docker compose -f ' + COMPOSE_FILE +
-      ' up -d)');
+    if (opts.cluster) {
+      console.log('\nThe load balancer listens on 127.0.0.1:' +
+        opts.clusterHostPort + ' only (the reverse proxy). The ' +
+        'companion is http://companion:9700 on the cluster network ' +
+        'only, not published on this host. The decision API is not ' +
+        'published. There is no TCP forwarder.');
+    } else {
+      console.log('\nStart it:\n  docker run -d --name ' + opts.name +
+        ' --hostname ' + opts.name + ' --env-file ' +
+        path.join(opts.out, ENV_FILE) + ' \\\n    -v "' +
+        path.resolve(opts.out) + ':' + (opts.mount || '/certs') + ':ro" ' +
+        '-p 127.0.0.1:9444:9443 iyasec/iya-sts-xacml-pep\n' +
+        'or: (cd ' + opts.out + ' && docker compose -f ' + COMPOSE_FILE +
+        ' up -d)');
+    }
     console.log('\nVerify: GET ' + origin + prefix + '/admin-api/xacml/' +
       'peps?pep=' + opts.name + ' lists it once it registers' +
       (row ? ' (it is registered now, last seen ' +
@@ -1151,6 +2444,13 @@ async function main(argv) {
       (listener === 'waiting' && !opts.dryRun
         ? '\nThen run this same command again to issue its HTTPS ' +
           'listener pair.' : ''));
+    if (opts.pepApp) {
+      const spec = pepAppSpec(opts);
+      console.log('\nCompanion path: ' + spec.publicBase + spec.path +
+        ' on cluster "' + opts.cluster + '", protected by the one role "' +
+        spec.role + '" (read and write). Grant that role to the people ' +
+        'who may use it (POST /admin-api/roles/add-member).');
+    }
   } catch (e) {
     log.debug("Caught in main(): " + ((e && e.message) || e));
     if (e instanceof StepError) {

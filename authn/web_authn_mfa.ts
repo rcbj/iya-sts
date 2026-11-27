@@ -34,6 +34,7 @@
 // ---------------------------------------------------------------------------
 
 import WebAuthnLogin = require('./web_authn_login');
+import WebSaid = require('../common/web_said');
 import WebQr = require('../common/web_qr');
 
 type Json = any;
@@ -154,9 +155,44 @@ class WebAuthnMfa {
       '0'.repeat(digits) + '">' +
       '<div class="row"><button type="submit" id="totp-submit" name="action" ' +
       'value="totp">' + t.html('authn.totp.signIn') + '</button></div>' +
-      '</form>' + WebAuthnMfa.startOver(t) + '<div class="meta"><div>' +
+      '</form>' + WebAuthnMfa.resync(v, t, digits) +
+      WebAuthnMfa.startOver(t) + '<div class="meta"><div>' +
       t.html('authn.totp.meta', { period: period }) + '</div>' +
       WebAuthnMfa.links(v, t, 'authn.totp.backup') + '</div>';
+  }
+
+  // AN HOTP TOKEN OUT OF STEP (the #1955 review): two consecutive codes
+  // resynchronise it (RFC 4226 section 7.4) and sign in, for somebody whose
+  // only second factor is the token and who cannot reach the portal. Folded
+  // away in a `<details>`, drawn only where the person holds one.
+  /**
+   * The two-code resynchronisation form of `/authn/totp`, or ''.
+   *
+   * @param v - the view
+   * @param t - the translator
+   * @param digits - the code length
+   * @returns the markup
+   */
+  static resync(v: Json, t: Json, digits: number): string {
+    if (!(v.totp && v.totp.hotp)) {
+      return '';
+    }
+    const field = function (id: string, label: string): string {
+      return '<label for="' + id + '">' + t.html(label) + '</label>' +
+        '<input type="text" class="code" id="' + id + '" name="' + id +
+        '" autocomplete="off" inputmode="numeric" pattern="[0-9]*" ' +
+        'maxlength="' + digits + '" placeholder="' + '0'.repeat(digits) +
+        '">';
+    };
+    return '<details class="resync"><summary>' +
+      t.html('authn.totp.resyncSummary') + '</summary><p>' +
+      t.html('authn.totp.resyncHelp') + '</p>' +
+      '<form method="post" action="/authn/totp">' +
+      field('resync1', 'authn.totp.resyncFirst') +
+      field('resync2', 'authn.totp.resyncSecond') +
+      '<div class="row"><button type="submit" id="totp-resync" ' +
+      'name="action" value="resync">' + t.html('authn.totp.resyncButton') +
+      '</button></div></form></details>';
   }
 
   /**
@@ -258,7 +294,10 @@ class WebAuthnMfa {
         ? t.html('authn.webauthn.subPasswordless',
                  { name: String(v.username) })
         : t.html('authn.webauthn.subSecond', { name: String(v.username) })) +
-      '</p>' + WebAuthnMfa.error(ctx, w.problem) +
+      // The step's own refusal in the page's language where it carried
+      // its catalog message (#2006, `problemRefusal`).
+      '</p>' + WebAuthnMfa.error(ctx, (w.problemRefusal &&
+        WebSaid.saidWith(t, w.problemRefusal)) || w.problem) +
       // NO POST-QUANTUM PASSKEY WHERE ONE IS REQUIRED (#946): the panel —
       // what the application requires, and where to add one — under the
       // refusal's own sentence.
@@ -457,6 +496,46 @@ class WebAuthnMfa {
   }
 
   /**
+   * `/authn/roles` (#1072): the dynamic roles this sign-in may choose, each
+   * a checkbox with the label and description its role gives; Continue
+   * sends the ticked ones. What a role is for is the administrator's
+   * description; the page never names a policy or why a role is offered.
+   *
+   * @param v - the view
+   * @param ctx - the context
+   * @returns the body
+   */
+  static roles(v: Json, ctx: Json): string {
+    const t = ctx.t;
+    const r = v.roles || {};
+    const esc = WebAuthnLogin.esc;
+    const offered: Json[] = r.offered || [];
+    const boxes = offered.map(function (one: Json, at: number): string {
+      return '<label class="chk"><input type="checkbox" name="roles" ' +
+        'id="role-' + at + '" value="' + esc(one.name) + '"> ' +
+        esc(one.label) +
+        (one.required ? ' <strong>' + t.html('authn.roles.requiredTag') +
+                        '</strong>' : '') +
+        (one.description ? ' <span class="sub">' + esc(one.description) +
+                           '</span>' : '') +
+        (one.exclusiveGroup ? ' <span class="sub">' +
+          t.html('authn.roles.exclusive') + '</span>' : '') + '</label>';
+    }).join('');
+    return '<h1>' + t.html('authn.roles.heading') + '</h1>' +
+      '<p class="sub">' + t.html('authn.roles.sub',
+                                 { name: String(v.username || '') }) +
+      '</p>' + WebAuthnMfa.error(ctx) +
+      (r.required ? '<p><strong>' + t.html('authn.roles.required') +
+                    '</strong></p>' : '') +
+      '<form method="post" action="/authn/roles">' + boxes +
+      '<div class="row"><button type="submit" id="roles-choose" ' +
+      'name="action" value="choose">' + t.html('authn.roles.continue') +
+      '</button></div></form>' +
+      WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      t.html('authn.mfaSetup.meta') + '</div>';
+  }
+
+  /**
    * `/authn/post-login` (#1096): what the realm asks after signing in —
    * today, a post-quantum passkey (no role since #1135) — with Register,
    * and Skip where the allotted time has not passed.
@@ -468,6 +547,14 @@ class WebAuthnMfa {
   static postLogin(v: Json, ctx: Json): string {
     const t = ctx.t;
     const p = v.postLogin || {};
+    // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2) has a page of its own.
+    if (p.activity === 'pqc-mail-encryption') {
+      return WebAuthnMfa.postLoginMail(v, ctx);
+    }
+    // THE PIV RE-ISSUE (#2009 P3) has a page of its own.
+    if (p.activity === 'piv-reissue') {
+      return WebAuthnMfa.postLoginPiv(v, ctx);
+    }
     const name = String(v.username);
     const button = function (action: string, label: string,
                              secondary: boolean): string {
@@ -512,6 +599,194 @@ class WebAuthnMfa {
       (p.canSkip
         ? button('skip', t.html('authn.postLogin.skipButton',
                                 { days: Number(p.snoozeDays) || 1 }), true)
+        : '') +
+      WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      t.html('authn.mfaSetup.meta') + '</div>';
+  }
+
+  /**
+   * `/authn/post-login` for the mail-encryption activity (#2009 P2): why
+   * the person is asked, then each kind of key the step offers — an RFC
+   * 9980 OpenPGP key (a challenge to sign, then the key and the signed
+   * text) and an uploaded ML-KEM S/MIME certificate — and Skip where it is
+   * allowed. What is said about the card is design U2's: an OpenPGP card
+   * cannot hold such a key, so nothing is called hardware-bound.
+   *
+   * @param v - the view
+   * @param ctx - the context
+   * @returns the body
+   */
+  static postLoginMail(v: Json, ctx: Json): string {
+    const t = ctx.t;
+    const p = v.postLogin || {};
+    const m = p.mail || {};
+    const esc = WebAuthnLogin.esc;
+    const name = String(v.username);
+    const offers: string[] = [].concat(m.offers || []).map(String);
+    const current = m.current || {};
+    const why = p.reason === 'none' ? 'authn.postLogin.mailSubNone'
+      : (p.reason === 'smime-classical' ? 'authn.postLogin.mailSubSmime'
+                                        : 'authn.postLogin.mailSubOpenpgp');
+    const until = String(p.deadline || '').slice(0, 10);
+    const openpgp = offers.indexOf('openpgp') < 0 ? ''
+      : '<h2>' + t.html('authn.postLogin.mailOpenpgpHeading') + '</h2>' +
+        '<p>' + t.html('authn.postLogin.mailOpenpgpHow') + '</p>' +
+        '<p>' + t.html('authn.postLogin.mailOpenpgpCard') + '</p>' +
+        (current.kind === 'openpgp' && Number(m.keepClassicalDays) > 0
+          ? '<p>' + t.html('authn.postLogin.mailKeep',
+                           { days: Number(m.keepClassicalDays) }) + '</p>'
+          : '') +
+        (m.challenge
+          ? '<p>' + t.html('authn.postLogin.mailChallenge',
+                           { date: String(m.challenge.expiresAt || '')
+                             .slice(0, 16).replace('T', ' ') }) + '</p>' +
+            '<pre id="post-login-challenge">' + esc(m.challenge.text) +
+            '</pre>' +
+            '<form method="post" action="/authn/post-login">' +
+            '<div class="row"><label for="post-login-public-key">' +
+            t.html('authn.postLogin.mailPublicKey') + '</label>' +
+            '<textarea id="post-login-public-key" name="publicKey" ' +
+            'rows="8" cols="64"></textarea></div>' +
+            '<div class="row"><label for="post-login-signed">' +
+            t.html('authn.postLogin.mailSigned') + '</label>' +
+            '<textarea id="post-login-signed" name="signed" rows="8" ' +
+            'cols="64"></textarea></div>' +
+            '<div class="row"><button type="submit" ' +
+            'id="post-login-openpgp-register" name="action" ' +
+            'value="openpgp-register">' +
+            t.html('authn.postLogin.mailRegisterButton') +
+            '</button></div></form>'
+          : '<form method="post" action="/authn/post-login">' +
+            '<div class="row"><button type="submit" ' +
+            'id="post-login-openpgp-challenge" name="action" ' +
+            'value="openpgp-challenge">' +
+            t.html('authn.postLogin.mailChallengeButton') +
+            '</button></div></form>');
+    const smime = offers.indexOf('smime') < 0 ? ''
+      : '<h2>' + t.html('authn.postLogin.mailSmimeHeading') + '</h2>' +
+        '<p>' + t.html('authn.postLogin.mailSmimeHow') + '</p>' +
+        '<form method="post" action="/authn/post-login">' +
+        '<div class="row"><label for="post-login-certificate">' +
+        t.html('authn.postLogin.mailCertificate') + '</label>' +
+        '<textarea id="post-login-certificate" name="certificate" ' +
+        'rows="8" cols="64"></textarea></div>' +
+        '<div class="row"><button type="submit" ' +
+        'id="post-login-smime-register" name="action" ' +
+        'value="smime-register">' +
+        t.html('authn.postLogin.mailSmimeButton') + '</button></div></form>';
+    return '<h1>' + t.html('authn.postLogin.mailHeading') + '</h1>' +
+      '<p class="sub">' + t.html(why, { name: name,
+        algorithm: String(current.algorithm || '') }) + '</p>' +
+      WebAuthnMfa.error(ctx) +
+      (p.required ? '<p><strong>' + t.html('authn.postLogin.required') +
+                    '</strong></p>'
+        : (until ? '<p>' + t.html('authn.postLogin.until',
+                                  { date: until }) + '</p>' : '')) +
+      openpgp + smime +
+      (p.canSkip
+        ? '<form method="post" action="/authn/post-login"><div class="row">' +
+          '<button type="submit" id="post-login-skip" class="secondary" ' +
+          'name="action" value="skip">' +
+          t.html('authn.postLogin.skipButton',
+                 { days: Number(p.snoozeDays) || 1 }) +
+          '</button></div></form>'
+        : '') +
+      WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      t.html('authn.mfaSetup.meta') + '</div>';
+  }
+
+  /**
+   * `/authn/post-login` for the PIV re-issue (#2009 P3): why the person is
+   * asked, then each due slot — its certificate and the reason, the
+   * `ykman` commands that make the request and the attestations, and a form
+   * for the three PEM texts — or, once issued, the new certificate and the
+   * command that writes it to the card. Continue once every slot has one;
+   * Skip where it is allowed.
+   *
+   * @param v - the view
+   * @param ctx - the context
+   * @returns the body
+   */
+  static postLoginPiv(v: Json, ctx: Json): string {
+    const t = ctx.t;
+    const p = v.postLogin || {};
+    const piv = p.piv || {};
+    const esc = WebAuthnLogin.esc;
+    const name = String(v.username);
+    const issued: Json[] = [].concat(piv.issued || []);
+    const until = String(p.deadline || '').slice(0, 10);
+    const slots = [].concat(piv.slots || []).map(function (one: Json) {
+      const slot = String(one.slot || '');
+      const done = issued.filter(function (i: Json) {
+        return i.slot === slot;
+      })[0];
+      const head = '<h2>' + t.html('authn.postLogin.pivSlotHeading',
+        { slot: slot, profile: String(one.profile || '') }) + '</h2>' +
+        '<p>' + t.html(one.reason === 'classical-issuer'
+          ? 'authn.postLogin.pivReasonClassical'
+          : 'authn.postLogin.pivReasonExpiring',
+          { serial: String(one.serialHex || ''),
+            date: String(one.notAfter || '').slice(0, 10) }) + '</p>';
+      if (done) {
+        return head + '<p id="post-login-piv-issued-' + esc(slot) + '">' +
+          t.html('authn.postLogin.pivIssued',
+                 { serial: String(done.serialHex || '') }) + '</p>' +
+          '<pre id="post-login-piv-certificate-' + esc(slot) + '">' +
+          esc(done.certificatePem) + '</pre>' +
+          '<p>' + t.html('authn.postLogin.pivImport') + '</p>' +
+          '<pre>' + esc(done.command) + '</pre>';
+      }
+      return head + '<p>' + t.html('authn.postLogin.pivHow') + '</p>' +
+        '<pre>ykman piv keys generate ' + esc(slot) + ' public.pem\n' +
+        'ykman piv certificates request ' + esc(slot) +
+        ' public.pem request.csr\nykman piv keys attest ' + esc(slot) +
+        ' attestation.pem\nykman piv certificates export f9 f9.pem</pre>' +
+        '<form method="post" action="/authn/post-login">' +
+        '<input type="hidden" name="slot" value="' + esc(slot) + '">' +
+        '<div class="row"><label for="post-login-piv-csr-' + esc(slot) +
+        '">' + t.html('authn.postLogin.pivCsr') + '</label>' +
+        '<textarea id="post-login-piv-csr-' + esc(slot) + '" name="csr" ' +
+        'rows="6" cols="64"></textarea></div>' +
+        '<div class="row"><label for="post-login-piv-slot-' + esc(slot) +
+        '">' + t.html('authn.postLogin.pivSlotPem') + '</label>' +
+        '<textarea id="post-login-piv-slot-' + esc(slot) + '" ' +
+        'name="slotPem" rows="6" cols="64"></textarea></div>' +
+        '<div class="row"><label for="post-login-piv-f9-' + esc(slot) +
+        '">' + t.html('authn.postLogin.pivF9') + '</label>' +
+        '<textarea id="post-login-piv-f9-' + esc(slot) + '" ' +
+        'name="attestationPem" rows="6" cols="64"></textarea></div>' +
+        '<div class="row"><button type="submit" id="post-login-piv-enrol-' +
+        esc(slot) + '" name="action" value="piv-enrol">' +
+        t.html('authn.postLogin.pivEnrolButton') + '</button></div></form>';
+    }).join('');
+    const allDone = [].concat(piv.slots || []).every(function (one: Json) {
+      return issued.some(function (i: Json) {
+        return i.slot === one.slot;
+      });
+    });
+    return '<h1>' + t.html('authn.postLogin.pivHeading') + '</h1>' +
+      '<p class="sub">' + t.html('authn.postLogin.pivSub', { name: name }) +
+      '</p>' + WebAuthnMfa.error(ctx) +
+      '<p>' + t.html('authn.postLogin.pivSuperseded') + '</p>' +
+      (p.required ? '<p><strong>' + t.html('authn.postLogin.required') +
+                    '</strong></p>'
+        : (until ? '<p>' + t.html('authn.postLogin.until',
+                                  { date: until }) + '</p>' : '')) +
+      slots +
+      (allDone
+        ? '<form method="post" action="/authn/post-login"><div class="row">' +
+          '<button type="submit" id="post-login-piv-continue" ' +
+          'name="action" value="piv-continue">' +
+          t.html('authn.postLogin.pivContinueButton') +
+          '</button></div></form>'
+        : '') +
+      (p.canSkip
+        ? '<form method="post" action="/authn/post-login"><div class="row">' +
+          '<button type="submit" id="post-login-skip" class="secondary" ' +
+          'name="action" value="skip">' +
+          t.html('authn.postLogin.skipButton',
+                 { days: Number(p.snoozeDays) || 1 }) +
+          '</button></div></form>'
         : '') +
       WebAuthnMfa.startOver(t) + '<div class="meta">' +
       t.html('authn.mfaSetup.meta') + '</div>';

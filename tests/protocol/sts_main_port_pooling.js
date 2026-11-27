@@ -42,6 +42,7 @@
 const assert = require("assert");
 const https = require("https");
 const tls = require("tls");
+const serviceTrust = require("../tools/service_trust.js");
 const net = require("net");
 const fs = require("fs");
 const os = require("os");
@@ -49,6 +50,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const credentials = require("../tools/pep-credential.js");
 const portal = require("./portal_signin.js");
+const ownPassword = require("./own_password");
 // The root section 4 posts. Removed when the job finishes, pass or fail
 // (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
 const addedAnchors = [];
@@ -245,9 +247,9 @@ function pipelined(requests, options) {
       host: HOST, port: PORT, servername: net.isIP(HOST) ? undefined : HOST,
       cert: opts.certPem, key: opts.keyPem, session: opts.session,
       // What is asserted is the session and the client certificate; the
-      // server's certificate is not verified here, as in
-      // `sts_global_logout.js`.
-      rejectUnauthorized: false
+      // server's certificate is verified as well (tools/service_trust.js),
+      // as in `sts_global_logout.js`.
+      ca: serviceTrust.trustedCa()
     }, function () {
       reused = socket.isSessionReused();
       const text = requests.map(function (one, i) {
@@ -536,10 +538,28 @@ async function revocationOutlivesNoSession() {
   const person = "pooling-revoked-" + STAMP;
   const password = "Pooling-Revoked-" + STAMP + "-1";
   const made = await post("/admin-api/users/create", {
-    username: person, invent: false, credential: "password", password: password,
+    username: person, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(password),
     attributes: { givenName: "Pooling", sn: person,
                   mail: person + "@pooling.test" } });
   assert.strictEqual(made.status, 200, made.text.slice(0, 300));
+  // Temporary, then the person's own (#2160, `own_password.js`).
+  await ownPassword.ownPassword(base, person, password,
+    async function setOwn(who, value) {
+      log.debug("Entering setOwn(). " + who);
+      const r = await post("/admin-api/users/set-password",
+                           { user: who, password: value });
+      let json = null;
+      try {
+        json = JSON.parse(r.text);
+      } catch (e) {
+        log.debug("Caught in setOwn(): " + ((e && e.message) || e));
+        // Not JSON; the status carries the refusal.
+        json = null;
+      }
+      log.debug("Leaving setOwn(). " + r.status);
+      return { status: r.status, json: json };
+    });
   const browser = await portal.signInToThePortal(base, person, null,
                                                  { password: password });
   const issued = await browser.act("/portal/signing-key",

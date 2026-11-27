@@ -117,8 +117,9 @@ async function signingKeyOf(privateKeyPem) {
   return imported;
 }
 
-// AN EMPTY CRL signed by `ca` — `{ pem | certificatePem, privateKeyPem }` —
-// fresh for `days` (1 by default). DER bytes.
+// A CRL signed by `ca` — `{ pem | certificatePem, privateKeyPem }` — fresh
+// for `days` (1 by default), EMPTY unless `revoked` lists serial numbers
+// (hexadecimal, #2089: a job that needs a revoked leaf). DER bytes.
 async function crlFor(ca, options) {
   log.debug("Entering crlFor().");
   const opts = options || {};
@@ -148,6 +149,17 @@ async function crlFor(ca, options) {
       }).toSchema().toBER(false) }));
   }
   crl.crlExtensions = new pkijs.Extensions({ extensions: extensions });
+  const revoked = (opts.revoked || []).map(function (serialHex) {
+    const hex = String(serialHex).replace(/[^0-9a-f]/gi, "");
+    return new pkijs.RevokedCertificate({
+      userCertificate: new asn1js.Integer({ valueHex: arrayBufferOf(
+        Buffer.from(hex.length % 2 ? "0" + hex : hex, "hex")) }),
+      revocationDate: new pkijs.Time({ type: 0,
+                                       value: new Date(now - 30000) }) });
+  });
+  if (revoked.length) {
+    crl.revokedCertificates = revoked;
+  }
   await crl.sign(await signingKeyOf(keyPem), "SHA-256");
   log.debug("Leaving crlFor().");
   return Buffer.from(crl.toSchema(true).toBER(false));

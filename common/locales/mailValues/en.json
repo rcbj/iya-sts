@@ -11,6 +11,15 @@
   "by.administratorConsoleLogout": "an administrator (the admin console at /admin/logout)",
   "act.credentialCompromised": "credential marked compromised",
   "act.accountDisabled": "account disabled",
+  "signIn.kind": "{kind, select, new-device {a device or browser not seen before} new-country {a country not seen before} anonymiser {an anonymising network such as Tor} after-refusals {refused passwords just before} unusual {a risk level unusual for this account} other {{kind}}}",
+  "signIn.method": "{kind, select, password {a password} webauthn {a passkey or security key} fido {a passkey or security key} federation {another identity provider} kerberos {Kerberos} x509 {a certificate} totp {an authenticator app} backup-code {a recovery code} wallet {a digital wallet} yubico-otp {a YubiKey OTP} ssh {an SSH key} other {another method}}",
+  "signIn.device": "{browser} on {os}",
+  "signIn.deviceUnknown": "a browser or device that did not name itself",
+  "signIn.placeUnknown": "not known",
   "rights.access": "access",
-  "address.none": "(none)"
+  "address.none": "(none)",
+  "credentialChange.item": "{kind, select, passkey {passkey or security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {recovery codes} certificate {certificate} certificate-binding {certificate sign-in binding} smime {S/MIME certificate} openpgp {OpenPGP key} other {credential}} {change, select, added {added} generated {generated} removed {removed} other {changed}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {passkey or security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {recovery codes} certificate {certificate} certificate-binding {certificate sign-in binding} smime {S/MIME certificate} openpgp {OpenPGP key} other {credential}} “{label}” {change, select, added {added} generated {generated} removed {removed} other {changed}}",
+  "credentialChange.by": "{entity, select, user {by you, on the portal or at sign-in} other {by an administrator}}",
+  "expiry.item": "{kind, select, certificate {the certificate} piv {the PIV smart card certificate} smime {the S/MIME certificate} tls-client {the TLS client certificate} signin-certificate {the sign-in certificate} other {the credential}} “{label}”, which expires on {date} (UTC): {renew, select, certificates {renew it on your portal’s Certificates page} tokens {renew it on your portal’s Tokens and keys page, on PIV} openpgp {replace it on your portal’s Tokens and keys page, on OpenPGP and S/MIME} signing-key {renew it on your portal’s Signing keys page} other {ask your administrator to renew it}}"
 }

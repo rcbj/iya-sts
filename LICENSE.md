@@ -119,9 +119,11 @@ own licences. `REUSE.toml` declares each of them in machine-readable form and
 | Path | From | Licence |
 |---|---|---|
 | `xacml/conformance/` | The OASIS XACML 3.0 conformance test suite, taken from [`authzforce/core`](https://github.com/authzforce/core). `xacml/conformance/PROVENANCE.md` records the full chain — OASIS XACML TC, then AT&T (April 2014, MIT), then AuthzForce — together with the one link in that chain that public sources do not establish. Its own `LICENSE` file sits beside it. | Apache-2.0 |
+| `xacml/pep-corpus/oasis/` | The embedded PEP corpus's cases (#2024): the OASIS suite's mandatory cases above, converted by `rust/crates/sts-xacml/tests/pep_corpus.rs` (the policies verbatim, the request as attributes, the expected answer the reference engine's). A modified form of the suite, so under its licence; `xacml/pep-corpus/README.md` says what changed. The manifest, `enforcement.json` and the README beside them are MIT, so the MIT `iya-pep-<lang>` packages can vendor the whole corpus. | Apache-2.0 (cases), MIT (the rest) |
 | `spiffe/protos/` | The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the SPIFFE Broker API, copied verbatim. | Apache-2.0 |
 | `common/crypto_impl/contexts/credentials_v1.json`, `credentials_v2.json` | The W3C Verifiable Credentials JSON-LD contexts. | W3C Software and Document License |
 | `admin-ui/natural_earth/` | Country outlines derived from Natural Earth's 1:50m Admin 0 – Countries by `tests/tools/natural-earth.js`. | Public domain |
+| `tests/client-lab/patches/pivapplet-yubikey-attestation.patch` | A patch to [`arekinath/PivApplet`](https://github.com/arekinath/PivApplet)'s `PivApplet.java` (#2056) that makes the client lab's virtual PIV card attest as a YubiKey 5. It is a modified form of that file, so it is under that file's licence. It is applied to the pinned upstream source only when the TEST image `tests/client-lab/` is built. That build also fetches PivApplet, SmartPGP (GPL-2.0), jcardsim (Apache-2.0) and Oracle's Java Card API jar, and installs vsmartcard's vpcd (GPL-3.0). None of these is in this repository or in the service image. | MPL-2.0 |
 
 The Business Source License above covers every other file, with one
 exception. The rest of `common/crypto_impl/` (all but `pqc.js`, `pqc_x509.js` and
@@ -165,6 +167,7 @@ directory:
 | Apache-2.0 | @biscuit-auth/biscuit-wasm, @grpc/grpc-js, @grpc/proto-loader |
 | BSD-3-Clause OR GPL-2.0 | node-forge, used under BSD-3-Clause |
 | Unlicense | isbot |
+| LGPL-3.0-or-later | openpgp (openpgp.js, #1955), used unmodified as a separate npm module that can be replaced in `node_modules/` |
 
 ## Runtime dependencies in the remote PEP image
 

@@ -90,6 +90,27 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepListenersInUse"})
   `listenersInUse`?: string;
 
+  // #2026: an embedded PEP's kind, application, mode, protocol version and
+  // its stream's report.
+  @fromAttr(#{attr: "xacmlPepKind"})
+  `kind`?: string;
+
+  @fromAttr(#{attr: "xacmlPepApplication"})
+  `application`?: string;
+
+  @fromAttr(#{attr: "xacmlPepMode"})
+  `mode`?: string;
+
+  @fromAttr(#{attr: "xacmlPepProtocolVersion"})
+  `protocolVersion`?: integer;
+
+  @fromAttr(#{attr: "xacmlPepPolicyEvents"})
+  `policyEvents`?: string;
+
+  // #2027: what it last pulled.
+  @fromAttr(#{attr: "xacmlPepPullScope"})
+  `pullScope`?: string;
+
   @fromAttr(#{attr: "description"})
   `description`?: string[];
 }
@@ -384,6 +405,12 @@ model AuthenticationPolicy {
   @fromAttr(#{attr: "stsAuthnTotpSecondFactor"})
   `totpSecondFactor`?: boolean;
 
+  @fromAttr(#{attr: "stsAuthnHotpSecondFactor"})
+  `hotpSecondFactor`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnYubicoOtpSecondFactor"})
+  `yubicoOtpSecondFactor`?: boolean;
+
   @fromAttr(#{attr: "stsAuthnRecoveryCodeSecondFactor"})
   `recoveryCodeSecondFactor`?: boolean;
 
@@ -404,6 +431,18 @@ model AuthenticationPolicy {
 
   @fromAttr(#{attr: "stsAuthnKerberosPrimary"})
   `kerberosPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnSmartCardPrimary"})
+  `smartCardPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnSmartCardCardAuthPrimary"})
+  `smartCardCardAuthPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnPkinitSmartCardPrimary"})
+  `pkinitSmartCardPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnRequireAttestedHardware"})
+  `requireAttestedHardware`?: string;
 
   @fromAttr(#{attr: "stsAuthnWalletPrimary"})
   `walletPrimary`?: boolean;
@@ -557,6 +596,12 @@ model PasskeyPolicy {
   @fromAttr(#{attr: "stsPasskeyDeviceBoundRequired"})
   `deviceBoundRequired`?: string;
 
+  @fromAttr(#{attr: "stsPasskeyCredProtect"})
+  `credProtect`?: string;
+
+  @fromAttr(#{attr: "stsPasskeyEnforceCredProtect"})
+  `enforceCredProtect`?: string;
+
   @fromAttr(#{attr: "stsPasskeyPrecedence"})
   `precedence`?: integer;
 
@@ -660,6 +705,47 @@ model PostLoginPolicy {
 
   @fromAttr(#{attr: "stsPostLoginNoPasskeyFallback"})
   `noPasskeyFallback`?: string;
+
+  // #2009 P2: the mail-encryption activity's block.
+  @fromAttr(#{attr: "stsPostLoginMailEnabled"})
+  `mailEnabled`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailSnoozeDays"})
+  `mailSnoozeDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailGraceDays"})
+  `mailGraceDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailNoKey"})
+  `mailNoKey`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailPrefer"})
+  `mailPrefer`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailKeepClassical"})
+  `mailKeepClassical`?: string;
+
+  // #2009 P3: the PIV re-issue's block.
+  @fromAttr(#{attr: "stsPostLoginPivEnabled"})
+  `pivEnabled`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivSnoozeDays"})
+  `pivSnoozeDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivGraceDays"})
+  `pivGraceDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivSlots"})
+  `pivSlots`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivTrigger"})
+  `pivTrigger`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivRenewDays"})
+  `pivRenewDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivTarget"})
+  `pivTarget`?: string;
 
   @fromAttr(#{attr: "stsPostLoginPrecedence"})
   `precedence`?: integer;

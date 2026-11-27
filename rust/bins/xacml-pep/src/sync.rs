@@ -105,6 +105,35 @@ pub struct AuthzenSettings {
     pub max_evaluations: usize,
     pub max_body_bytes: usize,
     pub return_reasons: bool,
+    /// The realm's `authzen.obligationsProfile` (#1177, #1205). ABSENT IS
+    /// OFF, although the setting's own default is on: a catalogue from an
+    /// older service that does not send it cannot say the profile is on,
+    /// and an edge that handed obligations — turning a Permit that carries
+    /// one from false into true — while the realm had turned the profile
+    /// off would be wider than the service. Off hands nothing, and a
+    /// Permit carrying an obligation stays false.
+    pub obligations_profile: bool,
+    /// The realm's `authzen.tokenExchange` (#1181, #1205), which decides how
+    /// the service classifies a request's tuples: on, its gate, scope and
+    /// detail tuples are the binding's and answered by its fixed rules (so
+    /// this edge answers them 403, STS-XPEP-0140); off, every tuple is an
+    /// ordinary evaluation. ABSENT IS ON: an older service that does not
+    /// send it may have the binding on, and evaluating one of its tuples
+    /// here as ordinary could answer true where the service answers a fixed
+    /// false (a lone scope, STS-AUTHZEN-0105). That 403 decides nothing.
+    pub token_exchange: bool,
+    /// The `authorization_details` types the realm's applications declare,
+    /// which make a tuple beside a token-exchange gate one of the binding's
+    /// detail tuples. `None` (absent, or the service could not read them)
+    /// counts EVERY other resource type beside a gate as one, the closed
+    /// direction.
+    pub detail_types: Option<Vec<String>>,
+    /// The token types a token-exchange gate may name
+    /// (`issue:<token type>:token_exchange`), the service's registry. Only
+    /// such a gate makes the tuples beside it scopes or details of the
+    /// exchange. `None` (absent) counts every well-formed token type, the
+    /// closed direction.
+    pub token_types: Option<Vec<String>>,
 }
 
 impl Default for AuthzenSettings {
@@ -116,8 +145,24 @@ impl Default for AuthzenSettings {
             max_evaluations: 64,
             max_body_bytes: 262_144,
             return_reasons: false,
+            obligations_profile: false,
+            token_exchange: true,
+            detail_types: None,
+            token_types: None,
         }
     }
+}
+
+/// A list of names a catalogue's settings carry, or `None` when the member
+/// is absent or not an array of strings: an older service, or one that
+/// could not read the list, and both are read in the closed direction.
+fn names(said: &Value) -> Option<Vec<String>> {
+    let list = said.as_array()?;
+    let mut out = Vec::new();
+    for one in list {
+        out.push(one.as_str()?.to_string());
+    }
+    Some(out)
 }
 
 impl AuthzenSettings {
@@ -151,6 +196,14 @@ impl AuthzenSettings {
             return_reasons: said["returnReasons"]
                 .as_bool()
                 .unwrap_or(d.return_reasons),
+            obligations_profile: said["obligationsProfile"]
+                .as_bool()
+                .unwrap_or(d.obligations_profile),
+            token_exchange: said["tokenExchange"]
+                .as_bool()
+                .unwrap_or(d.token_exchange),
+            detail_types: names(&said["tokenExchangeDetailTypes"]),
+            token_types: names(&said["tokenExchangeTokenTypes"]),
         }
     }
 }
@@ -198,8 +251,8 @@ pub struct PulledCaller {
 #[derive(Debug, Clone, Default)]
 pub struct Callers {
     /// A list was pulled at least once. Until then `PEP_AUTHZEN_CALLERS`,
-    /// when it is set, decides alone, and when it is not the edge answers
-    /// 503.
+    /// when it is set, decides alone, and when it is not the edge admits
+    /// nobody (403, a PEP failure, #2208).
     pub loaded: bool,
     pub sync_token: String,
     /// The realm's `authzen.callerAuthentication`: only `mtls` admits a
@@ -230,12 +283,13 @@ pub struct ProxyHolding {
 }
 
 /// THE PROXY BEFORE ITS FIRST CONFIGURATION (rcbj, 2026-11-15): every
-/// request is answered 503 with `Retry-After`, and the log carries the state
+/// request is refused 403 with `Retry-After` (#2208: it was 503), and the
+/// log carries the state
 /// change and a summary at most once per [`WAITING_SUMMARY_EVERY`], never a
 /// line per request (`STS-XPEP-0118`).
 #[derive(Debug, Clone, Default)]
 struct ProxyWaiting {
-    /// Answered 503 since the start.
+    /// Refused (403, STS-XPEP-0118) since the start.
     refused: u64,
     /// Of those, since the last line about them.
     unreported: u64,
@@ -458,7 +512,7 @@ struct State {
     proxy: ProxyHolding,
     last_proxy_kept_why: String,
     proxy_counters: ProxyCounters,
-    /// The requests the proxy answered 503 because no configuration has
+    /// The requests the proxy refused (403) because no configuration has
     /// been received since this process started (`STS-XPEP-0118`).
     proxy_waiting: ProxyWaiting,
     /// (relying parties, CAEP/RISC receivers) the proxy holds, as of its
@@ -668,7 +722,11 @@ impl Sync {
                     "batchEnabled": c.settings.batch_enabled,
                     "maxEvaluations": c.settings.max_evaluations,
                     "maxBodyBytes": c.settings.max_body_bytes,
-                    "returnReasons": c.settings.return_reasons
+                    "returnReasons": c.settings.return_reasons,
+                    "obligationsProfile": c.settings.obligations_profile,
+                    "tokenExchange": c.settings.token_exchange,
+                    "tokenExchangeDetailTypes": c.settings.detail_types,
+                    "tokenExchangeTokenTypes": c.settings.token_types
                 },
                 "lastPullAt": c.last_pull_at,
                 "lastPullOk": c.last_pull_ok,
@@ -1519,8 +1577,9 @@ impl Sync {
             )
         } else {
             format!(
-                "{} NO CATALOGUE IS HELD, so the AuthZEN endpoints answer \
-                 503: a request cannot be mapped as the service maps it.",
+                "{} NO CATALOGUE IS HELD, so the AuthZEN endpoints refuse \
+                 every request (403): a request cannot be mapped as the \
+                 service maps it.",
                 why
             )
         };
@@ -1663,7 +1722,7 @@ impl Sync {
         } else {
             format!(
                 "{} NO CALLER LIST IS HELD and PEP_AUTHZEN_CALLERS is not \
-                 set, so the AuthZEN endpoints answer 503.",
+                 set, so the AuthZEN endpoints refuse every caller (403).",
                 why
             )
         };
@@ -1794,7 +1853,7 @@ impl Sync {
             let line = format!(
                 "xacml-pep: the reverse proxy received its first \
                  configuration since it started; {} request(s) were \
-                 answered 503 (STS-XPEP-0118) while it waited.",
+                 refused (403, STS-XPEP-0118) while it waited.",
                 state.proxy_waiting.refused
             );
             tracing::info!("{}", line);
@@ -1826,7 +1885,7 @@ impl Sync {
         } else {
             format!(
                 "{} NO CONFIGURATION HAS BEEN RECEIVED since the start, so \
-                 the proxy answers 503 with Retry-After to everything.",
+                 the proxy refuses everything (403) with Retry-After.",
                 why
             )
         };
@@ -1848,14 +1907,14 @@ impl Sync {
     /// The configuration in force now, and whether ANY configuration
     /// answer has been loaded since this process started — read under one
     /// lock, so a pull landing between the two cannot be half seen. Not
-    /// received yet is the 503 of `STS-XPEP-0118`; received and empty or
+    /// received yet is the 403 of `STS-XPEP-0118`; received and empty or
     /// switched off is the 404 of `STS-XPEP-0065`.
     pub fn proxy_received(&self) -> (Arc<Pulled>, bool) {
         let state = self.lock();
         (state.proxy.pulled.clone(), state.proxy.loaded)
     }
 
-    /// One request answered 503 before the first configuration. Logged
+    /// One request refused (403) before the first configuration. Logged
     /// when the state is first met, then as a count at most once per
     /// [`WAITING_SUMMARY_EVERY`] — a browser retrying, a health probe of
     /// the application or a crawler would otherwise write a line each.
@@ -1878,8 +1937,8 @@ impl Sync {
         let line = if first {
             format!(
                 "{}xacml-pep: the reverse proxy has received no \
-                 configuration since it started, so it answers 503 with \
-                 Retry-After to every request until the first pull \
+                 configuration since it started, so it refuses every \
+                 request (403) with Retry-After until the first pull \
                  succeeds. A count follows at most once a minute. The \
                  last pull: {}",
                 tag("STS-XPEP-0118"),
@@ -1888,7 +1947,7 @@ impl Sync {
         } else {
             format!(
                 "{}xacml-pep: the reverse proxy is still waiting for its \
-                 first configuration: {} request(s) answered 503 in the \
+                 first configuration: {} request(s) refused (403) in the \
                  last {}s, {} since the start. The last pull: {}",
                 tag("STS-XPEP-0118"),
                 w.unreported,

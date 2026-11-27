@@ -282,7 +282,7 @@ jobs:
           secret="$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)"
           echo "::add-mask::${secret}"
           echo "ADMIN_API_CLIENT_SECRET=${secret}" >> "$GITHUB_ENV"
-          docker run -d --name sts-ci -p 8081:8081 \
+          docker run -d --name sts-ci -p 8081:8081 -p 127.0.0.1:8082:8082 \
             -e ADMIN_API_CLIENT_SECRET="${secret}" rcbj/sts:ci
 
       # https AND `-k` SINCE 2026-08-30, and both halves are load-bearing. The
@@ -327,14 +327,37 @@ jobs:
             bunyan@1.8.15
           echo "NODE_PATH=$RUNNER_TEMP/smoke/node_modules" >> "$GITHUB_ENV"
 
+      # THE CONTAINER'S CHAIN, VERIFIED, FOR THE TWO STEPS BELOW (#1954's
+      # follow-up). They ran with NODE_TLS_REJECT_UNAUTHORIZED=0, which also
+      # switched off the verified bootstrap tests/tools/admin-api-token.js
+      # makes on its own. tests/tools/trust.js's trustTheService() is what a
+      # run's launcher calls: it fetches the chain from /tls/server-
+      # certificate and verifies it against the Root the container's
+      # revocation listener publishes on 8082 (published above on 127.0.0.1
+      # only), and writes the bundle. NODE_EXTRA_CA_CERTS hands it to every
+      # later step's node, which reads it at start.
+      - name: Trust the container's certificate
+        run: |
+          node -e '
+            const trust = require("./tests/tools/trust.js");
+            const log = { info: console.log, warn: console.warn,
+                          debug: function () {} };
+            trust.trustTheService("https://localhost:8081",
+              process.env.RUNNER_TEMP + "/sts-trust", log)
+              .then(function (got) {
+                require("fs").appendFileSync(process.env.GITHUB_ENV,
+                  "NODE_EXTRA_CA_CERTS=" + got.pemPath + "\n");
+              }, function (e) {
+                console.error("the chain could not be verified: " +
+                              e.message);
+                process.exit(1);
+              });'
+
       # The ONE place a run mints /admin-api's token is
       # tests/tools/admin-api-token.js, so this calls it rather than writing
-      # the client id, grant and form out a second time. NODE_TLS_REJECT_
-      # UNAUTHORIZED=0 is `-k`'s reason above: the certificate is regenerated
-      # on every start, and the question here is not whether it is trusted.
+      # the client id, grant and form out a second time. It verifies the
+      # listener itself, against the bundle above.
       - name: Mint an /admin-api access token
-        env:
-          NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: |
           token=$(STS_ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET}" \
             node tests/tools/admin-api-token.js https://localhost:8081)
@@ -357,8 +380,6 @@ jobs:
       # and then failed on a 303; since the #446 cutover that path answers the
       # static console's shell, which lists nothing.
       - name: Check /admin-api/sts-metadata answers
-        env:
-          NODE_TLS_REJECT_UNAUTHORIZED: '0'
         run: node tests/tools/container-smoke.js https://localhost:8081
 
       # THE IMAGE REPORTS THE BUILD IT WAS STAMPED WITH, which is the only

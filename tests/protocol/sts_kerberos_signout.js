@@ -44,6 +44,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 const wire = require("./krb5_wire.js");
 const { declineToRun } = require("./expectation.js");
 
@@ -146,12 +147,19 @@ async function learnTheService() {
 async function ensurePerson() {
   log.debug("Entering ensurePerson(). " + P);
   const r = await apiCall("POST", "/users/create", {
-    username: P, invent: false, credential: "password", password: PASSWORD,
+    username: P, invent: false, credential: "password",
+    password: ownPassword.temporaryFor(PASSWORD),
     attributes: { cn: "Sign-out " + P, givenName: "Sign-out", sn: P,
                   displayName: "Sign-out " + P, mail: P + "@signout.test" } });
   assert.ok(r.status === 200 && r.body && r.body.ok,
             "POST /admin-api/users/create " + P + ": " + r.status + " " +
             String(r.raw).slice(0, 300));
+  // Temporary, then the person's own (#2160, `own_password.js`): the KDC
+  // refuses a password that has to be changed first (STS-KRB-0257).
+  await ownPassword.ownPassword(base, P, PASSWORD, function (one, value) {
+    return apiCall("POST", "/users/set-password",
+                   { user: one, password: value });
+  });
   log.debug("Leaving ensurePerson().");
 }
 

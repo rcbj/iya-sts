@@ -41,7 +41,7 @@ using IyaSts.ApiLib;
   `info`:#{
     `title`:"IYA STS remote PEP reverse proxy",
     `version`:"1",
-    `description`:"The paths a remote PEP's reverse proxy owns on its listeners (PEP_PROXY_PORT, 9180, plain; PEP_PROXY_HTTPS_PORT, 9543, which asks for and never requires a client certificate; and listeners of purpose proxy the service defines). Every other path is a configured route, decided by the configuration the PEP pulls, and is not described here. EVERY PATH, ROUTES INCLUDED, IS ANSWERED IN THIS ORDER: a path that does not normalise (a backslash, a control or non-ASCII byte, a bad or encoded-separator escape, //, a . or .. segment) is 400 STS-XPEP-0064; before the first configuration arrives every path is 503 STS-XPEP-0118 with Retry-After; /.iya-pep/logo.png; with no active configuration, the start page for a browser's GET of / and 404 STS-XPEP-0065 otherwise; then the callback, sign-out and accounts paths; then any other path under /.iya-pep/, which is the proxy's own and 404 STS-XPEP-0134 (a route may not be configured there); then the route table. A ROUTE then answers: 405 STS-XPEP-0066 with Allow for a method it does not list; 403 STS-XPEP-0093 when its application is not usable; 413 STS-XPEP-0067 over its maxBodyBytes; its mechanism (an Authorization header of scheme Bearer for oauth2, SAML for saml2, Basic for basic, else the session cookie): 401 with one challenge header per mechanism it allows (Bearer realm, with error=\"invalid_token\" when a token was refused; Basic realm, charset=\"UTF-8\"; SAML realm; none for session) and codes 0070 to 0084 and 0089, 429 0080 with Retry-After when the service has locked a password out, 502 0075 when the service cannot be asked; for a browser (GET or HEAD accepting text/html) with no live session, 302 to the provider's authorization endpoint (code flow, PKCE S256, or a PAR request_uri), or on a multipleAccounts route with accounts held, 302 to /.iya-pep/accounts?return=; 403 0117 when its policy is not held and 0086 when the XACML decision refuses; 403 0116 for a deny-all route; 502 0095 to 0098 when the identity cannot be delivered (403 0095 when the service refuses it); 502 0091, 0092 or 0069 and 504 0068 for the upstream; else the upstream's own answer, streamed, redirects not followed, hop-by-hop headers removed and nothing added. Upstream, the proxy removes Host, Forwarded, X-Forwarded-*, every route's identity headers, Authorization (unless forwardCredentials), its own cookies and the service's, and adds X-Forwarded-For, X-Forwarded-Proto and X-Forwarded-Host and the route's identity (headers, a service-issued Bearer token, or a SAML session held for it at the application). Error codes are recorded in the PEP's log, with the error page's incident ID, and never sent.",
+    `description`:"The paths a remote PEP's reverse proxy owns on its listeners (PEP_PROXY_PORT, 9180, plain; PEP_PROXY_HTTPS_PORT, 9543, which asks for and never requires a client certificate; and listeners of purpose proxy the service defines). Every other path is a configured route, decided by the configuration the PEP pulls, and is not described here. EVERY PATH, ROUTES INCLUDED, IS ANSWERED IN THIS ORDER: a path that does not normalise (a backslash, a control or non-ASCII byte, a bad or encoded-separator escape, //, a . or .. segment) is 400 STS-XPEP-0064; before the first configuration arrives every path is 403 STS-XPEP-0118 with Retry-After; /.iya-pep/logo.png; with no active configuration, the start page for a browser's GET of / and 404 STS-XPEP-0065 otherwise; then the callback, sign-out and accounts paths; then any other path under /.iya-pep/, which is the proxy's own and 404 STS-XPEP-0134 (a route may not be configured there); then the route table. A ROUTE then answers: 405 STS-XPEP-0066 with Allow for a method it does not list; 403 STS-XPEP-0093 when its application is not usable; 413 STS-XPEP-0067 over its maxBodyBytes; its mechanism (an Authorization header of scheme Bearer for oauth2, SAML for saml2, Basic for basic, else the session cookie): 401 with one challenge header per mechanism it allows (Bearer realm, with error=\"invalid_token\" when a token was refused; Basic realm, charset=\"UTF-8\"; SAML realm; none for session) and codes 0070 to 0084 and 0089, 429 0080 with Retry-After when the service has locked a password out, 403 0075 when the service cannot be asked; for a browser (GET or HEAD accepting text/html) with no live session, 302 to the provider's authorization endpoint (code flow, PKCE S256, or a PAR request_uri), or on a multipleAccounts route with accounts held, 302 to /.iya-pep/accounts?return=; 403 0117 when its policy is not held and 0086 when the XACML decision refuses; 403 0116 for a deny-all route; 403 0095 to 0098 when the identity cannot be delivered or the service refuses it, but 502 0097 when the application's ACS cannot be reached or answers 5xx; 403 0091 or 0092 when the proxy cannot send the request; 502 0069 and 504 0068 when the application cannot be reached or is too slow; else the upstream's own answer, streamed, redirects not followed, hop-by-hop headers removed and nothing added. Upstream, the proxy removes Host, Forwarded, X-Forwarded-*, every route's identity headers, Authorization (unless forwardCredentials), its own cookies and the service's, and adds X-Forwarded-For, X-Forwarded-Proto and X-Forwarded-Host and the route's identity (headers, a service-issued Bearer token, or a SAML session held for it at the application). EVERY PEP FAILURE IS A 403 access_denied (the service or one of its endpoints cannot be asked or answers badly, no configuration yet, no relying party, no room for a session, an identity that cannot be delivered), never a 5xx and never forwarded, and described by a generic sentence. Only the application's own failures are 502 and 504. Error codes are recorded in the PEP's log, with the error page's incident ID, and never sent.",
     `x-iya-cookies`:#{
       `iya_pep_session`:"A single-account session: 43 base64url characters. Path=/; HttpOnly; SameSite=Lax; Secure on HTTPS; no expiry. The server ends it after PEP_PROXY_SESSION_TTL_MS (8 hours).",
       `iya_pep_accounts`:"A browser's set of accounts on multipleAccounts routes: 32 base64url characters, the same attributes."
@@ -55,7 +55,7 @@ using IyaSts.ApiLib;
 })
 namespace IyaSts.Pep.Proxy {
 
-@js(#{`description`:"A refusal to a request whose Accept does not name text/html (one that does gets the error page). error follows the status: 400 invalid_request, 401 unauthorized or invalid_token, 403 access_denied, 404 not_found, 405 method_not_allowed, 413 payload_too_large, 429 too_many_requests, 503 temporarily_unavailable, 504 gateway_timeout, any other bad_gateway. Cache-Control: no-store."})
+@js(#{`description`:"A refusal to a request whose Accept does not name text/html (one that does gets the error page). error follows the status: 400 invalid_request, 401 unauthorized or invalid_token, 403 access_denied, 404 not_found, 405 method_not_allowed, 413 payload_too_large, 429 too_many_requests, 504 gateway_timeout, any other bad_gateway. Cache-Control: no-store."})
 @component model `Refusal` {
   `error`: "invalid_request" | "unauthorized" | "invalid_token" | "access_denied" | "not_found" | "method_not_allowed" | "payload_too_large" | "too_many_requests" | "temporarily_unavailable" | "gateway_timeout" | "bad_gateway";
   `error_description`: string;
@@ -110,19 +110,17 @@ namespace IyaSts.Pep.Proxy {
   `responses`:#{
     `302`:#{`description`:"Signed in: Location is the path that started the sign-in. Set-Cookie: iya_pep_session (a single-account route) or iya_pep_accounts (a multipleAccounts route, whose new account becomes the active one).",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}},`Set-Cookie`:#{`schema`:#{`type`:"string"}}}},
     `401`:#{`description`:"No such pending sign-in, or its relying party is gone (STS-XPEP-0082); the provider's error, a wrong iss, no code, a replayed code, a token endpoint or ID Token failure, a token in the query, or another person on an account's re-sign-in (0083).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `403`:#{`description`:"The browser already holds PEP_PROXY_MAX_ACCOUNTS accounts (STS-XPEP-0108): always the error page, with a link to the chooser.",`content`:#{`text/html`:#{`schema`:null}}},
+    `403`:#{`description`:"The browser already holds PEP_PROXY_MAX_ACCOUNTS accounts (STS-XPEP-0108): always the error page, with a link to the chooser. Or a PEP failure: the session store is full or no random value was had (STS-XPEP-0085), no Retry-After.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `405`:#{`description`:"A method other than GET or HEAD (STS-XPEP-0132).",`headers`:#{`Allow`:#{`schema`:#{`type`:"string",`const`:"GET, HEAD"}}},`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `503`:#{`description`:"The session store is full or no random value was had (STS-XPEP-0085); no Retry-After.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `getCallback`(`responses/401/content/application~1json/schema`: `Refusal`,
   `responses/401/content/text~1html/schema`: `Page`,
+  `responses/403/content/application~1json/schema`: `Refusal`,
   `responses/403/content/text~1html/schema`: `Page`,
   `responses/405/content/application~1json/schema`: `Refusal`,
   `responses/405/content/text~1html/schema`: `Page`,
-  `responses/503/content/application~1json/schema`: `Refusal`,
-  `responses/503/content/text~1html/schema`: `Page`,
   `responses/default/content/application~1json/schema`: `Refusal`,
   `responses/default/content/text~1html/schema`: `Page`): void;
 
@@ -134,7 +132,7 @@ op `getCallback`(`responses/401/content/application~1json/schema`: `Refusal`,
     `200`:#{`description`:"Nothing more to do: no session, or the provider publishes no end_session_endpoint. JSON even to a browser.",`headers`:#{`Set-Cookie`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `302`:#{`description`:"To the provider's end_session_endpoint with id_token_hint and client_id (no post_logout_redirect_uri).",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}},`Set-Cookie`:#{`schema`:#{`type`:"string"}}}},
     `405`:#{`description`:"A method other than GET or HEAD (STS-XPEP-0133).",`headers`:#{`Allow`:#{`schema`:#{`type`:"string",`const`:"GET, HEAD"}}},`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `getLogout`(`responses/200/content/application~1json/schema`: `SignedOut`,
@@ -153,7 +151,7 @@ op `getLogout`(`responses/200/content/application~1json/schema`: `SignedOut`,
   ],
   `responses`:#{
     `200`:#{`description`:"The chooser, or with format=json the list.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `getAccounts`(`responses/200/content/application~1json/schema`: `Accounts`,
@@ -171,18 +169,15 @@ op `getAccounts`(`responses/200/content/application~1json/schema`: `Accounts`,
   ],
   `responses`:#{
     `302`:#{`description`:"To the provider's authorization endpoint (code flow, PKCE S256, prompt=login), or its PAR request_uri.",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}}}},
+    `403`:#{`description`:"A PEP failure: the relying party could not be built (STS-XPEP-0090), or the provider could not be asked: discovery or PAR failed (0075).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `404`:#{`description`:"The return path is not on such a route (STS-XPEP-0110).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `502`:#{`description`:"The provider could not be asked: discovery or PAR failed (STS-XPEP-0075).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `503`:#{`description`:"The relying party could not be built (STS-XPEP-0090).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
-op `getAccountsAdd`(`responses/404/content/application~1json/schema`: `Refusal`,
+op `getAccountsAdd`(`responses/403/content/application~1json/schema`: `Refusal`,
+  `responses/403/content/text~1html/schema`: `Page`,
+  `responses/404/content/application~1json/schema`: `Refusal`,
   `responses/404/content/text~1html/schema`: `Page`,
-  `responses/502/content/application~1json/schema`: `Refusal`,
-  `responses/502/content/text~1html/schema`: `Page`,
-  `responses/503/content/application~1json/schema`: `Refusal`,
-  `responses/503/content/text~1html/schema`: `Page`,
   `responses/default/content/application~1json/schema`: `Refusal`,
   `responses/default/content/text~1html/schema`: `Page`): void;
 
@@ -195,7 +190,7 @@ op `getAccountsAdd`(`responses/404/content/application~1json/schema`: `Refusal`,
     `303`:#{`description`:"To the return path.",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}}}},
     `403`:#{`description`:"Cross-site (STS-XPEP-0109).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `404`:#{`description`:"The set holds no such account (STS-XPEP-0111).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `postAccountsSwitch`(`requestBody/content/application~1x-www-form-urlencoded/schema`: `AccountForm`,
@@ -215,7 +210,7 @@ op `postAccountsSwitch`(`requestBody/content/application~1x-www-form-urlencoded/
     `303`:#{`description`:"Back to the chooser: /.iya-pep/accounts?return=<return>.",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}}}},
     `403`:#{`description`:"Cross-site (STS-XPEP-0109).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
     `404`:#{`description`:"The set holds no such account (STS-XPEP-0111).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `postAccountsLogout`(`requestBody/content/application~1x-www-form-urlencoded/schema`: `AccountForm`,
@@ -234,7 +229,7 @@ op `postAccountsLogout`(`requestBody/content/application~1x-www-form-urlencoded/
   `responses`:#{
     `303`:#{`description`:"To the return path, clearing iya_pep_accounts.",`headers`:#{`Location`:#{`schema`:#{`type`:"string"}},`Set-Cookie`:#{`schema`:#{`type`:"string"}}}},
     `403`:#{`description`:"Cross-site (STS-XPEP-0109).",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `postAccountsLogoutAll`(`requestBody/content/application~1x-www-form-urlencoded/schema`: `ReturnForm`,
@@ -249,7 +244,7 @@ op `postAccountsLogoutAll`(`requestBody/content/application~1x-www-form-urlencod
   `description`:"GET and HEAD. Served once a configuration has arrived, active or not; another method is the reserved prefix's 404 (STS-XPEP-0134), or 0065 with no active configuration.",
   `responses`:#{
     `200`:#{`description`:"Cache-Control: public, max-age=3600.",`content`:#{`image/png`:#{`schema`:#{`type`:"string",`contentMediaType`:"image/png"}}}},
-    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 503 0118.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"Before dispatch: 400 STS-XPEP-0064, 403 0118 with Retry-After.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `getLogo`(`responses/default/content/application~1json/schema`: `Refusal`,
@@ -261,7 +256,7 @@ op `getLogo`(`responses/default/content/application~1json/schema`: `Refusal`,
   `description`:"For a GET or HEAD of / that accepts text/html, when no configuration is active or no route is mounted at /: the logo and a title, no links and no forms. A route mounted at / answers instead; anything else is 404 STS-XPEP-0065.",
   `responses`:#{
     `200`:#{`description`:"The page.",`content`:#{`text/html`:#{`schema`:null}}},
-    `default`:#{`description`:"400 STS-XPEP-0064, 503 0118, 404 0065, or the route at /.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
+    `default`:#{`description`:"400 STS-XPEP-0064, 403 0118 with Retry-After, 404 0065, or the route at /.",`content`:#{`application/json`:#{`schema`:null},`text/html`:#{`schema`:null}}}
   }
 })
 op `getStartPage`(`responses/200/content/text~1html/schema`: `Page`,

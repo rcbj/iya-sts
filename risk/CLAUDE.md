@@ -446,7 +446,7 @@ decision (2026-10-06, option A): `risk.mediumScorePercent` defaults to 300,
 θ = 3** — a calibrated line rather than 1, above the largest user term seen
 on a shared-network stack (1.98); `risk.calibrationMediumPercent` is how a
 realm tunes it. HIGH stays at 10 (`risk.highScorePercent` 1000); what that
-does to the evaluators is in `docs/v1.1.0/risk-scoring.md`, *Levels*.
+does to the evaluators is in `docs/v1.2.0/risk-scoring.md`, *Levels*.
 `tests/risk_model.js` holds the decomposition on all 82 notebook scores and
 the shared-network case; `tests/risk_engine.js` C2–C3 the record and the page.
 
@@ -823,6 +823,43 @@ more than its sign-in did. A session that already holds
 the HIGH line is raised by the same floor; one already at the line, with
 nothing else fresh, is left unwritten. The device and the model cannot move
 without a request, which is continuous evaluation's business.
+
+## A SUCCESSFUL UNUSUAL SIGN-IN IS TOLD TO THE PERSON (#2162, 2026-11-24)
+
+ASVS 5.0.0 6.3.5. **Not a reaction of the risk-response policy, and that is
+deliberate**: a reaction decides about somebody's access (rcbj's rule that
+authorization is XACML policy), and telling a person what happened on their
+own account decides nothing. So it is the engine's own step, with three
+settings of the mail channel's (`mail.signInAlerts`, `mail.signInAlertLevel`,
+`mail.signInAlertWindowS`), and it is asked on every SUCCESSFUL sign-in, not
+on a change of standing: a person who is MEDIUM every time is told of each
+new kind, which a level change would not see.
+
+- **WHAT IS UNUSUAL** is `ALERT_KINDS` over the signals (`new-device` and
+  `unregistered-device`, the three address lists, `account-failures`), plus
+  `new-country` — not a signal, it moves no score — where the person has
+  `risk.minimumHistory` and the country's count in their own history is 0,
+  plus `unusual` for MEDIUM or above with none of those
+  (`alertKindsOf()`). They ride on the assessment as `alerts`, enumerable,
+  because the answer may cross `pendingMfa`; `amend()` recomputes them.
+- **WHEN IT SUCCEEDED** is two places, one per kind of door: `settle()` when
+  the session's start hands the assessment and the username in (a door
+  that assessed before the session), and the end of `assessNow()` when the
+  input names a session (`assessRisk()`, a door that assessed after it).
+  `signedIn()` holds the level line and leaves out `phase: 'session'`.
+- **ONCE PER WINDOW PER KIND** is the mail outbox's: `mail.ts`'s
+  `dedupWindowS` and `dedupAlso`, and `queuedWithin()`, so a message about
+  two kinds is found by either later, cluster-wide. No store of this
+  directory's own and no timer.
+- **A RUN OF REFUSED PASSWORDS** is `risk_failures.ts`'s `noteRun()`, after
+  each row is recorded: the subject's refusals in `security.rateLimitWindowS`
+  counted from this register, told when they reach
+  `security.rateLimitPerIdentity` — the limiter's numbers — and at most once
+  in `mail.signInAlertWindowS`. Counted only while the alerts could be sent.
+
+**Impossible journeys are not detected.** A listed assessment carries no
+coordinates (`riskListAssessments()`), and a country change is what
+`new-country` already tells. `tests/sign_in_alert_mail.js`.
 
 ## THE FIDO METADATA (P5, 2026-09-22)
 

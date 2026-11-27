@@ -1767,7 +1767,7 @@ function childMain() {
     // ===== O. #746's GLOBAL PROVIDERS =======================================
     // Each one's shape against a server that behaves as its documentation
     // says. None of this is the provider itself:
-    // docs/v1.1.0/federation-consumer-providers.md says which have met a
+    // docs/v1.2.0/federation-consumer-providers.md says which have met a
     // live one, and the answer is none.
     // After the sections above, because this many sign-ins from one address
     // raise its risk, which K's connecting an account would be refused for.

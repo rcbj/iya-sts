@@ -51,6 +51,9 @@
 
 delete process.env.CONFIG_FILE;
 
+// An address compared by parsing it, not searched for as text
+// (`protocol/url_match.js`).
+const urls = require('./protocol/url_match.js');
 const zlib = require('zlib');
 const nodeCrypto = require('crypto');
 const kit = require('./tools/saml_signing_kit');
@@ -179,12 +182,12 @@ async function run(t) {
     log.debug("Leaving newParty().");
     return identifier;
   };
-  const getSso = function (xml) {
+  const getSso = async function (xml) {
     log.debug("Entering getSso().");
     const res = kit.fakeRes();
     const raw = 'SAMLRequest=' + encodeURIComponent(deflate(xml));
-    sso(kit.fakeReq('GET', '/saml2/sso', { SAMLRequest: deflate(xml) }, raw),
-        res);
+    await sso(kit.fakeReq('GET', '/saml2/sso',
+                          { SAMLRequest: deflate(xml) }, raw), res);
     log.debug("Leaving getSso().");
     return res;
   };
@@ -212,46 +215,46 @@ async function run(t) {
     const spA = newParty('envelope', 'saml2-service-provider', {
       samlAssertionConsumerService: 'https://envelope.test/acs' });
     const base = { issuer: spA, acs: 'https://envelope.test/acs' };
-    const elsewhere = getSso(authnRequest(Object.assign({
+    const elsewhere = await getSso(authnRequest(Object.assign({
       destination: 'https://other-idp.test/sso' }, base)));
     t.check(elsewhere.statusCode === 400 &&
             codeOf(elsewhere) === 'STS-SAML-0085',
             'an AuthnRequest whose Destination is another endpoint is ' +
             'REFUSED, STS-SAML-0085', elsewhere.statusCode + ' ' +
             codeOf(elsewhere));
-    const stale = getSso(authnRequest(Object.assign({
+    const stale = await getSso(authnRequest(Object.assign({
       issueInstant: new Date(Date.now() - 3600000).toISOString() }, base)));
     t.equal(codeOf(stale), 'STS-SAML-0086',
             'one issued an hour ago is REFUSED, STS-SAML-0086');
-    const future = getSso(authnRequest(Object.assign({
+    const future = await getSso(authnRequest(Object.assign({
       issueInstant: new Date(Date.now() + 600000).toISOString() }, base)));
     t.equal(codeOf(future), 'STS-SAML-0086',
             'one issued ten minutes in the future is refused too');
-    const noInstant = getSso(authnRequest(Object.assign({
+    const noInstant = await getSso(authnRequest(Object.assign({
       issueInstant: null }, base)));
     t.equal(codeOf(noInstant), 'STS-SAML-0086',
             'and one with no IssueInstant');
-    const oldVersion = getSso(authnRequest(Object.assign({ version: '1.1' },
-                                                         base)));
+    const oldVersion = await getSso(authnRequest(Object.assign(
+      { version: '1.1' }, base)));
     t.equal(codeOf(oldVersion), 'STS-SAML-0087',
             'a Version other than 2.0 is REFUSED, STS-SAML-0087');
     const once = authnRequest(Object.assign({ id: id() }, base));
-    const first = getSso(once);
-    const again = getSso(once);
+    const first = await getSso(once);
+    const again = await getSso(once);
     t.check(first.statusCode === 303 && /authn/.test(first.location),
             'a fresh unsigned request (development) goes on to the sign-in ' +
             'screen', first.statusCode + ' ' + codeOf(first));
     t.check(again.statusCode === 400 && codeOf(again) === 'STS-SAML-0088',
             'the SAME request again is a REPLAY, refused STS-SAML-0088',
             again.statusCode + ' ' + codeOf(again));
-    const unaddressed = getSso(authnRequest(Object.assign({
+    const unaddressed = await getSso(authnRequest(Object.assign({
       destination: null }, base)));
     t.check(unaddressed.statusCode === 303,
             'an UNSIGNED request with no Destination is still answered ' +
             '(only a signed one must name it)', unaddressed.statusCode + ' ' +
             codeOf(unaddressed));
     const lrElsewhere = kit.fakeRes();
-    sloPost(kit.fakeReq('POST', '/saml2/slo', {}, '', form({
+    await sloPost(kit.fakeReq('POST', '/saml2/slo', {}, '', form({
       SAMLRequest: Buffer.from(logoutRequest({
         issuer: spA, nameId: 'nobody', destination: 'https://x.test/slo' }))
         .toString('base64') })), lrElsewhere);
@@ -279,7 +282,7 @@ async function run(t) {
       at: Date.now(), nameId: 'bc2-' + stamp, nameIdFormat: UNSPECIFIED } };
     authn.noteSessionChanged(other);
     const wrong = kit.fakeRes();
-    sloPost(kit.fakeReq('POST', '/saml2/slo', {}, '', form({
+    await sloPost(kit.fakeReq('POST', '/saml2/slo', {}, '', form({
       SAMLRequest: Buffer.from(logoutRequest({
         issuer: spB, nameId: whoB, sessionIndex: other.id }))
         .toString('base64') })), wrong);
@@ -291,7 +294,7 @@ async function run(t) {
             'a SessionIndex naming ANOTHER person\'s session ends nothing ' +
             'and is answered UnknownPrincipal, STS-SAML-0090', codeOf(wrong));
     const right = kit.fakeRes();
-    sloPost(kit.fakeReq('POST', '/saml2/slo', {}, '', form({
+    await sloPost(kit.fakeReq('POST', '/saml2/slo', {}, '', form({
       SAMLRequest: Buffer.from(logoutRequest({
         issuer: spB, nameId: whoB, sessionIndex: heldB.id }))
         .toString('base64') })), right);
@@ -338,26 +341,26 @@ async function run(t) {
       samlAssertionConsumerService: acsD, saml2IdpInitiatedSso: 'TRUE' });
     const spOff = newParty('unsolicited-off', 'saml2-service-provider', {
       samlAssertionConsumerService: acsD });
-    const ask = function (query, extra) {
+    const ask = async function (query, extra) {
       log.debug("Entering ask().");
       const res = kit.fakeRes();
       const raw = new URLSearchParams(query).toString();
-      unsolicited(kit.fakeReq('GET', '/saml2/unsolicited', query, raw,
+      await unsolicited(kit.fakeReq('GET', '/saml2/unsolicited', query, raw,
                               undefined, extra), res);
       log.debug("Leaving ask().");
       return res;
     };
-    const off = ask({ providerId: spOff });
+    const off = await ask({ providerId: spOff });
     t.check(off.statusCode === 403 && codeOf(off) === 'STS-SAML-0091',
             'a service provider that did not opt in (saml2.idpInitiatedSso ' +
             'is off by default): refused, 403, STS-SAML-0091',
             off.statusCode + ' ' + codeOf(off));
-    t.equal(codeOf(ask({})), 'STS-SAML-0092',
+    t.equal(codeOf(await ask({})), 'STS-SAML-0092',
             'no service provider named: refused, STS-SAML-0092');
-    t.equal(codeOf(ask({ providerId: spD, binding: 'redirect' })),
+    t.equal(codeOf(await ask({ providerId: spD, binding: 'redirect' })),
             'STS-SAML-0093',
             'a Response on HTTP-Redirect: refused, STS-SAML-0093');
-    const stranger = kit.withSettings(config, product, function () {
+    const stranger = await kit.withSettings(config, product, function () {
       return ask({ providerId: 'https://never-registered-' + stamp +
                                '.test/sp' });
     });
@@ -365,14 +368,15 @@ async function run(t) {
             codeOf(stranger) === 'STS-SAML-0082',
             'PRODUCT: an unregistered service provider is a 404, ' +
             'STS-SAML-0082', stranger.statusCode + ' ' + codeOf(stranger));
-    const anonymous = ask({ providerId: spD });
+    const anonymous = await ask({ providerId: spD });
     t.check(anonymous.statusCode === 303 && /authn/.test(anonymous.location),
             'with no session it goes to the sign-in screen',
             anonymous.statusCode + ' ' + anonymous.location);
     const whoD = 'd-' + stamp;
     const cookieD = sessionFor(whoD).cookie;
-    const sentD = ask({ providerId: spD, shire: acsD, target: 'rs-' + stamp },
-                      withCookie(cookieD));
+    const sentD = await ask({ providerId: spD, shire: acsD,
+                              target: 'rs-' + stamp },
+                            withCookie(cookieD));
     const responseD = Buffer.from(hiddenField(sentD.body, 'SAMLResponse'),
                                   'base64').toString('utf8');
     t.check(/<samlp:Response\b/.test(responseD) &&
@@ -388,12 +392,13 @@ async function run(t) {
             new RegExp('>' + whoD + '</saml:AttributeValue>').test(responseD),
             'carrying the X.500/LDAP attribute profile\'s names (#189)',
             responseD.slice(0, 200));
-    const elsewhereD = ask({ providerId: spD, shire: 'https://evil.test/acs' },
-                           withCookie(cookieD));
-    t.check(kit.withSettings(config, product, function () {
+    const elsewhereD = await ask({ providerId: spD,
+                                   shire: 'https://evil.test/acs' },
+                                 withCookie(cookieD));
+    t.check((await kit.withSettings(config, product, function () {
       return ask({ providerId: spD, shire: 'https://evil.test/acs' },
                  withCookie(cookieD));
-    }).statusCode === 400 && elsewhereD.statusCode === 200,
+    })).statusCode === 400 && elsewhereD.statusCode === 200,
             'an unregistered shire is refused in PRODUCT (development ' +
             'delivers anywhere, as its SSO does)');
 
@@ -421,7 +426,7 @@ async function run(t) {
     const askAa = async function (body) {
       log.debug("Entering askAa().");
       const res = kit.fakeRes();
-      aa(kit.fakeReq('POST', '/saml2/aa', {}, '', body), res);
+      await aa(kit.fakeReq('POST', '/saml2/aa', {}, '', body), res);
       await res.done;
       log.debug("Leaving askAa().");
       return res;
@@ -469,7 +474,7 @@ async function run(t) {
     const md = kit.fakeRes();
     const mdReq = kit.fakeReq('GET', '/saml2/metadata/x', {}, '');
     mdReq.params = { sp: spE };
-    metadata(mdReq, md);
+    await metadata(mdReq, md);
     // #523: one entity, one document — the attribute authority names both
     // SAML versions.
     t.check(/<md:AttributeAuthorityDescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol urn:oasis:names:tc:SAML:1\.1:protocol">/
@@ -485,7 +490,7 @@ async function run(t) {
     const md11 = kit.fakeRes();
     const md11Req = kit.fakeReq('GET', '/saml11/metadata/x', {}, '');
     md11Req.params = { rp: spE };
-    metadata11(md11Req, md11);
+    await metadata11(md11Req, md11);
     t.check(/<md:IDPSSODescriptor[^>]*protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol urn:oasis:names:tc:SAML:1\.1:protocol urn:mace:shibboleth:1\.0"/
               .test(md11.body),
             'the IDPSSODescriptor names urn:mace:shibboleth:1.0 beside SAML ' +
@@ -523,9 +528,9 @@ async function run(t) {
       const q = { providerId: rp, shire: shire, target: 'ss:mem:' + stamp,
                   time: String(Math.floor(Date.now() / 1000)) };
       const res = kit.fakeRes();
-      const go = function () {
+      const go = async function () {
         log.debug("Entering go().");
-        sso11(kit.fakeReq('GET', '/saml11/sso', q,
+        await sso11(kit.fakeReq('GET', '/saml11/sso', q,
                           new URLSearchParams(q).toString(), undefined,
                           withCookie(cookieG)), res);
         log.debug("Leaving go().");
@@ -535,7 +540,7 @@ async function run(t) {
       return extraSettings ? kit.withSettings(config, extraSettings, go)
                            : go();
     };
-    const posted = shib(rpPost);
+    const posted = await shib(rpPost);
     const assertion11 = Buffer.from(hiddenField(posted.body, 'SAMLResponse'),
                                     'base64').toString('utf8');
     t.check(hiddenField(posted.body, 'TARGET') === 'ss:mem:' + stamp,
@@ -549,15 +554,15 @@ async function run(t) {
                                 'shibboleth:1.0:attributeNamespace:uri"') >= 0,
             'and names uid the way Shibboleth\'s attribute map reads it',
             assertion11.slice(0, 200));
-    const marked = shib(rpPost, { 'saml11.doNotCacheCondition': true });
+    const marked = await shib(rpPost, { 'saml11.doNotCacheCondition': true });
     t.check(/DoNotCacheCondition/.test(Buffer.from(
               hiddenField(marked.body, 'SAMLResponse'), 'base64')
               .toString('utf8')),
             'saml11.doNotCacheCondition on: a DoNotCacheCondition');
-    const artifact = shib(rpArt);
+    const artifact = await shib(rpArt);
     t.check(artifact.statusCode === 303 &&
             /SAMLart=/.test(artifact.location) &&
-            artifact.location.indexOf(rpArt) === 0,
+            urls.isAt(artifact.location, rpArt),
             'a shire registered on artifact-01 is answered on the ARTIFACT ' +
             'profile (#189)',
             artifact.statusCode + ' ' + artifact.location.slice(0, 120));
@@ -589,7 +594,7 @@ async function run(t) {
     const ask11 = async function (body, socket) {
       log.debug("Entering ask11().");
       const res = kit.fakeRes();
-      responder(kit.fakeReq('POST', '/saml11/responder', {}, '', body,
+      await responder(kit.fakeReq('POST', '/saml11/responder', {}, '', body,
                             socket ? { socket: socket } : {}), res);
       await res.done;
       log.debug("Leaving ask11().");

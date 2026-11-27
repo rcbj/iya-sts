@@ -66,8 +66,14 @@ function childMain() {
                                   { name: 'role-issuance' });
     const ids = (built.policy && built.policy.rules || [])
       .map(function (r) { return r.id.split(':rule:')[1]; });
-    note(built.ok && ids.indexOf('protocol-not-declared') ===
-         ids.indexOf('device-required') + 1,
+    // After the LAST device rule, whichever it is: #2179 added
+    // device-required-admin after device-required. The device rules are
+    // the registered device's (#164), not device-bound-session (DBSC).
+    const lastDevice = ids.reduce(function (at, id, i) {
+      return /^device-(compromised|required)/.test(id) ? i : at;
+    }, -1);
+    note(built.ok && ids.indexOf('device-required') >= 0 &&
+         ids.indexOf('protocol-not-declared') === lastDevice + 1,
          'A1. the built-in issuance policy carries protocol-not-declared ' +
          'right after the device rules', ids.join(','));
     const without = templates.build('role-issuance',

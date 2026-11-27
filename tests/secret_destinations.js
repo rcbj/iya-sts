@@ -391,7 +391,9 @@ async function registerAndHide(t, base) {
   const post = routes.filter(function (r) {
     return r.method === 'POST';
   })[0];
-  t.check(post && post.mirrors === 'POST /admin/secret-destinations' &&
+  // The create page posts to its own path too (#1132).
+  t.check(post && post.mirrors === 'POST /admin/secret-destinations and ' +
+            'POST /admin/secret-destinations/new' &&
           post.actions.map(function (a) { return a.action; }).join(',') ===
             'add-destination,update-destination,remove-destination,' +
             'test-push',

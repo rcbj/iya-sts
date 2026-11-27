@@ -17,7 +17,7 @@ namespace IyaSts.Directory;
   container: "ou=groups",
   ownContainer: true,
   authored: true,
-  section: "docs/v1.1.0/ldap-schema.md Groups",
+  section: "docs/v1.2.0/ldap-schema.md Groups",
   note: "No SCHEMA export. A group grants nothing by being a group.",
   objectClasses: #[
     #{

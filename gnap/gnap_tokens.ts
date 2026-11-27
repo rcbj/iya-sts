@@ -60,6 +60,12 @@
 //                  one key would let any of them mint for all of them. The
 //                  per-RS key is what the RS's application entry carries
 //                  (sealed) as `gnapMacaroonKey`.
+//
+//   Both secret-derived keys are verified under EVERY generation of the
+//   secret a signing rotation still keeps, current first, and minted under
+//   the current one only (#2212, `realmDerivedAll()` below); a resource
+//   server's `gnapMacaroonKey` is rewritten at the first macaroon minted for
+//   it after a rotation.
 //   biscuit, zcap  the realm's Ed25519 key from `allSigningKeys()` — selected
 //                  by CURVE, because a realm holds an Ed448 EdDSA key beside it
 //                  and biscuit is Ed25519-only. A zcap token is signed with it
@@ -111,6 +117,10 @@ interface GnapTokensDeps {
   // the cluster claims and the status-list codec, which a process that only
   // verifies GNAP tokens (an in-process format test) never needs.
   loadStatusList(): any;
+  // The resource server module (`gnap_rs.ts`), loaded LAZILY (#2212): it
+  // requires this module, and only a macaroon minted for a resource server
+  // needs it, to bring that server's stored root key up to date.
+  loadResourceServers(): any;
 }
 
 // What a refused verification answers.
@@ -122,6 +132,11 @@ interface Refusal {
 
 const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 
+// The HKDF info strings of the two realm-derived keys. Never changed: a token
+// issued under either is verified by re-deriving with the same string.
+const JWE_INFO = 'iya-sts gnap jwt-encrypted A256GCM v1';
+const MACAROON_INFO = 'iya-sts gnap macaroon root v1|';
+
 // TWO MARKERS, and only one of them is the type (#157). The PAYLOAD's `typ`,
 // `GNAP`, is the private claim every token this service signs carries for the
 // token registry (`admin_stats.js` counts by it, as it does `Bearer`, `ID` and
@@ -131,7 +146,7 @@ const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 // access token from being accepted as an ID Token, an RFC 9068 access token or
 // a logout token, and the reverse. RFC 9767 registers no media type for a JWT
 // access token, so `gnap-at+jwt` is a PRIVATE one, built the way RFC 9068
-// built `at+jwt`, and `docs/v1.1.0/gnap.md` says it is unregistered. Until #157
+// built `at+jwt`, and `docs/v1.2.0/gnap.md` says it is unregistered. Until #157
 // the header said `JWT`, the docs said it said `GNAP`, and verification read
 // the payload.
 const JWT_TYP = 'GNAP';
@@ -216,11 +231,68 @@ class GnapTokens {
                                     length || 32);
   }
 
+  // -------------------------------------------------------------------------
+  // EVERY GENERATION OF A DERIVED KEY THAT STILL VERIFIES (#2212). The realm
+  // secret both derived keys come from is the refresh-token secret, and
+  // `signing.rotate` replaces it (`helpers.rotateRefreshTokenKeys()`). Until
+  // #2212 only the CURRENT secret was read, so every macaroon and every
+  // `dir` jwt-encrypted token issued before a rotation was refused at it
+  // (STS-GNAP-0314, STS-GNAP-0341).
+  //
+  // WHY THE RETIRED SECRETS, AND NOT A GNAP SECRET OF ITS OWN. The rotation
+  // already keeps the secret it replaced, sealed and persisted in the realm
+  // key set, as `generations.retiredRefresh`, until its grace has passed,
+  // and `signing.retire` drops it then; `retiredRefreshTokenKeysFor()` is
+  // the read refresh tokens already use. So every token a rotation must not
+  // strand is covered by trying the current secret and then those, which is
+  // what biscuit and zcap already do with the Ed25519 generations. A
+  // dedicated secret would be a new key to generate, seal, persist, place
+  // in a cell tier and rotate on a job of its own, to do what this list
+  // already does — and the tokens issued before the upgrade are under the
+  // refresh-token secret, so it would still have to be read. What GNAP owes
+  // the retention is only its LENGTH: `refreshGraceMs()` in
+  // `common/signing_rotation.ts` counts `gnap.accessTokenLifetimeS` (and any
+  // client's own `gnapAccessTokenLifetimeS`) since #2212, and no GNAP token
+  // outlives that lifetime, nor its grant. An emergency rotation keeps
+  // nothing (grace 0), so after one every macaroon and `dir` token is
+  // refused, which is what an emergency is for.
+  //
+  // New tokens use the current secret only; the derivation itself is
+  // unchanged, so a token issued before the upgrade verifies as it did.
+  // -------------------------------------------------------------------------
+  private realmDerivedAll(info: string, length: number): Buffer[] {
+    const { log } = this;
+    const { helpers, stsCrypto } = this.deps;
+    log.debug("Entering GnapTokens.realmDerivedAll().");
+    const secrets = [helpers.refreshTokenKeysFor().secret];
+    const retired = typeof helpers.retiredRefreshTokenKeysFor === 'function'
+      ? helpers.retiredRefreshTokenKeysFor() : [];
+    retired.forEach(function (one: any): void {
+      if (one && one.secret) {
+        secrets.push(one.secret);
+      }
+    });
+    const out = secrets.map(function (secret: any): Buffer {
+      return stsCrypto.hkdf('sha256', secret, Buffer.alloc(0), info,
+                            length || 32);
+    });
+    log.debug("Leaving GnapTokens.realmDerivedAll(). " + out.length + ".");
+    return out;
+  }
+
   private jweSecret(): Buffer {
     const { log } = this;
     log.debug("Entering GnapTokens.jweSecret().");
     log.debug("Leaving GnapTokens.jweSecret().");
-    return this.realmDerived('iya-sts gnap jwt-encrypted A256GCM v1', 32);
+    return this.realmDerived(JWE_INFO, 32);
+  }
+
+  // The `dir` key of every live generation, current first (#2212).
+  private jweSecrets(): Buffer[] {
+    const { log } = this;
+    log.debug("Entering GnapTokens.jweSecrets().");
+    log.debug("Leaving GnapTokens.jweSecrets().");
+    return this.realmDerivedAll(JWE_INFO, 32);
   }
 
   // The macaroon root key a resource server verifies with. `rsIdentity` is the
@@ -238,8 +310,22 @@ class GnapTokens {
     const { log } = this;
     log.debug("Entering GnapTokens.macaroonKeyFor().");
     log.debug("Leaving GnapTokens.macaroonKeyFor().");
-    return this.realmDerived('iya-sts gnap macaroon root v1|' +
-                             String(rsIdentity || ''), 32);
+    return this.realmDerived(MACAROON_INFO + String(rsIdentity || ''), 32);
+  }
+
+  /**
+   * Returns the macaroon root key of every generation of the realm secret
+   * that still verifies, current first (#2212), so a macaroon minted before
+   * a signing rotation verifies until its secret's grace has passed.
+   *
+   * @param rsIdentity - the resource server application's identifier
+   * @returns the root keys, current first
+   */
+  macaroonKeysFor(rsIdentity?: unknown): Buffer[] {
+    const { log } = this;
+    log.debug("Entering GnapTokens.macaroonKeysFor().");
+    log.debug("Leaving GnapTokens.macaroonKeysFor().");
+    return this.realmDerivedAll(MACAROON_INFO + String(rsIdentity || ''), 32);
   }
 
   /**
@@ -616,15 +702,15 @@ class GnapTokens {
         expiresAt: valid.model.exp ? Number(valid.model.exp) * 1000 : 0 });
       // `gnap.accessTokenCertificateHeader` decides the `x5c` / `x5u`, on the
       // JWS in both JWT formats — never on the JWE around jwt-encrypted, which
-      // is encrypted to a resource server's key or to a secret.
-      const signed = helpers.signJwt(this.claimsOf(valid.model, statusRef,
-                                                   context),
-                                     { grant: 'gnap',
-                                       setId: context.setId || null,
-                                       sessionId: context.sessionId || null },
-                                     { certificateHeader:
-                                         'gnap-access-token',
-                                       header: { typ: JWT_HEADER_TYP } });
+      // is encrypted to a resource server's key or to a secret. Off the
+      // event loop for a realm key in the HSM (#1955 P8 follow-up); a
+      // software key signs in place, as `signJwt()` does.
+      const signed = await helpers.signJwtOffLoop(
+        this.claimsOf(valid.model, statusRef, context),
+        { grant: 'gnap', setId: context.setId || null,
+          sessionId: context.sessionId || null },
+        { certificateHeader: 'gnap-access-token',
+          header: { typ: JWT_HEADER_TYP } });
       if (typeof signed !== 'string' || signed.split('.').length !== 3) {
         log.debug("Leaving GnapTokens.mint(). The signer produced no JWS.");
         throw new Error('the ' + format + ' access token could not be ' +
@@ -661,8 +747,18 @@ class GnapTokens {
       const minted = await macaroon.mint(model, {
         rootKey: this.macaroonKeyFor(context.rs ? context.rs.identity : ''),
         location: model.iss });
+      const out = this.mintedOrThrow(format, minted);
+      // THE RESOURCE SERVER'S ENTRY BROUGHT UP TO DATE (#2212), at the
+      // first macaroon minted for it under a new secret: from then on its
+      // entry carries the key that macaroon was minted under, and before
+      // then no macaroon under that key exists. An RS verifying locally
+      // learns the new key where it learned the first — its own entry —
+      // and keeps the one it held for the macaroons issued before.
+      if (context.rs && context.rs.identity) {
+        this.refreshResourceServerKey(String(context.rs.identity));
+      }
       log.debug("Leaving GnapTokens.mint(). macaroon.");
-      return this.mintedOrThrow(format, minted);
+      return out;
     }
     if (format === 'biscuit') {
       const keys = this.ed25519Keys();
@@ -681,6 +777,57 @@ class GnapTokens {
     log.debug("Leaving GnapTokens.mint(). Unknown format.");
     throw new Error('there is no access token format called "' + format +
                     '".');
+  }
+
+  // A `dir` jwt-encrypted token opened under the first generation of the
+  // realm secret it decrypts under (#2212), current first. A wrong key fails
+  // A256GCM's tag, so trying the next one cannot accept a forgery. Throws the
+  // current key's error when none opens it, which the caller turns into
+  // STS-GNAP-0341.
+  private openDir(value: unknown): any {
+    const { log } = this;
+    const { stsCrypto } = this.deps;
+    log.debug("Entering GnapTokens.openDir().");
+    const secrets = this.jweSecrets();
+    let first: any = null;
+    for (let i = 0; i < secrets.length; i++) {
+      try {
+        const opened = stsCrypto.decryptJweCompact(value,
+                                                   { secret: secrets[i],
+                                                     allowedAlg: ['dir'],
+                                                     allowedEnc:
+                                                       ['A256GCM'] });
+        log.debug("Leaving GnapTokens.openDir(). Generation " + i + ".");
+        return opened;
+      } catch (e) {
+        log.debug("Caught in GnapTokens.openDir(): " +
+                  ((e && e.message) || e));
+        // Not this generation's; the next one is tried, and the first
+        // error is the one reported when none opens it.
+        first = first || e;
+      }
+    }
+    log.debug("Leaving GnapTokens.openDir(). No generation opens it.");
+    throw first || new Error('no realm secret is held to open it.');
+  }
+
+  // The resource server's stored root key made the current one (#2212).
+  // Best effort: a failure is logged by `gnap_rs.ts` under STS-GNAP-0655 and
+  // never refuses the token, which verifies at this AS either way.
+  private refreshResourceServerKey(identifier: string): void {
+    const { log } = this;
+    const { errorCodes } = this.deps;
+    log.debug("Entering GnapTokens.refreshResourceServerKey().");
+    try {
+      this.deps.loadResourceServers().ensureMacaroonKeyOf(identifier);
+    } catch (e) {
+      log.debug("Caught in GnapTokens.refreshResourceServerKey(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-GNAP-0655') + 'gnap: the macaroon root ' +
+               'key of "' + identifier + '" could not be brought up to ' +
+               'date: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving GnapTokens.refreshResourceServerKey().");
   }
 
   // Which format a presented value is, read off its shape. For a resource
@@ -759,10 +906,7 @@ class GnapTokens {
                                                 'base64url')
                                           .toString('utf8'));
           const opened = header.alg === 'dir'
-            ? stsCrypto.decryptJweCompact(value,
-                                          { secret: this.jweSecret(),
-                                            allowedAlg: ['dir'],
-                                            allowedEnc: ['A256GCM'] })
+            ? this.openDir(value)
             : (context.rsPrivateKey
               ? stsCrypto.decryptJweCompact(value,
                                             { privateKey:
@@ -845,13 +989,27 @@ class GnapTokens {
       log.debug("Leaving GnapTokens.verify(). jwt ok=" + checked.ok);
       return checked;
     }
+    // Against every live generation of the realm secret (#2212), current
+    // first. Only a broken HMAC chain (STS-GNAP-0314) moves on to the next
+    // key: any other refusal was reached under the key that minted the
+    // macaroon, so it is the answer. None verifying answers the current
+    // key's refusal, which is the one every caller already reads.
     if (format === 'macaroon') {
-      const out = await macaroon.verify(value,
-                                        { rootKey: this.macaroonKeyFor(
-                                            context.rsIdentity || ''),
-                                          location: null }, context);
-      log.debug("Leaving GnapTokens.verify(). macaroon ok=" + out.ok);
-      return out;
+      const roots = this.macaroonKeysFor(context.rsIdentity || '');
+      let first: any = null;
+      for (let i = 0; i < roots.length; i++) {
+        const out = await macaroon.verify(value,
+                                          { rootKey: roots[i],
+                                            location: null }, context);
+        if (out.ok || out.errorCode !== 'STS-GNAP-0314') {
+          log.debug("Leaving GnapTokens.verify(). macaroon ok=" + out.ok +
+                    ", generation " + i + ".");
+          return out;
+        }
+        first = first || out;
+      }
+      log.debug("Leaving GnapTokens.verify(). macaroon refused.");
+      return first;
     }
     // Against EVERY live generation of the Ed25519 key (#49 P5): the first
     // that verifies answers, and the current key's answer is the one given
@@ -1023,6 +1181,11 @@ class GnapTokens {
         helpers.log.debug("Entering loadStatusList().");
         helpers.log.debug("Leaving loadStatusList().");
         return require('../oauth-oidc/access_token_status');
+      },
+      loadResourceServers: function loadResourceServers(): any {
+        helpers.log.debug("Entering loadResourceServers().");
+        helpers.log.debug("Leaving loadResourceServers().");
+        return require('./gnap_rs');
       }
     };
   }
@@ -1074,6 +1237,7 @@ export = {
   formatOf: slot.forward('formatOf'),
   checkModel: slot.forward('checkModel'),
   macaroonKeyFor: slot.forward('macaroonKeyFor'),
+  macaroonKeysFor: slot.forward('macaroonKeysFor'),
   zcapKeys: slot.forward('zcapKeys'),
   ed25519Keys: slot.forward('ed25519Keys'),
   publicMaterial: slot.forward('publicMaterial'),

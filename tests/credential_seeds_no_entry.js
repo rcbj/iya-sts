@@ -61,15 +61,22 @@ function childMain() {
   const OUT = process.env.WSI_OUT;
   const M = JSON.parse(process.env.CS_MATERIAL);
   const https = require('https');
+  const http = require('http');
   const nodeCrypto = require('crypto');
   const walletKit = require(ROOT + '/tests/wallet_kit');
 
   // GET /tls/sign-in over a real handshake, presenting `cert` and `key`.
+  // The listener is VERIFIED against the anchors this process gives a
+  // loopback caller (tls_server.js's trustAnchorPems()). It is the test's
+  // own client, not a dialer of the service's, so paranoid mode's outbound
+  // gate, in force while a case runs in product, is not its business.
   function signInWith(port, cert, key) {
+    const anchors = require(ROOT + '/tls/tls_server').trustAnchorPems();
     return new Promise(function (resolve) {
       const req = https.request({ host: '127.0.0.1', port: port,
         path: '/tls/sign-in', method: 'GET', cert: cert, key: key,
-        rejectUnauthorized: false, agent: false }, function (res) {
+        ca: anchors, stsOutboundGate: false, agent: false },
+      function (res) {
         let text = '';
         res.on('data', function (c) { text += c; });
         res.on('end', function () {
@@ -120,13 +127,35 @@ function childMain() {
     // truststore — which holds the foreign CA from here on.
     const serverCert = tls.serverCertificate();
     const listener = https.createServer(Object.assign({
-      cert: serverCert.certPem, key: serverCert.privateKeyPem,
-      ca: tls.clientTruststoreOptions().ca,
-      requestCert: true, rejectUnauthorized: false
-    }, tls.protocolOptions()), m.app);
+      cert: tls.presentedBundlePem(serverCert),
+      key: serverCert.privateKeyPem,
+      ca: tls.clientTruststoreOptions().ca
+    }, tls.clientAuthOptions('optional'), tls.protocolOptions()), m.app);
     tls.trustClientCertificatesOn(listener, 'the #414 test listener');
     await new Promise(function (r) { listener.listen(0, '127.0.0.1', r); });
     const tlsPort = listener.address().port;
+    // THE FOREIGN CA'S CRL, at the address its leaves name (run
+    // 45236493306). Product requires a VERIFIED revocation status at a
+    // certificate sign-in (#2012, `certSignIn.requireRevocation`'s `auto`),
+    // and that refusal comes first (`certificateRefusal()`): a leaf naming
+    // no distribution point was refused for that and never reached the
+    // #1061 question A1 asks. So the CA publishes an empty list here, the
+    // status is `good`, and what refuses the sign-in is that no entry
+    // stores the certificate.
+    const crlBytes = fs.readFileSync(M.crl);
+    const crlServer = http.createServer(function (req, res) {
+      if (req.url === '/ca.crl') {
+        res.writeHead(200, { 'Content-Type': 'application/pkix-crl' });
+        res.end(crlBytes);
+        return;
+      }
+      // error-code: none — a test fixture, not the service
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(function (r) {
+      crlServer.listen(M.crlPort, '127.0.0.1', r);
+    });
     const anchored = tls.addAnchors(fs.readFileSync(M.caCert, 'utf8'));
     note(anchored.added === 1, 'setup: the foreign CA is a client trust ' +
          'anchor', JSON.stringify(anchored));
@@ -354,6 +383,7 @@ function childMain() {
       }
     }
     listener.close();
+    crlServer.close();
   }
 }
 
@@ -366,7 +396,24 @@ function openssl(dir, args) {
   log.debug("Leaving openssl().");
 }
 
-function makeMaterial() {
+// A free loopback port for the CRL the child serves: the leaves name it, so
+// it is chosen before they are signed.
+function freePort() {
+  log.debug("Entering freePort().");
+  return new Promise(function (resolve, reject) {
+    const probe = require('net').createServer();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', function () {
+      const port = probe.address().port;
+      probe.close(function () {
+        log.debug("Leaving freePort(). " + port);
+        resolve(port);
+      });
+    });
+  });
+}
+
+function makeMaterial(crlPort) {
   log.debug("Entering makeMaterial().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-414-'));
   const ec = ['-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256',
@@ -377,9 +424,23 @@ function makeMaterial() {
     '-addext', 'keyUsage=critical,keyCertSign,cRLSign']));
   fs.writeFileSync(path.join(dir, 'leaf.cnf'),
     'basicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature\n' +
-    'extendedKeyUsage=clientAuth\n');
+    'extendedKeyUsage=clientAuth\n' +
+    'crlDistributionPoints=URI:http://127.0.0.1:' + crlPort + '/ca.crl\n');
+  // AN EMPTY CRL from the CA (`openssl ca -gencrl`, as
+  // `tests/revocation_status.js` makes one), served by the child as DER.
+  fs.writeFileSync(path.join(dir, 'index.txt'), '');
+  fs.writeFileSync(path.join(dir, 'crlnumber'), '01\n');
+  fs.writeFileSync(path.join(dir, 'ca.cnf'),
+    '[ca]\ndefault_ca=d\n[d]\ndatabase=' + path.join(dir, 'index.txt') +
+    '\ncrlnumber=' + path.join(dir, 'crlnumber') +
+    '\ndefault_md=sha256\ndefault_crl_days=1\nunique_subject=no\n');
+  openssl(dir, ['ca', '-config', 'ca.cnf', '-gencrl', '-keyfile', 'ca.key',
+    '-cert', 'ca.pem', '-out', 'crl.pem']);
+  openssl(dir, ['crl', '-in', 'crl.pem', '-outform', 'DER', '-out',
+    'ca.crl']);
   const material = { dir: dir, stamp: STAMP,
                      caCert: path.join(dir, 'ca.pem'),
+                     crl: path.join(dir, 'ca.crl'), crlPort: crlPort,
                      names: {}, leaf: {}, key: {} };
   ['development', 'product'].forEach(function (mode) {
     const name = 'cs-cert-' + mode.slice(0, 4) + '-' + STAMP;
@@ -400,7 +461,7 @@ async function run(t) {
   log.debug("Entering run().");
   let material = null;
   try {
-    material = makeMaterial();
+    material = makeMaterial(await freePort());
   } catch (e) {
     log.debug("Caught in run(): " + ((e && e.message) || e));
     t.bad('openssl made the foreign CA and its client certificates',

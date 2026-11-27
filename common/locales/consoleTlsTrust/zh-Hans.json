@@ -36,5 +36,6 @@
   "linkJson": "此页面的 JSON",
   "linkApi": "通过管理 API 获取的相同内容",
   "linkSettings": "TLS 监听器的设置",
-  "linkPki": "本服务自己的证书颁发机构"
+  "linkPki": "本服务自己的证书颁发机构",
+  "shadowedBy": "与另一个信任锚共用同一主题（{fingerprint}）。两者都安装时，由其中任一签发的证书可能无法验证。出示本证书本身仍然可以验证。"
 }

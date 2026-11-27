@@ -69,7 +69,7 @@ using IyaSts.Api.Common;
   `info`:#{
     `title`:"IYA STS reports",
     `version`:"1",
-    `description`:"The reports API. Every operation takes an access token for this realm's /report-api carrying report:use or report:admin — the public client sts-report's, DPoP-bound and sent as Authorization: DPoP, or an application's own (client_credentials) where the application is a member of REPORT_USE or REPORT_ADMIN and declares the scope. The scopes are the permissions of those two roles; the access-control policy decides every definition and job: an owner their own, a report administrator every one, a shared group's member reading and running one shared with them, an application only what it defined. A job id is not an authorization: retrieving a result takes the same token. Paths are after the realm prefix; the default realm has none. The catalog is the field reference. A query names one source. An offset, a second source and a SQL statement are invalid_query. Errors are English. The body never carries an STS-REPORT code."
+    `description`:"The reports API. Every operation takes an access token for this realm's /report-api carrying report:use or report:admin — or, for a read (GET), report:read, which the reports application signs in with and which reads with the report role its subject holds (#2168) — the public client sts-report's, DPoP-bound and sent as Authorization: DPoP, or an application's own (client_credentials) where the application is a member of REPORT_USE or REPORT_ADMIN and declares the scope. The scopes are the permissions of those two roles; the access-control policy decides every definition and job: an owner their own, a report administrator every one, a shared group's member reading and running one shared with them, an application only what it defined. A job id is not an authorization: retrieving a result takes the same token. Paths are after the realm prefix; the default realm has none. The catalog is the field reference. A query names one source. An offset, a second source and a SQL statement are invalid_query. Errors are English. The body never carries an STS-REPORT code."
   },
   `components`:#{
     `securitySchemes`:#{
@@ -86,7 +86,7 @@ using IyaSts.Api.Common;
 namespace IyaSts.Api.Report {
   
 
-@component model `Error` {`error`?: string; `error_description`?: string}
+@component model `Error` {`error`?: string; `error_description`?: string; `messages`?: RefusalMessages}
 
 @component model `OpenApiDocument` {
     `openapi`?: string;
@@ -221,6 +221,12 @@ namespace IyaSts.Api.Report {
     @js(#{
       `description`:"True for a source read from the directory (users, credentialHolders): a filter on it has to name a field whose `indexed` list holds the operator — a leaf of an and, or every arm of an or — or it is refused as invalid_query; the other fields narrow an indexed read."
     }) `anchored`?: boolean;
+    @js(#{
+      `description`:"True for a source only a report administrator may query (#2126): auditEvents, authActivity and credentialHolders. A caller without REPORT_ADMIN is refused a query, a job, a definition saved or run, and a result downloaded over it, as forbidden (HTTP 403)."
+    }) `adminOnly`?: boolean;
+    @js(#{
+      `description`:"Whether this caller may query the source: false where a query of it would be refused for its source (#2126), so the page disables it. Absent where the answer is not about a caller."
+    }) `usable`?: boolean;
     `bounded`?: boolean;
     `retention`?: string;
     `paging`?: "limit";
@@ -512,7 +518,7 @@ namespace IyaSts.Api.Report {
     `operationId`:"getIndex",
     `summary`:"The report API index",
     `description`:"Names the catalog and realms addresses, and carries the service version the application draws in its footer.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The index.",
@@ -544,7 +550,7 @@ op `getIndex`(`responses/200/content/application~1json/schema`: `Index`,
     `operationId`:"getOpenApi",
     `summary`:"This document",
     `description`:"The description of the released routes.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"This OpenAPI document.",
@@ -576,7 +582,7 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: `OpenApiDocume
     `operationId`:"getRealms",
     `summary`:"The trust realms",
     `description`:"The realm this request is in, and every realm with its id, name and path prefix where realms are active (null where they are not). The application draws its realm field and switch from it.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The realms.",
@@ -608,7 +614,7 @@ op `getRealms`(`responses/200/content/application~1json/schema`: `Realms`,
     `operationId`:"getGroups",
     `summary`:"Search the realm's groups",
     `description`:"The groups of this realm whose name or DN contains `q` (case-insensitive; empty matches every group), five a page in name order, each with its own `mail` attribute or an empty string. The definition page builds its share list from it; a definition's groups are who is emailed its result, at that address (#989).",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"One page of groups.",
@@ -658,7 +664,7 @@ op `getGroups`(`parameters/0/schema`: string,
     `operationId`:"getSignals",
     `summary`:"This application's Shared Signals inbox",
     `description`:"The CAEP and RISC events this application's own stream delivered in this realm, newest first, twenty a page by default (#1042). report:admin sees every one (`scope` realm); anybody else sees only the events about themselves (`scope` own), and an application sees none. Each row says what this application did with it: the sessions it ended and the tokens of its own client it revoked for the person named, or why it did nothing. `receiving` is false, with `why`, when nothing can arrive. `per` is at most 100.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"One page of the inbox.",
@@ -708,7 +714,7 @@ op `getSignals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
     `operationId`:"getMe",
     `summary`:"What the user menu draws",
     `description`:"The path of the signed-in person's own profile photo on this realm (#719), empty where they have none. It answers only about the token's person.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"`photo`.",
@@ -740,7 +746,7 @@ op `getMe`(`responses/200/content/application~1json/schema`: `Me`,
     `operationId`:"getAnnouncements",
     `summary`:"Announcements for everybody signed in",
     `description`:"What an administrator broadcast to this application (#1086) after `since` — the `now` this operation answered the tab's first ask with — within ssf.announcementKeepS, oldest first. With no `since` it answers only `now`. `everyMs` is how often an open tab asks again.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"`now`, `everyMs` and `announcements`.",
@@ -782,7 +788,7 @@ op `getAnnouncements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
     `operationId`:"getSchedules",
     `summary`:"The scheduled definitions and their runs",
     `description`:"Every definition that carries a schedule, with when it next runs, the occurrence it last took, the notes a skipped run left, and its most recent scheduled jobs. A report:use token sees the definitions it owns or is shared; report:admin sees every one in the realm and may name one owner with `owner` (a urn:uuid subject or a username). A report:use token that names another owner is refused with forbidden (403). Paged; `per` is at most 100.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The schedules.",
@@ -839,7 +845,7 @@ op `getSchedules`(`parameters/0/schema`: string,
     `operationId`:"getCatalog",
     `summary`:"The report catalog",
     `description`:"Every source. Each field has an id, a meaning, a type, whether it can be filtered, sorted or grouped, and its operators. paging is limit. relationships is empty. retention is the English sentence for how long the rows last.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The sources.",
@@ -871,7 +877,7 @@ op `getCatalog`(`responses/200/content/application~1json/schema`: `Catalog`,
     `operationId`:"getCatalogSource",
     `summary`:"One report source",
     `description`:"The same object the catalog lists for one id.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The source.",
@@ -946,7 +952,7 @@ op `getCatalogSource`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `429`:#{
-        `description`:"too_many_jobs.",
+        `description`:"too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `default`:#{
@@ -974,7 +980,7 @@ op `runQuery`(`requestBody/content/application~1json/schema`: `QueryDocument`,
     `operationId`:"getDefinitions",
     `summary`:"List definitions",
     `description`:"The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The definitions.",
@@ -1071,7 +1077,7 @@ op `createDefinition`(`requestBody/content/application~1json/schema`: `Definitio
     `operationId`:"getDefinition",
     `summary`:"Read a definition",
     `description`:"An id the caller may not see is not_found, the same answer as an id that does not exist.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The definition.",
@@ -1300,7 +1306,7 @@ op `shareDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `429`:#{
-        `description`:"too_many_jobs.",
+        `description`:"too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `default`:#{
@@ -1337,7 +1343,7 @@ op `runDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
     `operationId`:"getJobs",
     `summary`:"List jobs",
     `description`:"Newest first, in numbered pages: `page` and `per` (50 unless given, at most 200), with page, pages, per and total beside the rows. A caller may page by cursor instead: `after` is the previous page's next id and `limit` its size. A job id in the list is not permission to read a job the token cannot see.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The page. next is null on the last page.",
@@ -1422,7 +1428,7 @@ op `getJobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `429`:#{
-        `description`:"too_many_jobs.",
+        `description`:"too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `default`:#{
@@ -1447,7 +1453,7 @@ op `queueJob`(`requestBody/content/application~1json/schema`: `QueryDocument`,
     `operationId`:"getJob",
     `summary`:"Read a job",
     `description`:"The owner and report:admin also receive the query document. A hidden id is job_not_found.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The job.",
@@ -1543,7 +1549,7 @@ op `cancelJob`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
     `operationId`:"getJobResult",
     `summary`:"Download a result",
     `description`:"The artifact bytes. The media type is the format. A job id is not enough: the token must be allowed to see the job. Past artifact retention the result is gone.",
-    `security`:#[#{`dpop`:#["report:use","report:admin"]}],
+    `security`:#[#{`dpop`:#["report:read","report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
         `description`:"The artifact. JSON, CSV or PDF.",
@@ -1573,6 +1579,10 @@ op `cancelJob`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
         `description`:"result_expired.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
+      `429`:#{
+        `description`:"too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
       `default`:#{
         `description`:"Any other refusal or failure: unavailable, and a rate limit on a token that keeps failing, among them.",
         `content`:#{`application/json`:#{`schema`:null}}
@@ -1598,6 +1608,7 @@ op `getJobResult`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/404/content/application~1json/schema`: `Error`,
   `responses/409/content/application~1json/schema`: `Error`,
   `responses/410/content/application~1json/schema`: `Error`,
+  `responses/429/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
   
 }

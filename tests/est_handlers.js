@@ -113,6 +113,13 @@ async function childMain() {
       res.headersSent = true;
       return res;
     };
+    // The EST answers end() with their own Content-Length and no ETag
+    // (#2236, `Est.sendBytes()`).
+    res.end = function (body) {
+      res.body = body;
+      res.headersSent = true;
+      return res;
+    };
     // Set-Cookie, as express appends it (#257's nonce cookie).
     res.append = function (k, v) {
       const name = String(k).toLowerCase();
@@ -686,8 +693,9 @@ async function childMain() {
   await inRealm(A, function () {
     view = estConsole.estView(viewReq);
   });
-  note(view.profiles.length === 10 && view.refusedProfiles.length === 5,
-       'the view lists the nine profiles, the device profile (#164) and ' +
+  note(view.profiles.length === 14 && view.refusedProfiles.length === 5,
+       'the view lists the thirteen profiles (the nine and #1955\'s four ' +
+       'PIV slot profiles), the device profile (#164) and ' +
        'the five refused',
        view.profiles.length + '/' + view.refusedProfiles.length);
   note(JSON.stringify(view.endpoints.map(function (e) {

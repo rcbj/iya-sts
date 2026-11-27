@@ -100,7 +100,9 @@ const BARRIERS = {
   peopleByMail: '`byMail` asked of the store in a windowed process; a walk ' +
     'of the in-memory Map otherwise',
   peopleByFederationLink: 'an indexed `windowedFind()` in a windowed ' +
-    'process; a walk of the in-memory Map otherwise'
+    'process; a walk of the in-memory Map otherwise',
+  certificateBindingHolders: 'the store\'s `certificatebinding` index in a ' +
+    'windowed process (#2012); a walk of the in-memory Map otherwise'
 };
 const CONTAINER_WALK = /\bentriesUnder\s*\(\s*(usersDn|devicesDn)\s*\(\s*\)/;
 

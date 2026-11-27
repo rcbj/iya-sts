@@ -85,7 +85,8 @@ function childMain() {
       req.end();
     });
   }
-  // A PNG's signature and IHDR sides, all the check reads.
+  // A PNG's signature and IHDR sides, and (since #2140, which walks the
+  // file to remove its metadata) an IDAT and an IEND.
   function png(width, height) {
     const b = Buffer.alloc(64);
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
@@ -93,6 +94,10 @@ function childMain() {
     b.write('IHDR', 12, 'latin1');
     b.writeUInt32BE(width, 16);
     b.writeUInt32BE(height, 20);
+    b.writeUInt32BE(7, 33);
+    b.write('IDAT', 37, 'latin1');
+    b.writeUInt32BE(0, 52);
+    b.write('IEND', 56, 'latin1');
     return b;
   }
   function attr(html, name) {

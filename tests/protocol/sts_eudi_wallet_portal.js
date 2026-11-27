@@ -76,6 +76,9 @@
 
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const childProcess = require("child_process");
 const fs = require("fs");
@@ -88,6 +91,7 @@ const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -669,7 +673,8 @@ async function walletSignIn(driver, wallet, id) {
   const web = await hrefOf(driver, "#wallet-web");
   check("the wait page hands the request to this realm's web wallet (" +
         id + ")", function () {
-    assert.ok(web.indexOf(wallet.url + WALLET_REQUEST_PATH + "?") === 0,
+    assert.ok(urls.isAt(web, wallet.url + WALLET_REQUEST_PATH) &&
+              new URL(web).search !== "",
               web);
   });
   await driver.get(web);
@@ -703,13 +708,22 @@ async function prepare(wallet) {
              "set " + one[0]);
   }
   // A PASSWORD THIS JOB CHOOSES: one the service generates must be changed at
-  // first use in product (#1446), and this job signs in with it.
+  // first use in product (#1446), and this job signs in with it. A typed
+  // one is temporary there too (#2160), so the holder is made with a
+  // temporary one and chooses this one (`own_password.js`).
   const password = "Eudi-" +
     require("crypto").randomBytes(18).toString("base64url");
   await ok(api + "/users/create", { username: HOLDER,
-    invent: false, credential: "password", password: password,
+    invent: false, credential: "password",
+    password: ownPassword.temporaryFor(password),
     attributes: { cn: "eudi " + HOLDER, givenName: "Eudi", sn: "Holder",
                   mail: HOLDER + "@eudi668.test" } }, "created " + HOLDER);
+  await ownPassword.ownPassword(base, HOLDER, password,
+    function (who, value) {
+      return send(api + "/users/set-password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: who, password: value }) });
+    });
   const batch = Number(await facts.setting(api, "oid4vci.batchSize")) || 1;
   log.debug("Leaving prepare(). batch=" + batch);
   return { password: password, batch: batch };
@@ -749,7 +763,8 @@ async function addCredential(driver, wallet, state) {
   const web = await hrefOf(driver, "#open_in_web_wallet");
   check("the offer is handed to this realm's web wallet, with a " +
         "Transaction Code", function () {
-    assert.ok(web.indexOf(wallet.url + WALLET_OFFER_PATH + "?") === 0, web);
+    assert.ok(urls.isAt(web, wallet.url + WALLET_OFFER_PATH) &&
+              new URL(web).search !== "", web);
     assert.ok(/^\d{4,12}$/.test(txCode), txCode);
   });
   await driver.get(web);
@@ -831,7 +846,7 @@ async function addCredential(driver, wallet, state) {
         function () {
     copies.forEach(function (c) {
       assert.ok(Number.isInteger(c.idx) && c.idx >= 0, JSON.stringify(c));
-      assert.ok(c.uri.indexOf(base + "/") === 0, c.uri);
+      assert.ok(urls.isUnder(c.uri, base + "/"), c.uri);
       assert.strictEqual(c.uri, copies[0].uri);
     });
     const distinct = new Set(copies.map(function (c) {

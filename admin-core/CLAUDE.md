@@ -11,6 +11,8 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 | `certificate_views.ts` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
 | `protocol_endpoints.ts` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
 | `policy_transfer.ts` | **a realm's policies, out and back in, signed** (#1713) | `exportPolicies()`, `inspect()`, `importPolicies()`, answered by `admin_actions.ts`'s `policyTransferAction()` — see the section at the foot |
+| `dual_control.ts` | **two-person approval of high-risk acts** (#2166) | `HELD`, the one table of held `/admin-api` operations, the per-realm store of held acts, the decisions, the expiry job — see the section at the foot |
+| `create_forms.ts` | **which fields each directory create takes, and which it refuses without** (#1132) | `CreateForms.fieldsOf()`, answered as `createFields` by every `GET /admin-api/<object>/new` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
@@ -318,6 +320,21 @@ what it needs:**
   per person; `ldap/CLAUDE.md` (*the window*) has the counts.
   `tests/users_page_before_decoration.js` section 8 holds that both doors
   answer what the synchronous views answer.
+* **The register's subjects, asked once a while (#790, 2026-11-20).** The
+  population is built inside `stats.withSubjectsResolvedAsync()`, which
+  names every held token's and artifact's `urn:uuid:` subject — on demand
+  up to the 20,000 tokens a process holds, and every artifact. The kept
+  population's entry carries a memo of those names (`entry.subjects`), and
+  a rebuild asks the directory only for the subjects the last build did not
+  meet. The memo holds exactly the last walk's subjects. It is dropped whole
+  two minutes after the walk that asked them all (`SUBJECT_NAMES_KEPT_MS`,
+  the staleness an unfiltered page already accepts), and whenever this
+  process renames or deletes a person (`renameIdentity()`,
+  `forgetIdentity()` move a generation). **The cost is a rename or delete
+  made by ANOTHER process, which shows up to two minutes late.** The read
+  could not be bounded to the fifty shown rows instead (rcbj's decision on
+  #790): the list is sorted by name over every source, and a subject has no
+  name until it is resolved. `tests/users_population_async.js` P9.
 * **Page, then decorate.** `pagedRows()` takes `options.decorate(row)` and
   applies it to the shown slice only. `decoratePerson()` builds each shown
   row's full factors from `credentials.factorHolderRow()` — which is
@@ -679,3 +696,81 @@ foreign realms, the pin across a third and a fourth realm, refusals,
 revocation, every algorithm, the action layer, the console's question and
 the view);
 `tests/protocol/sts_policy_transfer.js` over HTTP.
+
+## `create_forms.ts`: WHAT EACH DIRECTORY CREATE REQUIRES (#1132, 2026-11-20)
+
+**A field is required exactly when its create refuses without it today, and
+every other field is optional** (rcbj on #1132). So the table DESCRIBES the
+creates' own refusals and is not a second set of rules: nothing reads it to
+refuse anything. That is why it can be one table beside eight doors without
+becoming the thing they disagree with — and why `tests/create_forms.js`
+calls each door without each required field (refused) and with the required
+fields alone (accepted). A field added to a create, or a refusal added to
+one, owes a row here, and that test fails otherwise.
+
+* **A name is the name the form posts and the create takes**, so a caller can
+  build the body from `createFields`.
+* **`requiredWhen`** is a field required for some choices only (a secret
+  destination's region is AWS's). It remains `required: false`; the console
+  outlines it, says required, names it in the note and makes it required in
+  the browser only while that choice is selected.
+* **The policies are not in the table.** A named policy is a save under a new
+  name, and its fields are the kind's own (each module's `FIELDS`, its
+  `optional` rows the ones a save keeps in force), so `newPolicyJson()` in
+  `admin_views.ts` derives them; a second copy here would be the drift.
+* **A name given empty is refused; a name left out is the default**
+  (`policiesAction`, STS-ADMIN-0549, "A name is required."). A save whose
+  `profile` is null or blank after trim is refused, and so is the console's
+  new-policy create (`newProfile`) without one: either used to overwrite
+  `cn=default`. A save that OMITS `profile` edits the default profile, as
+  it did in 1.0.0 — rcbj's backwards-compatibility directive forbids
+  refusing an input an earlier release accepted. `save-named-authn-policy`
+  is the kind's own act: its `name` is always required and is never
+  `default`, and its refusal is `authn_policy.ts`'s STS-AUTHN-0532, as it
+  always was. A reset that omits the name still resets the default.
+* **A library (rule 3)**: it requires `helpers` alone, so any module may
+  require it without moving a route or closing a cycle.
+
+## `dual_control.ts`: two-person approval (#2166, ASVS 5.0.0 2.3.5)
+
+rcbj's decision of 2026-11-24: built, OFF by default behind
+`admin.dualControl` (a realm's setting). The design comment is on #2166; the
+file's header argues each point. What a maintainer needs quickly:
+
+* **`HELD` is the one place an act is made high-risk**: a row per
+  `/admin-api` operationId, with a `when(body)` predicate where only some
+  bodies are (an administrator role, a CA certificate, the setting turned
+  off) and an `alsoIn(body)` where another realm's own setting also holds it
+  (a realm removed, a realm's setting written from outside). Adding an action
+  is one row; `tests/dual_control.js` I holds every row to a management API
+  POST that mirrors a console page.
+* **The choke point is `mgmt-api/admin_api.ts`'s POST wrapper**
+  (`holdForSecondAdministrator()`), after the gate and the request schema and
+  before the handler. The static console sends every form there, so parity
+  holds by construction. A held act is answered 202 with `approval.id` and a
+  `Location`; each held operation's model has that 202 (`DualControlHeld`).
+* **The approval REPLAYS the stored operation through its own handler**
+  (`replayHeld()`): the body re-checked against the schema, the caller the
+  requester (whose authority is re-checked with `effectiveRoles()` first),
+  the `authTime` the approver's — every held act is one #2161 puts under the
+  recent-sign-in rule, so the approval asks it (`AdminApi.signInIsStale()`, #2161's one rule; the POST step asks it of the decision operations as well, by their `Admin roles` tag) and the
+  replay carries what it verified. A replay carries `__dualControlReplay` and
+  is never held again.
+* **The single-administrator rule: the act PROCEEDS** (`STS-ADMIN-0976`, or
+  `0963` where the open development API names nobody) when fewer than two
+  people could decide it. Refusing the setting instead would test the roster
+  once and could later hold every act — the off switch included — for ever.
+  The lone-administrator door it leaves (revoking the others) is a row: a
+  revoke leaving fewer than two holders is held. A Security Administrator
+  counts as an approver only while also holding Admin Write, because the
+  decision operation is a write at the gate. `/admin/mode` draws `state()`.
+* **The patterns are #1180's, not its module**: a `realms.map()` store
+  declared here (`dualControl.requests`, GLOBAL tier, minted rows, so no
+  table), a pending index row, the deadline at every read, the realm-scope
+  cluster job `admin.dual-control` as the only periodic work, an
+  `InstanceSlot` built by the root at 18i-ii. Generalising
+  `authzen_access_request.ts` was rejected: its task, binding and callback
+  semantics are the AuthZEN profile's.
+* **Not held, and recorded only**: a person removed from an administrator
+  group over LDAP or SCIM, or deleted. Those doors name no administrator to
+  hold the act for.

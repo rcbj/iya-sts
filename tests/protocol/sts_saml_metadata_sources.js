@@ -51,6 +51,9 @@
 // OWNED HERE (local: true). Its realms are removed only on a private probe.
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const path = require("path");
 const K = require("./oauth_wire_kit.js").kit("sts_saml_metadata_sources");
@@ -189,7 +192,7 @@ async function refresh() {
   K.check("R1. the act fetches the first document and consumes it",
           function () {
             assert.strictEqual(first.status, 200, K.shown(first));
-            assert.ok(acsOf(f).indexOf(one) >= 0, acsOf(f));
+            assert.ok(urls.namesAddress(acsOf(f), one), acsOf(f));
           });
   let v = await view(D, sp);
   K.check("R2. with cacheDuration PT0S it is STALE at once, and refreshable " +
@@ -206,13 +209,13 @@ async function refresh() {
           });
   serve(at, 200, entity(sp, { acs: two, cache: "PT0S" }));
   await runRefresher(D);
-  for (let i = 0; i < 60 && acsOf(f).indexOf(two) < 0; i += 1) {
+  for (let i = 0; i < 60 && !urls.namesAddress(acsOf(f), two); i += 1) {
     await K.sleep(500);
     f = await fieldsOf(D, sp);
   }
   K.check("R4. one run of saml2.sp-metadata-refresh REFRESHED it from the " +
           "URL", function () {
-    assert.ok(acsOf(f).indexOf(two) >= 0, acsOf(f));
+    assert.ok(urls.namesAddress(acsOf(f), two), acsOf(f));
     assert.ok(hitsOf(at) > hits);
   });
   serve(at, 500, "");
@@ -227,7 +230,7 @@ async function refresh() {
   K.check("R5. a run whose fetch FAILS changes NOTHING on the entry, and " +
           "the view records the failure", function () {
     assert.ok(hitsOf(at) > failedHits, "the run never dialled");
-    assert.ok(acsOf(f).indexOf(two) >= 0, acsOf(f));
+    assert.ok(urls.namesAddress(acsOf(f), two), acsOf(f));
     assert.ok(/fail|500/i.test(v), v.slice(0, 800));
   });
   const still = await K.send(ssoUrl(D, sp, two));
@@ -296,7 +299,7 @@ async function anchors(anchor, stranger) {
   K.check("T5. an EntitiesDescriptor SIGNED AS A WHOLE by the anchor is " +
           "consumed for its entity", function () {
     assert.strictEqual(aggOk.status, 200, K.shown(aggOk));
-    assert.ok(acsOf(f).indexOf(aggAcs) >= 0, acsOf(f));
+    assert.ok(urls.namesAddress(acsOf(f), aggAcs), acsOf(f));
   });
   const inner = await app(T, "sms-inner-" + K.STAMP);
   const innerAcs = "https://inner-" + K.STAMP + ".md.example/acs";
@@ -306,7 +309,7 @@ async function anchors(anchor, stranger) {
   K.check("T6. an unsigned aggregate whose ENTITY is signed by the anchor " +
           "is consumed", function () {
     assert.strictEqual(innerOk.status, 200, K.shown(innerOk));
-    assert.ok(acsOf(f).indexOf(innerAcs) >= 0, acsOf(f));
+    assert.ok(urls.namesAddress(acsOf(f), innerAcs), acsOf(f));
   });
   log.debug("Leaving anchors().");
 }
@@ -327,7 +330,7 @@ async function mdq() {
           "CREATES the entry and consumes the answer", function () {
     assert.strictEqual(imported.status, 200, K.shown(imported));
     assert.strictEqual(hitsOf(at), 1, JSON.stringify(L.hits.slice(-4)));
-    assert.ok(acsOf(f).indexOf(acs) >= 0, acsOf(f));
+    assert.ok(urls.namesAddress(acsOf(f), acs), acsOf(f));
   });
   const ghost = "https://ghost-" + K.STAMP + ".md.example/saml";
   const ghostAt = "/mdq/entities/" + encodeURIComponent(ghost);
@@ -381,7 +384,7 @@ async function product() {
   K.check("F3. and the entityID is listed as refused on GET " +
           "/admin-api/saml2, with no code in the answer", function () {
     const text = JSON.stringify(listed.json || {});
-    assert.ok(text.indexOf(stranger) >= 0, listed.text.slice(0, 600));
+    assert.ok(urls.namesAddress(text, stranger), listed.text.slice(0, 600));
     const row = text.slice(text.indexOf(stranger) - 200,
                            text.indexOf(stranger) + 300);
     assert.ok(!/STS-SAML-0080/.test(row), row);

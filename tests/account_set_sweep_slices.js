@@ -23,6 +23,17 @@
 //   B1–B3 (#784). a run of the job does at most its budget, the runs resume
 //       where the last stopped, every set of a pass is visited once, and a
 //       finished pass is followed by a new one.
+//   A1–A4 (#780, reopened 2026-11-13: "a run holds no worker"). Given a
+//       read-ahead, a run reads each batch's sessions asynchronously and
+//       asks the synchronous check NOTHING; the event loop is never held
+//       for long, and the pass ends what the parity rule ends (A1); a
+//       session added to a set while its batch's read is out is kept (A2);
+//       a read-ahead that fails decides nothing and the next run starts at
+//       that batch again (A3); a run due while one is still reading is
+//       skipped (A4).
+//   W1–W3 (#780). `SessionWindow.readAsync()` answers a stored session
+//       without admitting it, an absent row as absent, and a read that
+//       failed as a failure — never as absence.
 //
 // In a child process: it fills the module-wide account-set store.
 // ===========================================================================
@@ -186,6 +197,189 @@ function child() {
     note(next.at > 0 && next.at < next.of && next.sets > 0,
          'B3. after a pass ends, the next run begins a new one',
          JSON.stringify(next));
+
+    // --- A (#780): the reads off the event loop ----------------------------
+    // Runs the pass in progress to its end, with the synchronous check.
+    const drain = async function () {
+      for (let i = 0; i < 200; i++) {
+        const run = await inRealm(function () {
+          return AccountSets.sweepBudgeted(live, 1000);
+        });
+        if (run.at >= run.of) {
+          return;
+        }
+      }
+    };
+    // The parity rule, answered after a 5 ms wait: a store's read pool.
+    const parity = function (sid) {
+      return Number(sid.split('-').pop()) % 2 === 1;
+    };
+    const slowRead = function (sids) {
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          const answers = new Map();
+          sids.forEach(function (sid) {
+            answers.set(sid, parity(sid));
+          });
+          resolve(answers);
+        }, 5);
+      });
+    };
+    let syncAsked = 0;
+    const never = function () {
+      syncAsked++;
+      return true;
+    };
+    await drain();
+    inRealm(function () {
+      return fill(100, 'se');
+    });
+    let lastTick = Date.now();
+    let worstGap = 0;
+    const ticker = setInterval(function () {
+      const at = Date.now();
+      worstGap = Math.max(worstGap, at - lastTick);
+      lastTick = at;
+    }, 2);
+    // A2's session: added to the first set of the pass while the first
+    // batch's read is out. Its number is even, so a check would end it.
+    let lateAdded = false;
+    const readAndAdd = function (sids) {
+      if (!lateAdded) {
+        lateAdded = true;
+        inRealm(function () {
+          const row = AccountSets.byId(ids[0]);
+          AccountSets.addSession(row, 'late-sid-0',
+            { sub: 'urn:uuid:late-0', username: 'late-0', label: 'late-0' });
+          AccountSets.save(row);
+        });
+      }
+      return slowRead(sids);
+    };
+    const aRuns = [];
+    for (let i = 0; i < 200; i++) {
+      const run = await inRealm(function () {
+        return AccountSets.sweepBudgeted(never, 1000, readAndAdd);
+      });
+      aRuns.push(run);
+      if (run.at >= run.of) {
+        break;
+      }
+    }
+    clearInterval(ticker);
+    const aEnded = aRuns.reduce(function (n, r) {
+      return n + r.ended;
+    }, 0);
+    const aReads = aRuns.reduce(function (n, r) {
+      return n + (r.reads || 0);
+    }, 0);
+    const aLast = aRuns[aRuns.length - 1];
+    note(syncAsked === 0 && aReads > 1 && aLast.at === aLast.of &&
+         aEnded === 50 && worstGap < 60,
+         'A1. with a read-ahead the pass asks the synchronous check nothing, ' +
+         'reads in several batches, ends the 50 ended sessions of the 100 ' +
+         'new sets, and never holds the loop for long',
+         JSON.stringify({ syncAsked: syncAsked, reads: aReads,
+                          ended: aEnded, worstGapMs: worstGap,
+                          runs: aRuns.length }));
+    const firstRow = inRealm(function () {
+      return AccountSets.byId(ids[0]);
+    });
+    note(lateAdded && firstRow && firstRow.sessions &&
+         firstRow.sessions['late-sid-0'],
+         'A2. a session added to a set while its batch was being read is ' +
+         'kept, for the next pass to decide');
+
+    // A3: a read-ahead that fails.
+    inRealm(function () {
+      return fill(10, 'sf');
+    });
+    const failing = function () {
+      return Promise.reject(new Error('the read pool is gone'));
+    };
+    const failed = await inRealm(function () {
+      return AccountSets.sweepBudgeted(never, 1000, failing);
+    });
+    const after = await inRealm(function () {
+      return AccountSets.sweepBudgeted(never, 1000, slowRead);
+    });
+    note(failed.at === 0 && failed.sets === 0 && failed.ended === 0 &&
+         after.at > 0 && after.sets > 0 && syncAsked === 0,
+         'A3. a read-ahead that fails decides nothing, and the next run ' +
+         'starts that batch again', JSON.stringify({ failed: failed,
+                                                    after: after }));
+
+    // A4: a run due while one is still reading.
+    let release = null;
+    const held = function (sids) {
+      if (release) {
+        // Only the first batch's read is held; the rest answer as usual.
+        return slowRead(sids);
+      }
+      return new Promise(function (resolve) {
+        release = function () {
+          slowRead(sids).then(resolve);
+        };
+      });
+    };
+    const first = inRealm(function () {
+      return AccountSets.sweepBudgeted(never, 1000, held);
+    });
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 10);
+    });
+    const second = await inRealm(function () {
+      return AccountSets.sweepBudgeted(never, 1000, slowRead);
+    });
+    if (release) {
+      release();
+    }
+    const firstDone = await first;
+    note(release && second.skipped === true && second.sets === 0 &&
+         firstDone.sets > 0,
+         'A4. a run due while another is still reading is skipped, and the ' +
+         'first finishes', JSON.stringify({ second: second,
+                                            first: firstDone }));
+
+    // --- W (#780): SessionWindow.readAsync() --------------------------------
+    const keystore = require(ROOT + '/common/keystore');
+    keystore.sealed = function () {
+      return true;
+    };
+    keystore.keyedDigest = function (label, text) {
+      return 'digest:' + text;
+    };
+    const sessionWindow = require(ROOT + '/authn/session_window');
+    const realmId = inRealm(function () {
+      return realms.currentId();
+    });
+    const rows = { 'w-live': { session: { id: 'w-live', user: 'w' } },
+                   'w-gone': null };
+    sessionWindow.offerAsyncQuery(function (name, args) {
+      const digest = String(args[1] || '');
+      const sid = digest.split('\n').pop();
+      if (sid === 'w-broken') {
+        return Promise.reject(new Error('the read pool is gone'));
+      }
+      return new Promise(function (resolve) {
+        setTimeout(function () {
+          resolve(name === 'session.read' ? rows[sid] || null : null);
+        }, 2);
+      });
+    });
+    const wLive = await sessionWindow.readAsync(realmId, 'w-live');
+    const wSlot = sessionWindow.slotState(realmId, 'w-live');
+    note(wLive.ok && wLive.session && wLive.session.id === 'w-live' &&
+         !wSlot.cached,
+         'W1. a stored session is answered, and not admitted to the window',
+         JSON.stringify({ read: wLive, slot: wSlot }));
+    const wGone = await sessionWindow.readAsync(realmId, 'w-gone');
+    note(!wGone.ok && wGone.absent === true && !wGone.error,
+         'W2. an absent row is answered as absent', JSON.stringify(wGone));
+    const wBroken = await sessionWindow.readAsync(realmId, 'w-broken');
+    note(!wBroken.ok && wBroken.error === true && !wBroken.absent,
+         'W3. a read that failed is answered as a failure, never as absence',
+         JSON.stringify(wBroken));
     finish();
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
@@ -236,6 +430,7 @@ function run(t) {
 module.exports = {
   name: 'account_set_sweep_slices',
   describe: 'the hourly account-set sweep gives the event loop back between ' +
-            'slices and does what the whole sweep did (#780)',
+            'slices, reads its sessions off the event loop, and does what ' +
+            'the whole sweep did (#780)',
   run: run
 };

@@ -348,6 +348,49 @@ class PqcSupport {
   }
 
   // -------------------------------------------------------------------------
+  // BY THE SIGNATURE ON A CERTIFICATE (#2009 P3): the algorithm its ISSUER
+  // signed it with, which is the one question `ofCertificate()` never asks
+  // (the key decides there). A PIV certificate whose key is classical — it
+  // has to be: a YubiKey makes no post-quantum key — is still forgeable
+  // only if its issuer's signature is; this is what the post-login PIV
+  // re-issue reads to tell a certificate a classical CA signed. A
+  // certificate that does not parse is null, as there.
+  // -------------------------------------------------------------------------
+  /**
+   * Describes the algorithm a certificate's issuer signed it with.
+   *
+   * @param pem - a PEM certificate
+   * @returns the answer, or null for a classical signature or a certificate
+   *   that does not parse
+   */
+  ofSignature(pem: unknown): PqcInfo | null {
+    const { log } = this.deps;
+    log.debug("Entering PqcSupport.ofSignature().");
+    const block = String(pem || '').match(
+      /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+    if (!block) {
+      log.debug("Leaving PqcSupport.ofSignature(). No certificate.");
+      return null;
+    }
+    let oid = '';
+    try {
+      const der = Buffer.from(block[0].replace(/-----[^-]+-----/g, '')
+        .replace(/\s+/g, ''), 'base64');
+      oid = String(pkijs.Certificate.fromBER(new Uint8Array(der))
+        .signatureAlgorithm.algorithmId || '');
+    } catch (e) {
+      log.debug("Caught in PqcSupport.ofSignature(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving PqcSupport.ofSignature(). Unreadable.");
+      return null;
+    }
+    const out = oid ? this.ofAlgorithm(oid) : null;
+    log.debug("Leaving PqcSupport.ofSignature(). " +
+              (out ? out.kind : 'classical'));
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
   // THE FIRST ANSWER AMONG SEVERAL SPELLINGS OF ONE KEY — a certificate
   // first, because it is the most specific (it is the only one that can see a
   // hybrid), then each name in the order given.
@@ -437,6 +480,7 @@ export = {
   KINDS: PqcSupport.KINDS,
   ofAlgorithm: slot.forward('ofAlgorithm'),
   ofCertificate: slot.forward('ofCertificate'),
+  ofSignature: slot.forward('ofSignature'),
   of: slot.forward('of'),
   sentence: slot.forward('sentence')
 };

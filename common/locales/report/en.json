@@ -145,5 +145,18 @@
   "announcement.close": "Close",
   "presets": "Predefined queries",
   "presetsNote": "Each opens New Query with its query filled in. Nothing runs until you press Run, and saving it makes a definition of your own.",
-  "presetFrom": "Started from the predefined query {name}."
+  "presetFrom": "Started from the predefined query {name}.",
+  "adminOnlySource": "Report administrators only",
+  "adminOnlyNote": "Only a report administrator (REPORT_ADMIN) may query this source: it holds who did what and from where, or who holds which credential.",
+  "noWebCrypto.title": "This browser cannot open this page",
+  "noWebCrypto.text": "This browser cannot run this page securely: WebCrypto is unavailable, usually because the page was not opened over HTTPS or the browser is too old.",
+  "step.pending": "Getting permission to make this change…",
+  "step.blocked": "This change needs your permission. Open the window to give it.",
+  "step.signIn": "Sign in to make this change.",
+  "step.fresh": "This change needs you to sign in again.",
+  "step.open": "Continue",
+  "step.cancel": "Cancel",
+  "step.refused": "Permission to make this change was not given: ",
+  "step.other": "That sign-in was another account, so nothing was sent.",
+  "step.failed": "Permission to make this change could not be had."
 }

@@ -377,8 +377,14 @@ const USER_FIELD_PREFIX = 'field.';
  */
 const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'clear-totp', 'clear-key', 'clear-backup-codes',
+                       // A one-time code token (#1955 P4).
+                       'clear-hotp',
+                       // A YubiKey OTP (#1955 P5).
+                       'clear-yubi',
                        // A passkey's name (#470, rcbj's decision D).
                        'rename-key',
+                       // A legacy U2F credential imported (#1955 P7).
+                       'import-u2f-key',
                        // The emailed second factor, and the address
                        // (#64, 2026-09-23).
                        'clear-email-factor', 'set-mail',
@@ -741,7 +747,11 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 /**
  * The actions the MFA resource answers, all of them handed to `usersAction()`.
  */
-const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
+const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor',
+                     // #1955 P4: a one-time code token.
+                     'clear-hotp',
+                     // #1955 P5: a YubiKey OTP.
+                     'clear-yubi'];
 
 // The shortest statement of how a person's identity was verified (#1504).
 const MIN_EVIDENCE_LENGTH = 8;
@@ -769,7 +779,8 @@ const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
                       'remove-member', 'describe-role', 'add-permission',
                       'remove-permission', 'add-conferring-client',
                       'remove-conferring-client', 'add-owner',
-                      'remove-owner'];
+                      'remove-owner', 'set-membership-mode',
+                      'set-selection', 'set-eligibility-policy'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -958,6 +969,14 @@ const TRUSTSTORE_ACTIONS = ['add', 'remove'];
  * The actions `pkiTrustAction()` answers (#1360).
  */
 const PKI_TRUST_ACTIONS = ['add', 'remove', 'recheck', 'set-row'];
+
+/**
+ * The actions `namedTruststoresAction()` answers (#2118): named truststores
+ * and the use cases assigned them.
+ */
+// `set-keys` (#2149): a key-set truststore's keys, pasted or a jwks_uri.
+const NAMED_TRUSTSTORE_ACTIONS = ['show', 'create', 'delete', 'add', 'remove',
+                                  'assign', 'unassign', 'set-keys'];
 
 /**
  * The actions `spiffeEntriesAction()` answers.
@@ -2689,10 +2708,16 @@ class AdminActions {
     const rows = held.certificates.map(function (one) {
       return self.describeStoredCertificate(one.der, one.sha256);
     });
+    // A PERSON'S S/MIME AND SSH USER CERTIFICATES (#2050), listed where the
+    // stored ones are: both are on the entry, and neither signs anybody in.
+    const extra = application ? {}
+      : { smimeCertificates: this.describeSmimeCertificates(held.smime),
+          sshCertificates: this.describeSshCertificates(held.ssh) };
     log.debug("Leaving AdminActions.storedCertificatesFor(). " +
               rows.length + ".");
     return Object.assign(application ? { ok: true, application: name }
                                      : { ok: true, user: name },
+      extra,
       { dn: held.dn, certificates: rows,
         rule: 'A certificate from an outside certificate authority ' +
               (application ? 'authenticates this application'
@@ -2700,6 +2725,56 @@ class AdminActions {
               ' only while it is stored here, byte for byte, and on no ' +
               'other entry of the realm. A renewed certificate is stored ' +
               'again.' });
+  }
+
+  // A person's S/MIME certificates (#2050), each value as stored: base64
+  // DER or PEM, described as a stored one is; a value that holds no
+  // certificate is listed unreadable rather than left out.
+  private describeSmimeCertificates(values) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.describeSmimeCertificates().");
+    const self = this;
+    const codec = require('../persistence/directory_codec');
+    const out = [].concat(values || []).map(function (value) {
+      const der = codec.certificateDerOf(String(value));
+      return der
+        ? self.describeStoredCertificate(der,
+            stsCrypto.digest('sha256', der, 'hex'))
+        : { sha256: '', subject: '', issuer: '', serialNumber: '',
+            notBefore: '', notAfter: '', expired: false, readable: false };
+    });
+    log.debug("Leaving AdminActions.describeSmimeCertificates(). " +
+              out.length + ".");
+    return out;
+  }
+
+  // A person's live SSH user certificates (#2050), as their entry carries
+  // them (`common/ssh_issued.ts`); a value that module did not write is
+  // left out, since the register drops it at the next reconcile.
+  private describeSshCertificates(values) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.describeSshCertificates().");
+    const sshIssued = require('../common/ssh_issued');
+    const out = [];
+    [].concat(values || []).forEach(function (value) {
+      const read = sshIssued.readEntryValue(value);
+      if (read) {
+        out.push({
+          serialHex: String(read.serialHex),
+          keyType: String(read.keyType || ''),
+          keyFingerprint: String(read.keyFingerprint || ''),
+          principals: Array.isArray(read.principals)
+            ? read.principals.map(String) : [],
+          issuedAt: String(read.issuedAt || ''),
+          notAfter: String(read.notAfter || ''),
+          authority: String(read.authority || 'classical'),
+          certificate: String(read.certificate || '')
+        });
+      }
+    });
+    log.debug("Leaving AdminActions.describeSshCertificates(). " +
+              out.length + ".");
+    return out;
   }
 
   // One stored certificate, described from its DER.
@@ -3439,14 +3514,17 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0783', result);
       }
       const removed = result.removed || [];
-      removed.forEach(function (one) {
-        accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.keyCredentialType(one),
-          fido2Aaguid: String((one && one.aaguid) || ''),
-          changeType: 'delete', friendlyName: one.label, via: ctx.via,
-          reasonAdmin: 'An administrator removed every passkey of ' +
-                       who + '.',
-          reasonUser: 'A passkey was removed from your account.' });
+      // ONE MAIL FOR THEM ALL (#2163): each key is still its own CAEP event.
+      accountSignals.batch(function () {
+        removed.forEach(function (one) {
+          accountSignals.credentialChanged({ username: who,
+            credentialType: accountSignals.keyCredentialType(one),
+            fido2Aaguid: String((one && one.aaguid) || ''),
+            changeType: 'delete', friendlyName: one.label, via: ctx.via,
+            reasonAdmin: 'An administrator removed every passkey of ' +
+                         who + '.',
+            reasonUser: 'A passkey was removed from your account.' });
+        });
       });
       // THE SESSIONS EACH REMOVED KEY SIGNED IN END (#963), and no other:
       // a password session stays. Since #1135 every key goes (a key has no
@@ -3484,29 +3562,34 @@ class AdminActions {
       // them. Sessions wait for a removal that finished: a partial write
       // is a refusal, and a factor that is still there must not lose the
       // sessions it signed in.
-      if (removed.totp) {
-        accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
-          changeType: 'delete', via: ctx.via,
-          reasonAdmin: 'An administrator disabled every second factor of ' +
-                       who + '.',
-          reasonUser: 'Your authenticator app was removed from your ' +
-                      'account.' });
-      }
-      (removed.keys || []).forEach(function (one) {
-        accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.keyCredentialType(one),
-          fido2Aaguid: String((one && one.aaguid) || ''),
-          changeType: 'delete', friendlyName: one.label, via: ctx.via,
-          reasonAdmin: 'An administrator disabled every second factor of ' +
-                       who + '.',
-          reasonUser: 'A passkey was removed from your account.' });
+      // ONE MAIL FOR EVERY FACTOR (#2163): the person is told once, with a
+      // line per factor; each is still its own CAEP or RISC event.
+      accountSignals.batch(function () {
+        if (removed.totp) {
+          accountSignals.credentialChanged({ username: who,
+            credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
+            changeType: 'delete', via: ctx.via,
+            reasonAdmin: 'An administrator disabled every second factor ' +
+                         'of ' + who + '.',
+            reasonUser: 'Your authenticator app was removed from your ' +
+                        'account.' });
+        }
+        (removed.keys || []).forEach(function (one) {
+          accountSignals.credentialChanged({ username: who,
+            credentialType: accountSignals.keyCredentialType(one),
+            fido2Aaguid: String((one && one.aaguid) || ''),
+            changeType: 'delete', friendlyName: one.label, via: ctx.via,
+            reasonAdmin: 'An administrator disabled every second factor ' +
+                         'of ' + who + '.',
+            reasonUser: 'A passkey was removed from your account.' });
+        });
+        if (removed.backupCodes) {
+          accountSignals.recoveryInformationChanged({ username: who,
+            changeType: 'delete', initiatingEntity: 'admin', via: ctx.via,
+            reasonAdmin: 'An administrator disabled every second factor ' +
+                         'of ' + who + ', recovery codes included.' });
+        }
       });
-      if (removed.backupCodes) {
-        accountSignals.recoveryInformationChanged({ username: who,
-          reasonAdmin: 'An administrator disabled every second factor of ' +
-                       who + ', recovery codes included.' });
-      }
       if (!result.ok) {
         audited('admin.mfa.disabled',
                 'could not disable every second factor of ' + who,
@@ -4111,9 +4194,19 @@ class AdminActions {
   // it ends the sessions a person who has just become one still holds — the
   // policy would refuse them at the next sign-in, and a session already open
   // is the same browser.
+  //
+  // AND IT CLEARS A PENDING `pwdReset` (#2236, rcbj, 2026-11-25). A service
+  // account's password is a program's, machine-managed and rotated, which is
+  // why a typed one is never made temporary for it
+  // (`typedPasswordIsTemporary()`). An account that was an ordinary person
+  // when its password was typed still carries the flag, and a program has
+  // no sign-in screen to clear it at: every door it uses would refuse its
+  // right password (STS-AUTHN-0142). So becoming a service account clears
+  // it, and the audit row says so (`passwordResetCleared`).
   // ---------------------------------------------------------------------------
   private serviceAccountAction(who, body, ctx, audited) {
-    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    const { log, serviceAccounts, serviceAccountPolicy, credentials } =
+      this.deps;
     log.debug("Entering AdminActions.serviceAccountAction().");
     const wanted = body.serviceAccount === undefined ? true
       : this.truthy(body.serviceAccount);
@@ -4130,6 +4223,18 @@ class AdminActions {
         return one.dn;
       });
     };
+    // A PENDING CHANGE, CLEARED (#2236): see the header above.
+    let resetCleared: boolean | undefined;
+    if (wanted && result.ok) {
+      const account = String((result as any).username || who);
+      if (credentials.passwordResetRequired(account)) {
+        resetCleared = credentials.setPasswordResetRequired(account, false);
+        log.info('admin: ' + account + ' became a service account, so the ' +
+                 'change of password it owed was ' +
+                 (resetCleared ? 'cleared' : 'NOT cleared (the write ' +
+                                 'failed, STS-AUTHN-0143)') + '.');
+      }
+    }
     audited(wanted ? 'admin.service-account.set'
                    : 'admin.service-account.cleared',
             (result.ok ? '' : 'could not ') +
@@ -4141,6 +4246,7 @@ class AdminActions {
                                     .map(String),
               destination: String(body.destination || ''),
               secretName: String(body.secretName || ''),
+              passwordResetCleared: resetCleared,
               errors: result.ok ? undefined
                 : ((result as any).errors || []) },
             result.ok ? 'success' : 'failure');
@@ -4447,6 +4553,54 @@ class AdminActions {
     return last ? (rbac.roleFor(last) || { label: last }).label : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // A PASSWORD AN ADMINISTRATOR TYPED IS TEMPORARY (#2160, ASVS 5.0.0 6.4.6;
+  // rcbj, 2026-11-24). The administrator knows it, so it must be changed at
+  // the person's next sign-in, as a generated one already must (#1446). Two
+  // exceptions:
+  //
+  //   * DEVELOPMENT MODE (`mode.verifiesCredentials()`): no door checks a
+  //     password there, so a password the administrator knows opens nothing
+  //     that any other password would not. `create`'s generated password
+  //     has the same exception, for the same reason.
+  //   * A SERVICE ACCOUNT (common/CLAUDE.md 3cd): its password is a
+  //     program's, machine-managed and rotated, and a program has no sign-in
+  //     screen to change it at. `pwdReset` would only make every door it
+  //     uses refuse it (STS-AUTHN-0142).
+  //
+  // `set-password` and `create` ask it here, and the LDAP doors ask the same
+  // question in `ldap/ldap_server.js` (`adminWrittenPasswordIsTemporary()`).
+  // `reset-keytab` does not ask it, and says why.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a password an administrator typed for this person must be
+   * changed at their next sign-in.
+   *
+   * @param who - the person's username
+   * @returns true in product mode for anybody but a service account
+   */
+  typedPasswordIsTemporary(who: string): boolean {
+    const { log, serviceAccounts } = this.deps;
+    log.debug("Entering AdminActions.typedPasswordIsTemporary().");
+    if (!mode.verifiesCredentials()) {
+      log.debug("Leaving AdminActions.typedPasswordIsTemporary(). " +
+                "Development checks no password.");
+      return false;
+    }
+    let service = false;
+    try {
+      service = serviceAccounts.isServiceAccountName(who) === true;
+    } catch (e) {
+      log.debug("Caught in AdminActions.typedPasswordIsTemporary(): " +
+                ((e && e.message) || e));
+      // Unreadable: treated as a person, the stricter reading.
+      service = false;
+    }
+    log.debug("Leaving AdminActions.typedPasswordIsTemporary(). " +
+              (service ? "A service account." : "Temporary."));
+    return !service;
+  }
+
   /**
    * Performs a `/admin/users` action on a person: create, set a password or
    * mail address, issue an activation link, clear a second factor, disable or
@@ -4547,11 +4701,19 @@ class AdminActions {
         audit('admin.passkey.upgrade-started', 'success', {
           stage: 'begin', mode: begun.mode, lane: begun.lane,
           previousAlgorithm: begun.previousAlgorithm });
+        // THE ONE BUILDER OF AN ASSERTION'S OPTIONS (#1955 P7): its user
+        // verification, and the `appid` extension where the key upgraded is
+        // a permitted legacy U2F key — the two members this answer carries.
+        const proofOptions = webauthnPolicy.assertionOptions(rpId,
+          credentials.keysOf(who).filter(function (one) {
+            return String(one.credentialId) === String(begun.credentialId);
+          }));
         return { ok: true, upgradeId: begun.upgradeId,
           ceremony: { challenge: begun.challenge, rpId: rpId,
             allow: begun.credentialId,
-            options: { userVerification:
-              webauthnPolicy.settings().userVerification } } };
+            options: Object.assign({ userVerification:
+              proofOptions.userVerification },
+              proofOptions.appid ? { appid: proofOptions.appid } : {}) } };
       }
       let posted: any = null;
       try {
@@ -4930,6 +5092,119 @@ class AdminActions {
     }
 
     // ---------------------------------------------------------------------
+    // A ONE-TIME CODE TOKEN (HOTP, #1955 P4): `clear-totp`'s act for the
+    // other kind of code, under the same evidence rule and with the same
+    // session ending. A token imported from a vendor's file and lost with
+    // its YubiKey is better reported lost (Directory → Hardware tokens),
+    // which retires every credential on it; this clears the one.
+    // ---------------------------------------------------------------------
+    if (action === 'clear-hotp') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person whose one-time code token is being ' +
+                   'cleared.'] });
+      }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
+      const result = credentials.removeHotp(who);
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'hotp' }, ctx,
+                                 'the one-time code token')
+        : null;
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.hotp.cleared',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'cleared' : 'could not clear') +
+                 ' the one-time code token of ' + who,
+        detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      if (result.ok) {
+        accountSignals.credentialChanged({ username: who,
+          credentialType: accountSignals.HOTP_CREDENTIAL_TYPE,
+          changeType: 'delete', via: ctx.via,
+          reasonAdmin: 'An administrator cleared the one-time code token ' +
+                       'of ' + who + '.',
+          reasonUser: 'Your one-time code token was removed from your ' +
+                      'account.' });
+        log.info('admin: the one-time code token of "' + who + '" was ' +
+                 'cleared by ' + (ctx.actor || 'an unnamed caller') + ' (' +
+                 ctx.via + ').');
+        result.sessionsEnded = ended ? ended.sessionsEnded : 0;
+        result.message = 'The one-time code token of ' + who + ' is ' +
+          'cleared.' + (ended ? this.sessionsEndedSentence(ended) : '');
+      }
+      log.debug("Leaving AdminActions.usersAction(). clear-hotp " +
+                (result.ok ? "ok." : "refused."));
+      return this.refusedBy('STS-ADMIN-0520', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // A YUBIKEY OTP (#1955 P5): the same act as clear-hotp. The AES key is
+    // held here, so clearing takes it off the entry and retires the public
+    // identity. A token lost with the key is better reported lost
+    // (Directory → Hardware tokens), which retires every credential on it.
+    // ---------------------------------------------------------------------
+    if (action === 'clear-yubi') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person whose YubiKey OTP is being cleared.'] });
+      }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
+      if (!credentials.yubiStatusOf(who)) {
+        log.debug("Leaving AdminActions.usersAction(). No YubiKey OTP.");
+        return this.refused('STS-YUBIOTP-0030', { ok: false,
+          errors: ['No YubiKey OTP is enrolled for ' + who + '.'] });
+      }
+      const result = credentials.removeYubiOtp(who);
+      const ended = result.ok
+        ? this.endFactorSessions(who, { kind: 'yubiotp' }, ctx,
+                                 'the YubiKey OTP')
+        : null;
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.yubiotp.cleared',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'cleared' : 'could not clear') +
+                 ' the YubiKey OTP of ' + who,
+        detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
+                  sessionsEnded: ended ? ended.sessionsEnded : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      if (result.ok) {
+        accountSignals.credentialChanged({ username: who,
+          credentialType: accountSignals.YUBIOTP_CREDENTIAL_TYPE,
+          changeType: 'delete', via: ctx.via,
+          reasonAdmin: 'An administrator cleared the YubiKey OTP of ' +
+                       who + '.',
+          reasonUser: 'Your YubiKey OTP was removed from your account.' });
+        log.info('admin: the YubiKey OTP of "' + who + '" was cleared by ' +
+                 (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + ').');
+        result.sessionsEnded = ended ? ended.sessionsEnded : 0;
+        result.message = 'The YubiKey OTP of ' + who + ' is cleared.' +
+          (ended ? this.sessionsEndedSentence(ended) : '');
+      }
+      log.debug("Leaving AdminActions.usersAction(). clear-yubi " +
+                (result.ok ? "ok." : "refused."));
+      return this.refusedBy('STS-YUBIOTP-0010', result);
+    }
+
+    // ---------------------------------------------------------------------
     // THE THIRD REMOVAL (2026-09-10), AND IT STOPPED BEING AN ISSUING CONTROL
     // ON 2026-09-11.
     //
@@ -4989,6 +5264,7 @@ class AdminActions {
       });
       if (result.ok) {
         accountSignals.recoveryInformationChanged({ username: who,
+          changeType: 'delete', initiatingEntity: 'admin', via: ctx.via,
           reasonAdmin: 'An administrator cleared the recovery codes of ' + who +
                        '.' });
         log.info('admin: the recovery codes for "' + who +
@@ -5298,6 +5574,67 @@ class AdminActions {
         : this.refusedBy('STS-ADMIN-0850', result);
     }
 
+    // A LEGACY FIDO U2F CREDENTIAL IMPORTED ONTO A PERSON (#1955 P7, rcbj's
+    // reversal of the issue's D5). THROUGH `credentials.importU2fKey()`,
+    // which checks the four values and writes through `addKey()`, the one
+    // writer — so the duplicate check, the cap and the registration rules of
+    // the person's passkey policy hold. Off until `webauthn.u2fAppIds` names
+    // the AppID (STS-AUTHN-0561). The importer is the caller, recorded on the
+    // key; audited, and no ceremony ran, so nothing about the key is
+    // attested — the console says so.
+    if (action === 'import-u2f-key') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0951', { ok: false, errors: ['Name ' +
+          'the person the U2F security key is imported for, in `user`.'] });
+      }
+      const admin: any = (context && (context as any).admin) || {};
+      const result = credentials.importU2fKey(who, {
+        keyHandle: body.keyHandle, publicKey: body.publicKey,
+        appId: body.appId, counter: body.counter, label: body.label
+      }, { importedBy: { username: String(admin.username || ctx.actor ||
+                                          'operator'),
+                         sub: String(admin.sub || ''), at: Date.now() } });
+      // A CREDENTIAL ADDED TO SOMEBODY BY AN ADMINISTRATOR IS TOLD (the #1955
+      // review): CAEP credential-change `create` and, through the same
+      // call, the person's own security notice by mail — as every other
+      // administrator's change to how somebody signs in is.
+      if (result.ok) {
+        accountSignals.credentialChanged({ username: who,
+          credentialType: 'fido-u2f', changeType: 'create',
+          friendlyName: String(body.label || ''), via: ctx.via,
+          initiatingEntity: 'admin',
+          reasonAdmin: 'An administrator imported a U2F security key for ' +
+                       who + '.',
+          reasonUser: 'A security key was added to your account by an ' +
+                      'administrator.' });
+      }
+      auditLog.record({
+        category: 'authentication', action: 'admin.mfa.key.imported',
+        actor: ctx.actor, target: who,
+        outcome: result.ok ? 'success' : 'failure',
+        summary: (result.ok ? 'imported' : 'could not import') +
+                 ' a U2F security key for ' + who,
+        detail: { username: who, via: ctx.via,
+                  appId: String(body.appId || '').slice(0, 200),
+                  credentialId: result.ok
+                    ? String(result.credentialId || '') : undefined,
+                  errors: result.ok ? undefined : (result.errors || []) }
+      });
+      log.debug("Leaving AdminActions.usersAction(). import-u2f-key " +
+                (result.ok ? "ok." : "refused."));
+      return result.ok
+        ? { ok: true, message: 'A U2F security key registered under ' +
+            String(body.appId || '') + ' is imported for ' + who + '. It ' +
+            'answers a second-factor step only.' }
+        // THE ERRORS AND THE CODE ONLY: the writer's `reason` is a member
+        // this operation's answer does not carry.
+        : this.refusedBy('STS-ADMIN-0952', this.deps.errorCodes.mark(
+            { ok: false, errors: (result.errors || []).slice() },
+            this.deps.errorCodes.codeOf(result) || 'STS-ADMIN-0952'));
+    }
+
     // ---------------------------------------------------------------------
     // AN ADMINISTRATOR ENROLS A PASSKEY ON SOMEBODY'S BEHALF (#945, rule
     // 3cv). Two acts, as the person's own enrolment is two steps: `begin`
@@ -5529,8 +5866,13 @@ class AdminActions {
     // written as an attribute — which is also why `userPassword` is refused
     // by the attribute door on `create`. A GENERATED password sets `pwdReset`
     // (#1446, ASVS 5.0.0 6.4.1): it may be used once, to choose another, and
-    // cannot become the long-term password. One the administrator typed does
-    // not. Neither signs the person out, which is what `reset-password` does
+    // cannot become the long-term password. **ONE THE ADMINISTRATOR TYPED
+    // DOES TOO SINCE #2160** (ASVS 5.0.0 6.4.6, rcbj 2026-11-24), where
+    // passwords are verified: the administrator knows it, so it is a
+    // temporary password like a generated one (`typedPasswordIsTemporary()`
+    // says where, and why not for a service account). Typed passwords are
+    // still accepted. Neither signs the person out, which is what
+    // `reset-password` does
     // besides the password. What it shares with that door, since #960, is
     // the recovery note: a passkey holder's next password sign-in is held
     // by `recoveryAssurance` until a passkey signs them in.
@@ -5573,7 +5915,8 @@ class AdminActions {
                   "refused.");
         return this.refusedBy('STS-ADMIN-0525', set);
       }
-      if (generate) {
+      const temporary = generate || this.typedPasswordIsTemporary(who);
+      if (temporary) {
         credentials.setPasswordResetRequired(who, true);
       }
       // A passkey holder's recovery, noted the way `reset-password` notes
@@ -5593,7 +5936,7 @@ class AdminActions {
         // NO PASSWORD AND NO HASH IN THE AUDIT ROW, generated or typed. The row
         // records that it happened and by which door; the value existed in one
         // response and in one log line's absence.
-        detail: { generated: generate }
+        detail: { generated: generate, mustChange: temporary }
       });
       log.debug("Leaving AdminActions.usersAction().");
       return { ok: true, username: who, generated: generate,
@@ -5607,7 +5950,10 @@ class AdminActions {
                    'cannot produce it again, only replace it. It must be ' +
                    'changed at the next sign-in.'
                  : 'The password for ' + who + ' is set. It is stored as a ' +
-                   'hash and cannot be shown again.' };
+                   'hash and cannot be shown again.' + (temporary
+                     ? ' It is a temporary password: they must choose ' +
+                       'their own at their next sign-in.'
+                     : '') };
     }
 
     // THE PERSON AS AN LDIF FILE (2026-11-14), the application page's #546
@@ -5670,23 +6016,27 @@ class AdminActions {
                      reasonUser: 'Your account was created with ' +
                                  'credentials an administrator imported.' };
       const kinds = imported.credentialKinds || [];
-      if (kinds.indexOf('password') >= 0 ||
-          kinds.indexOf('app-passwords') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: 'password' }));
-      }
-      if (kinds.indexOf('totp') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: accountSignals.TOTP_CREDENTIAL_TYPE }));
-      }
-      if (kinds.indexOf('passkey') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: accountSignals.keyCredentialType(null) }));
-      }
-      if (kinds.indexOf('certificate') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: 'x509' }));
-      }
+      // ONE MAIL FOR THE IMPORT (#2163), a line per kind.
+      accountSignals.batch(function () {
+        if (kinds.indexOf('password') >= 0 ||
+            kinds.indexOf('app-passwords') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said, { credentialType: 'password' }));
+        }
+        if (kinds.indexOf('totp') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said, { credentialType: accountSignals.TOTP_CREDENTIAL_TYPE }));
+        }
+        if (kinds.indexOf('passkey') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said,
+            { credentialType: accountSignals.keyCredentialType(null) }));
+        }
+        if (kinds.indexOf('certificate') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said, { credentialType: 'x509' }));
+        }
+      });
       log.debug("Leaving AdminActions.usersAction(). import-ldif.");
       return { ok: true, changed: true, username: who, dn: imported.dn,
                attributes: imported.attributes,
@@ -5853,7 +6203,10 @@ class AdminActions {
               outcome: 'success',
               summary: 'a password was set for ' + result.username +
                        ' as they were created',
-              detail: { generated: generated }
+              detail: { generated: generated,
+                        mustChange: generated
+                          ? mode.verifiesCredentials()
+                          : this.typedPasswordIsTemporary(result.username) }
             });
             // CAEP credential-change (#145): the person's first password.
             accountSignals.credentialChanged({ username: result.username,
@@ -5879,6 +6232,13 @@ class AdminActions {
               credentialSaid = ' The password you typed is set, stored as a ' +
                 'scrypt hash, and cannot be shown again by anybody including ' +
                 'this console.';
+              // A TYPED ONE IS TEMPORARY TOO (#2160, ASVS 5.0.0 6.4.6),
+              // where passwords are verified: the administrator knows it.
+              if (this.typedPasswordIsTemporary(result.username)) {
+                credentials.setPasswordResetRequired(result.username, true);
+                credentialSaid += ' It is a temporary password: they must ' +
+                  'choose their own at their next sign-in.';
+              }
             }
           }
         }
@@ -8433,12 +8793,23 @@ class AdminActions {
     // The reply carries the statement, which is not a secret.
     if (action === 'issue-software-statement') {
       const ctx = context || {};
-      const result = softwareStatement.issue({
+      const asked = {
         identifier: identifier,
         metadata: body.metadata,
         lifetimeSeconds: body.lifetimeSeconds,
         base: ctx.base || ''
-      });
+      };
+      // Signed off the event loop where the realm's keys are in the HSM
+      // (#1955 P8 follow-up); the dispatchers take the promise. A software
+      // realm answers in place, as it always did.
+      if (helpers.keysInHsm()) {
+        log.debug("Leaving AdminActions.applicationsAction(). " +
+                  "issue-software-statement, off the event loop.");
+        return softwareStatement.issueAsync(asked).then((result) => {
+          return this.refusedBy('STS-ADMIN-0649', result);
+        });
+      }
+      const result = softwareStatement.issue(asked);
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "issue-software-statement " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -9394,10 +9765,22 @@ class AdminActions {
                                      'member to it rather than creating it ' +
                                           'again.'] });
       }
+      // A DYNAMIC ROLE MAY BE MADE AS ONE (#1072): it has no members to add
+      // first, so nothing is gained by making it static and switching it.
       const result = roles.write(fullName, { description: description,
                                              application: forApplication,
                                              displayName: displayName || '',
-                                             memberTypes: memberTypes || [] });
+                                             memberTypes: memberTypes || [],
+                                             membershipMode:
+                                               body.membershipMode ===
+                                                 undefined ? 'static'
+                                                 : String(body.membershipMode),
+                                             selection: body.selection ===
+                                               undefined ? 'optional'
+                                               : String(body.selection),
+                                             exclusiveGroup:
+                                               String(body.exclusiveGroup ||
+                                                      '') });
       if (result.ok) {
         auditLog.audit({ action: 'roles.create', actor: actor,
                       target: fullName, protocol: 'XACML', channel: 'http',
@@ -9425,11 +9808,19 @@ class AdminActions {
         return applications.requiredRolesOf(row.identifier)
           .some(function (one) { return one === name; });
       }).map(function (row) { return row.identifier; });
+      // A DYNAMIC ROLE'S OWN ELIGIBILITY POLICY GOES WITH IT (#1072),
+      // read before the role is: the reference is on the role's entry.
+      const ownedPolicy = String((roles.read(name) || {}).eligibilityPolicy ||
+                                 '');
       const result = roles.remove(name);
       if (!result.ok) {
         log.debug("Leaving AdminActions.rolesAction(). delete-role refused.");
         return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
                             { ok: false, errors: [result.why] });
+      }
+      if (ownedPolicy) {
+        require('../xacml/role_eligibility').removePolicy(name, ownedPolicy,
+                                                         { actor: actor });
       }
       auditLog.audit({ action: 'roles.delete', actor: actor, target: name,
                     protocol: 'XACML', channel: 'http',
@@ -9823,6 +10214,106 @@ class AdminActions {
       return result;
     }
 
+    // -------------------------------------------------------------------------
+    // HOW A ROLE IS HELD, AND HOW A DYNAMIC ONE IS CHOSEN (#1072). Each is
+    // the whole record written back with the one member changed, as every
+    // act here is; `roles.write()` refuses a dynamic role with members, a
+    // console or native role made dynamic, and an unknown value. Neither
+    // adds or removes a member, a group or a permission (the ticket's "must
+    // not unexpectedly alter existing assignments").
+    // -------------------------------------------------------------------------
+    if (action === 'set-membership-mode' || action === 'set-selection') {
+      const row = roles.read(name);
+      if (!row) {
+        log.debug("Leaving AdminActions.rolesAction(). No such role.");
+        return this.refused(roles.isBuiltIn(name) ? 'STS-ADMIN-0546'
+                                                  : 'STS-ADMIN-0543',
+          { ok: false, errors: [roles.isBuiltIn(name)
+            ? '"' + name + '" is a BUILT-IN role, computed from the context ' +
+              'of each decision; it cannot be offered at sign-in.'
+            : 'There is no role called "' + name + '". Create it first.'] });
+      }
+      const changes: Record<string, any> = {};
+      if (action === 'set-membership-mode') {
+        changes.membershipMode = String(body.mode || '');
+      } else {
+        if (!roles.isDynamic(row)) {
+          log.debug("Leaving AdminActions.rolesAction(). A static role.");
+          return this.refused('STS-XACML-0309', { ok: false, errors: ['"' +
+            name + '" is a static role, held by its members; only a ' +
+            'dynamic selectable role is chosen at sign-in. Make it dynamic ' +
+            'first (set-membership-mode).'] });
+        }
+        if (body.selection !== undefined) {
+          changes.selection = String(body.selection);
+        }
+        if (body.exclusiveGroup !== undefined) {
+          changes.exclusiveGroup = String(body.exclusiveGroup);
+        }
+      }
+      const result = roles.write(name, Object.assign({
+        description: row.description, users: row.users, groups: row.groups,
+        applications: row.applications, permissions: row.permissions,
+        application: row.application, displayName: row.displayName,
+        memberTypes: row.memberTypes
+      }, changes));
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). " + action +
+                  " refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      const after = roles.read(name) || row;
+      auditLog.audit({
+        action: action === 'set-membership-mode' ? 'roles.set-mode'
+                                                 : 'roles.set-selection',
+        actor: actor, target: name, protocol: 'XACML', channel: 'http',
+        detail: action === 'set-membership-mode'
+          ? 'the role "' + name + '" is now ' + after.membershipMode +
+            ' (was ' + row.membershipMode + ')'
+          : 'the dynamic role "' + name + '" is now ' + after.selection +
+            (after.exclusiveGroup ? ', exclusive in "' +
+              after.exclusiveGroup + '"' : '') });
+      log.debug("Leaving AdminActions.rolesAction(). " + action + " ok.");
+      return { ok: true, role: name, membershipMode: after.membershipMode,
+               selection: after.selection,
+               exclusiveGroup: after.exclusiveGroup,
+               message: action === 'set-membership-mode'
+                 ? '"' + name + '" is now ' + (roles.isDynamic(after)
+                   ? 'a dynamic selectable role, offered at sign-in to ' +
+                     'whoever its eligibility policy permits.'
+                   : 'a static role, held by its members.')
+                 : '"' + name + '" is ' + after.selection + ' at sign-in' +
+                   (after.exclusiveGroup ? ', and at most one role of "' +
+                     after.exclusiveGroup + '" may be chosen.' : '.') };
+    }
+
+    // -------------------------------------------------------------------------
+    // A DYNAMIC ROLE'S ELIGIBILITY POLICY (#1072): written from XACML XML or
+    // ALFA by `xacml/role_eligibility.ts`, which owns the lifecycle and every
+    // refusal. Required here, lazily: the XACML family is built at 23c.
+    // -------------------------------------------------------------------------
+    if (action === 'set-eligibility-policy') {
+      const result = require('../xacml/role_eligibility').setPolicy(name, {
+        document: body.document === undefined ? undefined
+          : String(body.document),
+        alfa: body.alfa === undefined ? undefined : String(body.alfa)
+      }, { actor: actor });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). " +
+                  "set-eligibility-policy refused.");
+        return this.refused(this.innerCode(result) || 'STS-ADMIN-0542',
+                            { ok: false, errors: [result.why] });
+      }
+      log.debug("Leaving AdminActions.rolesAction(). " +
+                "set-eligibility-policy ok.");
+      return { ok: true, role: name, policy: result.policy,
+               created: !!result.created,
+               message: (result.created ? 'Created "' : 'Rewrote "') +
+                 result.policy + '", the eligibility policy of "' + name +
+                 '". Only a Permit from it makes a person eligible.' };
+    }
+
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
@@ -9870,7 +10361,36 @@ class AdminActions {
     // can refill them in the reader's language.
     const fill = serverProse.fill;
     const MESSAGES = policyKinds.MESSAGES;
-    const profileName = String(body.profile || module.DEFAULT_PROFILE).trim();
+    const submitted: Record<string, any> = Object.assign({}, body);
+    // A NAME GIVEN AND EMPTY IS REFUSED, AND A NAME LEFT OUT IS THE DEFAULT
+    // (the #1132 notes; rcbj's backwards-compatibility directive since
+    // 1.0.0). A save that OMITS `profile` edits the default profile, as it
+    // always has, so an API caller written against 1.0.0 is answered as it
+    // was. What is refused is a name that is THERE and says nothing — null,
+    // or blank after trim — and the console's new-policy create
+    // (`newProfile`), which has no default to fall back on: either one
+    // overwrote cn=default before. An explicit `default`, surrounding spaces
+    // included, still writes the default; a present malformed name is the
+    // kind's own refusal. `save-named-authn-policy` is not this check's:
+    // its `name` is always required and never `default`, and its own
+    // refusal (STS-AUTHN-0532) is what it always answered.
+    const creatingNamedProfile = submitted.newProfile === true ||
+      String(submitted.newProfile || '') === '1';
+    if (found.verb === 'save') {
+      const present = Object.prototype.hasOwnProperty.call(submitted,
+                                                           'profile');
+      const raw = submitted.profile;
+      const blank = present && (raw === null ||
+                                String(raw).trim() === '');
+      if (blank || (creatingNamedProfile && !present)) {
+        log.debug("Leaving AdminActions.policiesAction(). A name is " +
+                  "required.");
+        return this.refused('STS-ADMIN-0549', {
+          ok: false, errors: ['A name is required.'] });
+      }
+    }
+    const profileName = String(submitted.profile ||
+                                module.DEFAULT_PROFILE).trim();
     // The profile the act is about (#535: a named passkey profile too).
     const before = module.read(profileName || module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {
@@ -9913,7 +10433,7 @@ class AdminActions {
       // `form` is no member of the body: it is this function telling the
       // policy module's `save()` which door the values came through, and the
       // copy is what carries it (#1579).
-      const given: Record<string, any> = Object.assign({}, body);
+      const given: Record<string, any> = Object.assign({}, submitted);
       if (ctx.via === 'console') {
         given.form = 'console';
       }
@@ -11761,6 +12281,376 @@ class AdminActions {
   }
 
   /**
+   * One certificate of a truststore as `/admin-api/truststores` answers it:
+   * the members the model names and no others, its PEM only when asked for.
+   *
+   * @param one - a row `common/truststores.ts` described
+   * @param withPem - whether the PEM goes in
+   * @returns the row
+   */
+  static truststoreCertificate(one, withPem: boolean) {
+    helpers.log.debug("Entering AdminActions.truststoreCertificate().");
+    const row: any = {
+      kind: String(one.kind || ''), subject: String(one.subject || ''),
+      issuer: String(one.issuer || ''), notBefore: Number(one.notBefore) || 0,
+      notAfter: Number(one.notAfter) || 0,
+      fingerprint256: String(one.fingerprint256 || '')
+    };
+    if (withPem) {
+      row.pem = String(one.pem || '');
+    }
+    if (one.unadmittable) {
+      row.unadmittable = String(one.unadmittable);
+    }
+    helpers.log.debug("Leaving AdminActions.truststoreCertificate().");
+    return row;
+  }
+
+  /**
+   * One truststore's row as `/admin-api/truststores` answers it, from a row
+   * `truststores.stores()` or `store()` gave: the members the model names,
+   * with the use cases that trust it.
+   *
+   * @param one - the row
+   * @param usedBy - the use cases that trust it in this realm
+   * @returns the row
+   */
+  static truststoreRow(one, usedBy: string[]) {
+    helpers.log.debug("Entering AdminActions.truststoreRow().");
+    const row: any = {
+      name: String(one.name || ''), kind: String(one.kind || ''),
+      scope: String(one.scope || ''), readOnly: !!one.readOnly,
+      description: String(one.description || ''),
+      anchors: Number(one.anchors) || 0,
+      intermediates: Number(one.intermediates) || 0,
+      problem: String(one.problem || ''), usedBy: (usedBy || []).slice()
+    };
+    if (one.kind === 'named') {
+      row.addedBy = String(one.addedBy || '');
+    }
+    // What it holds (#2149): certificates, a key set, or a SPIFFE bundle.
+    if (one.storeKind) {
+      row.storeKind = String(one.storeKind);
+    }
+    if (one.storeKind === 'jwks' && one.kind === 'named') {
+      row.party = String(one.party || '');
+      row.keys = Number(one.keys) || 0;
+      row.jwksUri = String(one.jwksUri || '');
+    }
+    // SSH CA keys (#2151) and documents (#2152), counted; a setting's as
+    // well as a store's.
+    if (['ssh', 'cosign', 'sigstore-root', 'tuf-root']
+          .indexOf(one.storeKind) >= 0) {
+      row.keys = Number(one.keys) || 0;
+    }
+    if (one.kind === 'spiffe') {
+      row.trustDomain = String(one.trustDomain || '');
+      row.jwtKeys = Array.isArray(one.jwtKeys) ? one.jwtKeys.length :
+        Number(one.jwtKeys) || 0;
+    }
+    helpers.log.debug("Leaving AdminActions.truststoreRow().");
+    return row;
+  }
+
+  /**
+   * One truststore with what it holds, as the `show` action and the System
+   * truststore tab answer it. `withPem: false` leaves every certificate's PEM
+   * out, which is what keeps node's own store (about 150 roots) a page and
+   * not a bundle (rcbj, 2026-11-24); `common/truststores.ts`'s `store()` is
+   * not changed for it.
+   *
+   * @param realmId - the realm
+   * @param name - the truststore
+   * @param options - `{ withPem }`, true where omitted
+   * @returns the truststore, or null where the realm can name none so
+   */
+  truststoreShown(realmId: string, name: string, options?: any) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.truststoreShown(). " + name);
+    // Lazily: a library this module is loaded long before.
+    const truststores = require('../common/truststores');
+    const withPem = !(options && options.withPem === false);
+    const held = truststores.store(realmId, name);
+    if (!held) {
+      log.debug("Leaving AdminActions.truststoreShown(). None.");
+      return null;
+    }
+    const out: any = AdminActions.truststoreRow(held,
+      truststores.usedBy(realmId, name));
+    out.certificates = (held.certificates || []).map(function (one) {
+      return AdminActions.truststoreCertificate(one, withPem);
+    });
+    // A JWK's PUBLIC members only, the closed model's: a bundle's key may
+    // carry members of its own, and none of them is a page's business.
+    const JWK_MEMBERS = ['kty', 'use', 'kid', 'alg', 'crv', 'x', 'y', 'n',
+                         'e', 'x5c', 'x5t', 'x5t#S256'];
+    out.jwks = (Array.isArray(held.jwtKeys) ? held.jwtKeys : [])
+      .map(function (key) {
+        const jwk: any = { kty: String((key && key.kty) || '') };
+        JWK_MEMBERS.forEach(function (name) {
+          if (name !== 'kty' && key && key[name] !== undefined) {
+            jwk[name] = name === 'x5c' ? [].concat(key[name]).map(String)
+              : String(key[name]);
+          }
+        });
+        return jwk;
+      });
+    log.debug("Leaving AdminActions.truststoreShown(). " +
+              out.certificates.length + " certificate(s).");
+    return out;
+  }
+
+  /**
+   * Answers `/admin-api/truststores/:action` (#2118 phase 4): named
+   * truststores and the use cases assigned them, on Protocols → PKI trust's
+   * Truststores and Use cases tabs. Every refusal carries the engine's own
+   * STS-PKI-03xx code (`common/truststores.ts`), recorded and never sent:
+   * the answer is `{ ok: false, errors }`. Every write is an audit row
+   * naming truststores, use cases and fingerprints, never certificate text.
+   *
+   * A SERVICE-WIDE USE CASE IS ASSIGNED FROM THE DEFAULT REALM ONLY. The
+   * engine writes such an assignment in the default realm whichever realm is
+   * ambient, because a handshake or an outbound dial has no realm in hand
+   * (D2); a realm's own administrator is confined to the realm (#32), so
+   * this layer refuses the write rather than let one realm change what every
+   * other realm's dials trust.
+   *
+   * @param body - `{ action, name, description, certificates, fingerprint,
+   *   useCase, truststores, withPem }`
+   * @param context - `{ actor, via }`
+   * @returns a promise of the answer
+   */
+  async namedTruststoresAction(body: IyaApi.AdminActionBody<
+    '/admin-api/truststores'>, context) {
+    const { log, auditLog } = this.deps;
+    log.debug("Entering AdminActions.namedTruststoresAction().");
+    const self = this;
+    const asked: any = body || {};
+    const action = String(asked.action || '');
+    const actor = String((context || {}).actor || '');
+    const via = String((context || {}).via || 'console');
+    if (NAMED_TRUSTSTORE_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). Unknown " +
+                "action.");
+      return this.refused('STS-ADMIN-0956', { ok: false, errors: [
+        'Unknown action "' + action + '". The eight are: ' +
+        NAMED_TRUSTSTORE_ACTIONS.join(', ') + '.'] });
+    }
+    // Lazily: libraries, loaded long after this module.
+    const truststores = require('../common/truststores');
+    const UseCases = require('../common/truststore_use_cases');
+    const realmId = realms.currentId();
+    const name = String(asked.name || '').trim();
+    const record = function (summary: string, detail: any): void {
+      log.debug("Entering record().");
+      auditLog.audit({ action: 'admin.pki.truststore.change', actor: actor,
+                       protocol: 'PKI', channel: 'http', target: realmId,
+                       summary: summary + ' through the ' + via,
+                       detail: Object.assign({ via: via }, detail) });
+      log.debug("Leaving record().");
+    };
+    // The engine's refusal, `{ ok, code, why }`, as this API answers one:
+    // the sentence sent, the code recorded.
+    const refusal = function (result: any, fallback: string): any {
+      log.debug("Entering refusal().");
+      log.debug("Leaving refusal().");
+      return self.refused(String((result && result.code) || '') ||
+                          errorCodes.codeOf(result) || fallback,
+                          { ok: false, errors: [String((result &&
+                            result.why) || 'Nothing was changed.')] });
+    };
+    if (action === 'show') {
+      const shown = this.truststoreShown(realmId, name, {
+        withPem: !(asked.withPem === false ||
+                   String(asked.withPem) === 'false') });
+      if (!shown) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). show: " +
+                  "none.");
+        return this.refused('STS-PKI-0301', { ok: false, errors: [
+          'This realm can name no truststore "' + name + '".'] });
+      }
+      log.debug("Leaving AdminActions.namedTruststoresAction(). show.");
+      return { ok: true, truststore: shown };
+    }
+    // A key set may be sent as JSON text or as the object itself (#2149).
+    const jwksText = function (value: any): string {
+      log.debug("Entering jwksText().");
+      log.debug("Leaving jwksText().");
+      return value && typeof value === 'object' ? JSON.stringify(value) :
+        String(value || '');
+    };
+    if (action === 'create') {
+      const kind = String(asked.kind || 'x509');
+      const made = truststores.create(realmId, {
+        name: name, description: String(asked.description || ''),
+        addedBy: actor, kind: kind, party: String(asked.party || ''),
+        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || ''),
+        sshKeys: String(asked.sshKeys || ''),
+        document: String(asked.document || '') });
+      if (!made.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). create " +
+                  "refused.");
+        return refusal(made, 'STS-ADMIN-0957');
+      }
+      record('The truststore ' + name + ' was created', Object.assign(
+        { action: 'create', name: name, kind: kind },
+        kind === 'jwks' ? { party: String(asked.party || ''),
+                            jwksUri: String(asked.jwksUri || '') } : {}));
+      log.debug("Leaving AdminActions.namedTruststoresAction(). created.");
+      return { ok: true, name: name,
+               message: 'The truststore "' + name + '" was created.' };
+    }
+    if (action === 'set-keys') {
+      const set = truststores.setKeys(realmId, name, {
+        jwks: jwksText(asked.jwks), jwksUri: String(asked.jwksUri || ''),
+        sshKeys: String(asked.sshKeys || ''),
+        document: String(asked.document || '') });
+      if (!set.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). set-keys " +
+                  "refused.");
+        return refusal(set, 'STS-ADMIN-0957');
+      }
+      // The kids and the jwks_uri, never the keys themselves.
+      const kids = asked.jwksUri || asked.sshKeys || asked.document ? '' :
+        truststores.keysOfText(
+        jwksText(asked.jwks)).keys.map(function (one: any) {
+        return String(one.kid || '');
+      }).join(' ');
+      record('The key set ' + name + ' was given new keys',
+             { action: 'set-keys', name: name,
+               jwksUri: String(asked.jwksUri || ''), kids: kids });
+      log.debug("Leaving AdminActions.namedTruststoresAction(). keys set.");
+      return { ok: true, name: name,
+               message: 'The key set "' + name + '" was given new keys.' };
+    }
+    if (action === 'delete') {
+      const gone = truststores.remove(realmId, name);
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). delete " +
+                  "refused.");
+        return refusal(gone, 'STS-ADMIN-0957');
+      }
+      record('The truststore ' + name + ' was deleted',
+             { action: 'delete', name: name });
+      log.debug("Leaving AdminActions.namedTruststoresAction(). deleted.");
+      return { ok: true, name: name,
+               message: 'The truststore "' + name + '" was deleted.' };
+    }
+    if (action === 'add') {
+      const text = Array.isArray(asked.certificates)
+        ? asked.certificates.map(String).join('\n')
+        : String(asked.certificates || '');
+      const result = await truststores.addCertificates(realmId, name, text,
+                                                       { addedBy: actor });
+      const refusals = (result.refused || []).map(function (one) {
+        return String(one.why || '');
+      });
+      if (!result.added.length && !result.duplicates) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). add " +
+                  "refused.");
+        return this.refused(errorCodes.codeOf(result) ||
+                            ((result.refused || [])[0] || {}).code ||
+                            'STS-ADMIN-0957',
+                            { ok: false, errors: refusals.length ? refusals :
+                              ['Nothing was added.'] });
+      }
+      if (result.added.length) {
+        // A detail value is a string of at most 200 characters
+        // (`common/audit.js`), so three fingerprints fit whole and a longer
+        // list is cut with its length named; `count` is always whole.
+        record('The truststore ' + name + ' was given ' +
+               result.added.length + ' certificate(s)', {
+          action: 'add', name: name, count: result.added.length,
+          fingerprints: result.added.map(function (one) {
+            return String(one.fingerprint256 || '');
+          }).join(' ')
+        });
+      }
+      log.debug("Leaving AdminActions.namedTruststoresAction(). added.");
+      return { ok: true, name: name,
+               added: result.added.map(function (one) {
+                 return AdminActions.truststoreCertificate(one, false);
+               }),
+               duplicates: result.duplicates,
+               refused: (result.refused || []).map(function (one) {
+                 return { subject: String(one.subject || ''),
+                          why: String(one.why || '') };
+               }),
+               message: 'Added ' + result.added.length + ', ' +
+                 result.duplicates + ' already held' +
+                 (refusals.length ? '; refused: ' + refusals.join('; ') : '') +
+                 '.' };
+    }
+    if (action === 'remove') {
+      const fingerprint = String(asked.fingerprint || '')
+        .replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+      const gone = truststores.removeCertificate(realmId, name, fingerprint);
+      if (!gone.ok) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). remove " +
+                  "refused.");
+        return refusal(gone, 'STS-ADMIN-0957');
+      }
+      record('A certificate was removed from the truststore ' + name,
+             { action: 'remove', name: name, fingerprint: fingerprint });
+      log.debug("Leaving AdminActions.namedTruststoresAction(). removed.");
+      return { ok: true, name: name, fingerprint: fingerprint,
+               message: 'Removed from "' + name + '".' };
+    }
+    // assign and unassign.
+    const useCase = String(asked.useCase || '').trim();
+    const row = UseCases.get(useCase);
+    if (!row || !UseCases.assignable(row)) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). Not " +
+                "assignable.");
+      return refusal(truststores.assignmentProblem(useCase, ['system'],
+                                                   realmId), 'STS-PKI-0303');
+    }
+    // #2148: an outbound use case may be overridden by a realm, for its own
+    // dials; every other service-wide one is the default realm's.
+    if (row.scope === 'service' && !UseCases.overridable(row) &&
+        realmId !== realms.DEFAULT_ID) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). A " +
+                "service-wide use case from a realm.");
+      return this.refused('STS-PKI-0302', { ok: false, errors: [
+        '"' + useCase + '" is decided with no realm in hand and trusts the ' +
+        'same truststores in every realm, so it is assigned from the ' +
+        'default realm only.'] });
+    }
+    let list: string[] = [];
+    if (action === 'assign') {
+      list = (Array.isArray(asked.truststores) ? asked.truststores :
+        String(asked.truststores || '').split(/[\s,]+/))
+        .map(function (one) {
+          return String(one || '').trim();
+        }).filter(Boolean);
+      if (!list.length) {
+        log.debug("Leaving AdminActions.namedTruststoresAction(). An " +
+                  "empty list.");
+        return refusal(truststores.assignmentProblem(useCase, list, realmId),
+                       'STS-PKI-0303');
+      }
+    }
+    const done = truststores.assign(realmId, useCase, list);
+    if (!done.ok) {
+      log.debug("Leaving AdminActions.namedTruststoresAction(). " + action +
+                " refused.");
+      return refusal(done, 'STS-ADMIN-0957');
+    }
+    const now = truststores.namesFor(useCase, realmId).names;
+    record(action === 'assign'
+      ? 'The use case ' + useCase + ' was assigned ' + now.join(', ')
+      : 'The use case ' + useCase + ' was returned to its default',
+    { action: action, useCase: useCase, names: now.join(', ') });
+    log.debug("Leaving AdminActions.namedTruststoresAction(). " + action +
+              ".");
+    return { ok: true, useCase: useCase, names: now,
+             message: action === 'assign'
+               ? '"' + useCase + '" now trusts ' + now.join(', ') + '.'
+               : '"' + useCase + '" trusts its default again: ' +
+                 now.join(', ') + '.' };
+  }
+
+  /**
    * Adds an anchor to the client-certificate truststore, or removes one; an add
    * is persisted where a store is installed, and the result says which.
    *
@@ -11843,6 +12733,7 @@ class AdminActions {
                         after.anchors.filter(function (one) {
         return addedPrints.indexOf(one.fingerprint256) >= 0;
       }).every(function (one) { return one.persisted === true; });
+      const note = [result.warning, result.error].filter(Boolean).join(' ');
       log.debug("Leaving AdminActions.truststoreAction().");
       return { ok: true, added: added.length,
                duplicates: result.duplicates || 0,
@@ -11855,8 +12746,9 @@ class AdminActions {
                persisted: persisted,
                // A partial add — the truststore filled part-way — is still a
                // success for what went in, and the reason the rest did not is
-               // carried rather than dropped.
-               warning: result.error || '',
+               // carried rather than dropped. A same-subject collision is a
+               // warning on the add, not an error (#1242).
+               warning: note,
                message: added.length + ' anchor(s) added' +
                  (result.duplicates ? ', ' + result.duplicates +
                   ' already held' :
@@ -11871,7 +12763,7 @@ class AdminActions {
                    : 'NOT PERSISTED — a runtime anchor is gone at the next ' +
                      'start; tls.trustAnchorsFile is the door for one that ' +
                      'must survive a restart.') +
-                 (result.error ? ' ' + result.error : '') };
+                 (note ? ' ' + note : '') };
     }
 
     // remove
@@ -12686,8 +13578,24 @@ class AdminActions {
   //      does it: an outstanding reset link is spent (the administrator has
   //      just decided what the password is), they are signed out of
   //      everything, the act is audited and said over Shared Signals. **NOT
-  //      a forced change** — `pwdReset` is CLEARED, not set — because the
-  //      person changing the password would kill the keytab this was for.
+  //      a forced change**, because the person changing the password would
+  //      kill the keytab this was for. **AND SINCE #2160 IT NO LONGER CLEARS
+  //      ONE EITHER** (rcbj, 2026-11-24). It used to clear `pwdReset`
+  //      because the KDC refuses a password flagged that way where passwords
+  //      are verified (STS-KRB-0257, #1446), and a keytab is that password's
+  //      keys, so the keytab would not have worked. But clearing it also
+  //      turned a temporary password, typed or generated by an
+  //      administrator, into a long-term one the administrator knows. So
+  //      `pwdReset` is left as it stands. In product, a reset for somebody
+  //      who still owes the change is REFUSED in step 1, before anything
+  //      changes (STS-ADMIN-0969), because the keytab would not work: they
+  //      change their password at the sign-in screen first. Development
+  //      neither checks the flag at the KDC nor refuses here.
+  //
+  //      A typed password here is NOT made temporary, unlike `set-password`
+  //      (#2160). The administrator holds the keytab anyway, and the keytab
+  //      is the same password's keys. Forcing a change would only end the
+  //      keytab.
   //   4. THE KEYTAB, from the password just set (`personKeytab()`), which
   //      waits for the derivation and checks it against what the KDC holds.
   //
@@ -12713,6 +13621,18 @@ class AdminActions {
                 "refused before anything changed.");
       return refused;
     }
+    // A FORCED CHANGE STILL OWED (#2160): see step 3 above.
+    if (mode.verifiesCredentials() &&
+        credentials.passwordResetRequired(who)) {
+      log.debug("Leaving AdminActions.resetPersonKeytab(). A password change " +
+                "is owed first.");
+      return this.refused('STS-ADMIN-0969', { ok: false, errors: [
+        who + ' must change their password at their next sign-in, and the ' +
+        'KDC refuses a password that must be changed, so a keytab made now ' +
+        'would not work. A keytab reset no longer clears that. Ask them to ' +
+        'sign in and choose their own password first, then make the keytab. ' +
+        'Nothing was changed.'] });
+    }
     const password = random ? credentials.generatePassword(who) : typed;
     // A typed password is screened against Pwned Passwords first (#62 P6).
     if (!random) {
@@ -12730,7 +13650,6 @@ class AdminActions {
     // — no passkey, assurance `any`, or a write already logged — leaves
     // the reset as it was.
     credentials.noteRecovery(who, 'admin-password');
-    credentials.setPasswordResetRequired(who, false);
     credentials.consumePasswordReset(who);
     const signedOut = this.signOutEverywhere(who, ctx,
                                              'a password reset for a keytab');
@@ -13138,6 +14057,9 @@ export = {
   truststoreAction: slot.forward('truststoreAction'),
   pkiTrustAction: slot.forward('pkiTrustAction'),
   PKI_TRUST_ACTIONS: PKI_TRUST_ACTIONS,
+  NAMED_TRUSTSTORE_ACTIONS: NAMED_TRUSTSTORE_ACTIONS,
+  namedTruststoresAction: slot.forward('namedTruststoresAction'),
+  truststoreShown: slot.forward('truststoreShown'),
   KERBEROS_PRINCIPAL_ACTIONS: KERBEROS_PRINCIPAL_ACTIONS,
   kerberosPrincipalsAction: slot.forward('kerberosPrincipalsAction'),
   KERBEROS_TRUST_ACTIONS: KERBEROS_TRUST_ACTIONS,

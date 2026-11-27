@@ -53,7 +53,7 @@
 # is what lets "nothing" work under the classic builder, which cannot make a
 # COPY optional.
 # ---------------------------------------------------------------------------
-ARG DEBUGGER_IMAGE=ghcr.io/rcbj/id-proto-debugger-embedded:0.9.3
+ARG DEBUGGER_IMAGE=ghcr.io/rcbj/id-proto-debugger-embedded:0.9.5
 FROM debian:bookworm-slim AS debugger-none
 RUN mkdir -p /debugger
 FROM ${DEBUGGER_IMAGE} AS debugger
@@ -168,7 +168,7 @@ RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
 # rest of `.github` is still excluded and nothing here reads any of it.
 #
 # **AND `docs` AND `docker-compose-run-tests.yml` ON 2026-09-14**, for the same
-# reason again: tests/error_codes.js reads docs/v1.1.0/error-codes.md and
+# reason again: tests/error_codes.js reads docs/v1.2.0/error-codes.md and
 # docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
 # read the test compose file. Excluded from the context, all three failed with
 # ENOENT in the first ./run-tests.sh run that reached them.
@@ -186,11 +186,15 @@ RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
 # `icap-clamav/`, the adapter's own container (`docker-compose.yml` builds it
 # from that directory). The service names some of them in a message and
 # reads none of them.
+# `sdk/` (#2141) is the optional SDKs' manifests and lockfile: the
+# `dependencies` stage installs them into /opt/sts-sdk, which the final stage
+# copies, so the tree needs no second copy.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./SECURITY.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
            ./build-typescript.sh ./rust ./companion \
            ./run-tests.sh ./run-coverage.sh ./run-jsdoc.sh \
-           ./docker-npm-test.sh ./docker-compose-quick.yml ./CONTRIBUTING.md ./icap-clamav
+           ./docker-npm-test.sh ./docker-compose-quick.yml ./CONTRIBUTING.md ./icap-clamav \
+           ./sdk
 
 # ---------------------------------------------------------------------------
 # THE SERVICE'S node_modules, THE SECRET-STORE SDKs AND BOTH SBOMs, MADE HERE
@@ -198,9 +202,27 @@ RUN rm -rf ./tests ./xacml-pep ./README.md ./SECURITY.md ./docker-compose.yml ./
 #
 # The final stage carries no npm, so every install happens in this stage, on
 # the same node as the one the service runs on (its binary is copied from this
-# image). A package with an install script runs it here exactly as it ran in
-# the final stage before: there is no compiler in either, so bunyan's optional
-# `dtrace-provider` skips its build as it always has.
+# image).
+#
+# **WITH INSTALL SCRIPTS OFF SINCE #2220 (2026-11-25, ASVS 5.0.0 15.2.4)**, as
+# the `typescript` stage and the SDK install below already were: a package's
+# install script is code from the registry run with the build's network and
+# its access to the context. Of the service's tree only two packages have one
+# (the root lockfile's `hasInstallScript`), and neither builds anything the
+# service loads, so NOTHING is rebuilt afterwards:
+#
+#   * bunyan's optional `dtrace-provider` runs `node-gyp rebuild || node
+#     suppress-error.js`. This stage has no compiler, so it never built: the
+#     script failed into its suppressor and the library falls back to its
+#     stub, which is exactly what it does when the script never ran;
+#   * `protobufjs` runs `scripts/postinstall`, which only prints a warning
+#     when a parent names it with the wrong version scheme.
+#
+# (`@fastify/pre-commit` has one too, a devDependency of the node-ldapjs
+# submodule, and `--omit=dev` keeps it out.) tests/sdk_lockfile.js holds the
+# root lockfile to that list: a new package with an install script fails it,
+# so whoever adds one decides here whether it needs an `npm rebuild <name>`,
+# as pkcs11js does in the SDK install.
 #
 # The LDAP server's library is `"ldapjs": "file:node-ldapjs"` — the git
 # SUBMODULE, not a registry package — so it has to be in the build context
@@ -226,7 +248,7 @@ FROM node:24.22.1-bookworm-slim AS dependencies
 WORKDIR /usr/src/sts
 COPY package*.json .npmrc ./
 COPY node-ldapjs ./node-ldapjs
-RUN npm ci --omit=dev && npm cache clean --force \
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force \
  && mkdir -p ./node-ldapjs/node_modules /out \
  && npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx \
       --sbom-type=application > /out/sbom.cdx.json
@@ -259,11 +281,38 @@ RUN npm ci --omit=dev && npm cache clean --force \
 # same way. So the SDK is installed into a prefix that has no opinion about
 # that package.json, and `NODE_PATH` (the final stage) is what makes
 # `require('node-vault')` find it.
-RUN mkdir -p /opt/sts-sdk \
-    && cd /opt/sts-sdk \
-    && npm init -y > /dev/null \
-    && npm install --omit=dev node-vault \
-    && npm cache clean --force
+#
+# **AND THAT PREFIX HAS A LOCKFILE OF ITS OWN SINCE #2141 (2026-11-24, ASVS
+# 5.0.0 15.2.4).** Until then it was `npm init -y` and a bare `npm install
+# node-vault`: whatever version the registry answered that day, with every
+# package's install scripts run. It is now `sdk/` in the repository, named for
+# the prefix it becomes, copied here whole: `sdk/package.json` declares one
+# npm WORKSPACE per optional SDK (`sdk/packages/sts-sdk-<name>/`, each
+# pinning its package to an exact version) and `sdk/package-lock.json` pins
+# everything beneath them. ONE lockfile and a workspace each, rather than one
+# lockfile per group, because a build names packages, not groups, and `npm
+# ci --workspace=…` installs exactly the named workspaces' trees from the one
+# lockfile and nothing else. `sdk/select.js` turns the names into those
+# arguments, and refuses a name with no workspace or a version the lockfile
+# does not hold, so an SDK that is not pinned is never installed.
+#
+# `--ignore-scripts` as in the `typescript` stage: node-vault has no install
+# script; of the pinned trees only pkcs11js (below), oracledb (a check that
+# prints a message), protobufjs (a check of its own CLI) and usocket (dbus-
+# next's optional native socket, which it falls back from) have one, and only
+# pkcs11js's builds anything the service loads.
+#
+# To move a pin: edit the version in `sdk/packages/sts-sdk-<name>/package.json`
+# and run `npm install --package-lock-only --ignore-scripts` in `sdk/`. A new
+# optional SDK is a new workspace directory and the same command;
+# tests/sdk_lockfile.js holds every optional peer of package.json to one.
+# `sdk/package.json`'s `overrides` (#2159) lift what an SDK pulls in past its
+# advisories: usocket 1.1.0 (node-gyp 13 instead of node-gyp 7's `request`
+# and old `tar`) and xml2js 0.6.2, both under dbus-next. An override is taken
+# into the lockfile by `npm update <name> --package-lock-only
+# --ignore-scripts`; `npm install --package-lock-only` keeps an existing
+# entry as it was. tests/tools/dependency-windows.js audits this lockfile.
+COPY sdk/ /opt/sts-sdk/
 # ---------------------------------------------------------------------------
 # A CLOUD SDK AND A DATABASE CA, FOR AN IMAGE THAT RUNS IN A CLOUD (2026-09-15).
 #
@@ -279,7 +328,10 @@ RUN mkdir -p /opt/sts-sdk \
 #
 # * `STS_CLOUD_SDKS` — space-separated package names, installed into the same
 #   prefix as node-vault (npm's peer rule above applies to them too). Empty by
-#   default, so the image every other launcher builds is unchanged.
+#   default, so the image every other launcher builds is unchanged. Each name
+#   is a workspace in `sdk/` and is installed at the version its lockfile pins
+#   (#2141); a `name@version` is accepted when the pinned version satisfies it,
+#   and anything else fails the build.
 # * `STS_DATABASE_CA_URL` — a PEM bundle fetched into
 #   /opt/sts-sdk/database-ca.pem. Node reads it through `NODE_EXTRA_CA_CERTS`,
 #   which the deployment sets; this service has no CA-file setting of its own
@@ -289,14 +341,33 @@ RUN mkdir -p /opt/sts-sdk \
 #   non-2xx answer or a body with no certificate fails the build, as `curl -f`
 #   and the grep after it did.
 # ---------------------------------------------------------------------------
+#
+# * `pkcs11js` (#1955 P8) may be one of them, for keys.kekProvider=pkcs11 and
+#   HSM signing keys. It is a NATIVE addon, built with node-gyp, and this
+#   stage has no compiler — so when the list names it, python3, make and g++
+#   are installed here first, in this stage only: the final stage takes the
+#   built tree and none of the tools. The HSM's own PKCS#11 module
+#   (yubihsm_pkcs11.so, libsofthsm2.so) is the deployment's to add to a
+#   derived image; `docs/v1.2.0/hsm.md` shows one.
 ARG STS_CLOUD_SDKS=
 ARG STS_DATABASE_CA_URL=
-RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
+RUN if printf '%s\n' ${STS_CLOUD_SDKS} | grep -q '^pkcs11js\(@.*\)\?$'; \
     then \
-      cd /opt/sts-sdk \
-      && npm install --omit=dev ${STS_CLOUD_SDKS} \
-      && npm cache clean --force; \
+      apt-get update \
+      && DEBIAN_FRONTEND=noninteractive apt-get -y install \
+           --no-install-recommends python3 make g++ \
+      && rm -rf /var/lib/apt/lists/*; \
     fi \
+    && cd /opt/sts-sdk \
+    && workspaces="$(node select.js ${STS_CLOUD_SDKS})" \
+    && npm ci --omit=dev --ignore-scripts ${workspaces} \
+    && if printf '%s\n' ${STS_CLOUD_SDKS} | grep -q '^pkcs11js\(@.*\)\?$'; \
+    then \
+      npm rebuild pkcs11js; \
+    fi \
+    && npm cache clean --force \
+    && node select.js --prune ${STS_CLOUD_SDKS} \
+    && rm -f select.js \
     && if [ -n "${STS_DATABASE_CA_URL}" ]; \
     then \
       node -e "fetch(process.argv[1]).then(function (r) { \
@@ -480,6 +551,13 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # (tests/tools/release-number.js). It must be M.N.O exactly or this RUN fails
 # (STS-CORE-0175); empty, the default, the release is VERSION's as before.
 #
+# STS_BUILD_KEY (#2142) is sixteen random bytes drawn here, once per build:
+# the opaque key the static surfaces' cached files are addressed by
+# (`version.buildKey()`), the same on every node and worker of this image and
+# different in the next one, which — unlike the build identifier it replaces
+# there — names neither the commit nor the build instant to whoever fetches
+# a page.
+#
 # `cat` afterwards so the record is in the build log: when somebody asks which
 # build an image is, the answer is in the log of the build that made it as well
 # as in the image.
@@ -490,6 +568,7 @@ ARG STS_VERSION_RELEASE=
 RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
     BUILD_NUMBER="${BUILD_NUMBER}" \
     STS_VERSION_RELEASE="${STS_VERSION_RELEASE}" \
+    STS_BUILD_KEY="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
     node common/version.js --stamp . && cat version.json
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
 # LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by
@@ -584,7 +663,7 @@ EXPOSE 8181
 EXPOSE 8444
 # The inter-cell channel (cells.port), bound only when the service is deployed
 # as cells (#98). A private address between cells; never publish it. See
-# docs/v1.1.0/cells.md.
+# docs/v1.2.0/cells.md.
 EXPOSE 8446
 # ---------------------------------------------------------------------------
 # THE SERVICE RUNS AS `sts`, UID AND GID 10001, AND NOT AS ROOT (#254,

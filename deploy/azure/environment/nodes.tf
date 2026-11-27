@@ -44,7 +44,18 @@ locals {
   # The settings every node agrees on (AWS: `node_environment`). The cluster
   # refuses a node whose must-agree settings differ, so they are spelt once.
   node_environment = merge({
-    STS_MODE                    = var.sts_mode
+    STS_MODE = var.sts_mode
+    # THE MAIN PORT IS HTTPS, SAID WHERE THE HEALTH CHECK CAN SEE IT (#1284,
+    # 2026-11-23; AWS's deploy/aws/environment/ecs.tf found it first). The
+    # appconfig file sets `global.https` (env/CLAUDE.md), so the service was
+    # HTTPS without this; but the image's Docker HEALTHCHECK runs
+    # common/healthcheck_probe.js, which loads no configuration and takes its
+    # scheme from STS_HTTPS alone, so it spoke plain HTTP to 8081 and Docker
+    # marked every node's container unhealthy. Here the load balancer and the
+    # Application Health extension ask /healthcheck over HTTPS themselves, so
+    # nothing was replaced for it, but `docker ps` said unhealthy. The same
+    # value the appconfig gives, so the service behaves as it did.
+    STS_HTTPS                   = "true"
     STS_PERSISTENCE_MODE        = "postgres"
     STS_PERSISTENCE_COORDINATE  = "true"
     STS_KEYS_SOURCE             = "persisted"

@@ -83,7 +83,7 @@
 //      is not an HTTP response, or `errorCodes.tag('STS-…')` at the front of a
 //      log message for a failure no audit row can hold;
 //   3. `node common/error_codes.js --docs`, which regenerates
-//      `docs/v1.1.0/error-codes.md`.
+//      `docs/v1.2.0/error-codes.md`.
 //
 // `tests/error_codes.js` fails on a code used and not registered, a code
 // registered and used nowhere, a documentation page that is stale, and a
@@ -92,7 +92,7 @@
 // property of the build rather than of anybody remembering.
 //
 // Run directly:
-//   node common/error_codes.js --docs     regenerate docs/v1.1.0/error-codes.md
+//   node common/error_codes.js --docs     regenerate docs/v1.2.0/error-codes.md
 //   node common/error_codes.js --check    non-zero if the page is stale
 //   node common/error_codes.js --json     the table
 // ===========================================================================
@@ -374,6 +374,55 @@ const SUBSYSTEMS = [
           'its attestation, compliance and status, the bounds on how many ' +
           'a person or an application holds, and the console\'s and the ' +
           'management API\'s doors to it.' },
+  { id: 'HWTOKEN', label: 'Hardware tokens',
+    where: 'common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, ' +
+           'portal/account_tokens.ts',
+    what: 'The hardware token register (#1955): one record per physical ' +
+          'token (a YubiKey, a smart card) keyed by vendor and serial, ' +
+          'the serial taken only from attestation, the credentials on it, ' +
+          'and the lost-key act that retires every one of them.' },
+  { id: 'OATH', label: 'OATH one-time code tokens',
+    where: 'common/hotp.ts, common/credentials.ts, common/pskc.ts, ' +
+           'common/oath_tokens.ts, mgmt-api/hardware_tokens_api.ts, ' +
+           'portal/account_tokens.ts',
+    what: 'Counter-based one-time codes (RFC 4226, #1955 P4): the ' +
+          'look-ahead, resynchronisation and the counter spent by ' +
+          'compare-and-set in the store; and vendor-provisioned tokens ' +
+          'imported from a PSKC seed file (RFC 6030), kept unassigned by ' +
+          'serial until an administrator assigns one or its holder claims ' +
+          'it.' },
+  { id: 'YUBIOTP', label: 'Yubico OTP',
+    where: 'common/yubiotp.ts, common/yubiotp_store.ts, ' +
+           'common/credentials.ts, authn/ykval.ts, ldap/ldap_server.js',
+    what: 'Yubico OTP (#1955 P5): a YubiKey OTP slot checked locally ' +
+          'with AES-128, an inventory of unassigned tokens, and the ' +
+          'YK-VAL 2.0 endpoint. No call is made to YubiCloud.' },
+  { id: 'PIV', label: 'PIV key attestation',
+    where: 'common/piv_attestation.ts, common/cert_enrollment.ts, ' +
+           'common/piv_enrolment.ts, portal/account_tokens.ts, ' +
+           'mgmt-api/hardware_tokens_api.ts',
+    what: 'YubiKey PIV key attestation at certificate enrolment (#1955 ' +
+          'P2): the request\'s attestation read and verified against the ' +
+          'realm\'s PIV attestation anchors and its PIN and touch policy, ' +
+          'the four PIV slot profiles, the escrow of piv-key-management ' +
+          'keys, and the mapping of an outside PIV or CAC card by its card ' +
+          'UUID.' },
+  { id: 'SSHCA', label: 'OpenSSH user certificates',
+    where: 'common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, ' +
+           'pki/pki_service.ts, account-api/ssh_user_ca.ts, ' +
+           'mgmt-api/hardware_tokens_api.ts',
+    what: 'The realm\'s OpenSSH user certificate authority (#1955 P3): ' +
+          'which principals a person may ask for, the security-key ' +
+          'attestation that earns the longer lifetime, the register of ' +
+          'issued certificates, and where the CA key and the KRL are ' +
+          'served.' },
+  { id: 'OPENPGP', label: 'OpenPGP keys and mail encryption',
+    where: 'common/openpgp_keys.ts, common/crypto.js (section 19), ' +
+           'portal/account_openpgp.ts, mgmt-api/openpgp_api.ts',
+    what: 'A person\'s OpenPGP public key registered with a proof of ' +
+          'possession (#1955 P6), its publication in the Web Key ' +
+          'Directory, their S/MIME certificate, and how mail to them is ' +
+          'encrypted.' },
   { id: 'SVCACCT', label: 'Service accounts',
     where: 'common/service_accounts.ts, common/service_account_policy.ts, ' +
            'common/service_account_rotation.ts, common/credentials.ts, ' +
@@ -660,6 +709,63 @@ const CODES = [
       'well-formed HTTP (400). The first is logged, and the rest are ' +
       'counted into one line a minute at most (#1500).',
     spec: 'HTTP 431, 408 or 400, then the connection closes' },
+  { code: 'STS-HTTP-0027',
+    summary: 'A browser reported a Content Security Policy violation at ' +
+      'POST /web/csp-report (#2164). The line names the realm, the ' +
+      'directive, the document\'s path (no query) and the blocked ' +
+      'origin or keyword; Monitoring > CSP reports counts them. A ' +
+      'report is unauthenticated, so it says what a browser claims.',
+    spec: 'none — recorded; answered 204 (CSP Level 3 section 5.5, the ' +
+      'Reporting API)' },
+  { code: 'STS-HTTP-0028',
+    summary: 'A CSP violation report was refused because its body is ' +
+      'larger than 16 KiB.',
+    spec: 'HTTP 413, with no body' },
+  { code: 'STS-HTTP-0029',
+    summary: 'A CSP violation report was refused because its address sent ' +
+      'more than 60 in a minute to this process.',
+    spec: 'HTTP 429 with Retry-After, and no body' },
+  { code: 'STS-HTTP-0030',
+    summary: 'A request to POST /web/csp-report carried no report: a type ' +
+      'other than application/csp-report, application/reports+json or ' +
+      'application/json, a Content-Encoding, a body that is not JSON, or ' +
+      'JSON holding no csp-report object and no csp-violation entry.',
+    spec: 'HTTP 415 or 400, with no body' },
+  { code: 'STS-HTTP-0031',
+    summary: 'A CSP violation report could not be forwarded to ' +
+      'cspReports.forwardUrl: the collector refused it, did not answer, ' +
+      'or the outbound rules refused the URL. Logged when forwarding ' +
+      'starts failing, not per report; the report is still recorded here.',
+    spec: 'none — the report was answered 204 and counted' },
+  { code: 'STS-HTTP-0032',
+    summary: 'Outbound HTTP requests are waiting for a connection: the ' +
+      'shared agent\'s cap per destination (federation.outboundMaxSockets) ' +
+      'or in all (federation.outboundMaxTotalSockets) is reached. They wait ' +
+      'within their overall deadline. Logged when requests first queue, ' +
+      'and again only after the queue has drained (#2220).',
+    spec: 'none — the requests wait; nothing is refused for the cap' },
+  { code: 'STS-HTTP-0033',
+    summary: 'An outbound request did not finish within its overall deadline ' +
+      '(federation.outboundDeadlineMs, or its own timeout where longer): ' +
+      'it was ended, and the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
+  { code: 'STS-HTTP-0034',
+    summary: 'An outbound connection was not made within the connect timeout ' +
+      '(federation.outboundConnectTimeoutMs): the request was ended, and ' +
+      'the caller\'s own timeout path ran (#2220).',
+    spec: 'the caller\'s own refusal for a timeout' },
+  { code: 'STS-HTTP-0035',
+    summary: 'An outbound request was not sent: its request-target (path ' +
+      'and query) is over 8 KiB, the bound RFC 9110 section 4.1 asks a ' +
+      'server to accept. It was destroyed before it was sent, and the ' +
+      'caller\'s own failure path ran (#2247, ASVS 5.0.0 4.2.5).',
+    spec: 'the caller\'s own refusal for a failed request' },
+  { code: 'STS-HTTP-0036',
+    summary: 'An outbound request was not sent: its header fields come to ' +
+      'more than 16 KiB, Node.js\'s own default bound on a request\'s ' +
+      'headers. It was destroyed before it was sent, and the caller\'s own ' +
+      'failure path ran (#2247, ASVS 5.0.0 4.2.5).',
+    spec: 'the caller\'s own refusal for a failed request' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -1303,6 +1409,42 @@ const CODES = [
       'file is not this: the image\'s own defaults are used ' +
       '(STS-CORE-0177).',
     spec: '' },
+  { code: 'STS-CORE-0180',
+    summary: 'A store could not forget what it held for a trust realm this ' +
+      'process never defined and the store no longer lists (#1938); it is ' +
+      'asked again at the next realm read.',
+    spec: '' },
+  { code: 'STS-CORE-0181',
+    summary: 'security.hstsPreload is on while ' +
+      'security.hstsIncludeSubDomains is off, so Strict-Transport-Security ' +
+      'is sent without preload: the HSTS preload list accepts a host only ' +
+      'when its header covers every subdomain (#2165). Logged when this ' +
+      'starts; /admin/mode shows it on the strict-transport-security row. ' +
+      'Turn on security.hstsIncludeSubDomains, or turn off ' +
+      'security.hstsPreload.',
+    spec: 'none — a warning; the header is still sent, without preload' },
+  { code: 'STS-CORE-0182',
+    summary: 'A file was not scanned because malwareScan.concurrency scans ' +
+      'were running and malwareScan.queueLimit more were waiting: it is ' +
+      'refused as a file the scanner could not answer for is. The warning ' +
+      'is logged when the queue first fills (#2220).',
+    spec: 'HTTP 503' },
+  { code: 'STS-CORE-0183',
+    summary: 'A setting that holds a list of regular expressions ' +
+      '(spiffe.httpChallengeAllowedDnsPatterns, ' +
+      'spiffe.dockerSigstoreAllowedIdentities) was refused at a save: an ' +
+      'entry is longer than 256 characters, uses a backreference, applies ' +
+      'a quantifier to a group that is itself quantified or an alternation ' +
+      '(the shape that makes a match take exponential time), or does not ' +
+      'compile (#2220).',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0184',
+    summary: 'A list of regular expressions in the environment or an ' +
+      'appconfig file holds an entry the console would refuse ' +
+      '(STS-CORE-0183). The service starts and uses it as configured; ' +
+      '/admin/config and the management API refuse it on the next save ' +
+      '(#2220).',
+    spec: 'none — a warning logged at startup; nothing is refused' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -1586,6 +1728,34 @@ const CODES = [
       'workers.readBarrierTimeoutMs; answering from its own copy could ' +
       'have been wrong.',
     spec: 'HTTP 503 (Retry-After: 5), plain text' },
+  { code: 'STS-WORKER-0055',
+    summary: 'A request worker reported that its change-log pull waited on ' +
+      'its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), ' +
+      'so the front process retired it — nothing more routed to it, then ' +
+      'drained, waiting for its own flush to settle — and forks a ' +
+      'replacement into its slot when it exits. A ' +
+      'pool that is stopping or has given up keeps the worker, and the ' +
+      'line says why.',
+    spec: '' },
+  { code: 'STS-WORKER-0056',
+    summary: 'A request worker retired because its change-log pull was ' +
+      'wedged (STS-WORKER-0055) did not finish draining within 8000 ms and ' +
+      'was ended; its replacement follows as for any worker that exits.',
+    spec: '' },
+  { code: 'STS-WORKER-0057',
+    summary: 'A request worker was ended, or exited, with its own flush ' +
+      'still out past ten times workers.readBarrierTimeoutMs after it ' +
+      'began (5 minutes by default): the flush was given up on, and the ' +
+      'writes in it may not have reached the store. A flush that settles ' +
+      'before then is waited for.',
+    spec: 'Log line' },
+  { code: 'STS-WORKER-0058',
+    summary: 'The front process could not catch up on the realm and ' +
+      'settings change logs before forwarding an answer that wrote a ' +
+      'setting (the catch-up ran out or failed): the answer is forwarded, ' +
+      'and a check the front makes before dispatch meets the new value at ' +
+      'its next change-log pull (#2019).',
+    spec: 'Log line' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -1750,7 +1920,9 @@ const CODES = [
       'and told its caller so; a request pool barrier asks again and ' +
       'refuses once workers.readBarrierTimeoutMs has passed. The line ' +
       'breaks the pull\'s time down: reading pages, the rows by kind, ' +
-      'preparing, the event loop\'s turns, and the rest.',
+      'preparing, the event loop\'s turns, and the rest — and says when ' +
+      'the apply is waiting on this process\'s own flush, and for how ' +
+      'long (STS-STORE-0176).',
     spec: '' },
   { code: 'STS-STORE-0040',
     summary: 'A read barrier could not read the change log and told its ' +
@@ -2175,6 +2347,59 @@ const CODES = [
       'arriving row replaced the held copy, as it did before such rows ' +
       'were merged.',
     spec: 'none — logged' },
+  { code: 'STS-STORE-0176',
+    summary: 'A change-log apply of a directory entry waited for this ' +
+      'process\'s own flush of that entry past workers.readBarrierTimeoutMs ' +
+      'and the flush had not settled. The pull fails before its position ' +
+      'moves, so the row is read again and never dropped; a request worker ' +
+      'asks the front process to replace it only once the flush is stuck ' +
+      '(STS-STORE-0177). Reported once a flush; a read barrier\'s ' +
+      'STS-STORE-0039 line names the wait while it lasts.',
+    spec: '' },
+  { code: 'STS-STORE-0177',
+    summary: 'A request worker\'s own flush has been out four times ' +
+      'workers.readBarrierTimeoutMs (2 minutes by default), so the worker ' +
+      'asks the front process to replace it (STS-WORKER-0055). Its drain ' +
+      'waits for that flush to settle until ten times the bound after it ' +
+      'began, so a flush that is only slow keeps its writes.',
+    spec: 'Log line' },
+  { code: 'STS-STORE-0178',
+    summary: 'A database statement was cancelled by the server at its ' +
+      'statement timeout (persistence.statementTimeoutMs, unless it set ' +
+      'its own). The caller\'s own failure path decides what follows: a ' +
+      'refused request, or a retried flush (#2220).',
+    spec: '' },
+  { code: 'STS-STORE-0179',
+    summary: 'The database password could not be read again from its ' +
+      'secret store (persistence.database-password-refresh, or after the ' +
+      'database refused a login, #2220); new connections go on using the ' +
+      'password already held.',
+    spec: 'Log line and audit row' },
+  { code: 'STS-STORE-0180',
+    summary: 'persistence.databaseTlsClientCertFile or ' +
+      'persistence.databaseTlsClientKeyFile is set and the client ' +
+      'certificate cannot be presented: only one of the two is set, a file ' +
+      'cannot be read (or is outside security.fileRoots in product), it ' +
+      'holds no certificate, the key is encrypted or does not parse, or it ' +
+      'is not the certificate\'s key (#2254). Fatal at ' +
+      'persistence.start(); the out-of-process tools that dial the ' +
+      'database refuse the same way.',
+    spec: 'none — fatal at start' },
+  { code: 'STS-STORE-0181',
+    summary: 'The database client certificate could not be read again ' +
+      '(persistence.database-password-refresh, or after the database ' +
+      'refused a login, #2254): a file is unreadable or the pair no longer ' +
+      'holds together. New connections go on presenting the pair already ' +
+      'held.',
+    spec: 'Log line and audit row' },
+  { code: 'STS-STORE-0182',
+    summary: 'The realm list or the settings table another process\'s ' +
+      'change asked for was read several times and each time this ' +
+      'process\'s own write of it committed while the read was out (GitHub ' +
+      'run 45732176952). The last answer is applied, with no realm removed ' +
+      'whose row this process wrote meanwhile; a value written here in that ' +
+      'moment may read as the stored one until the next change.',
+    spec: 'Log line' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -2336,6 +2561,17 @@ const CODES = [
       'whose row the flush dropped because the block claim\'s fence was ' +
       'gone: the token in the discarded body is not delivered.',
     spec: 'RFC 9110 section 15.6.4' },
+  { code: 'STS-CLUSTER-0167',
+    summary: 'A shared secret could not be read again from the store by ' +
+      'the per-process refresh (cluster.secret-refresh, #2220); the ' +
+      'process keeps the value it holds and tries again at the next run.',
+    spec: 'Log line' },
+  { code: 'STS-CLUSTER-0168',
+    summary: 'A step of a shared secret\'s rotation (cluster.secret-rotate, ' +
+      '#2220) failed: the stored value would not open or the new one would ' +
+      'not seal. The secret keeps its value and the step is tried again at ' +
+      'the next run.',
+    spec: 'Log line' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -2774,6 +3010,16 @@ const CODES = [
       'every cell (#727): it is answered 503 and its once-ever claim is ' +
       'released, so the provider\'s retry is accepted and fanned out again.',
     spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-CELL-0212',
+    summary: 'A synchronous call to another cell answered more than ' +
+      'cells.maxAnswerBytes: the connection was closed and the call ' +
+      'failed without reading the answer (#2220).',
+    spec: '' },
+  { code: 'STS-CELL-0213',
+    summary: 'keys.previousCellKekProvider is set and its location is ' +
+      'empty, or no cell key is configured for it to be the previous one ' +
+      'of (#2220); the service does not start.',
+    spec: 'Log line (fatal at start)' },
   // ===== SCHED =============================================================
   { code: 'STS-SCHED-0001',
     summary: 'A scheduled job\'s run threw or rejected; the run is recorded ' +
@@ -3843,6 +4089,129 @@ const CODES = [
       'after the realm was removed — and was skipped and deleted rather ' +
       'than refusing the start or kept.',
     spec: '' },
+  { code: 'STS-KEYS-0200',
+    summary: 'The signing keys of a trust realm this process never defined ' +
+      'were dropped once the store no longer listed it (#1938), and the ' +
+      'cached key set built from them could not be.',
+    spec: '' },
+  { code: 'STS-KEYS-0201',
+    summary: 'A PKCS#11 operation failed on the hardware security module: ' +
+      'no session could be opened, or a wrap, unwrap, signature or search ' +
+      'was refused, including after one reconnect (a connector restart or a ' +
+      'lost device is met by the next operation, never by a timer). A data ' +
+      'key that does not unwrap at start stops the start; a signature is ' +
+      'refused (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0202',
+    summary: 'The PKCS#11 module could not be used: keys.pkcs11Module is ' +
+      'empty, the module would not load or initialize, or no single token ' +
+      'matches the URI\'s token label, serial and slot (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0203',
+    summary: 'The key a PKCS#11 URI names is not usable: it is not on the ' +
+      'token (and keys.pkcs11GenerateKey is off, or this is a request ' +
+      'worker), more than one object matches, or it is extractable or not ' +
+      'AES-256 (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0204',
+    summary: 'The PKCS#11 token offers no mechanism this service wraps a ' +
+      'data key with for this key (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD, ' +
+      'CKM_YUBICO_AES_CCM_WRAP), or not the one keys.pkcs11Mechanism ' +
+      'names (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0205',
+    summary: 'The PKCS#11 location or PIN is wrong: the location is not an ' +
+      'RFC 7512 URI naming an object, it carries a PIN (pin-value, ' +
+      'pin-source), the PIN secret could not be read or holds none for the ' +
+      'token, or the token refused it (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0206',
+    summary: 'A realm whose signing keys are in the HSM was asked for ' +
+      'something only a key in this process can do — the private key ' +
+      'itself, a decryption, or an algorithm the HSM does not sign — and ' +
+      'refused it rather than making a software key (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0207',
+    summary: 'A signing key could not be made in, or read back from, the ' +
+      'hardware security module: the module offers no key-pair generation ' +
+      'for that algorithm or curve, or answered no public key (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0208',
+    summary: 'A realm key in the HSM was asked to decrypt (RSA-OAEP) or to ' +
+      'agree (ECDH) and the module refused it: the key was made without ' +
+      'CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could ' +
+      'decrypt. Rotating the realm\'s signing keys makes keys that can ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0209',
+    summary: 'A blocking PKCS#11 call with a realm key in the HSM (C_Sign, ' +
+      'C_Decrypt or C_DeriveKey) was asked while ' +
+      'keys.pkcs11SynchronousSign is off: by a module with no ' +
+      'asynchronous call for it, or by a synchronous door no service ' +
+      'caller uses with a realm key. Every service door signs and ' +
+      'decrypts off the event loop; turn the setting on to allow the ' +
+      'blocking call (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0210',
+    summary: 'A warning at start: the PKCS#11 calls this process can run at ' +
+      'once with realm keys in the HSM (keys.pkcs11Sessions times its ' +
+      'threads) reach libuv\'s thread pool size (UV_THREADPOOL_SIZE), ' +
+      'which they share with password hashing and post-quantum signing. ' +
+      'Nothing blocks the event loop; a slow token could hold every pool ' +
+      'thread. The line names the size that leaves room (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0211',
+    summary: 'The thread that makes a PKCS#11 token\'s non-cryptographic ' +
+      'calls off the event loop (opening and logging in a session, finding ' +
+      'a key, reading its attributes, beginning an operation, the key ' +
+      'wrap\'s session object, initialising the module again) failed or ' +
+      'exited. The calls waiting on it are refused and the next one starts ' +
+      'a new thread (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0212',
+    summary: 'A blocking PKCS#11 call was refused because the module is ' +
+      'being initialised again after the device was lost, or must be and ' +
+      'asynchronous calls of this thread still hold sessions on it: the ' +
+      'module is initialised again off the event loop once they drain, and ' +
+      'the next call is made on it (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0213',
+    summary: 'A thread held the process-wide lock on re-initialising a ' +
+      'PKCS#11 module for longer than the bound (a worker stopped while it ' +
+      'held it, or the module hung in C_Finalize or C_Initialize): the ' +
+      'thread waiting for it takes it over and initialises the module ' +
+      'again itself (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0214',
+    summary: 'A call to the OpenBao or Vault secret store still failed after ' +
+      'keys.storeAttempts attempts (no answer, a timeout, a 5xx or a 429 ' +
+      'each time); the failure is the caller\'s (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0215',
+    summary: 'An HSM operation was refused because keys.pkcs11QueueLimit ' +
+      'operations were already waiting for a session of the token in this ' +
+      'thread (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0216',
+    summary: 'An HSM operation, or the wait for a session to run it on, took ' +
+      'longer than keys.pkcs11TimeoutMs: it is refused, and a session ' +
+      'whose operation outlived its caller is discarded when the module ' +
+      'answers (#2220).',
+    spec: '' },
+  { code: 'STS-KEYS-0217',
+    summary: 'The keys.encryption-key-rotate job could not replace a ' +
+      'realm\'s request-decryption keys (#2220): the key set could not ' +
+      'be replaced (a newer generation was already held, or the store ' +
+      'refused the write). The keys go on as they are and the next run ' +
+      'tries again.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
+  { code: 'STS-KEYS-0218',
+    summary: 'An observer of the certificate authority hierarchies threw ' +
+      'when a hierarchy was set or dropped (#2292). The hierarchy is held ' +
+      'as written; what the observer keeps in step with it (the TLS ' +
+      'listeners\' client CA names) may be behind until the next change.',
+    spec: 'a warning log line' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -5314,6 +5683,149 @@ const CODES = [
       'GET /oid4vci/mdoc-iaca answers 500.',
     spec: 'the credential endpoint fails as it fails any signing error; ' +
       'the public certificate answers 500' },
+  { code: 'STS-PKI-0289',
+    summary: 'A request to issue an SSH user certificate (#1955 P3) had an ' +
+      'unsupported key, invalid principals, or a lifetime outside the ' +
+      'allowed range.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0290',
+    summary: 'The SSH user CA could not be created or used, a user ' +
+      'certificate could not be signed or recorded, or its KRL could not ' +
+      'be built (#1955 P3).',
+    spec: 'The account API or SSH KRL endpoint fails' },
+  { code: 'STS-PKI-0291',
+    summary: 'A requested SSH certificate revocation (#1955 P3) named a ' +
+      'malformed serial or one this realm did not issue.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0292',
+    summary: 'A public SSH user CA or KRL request (#1955 P3) named a scope ' +
+      'that does not have a realm SSH user CA.',
+    spec: 'The public PKI endpoint refuses the request' },
+  { code: 'STS-PKI-0293',
+    summary: 'A person requested an SSH user certificate (#1955 P3) while ' +
+      'pki.personSelfService is off.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0294',
+    summary: 'An SSH user certificate request (#1955 P3) had no UID, named ' +
+      'a principal the access policy refused, or its hardware evidence ' +
+      'could not be verified or recorded.',
+    spec: 'The account API refuses the request' },
+  { code: 'STS-PKI-0295',
+    summary: 'A person requested SSH user certificates (#1955 P3) too often ' +
+      'and the shared rate limiter refused it.',
+    spec: 'The account API refuses the request with HTTP 429' },
+  { code: 'STS-PKI-0296',
+    summary: 'A write turned on pki.sshUserCaPqcOnly and ' +
+      'pki.sshUserCaPqcAlongsideClassical together. One narrows a new ' +
+      'certificate to the ML-DSA authority; the other issues a classical ' +
+      'certificate and an ML-DSA certificate. They cannot both be on.',
+    spec: 'The console and the management API refuse the write' },
+  { code: 'STS-PKI-0297',
+    summary: 'An SSH user certificate was asked for while ' +
+      'pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: ' +
+      'this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in ' +
+      'pki.sshUserCaAlgorithms, or the authority could not be made. No ' +
+      'classical certificate is issued in its place.',
+    spec: 'The account API refuses the request with HTTP 503' },
+  { code: 'STS-PKI-0298',
+    summary: 'A public SSH user CA request named an algorithm other than ' +
+      'ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has ' +
+      'none.',
+    spec: 'GET /pki/ssh-user-ca/{scope} answers 400 or 404' },
+  { code: 'STS-PKI-0299',
+    summary: 'A realm\'s SSH user KRL was built but its cache could not be ' +
+      'persisted (#2092); the list built is answered and the next build ' +
+      'makes it again.',
+    spec: 'Nothing: GET /pki/ssh-user-krl/{scope} answers the KRL' },
+  { code: 'STS-PKI-0300',
+    summary: 'The named truststores\' directory half is not installed in ' +
+      'this process (#2118): a partial slot was refused, or a write was ' +
+      'asked of a process with no directory.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0301',
+    summary: 'A truststore name resolves to nothing in the realm (#2118): ' +
+      'no built-in, view, setting, SPIFFE bundle or named truststore has ' +
+      'it, or the named truststore holds no such certificate.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}; at a validation, the use case\'s own refusal' },
+  { code: 'STS-PKI-0302',
+    summary: 'A service-wide truststore use case was assigned what its ' +
+      'scope does not allow (#2118 D2, #2148): an inbound one (tls-client, ' +
+      'fido-mds, revocation-signer) assigned or cleared from a realm other ' +
+      'than the default, which alone decides it; or a truststore a realm ' +
+      'other than the default defines named by a service-wide use case, ' +
+      'except an outbound one that realm overrides for its own dials.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0303',
+    summary: 'A truststore assignment names no use case this service has, ' +
+      'one that is not assigned truststores (pins, its own hierarchy, an ' +
+      'admission rule), or no truststore at all (#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0304',
+    summary: 'A SPIFFE use case was assigned a truststore that is not a ' +
+      'SPIFFE bundle, or another use case a SPIFFE bundle (#2118, D5).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0305',
+    summary: 'A new truststore\'s name is not 1 to 63 lower-case letters, ' +
+      'digits and hyphens, is a built-in name, or is taken in the realm ' +
+      '(#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0306',
+    summary: 'A named truststore is full: 64 per realm, 32 anchors or 64 ' +
+      'intermediates per truststore, or the directory itself (#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0307',
+    summary: 'A named truststore a use case of the realm still trusts was ' +
+      'asked to be deleted (#2118); the assignment is changed first.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0308',
+    summary: 'A key-set truststore was refused its party or its keys ' +
+      '(#2149): the party is not client:, federation:, claims-provider: ' +
+      'or oidfed-anchor:<id>; the key set is not JSON, holds no key, more ' +
+      'than 32, a key without kty, or a private or symmetric key; neither ' +
+      'or both of pasted keys and a jwks_uri were given; or a Trust ' +
+      'Anchor\'s key set was given a jwks_uri (#2150); or an SSH CA ' +
+      'truststore was given no key, more than 32, or a line that is not ' +
+      'an SSH public key (#2151); or a cosign, sigstore-root or tuf-root ' +
+      'truststore was given no document, one over 256 KiB, or one that is ' +
+      'not PEM public keys, a trusted root or a TUF root (#2152). Also ' +
+      'recorded where a stored key set or a setting\'s file no longer ' +
+      'reads.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0309',
+    summary: 'A key set and a certificate truststore were confused ' +
+      '(#2149): a key-set use case was assigned a certificate truststore, ' +
+      'another use case a key set, a certificate was added to a key set, ' +
+      'or keys were set on a certificate truststore; or SSH CA keys and ' +
+      'certificates were confused the same way (#2151).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0310',
+    summary: 'A CA certificate inside its renewal lead could not be ' +
+      'renewed over the same key by the pki.ca-renew job (#2220): the ' +
+      'encoder refused, or its parent could not sign. The CA goes on as ' +
+      'it is and expires on its old date.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
+  { code: 'STS-PKI-0311',
+    summary: 'A CA certificate renewal was refused because the renewed ' +
+      'certificate\'s subject was not the subject it renews (#2220): a ' +
+      'renewal must keep the name every child names as its issuer.',
+    spec: 'an error log line and a failure audit row; nothing is stored' },
+  { code: 'STS-PKI-0312',
+    summary: 'A dedicated credential signer\'s key family could not be ' +
+      'moved on to its next generation by the scheduled rotation ' +
+      '(#2220). The current key goes on signing.',
+    spec: 'an error log line and a failure audit row; the scheduler run ' +
+      'fails with this code' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -6147,7 +6659,9 @@ const CODES = [
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0031',
     summary: 'WebAuthn verification failed: the RP ID hash in the ' +
-      'authenticator data is not SHA-256 of the expected RP ID.',
+      'authenticator data is not SHA-256 of the expected RP ID — or, for a ' +
+      'legacy U2F key whose client used the appid extension, of the AppID ' +
+      'it was imported under (#1955).',
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0032',
     summary: 'WebAuthn verification failed: the authenticator data does not ' +
@@ -8318,6 +8832,163 @@ const CODES = [
       'store with a NUL in it (STS-STORE-0063), so it was refused before ' +
       'the pending record was touched.',
     spec: 'action result with the reason' },
+  { code: 'STS-AUTHN-0558',
+    summary: 'The account-set expiry job could not read the sessions a ' +
+      'batch of browsers\' account sets lists, asynchronously (#780). The ' +
+      'batch decides nothing: no session is moved to remembered and no set ' +
+      'is deleted on it, and the next run starts again at that batch.',
+    spec: 'none: a scheduler job; logged, never sent' },
+  { code: 'STS-AUTHN-0559',
+    summary: 'A passkey was not registered: the passkey policy asks a ' +
+      'security key for CTAP 2.1 credential protection and enforces it ' +
+      '(credProtect, enforceCredProtect, #1955), and the authenticator ' +
+      'reported a lower credProtect level, or none, which is level 1. The ' +
+      'issuance policy\'s cred-protect rule. Asked where every key is ' +
+      'written.',
+    spec: 'HTTP 200 page naming the refusal; /admin-api and /account-api ' +
+      'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0560',
+    summary: 'A passkey policy save was refused: enforceCredProtect was on ' +
+      'while credProtect was none, so there was no level to enforce ' +
+      '(#1955). Nothing was written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0561',
+    summary: 'A legacy U2F security key was not imported: its AppID is not ' +
+      'one webauthn.u2fAppIds lists, or that setting is empty, which is ' +
+      'the feature off (#1955). Nothing was written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0562',
+    summary: 'A legacy U2F security key was not imported: its key handle ' +
+      'is not base64 or base64url of 1 to 255 bytes (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0563',
+    summary: 'A legacy U2F security key was not imported: its public key ' +
+      'is not an uncompressed P-256 point (65 bytes starting 0x04, on the ' +
+      'curve) (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0564',
+    summary: 'A legacy U2F security key was not imported: its counter is ' +
+      'not a whole number from 0 to 4294967295 (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0565',
+    summary: 'A sign-in step was answered by a legacy U2F security key ' +
+      'that may not answer it: the step is passwordless (a U2F key cannot ' +
+      'verify the person), or webauthn.u2fAppIds no longer permits its ' +
+      'AppID at this RP ID (#1955).',
+    spec: 'HTTP 200 page naming the refusal' },
+  { code: 'STS-AUTHN-0566',
+    summary: 'A write of webauthn.u2fAppIds was refused: an entry is not a ' +
+      'U2F AppID — an absolute https URL with a host, no user name or ' +
+      'password and no fragment, at most 2048 characters (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0567',
+    summary: 'The bootstrap password file could not be removed on a start ' +
+      'that found a credential already held. The plaintext is left on disk.',
+    spec: 'Log line; the service still starts, and the file is left' },
+  { code: 'STS-AUTHN-0580',
+    summary: 'A legacy U2F key was not imported: the person\'s passkey ' +
+      'policy enforces a CTAP 2.1 credProtect level, which an imported key ' +
+      'ran no ceremony to report and cannot prove (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-AUTHN-0581',
+    summary: 'A post-login activity is not asked: the module its row in ' +
+      'common/post_login_kinds.ts names could not be loaded, or does not ' +
+      'export a whole activity (its id and exposure the row\'s, and every ' +
+      'question it must answer). The other activities are still asked ' +
+      '(#2009).',
+    spec: 'Log line; nobody is asked that activity' },
+  { code: 'STS-AUTHN-0582',
+    summary: 'A post-login activity could not say whether a person is due ' +
+      'it (its answer threw), so it was not asked at that sign-in, even ' +
+      'where it may have been required. The other activities are still ' +
+      'asked. Logged at error level once per activity in a process (#2009).',
+    spec: 'Log line; the sign-in goes on without that activity' },
+  { code: 'STS-AUTHN-0590',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'does not accept a smart card (PIV/CAC) certificate as a first ' +
+      'factor (its smartCard row, which follows certificatePrimary while ' +
+      'unset) (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0591',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'does not accept Kerberos PKINIT with a smart card (a ticket carrying ' +
+      'this realm\'s pkinit-smartcard indicator; its pkinitSmartCard row, ' +
+      'which follows kerberosPrimary while unset) (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0592',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'requires attested hardware (requireAttestedHardware is always), and ' +
+      'the credential that completed the sign-in is on no active hardware ' +
+      'token in the register (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0593',
+    summary: 'The sign-in screen refused a client certificate: the ' +
+      'authentication policy takes the other kind of certificate (a smart ' +
+      'card, or a certificate that is not one) as a first factor, and not ' +
+      'this kind (#2031).',
+    spec: 'Sign-in screen refusal sentence; /authn-api answers refused' },
+  // #2009 P2: THE MAIL-ENCRYPTION ACTIVITY'S STEP. Numbered from 0600 so
+  // the parallel #2031 branch's codes above 0582 cannot meet these.
+  { code: 'STS-AUTHN-0600',
+    summary: 'The post-login mail-encryption activity refused an S/MIME ' +
+      'certificate whose key is not ML-KEM (RFC 9935): the activity asks ' +
+      'for a post-quantum certificate, and mail encrypted to an RSA or EC ' +
+      'one could be read once that key falls. Nothing was written (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0601',
+    summary: 'A post-login mail-encryption act named a kind of key the step ' +
+      'does not offer (an OpenPGP act where only S/MIME is offered, or the ' +
+      'reverse): the profile\'s mailPrefer and what the realm can take ' +
+      'decide what is offered, not the browser (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0602',
+    summary: 'A post-login act was sent to a step asking another activity: ' +
+      'a mail-encryption act at a passkey step, a passkey registration at ' +
+      'a mail-encryption step. Nothing was done (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0603',
+    summary: 'The post-login mail-encryption activity can no longer be done ' +
+      'here: since the step was asked the realm stopped taking every kind ' +
+      'it offered (openpgp.algorithms names no ML-KEM composite, or the ' +
+      'runtime cannot encapsulate to ML-KEM). The held session is started ' +
+      'without it: a sign-in is never held for something that cannot be ' +
+      'done (#2009).',
+    spec: 'none (the sign-in goes on)' },
+  { code: 'STS-AUTHN-0620',
+    summary: 'A post-login PIV re-issue act named a slot the step does not ' +
+      'ask for: no certificate in it was due when the step was asked ' +
+      '(#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0621',
+    summary: 'A post-login PIV re-issue act named a slot whose profile this ' +
+      'realm no longer enrols: est.allowedProfiles left it out after the ' +
+      'step was asked. Nothing was issued (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0622',
+    summary: 'The post-login PIV re-issue step was asked to continue before ' +
+      'every slot it asks for had a new certificate: enrol the others, or ' +
+      'Skip where the step may still be skipped (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0623',
+    summary: 'The post-login PIV re-issue can no longer be done here: since ' +
+      'the step was asked, the realm stopped enrolling every profile it ' +
+      'asked for. The held session is started without it: a sign-in is ' +
+      'never held for something that cannot be done (#2009).',
+    spec: 'none (the sign-in goes on)' },
+  { code: 'STS-AUTHN-0624',
+    summary: 'A sign-in logo was not saved: its bytes are a PNG, a JPEG or ' +
+      'a WebP image, but the file could not be walked to the end of its ' +
+      'image, so its metadata (EXIF, XMP, text chunks) could not be ' +
+      'removed. A logo is served to everybody and is kept only cleaned ' +
+      '(#2140).',
+    spec: 'none (a management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -10398,7 +11069,8 @@ const CODES = [
   { code: 'STS-OAUTH-0578',
     summary: 'In product mode, a client asked for a scope outside its ' +
       'oauthAllowedScope — or, declaring none, outside the default set ' +
-      '(OpenID Connect\'s six and the OpenID4VCI credential scopes).',
+      'oauth2.undeclaredClientScopes gives (openid alone by default since ' +
+      '1.2.0, #1589).',
     spec: 'invalid_scope (redirected error, or HTTP 400 at the token and ' +
       'pushed authorization request endpoints)' },
   { code: 'STS-OAUTH-0579',
@@ -11908,6 +12580,59 @@ const CODES = [
       'DPoP proof: every token issued to that client is DPoP-bound (RFC ' +
       '9449) to the PEP\'s assertion key (#1827\'s follow-up).',
     spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-1013',
+    summary: 'The token endpoint refused to issue an access token that ' +
+      'nothing would bind: oauth2.accessTokenRequireSenderConstraint is on ' +
+      'and the request carried neither a DPoP proof nor a client ' +
+      'certificate (#2183, ASVS 5.0.0 10.3.5, 10.4.14).',
+    spec: 'RFC 9449 section 7.1: HTTP 400 invalid_dpop_proof' },
+  { code: 'STS-OAUTH-1014',
+    summary: 'The authorization endpoint refused a response_type that would ' +
+      'mint an access token in the browser, which could never be bound, ' +
+      'while oauth2.accessTokenRequireSenderConstraint is on (#2183).',
+    spec: 'RFC 6749 section 4.1.2.1: the redirect carries ' +
+      'unsupported_response_type' },
+  { code: 'STS-OAUTH-1015',
+    summary: 'The authorization endpoint refused a request that carried ' +
+      'RFC 9396 authorization_details and was not pushed, while ' +
+      'oauth2.authorizationDetailsRequirePar is on (#2185, ASVS 5.0.0 ' +
+      '10.4.15).',
+    spec: 'RFC 9126 section 4: HTTP 400 invalid_request, answered on this ' +
+      'server' },
+  { code: 'STS-OAUTH-1016',
+    summary: 'The authorization endpoint refused a request whose ' +
+      'response_mode (the one asked for, or the response type\'s default ' +
+      'when none was) is not in the client\'s oauthResponseMode list ' +
+      '(#2247, ASVS 5.0.0 10.4.12). A client with no list is held to the ' +
+      'server\'s response_modes_supported alone, as before.',
+    spec: 'RFC 6749 section 4.1.2.1: the redirect carries ' +
+      'unauthorized_client' },
+  { code: 'STS-OAUTH-1017',
+    summary: 'The groups endpoint (/oauth2/groups, the distributed source ' +
+      'of a groups claim past groups.claimMaxBytes) was presented an ' +
+      'access token this service cannot verify (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1018',
+    summary: 'The groups endpoint was presented a token that is not a live ' +
+      'access token: another kind of token, or one revoked (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1019',
+    summary: 'The groups endpoint was presented an access token with no ' +
+      'person behind it (a client_credentials token), which has no groups ' +
+      '(#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-1020',
+    summary: 'The groups endpoint could not sign the JWT it answers with, ' +
+      'under the algorithm the client registered for its ID Tokens or the ' +
+      'realm\'s default (#2247).',
+    spec: 'HTTP 500 server_error' },
+  { code: 'STS-OAUTH-1021',
+    summary: 'The groups endpoint was presented an access token that carries ' +
+      'no overage reference to it (_claim_names mapping a claim to ' +
+      'sts-groups, whose _claim_sources endpoint is this realm\'s ' +
+      '/oauth2/groups): only a token issued with a groups claim over ' +
+      'groups.claimMaxBytes may redeem one (#2247).',
+    spec: 'RFC 6750 section 3.1: HTTP 401 invalid_token' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12815,7 +13540,9 @@ const CODES = [
   { code: 'STS-WSTRUST-0045',
     summary: 'A signed RST\'s WS-Security signature does not verify with the ' +
       'certificate it names, or a signed part was altered. Product ' +
-      '(#521).',
+      '(#521). A signature that cannot be checked because the request\'s ' +
+      'ciphertext will not open is STS-WSTRUST-0075, with the reason ' +
+      'it would not open (#2046).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0046',
@@ -13056,6 +13783,36 @@ const CODES = [
       'XML Encryption key. While the application holds one, a request for ' +
       'it is encrypted to its certificate and to nothing else. Nothing is ' +
       'issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0084',
+    summary: 'A WS-Trust request for an application that requires a ' +
+      'signed request (wstrustSignRequest, or wstrust.signRequest) ' +
+      'carried no WS-Security message signature this service accepted. ' +
+      'Nothing is issued (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0085',
+    summary: 'A WS-Trust request did not match its application\'s ' +
+      'wstrustSignRequestElements: an expression selected nothing, or ' +
+      'selected an element the accepted signature does not reference. ' +
+      'Nothing is issued (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0086',
+    summary: 'A WS-Trust response could not be signed while response ' +
+      'signing is on (wstrustSignResponse, or wstrust.signResponse): ' +
+      'an expression of wstrustSignResponseElements matched nothing or ' +
+      'selected the wsse:Security header itself, the realm\'s XML ' +
+      'signing key has no certificate to reference, or the signature ' +
+      'failed. The token is not sent (#1917, #1918).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0087',
+    summary: 'A WS-Trust request\'s signing map (wstrustSignRequestElements) ' +
+      'selected more than 256 elements of it. Nothing is issued: the map ' +
+      'is held to a bound, because each selected element is a walk of ' +
+      'the request (#1917).',
     spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
       'section 12' },
   { code: 'STS-WSFED-0001',
@@ -15846,6 +16603,27 @@ const CODES = [
       'that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE ' +
       'instead of its reply; the change is retried (GitHub run #569).',
     spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
+  { code: 'STS-KRB-0260',
+    summary: 'A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 over ' +
+      'an algorithm this KDC does not accept: one MS-PKCA does not list, ' +
+      'or SHA-1 in product mode without crypto.allowLegacyHashes (#2125).',
+    spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
+      'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
+  { code: 'STS-KRB-0261',
+    summary: 'A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 that ' +
+      'is not the digest of the KDC-REQ-BODY under the algorithm it names ' +
+      '(#2125).',
+    spec: 'MS-PKCA section 2.2.3: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0262',
+    summary: 'A PKINIT PKAuthenticator carried no MS-PKCA paChecksum2, ' +
+      'which krb5.pkinitRequirePaChecksum2 requires (#2125).',
+    spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
+      'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
+  { code: 'STS-KRB-0263',
+    summary: 'The krb5.service-key-rotate job could not rotate a service ' +
+      'principal key that was due (#2220): it could not be sealed or ' +
+      'written. The key goes on as it is.',
+    spec: 'an error log line; the scheduler run fails with this code' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -16779,6 +17557,31 @@ const CODES = [
       'handling can no longer catch it: the client is answered ' +
       'operationsError (1) rather than left without a result (run #510).',
     spec: 'RFC 4511 section 4.1.9' },
+  { code: 'STS-LDAP-0224',
+    summary: 'A handler for a person\'s credential attribute was refused by ' +
+      'the entry observer: the attribute is not one of the five it ' +
+      'observes, or the handler offers no changed(); that attribute\'s ' +
+      'index is not kept in step with the entries (#2050, #2051).',
+    spec: 'none — logged' },
+  { code: 'STS-LDAP-0225',
+    summary: 'The handler of a person\'s credential attribute threw on a ' +
+      'write of their entry; the write stands, and the index of that ' +
+      'attribute may be behind the entry until its job catches it up ' +
+      '(#2050, #2051).',
+    spec: 'none — logged' },
+  { code: 'STS-LDAP-0226',
+    summary: 'An LDAP search was refused before it read any entry: one of ' +
+      'its substring assertions held more components (initial, any, ' +
+      'final) than the limit of 32 (#2137).',
+    spec: 'LDAP adminLimitExceeded (11)' },
+  { code: 'STS-LDAP-0227',
+    summary: 'An LDAP connection was closed before its next message was ' +
+      'read: the length the message\'s BER header declared was over ' +
+      'ldap.maxMessageBytes (or, before a bind, ' +
+      'ldap.maxMessageBytesBeforeBind), or it used the indefinite length ' +
+      'LDAP does not allow. None of the message was buffered (#2220). ' +
+      'Logged at most once a minute, with a count of the rest.',
+    spec: 'RFC 4511 section 5.1 — the connection is closed with no result' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -18456,6 +19259,120 @@ const CODES = [
       'at every door that asks it; each door refuses it under its own code ' +
       'for a certificate that is not an identity.',
     spec: 'none (logged): the door\'s own refusal' },
+  { code: 'STS-TLS-0064',
+    summary: 'Two client-truststore anchors share a subject, and their ' +
+      'subject key identifiers do not tell them apart. OpenSSL looks an ' +
+      'issuer up by subject name and may check a certificate against ' +
+      'either, so a certificate one of them issued may not verify ' +
+      '(CERT_SIGNATURE_FAILURE) while both are installed; which one it ' +
+      'finds first is not promised. The add is kept and warned, and each ' +
+      'row\'s shadowedBy names the other\'s fingerprint (the lowest, when ' +
+      'several share it). Presenting either self-signed certificate itself ' +
+      'is recognised by its fingerprint and verified, when its own ' +
+      'purpose, key usage, validity and critical extensions allow a client ' +
+      'certificate (#1242).',
+    spec: 'the add succeeds with warning; the handshake of the certificate ' +
+      'itself verifies' },
+  { code: 'STS-TLS-0065',
+    summary: 'certSignIn.profiles is not a JSON array of well-formed ' +
+      'certificate sign-in profiles (an id, the issuers\' SubjectPublicKeyInfo ' +
+      'SHA-256s, keyUsage names, extendedKeyUsage and policy OIDs, known ' +
+      'binding methods, a name method only with lowAffinity true). A write ' +
+      'is refused; a stored value that is not one is not used, and no ' +
+      'certificate is covered by a profile (#2012).',
+    spec: 'HTTP 400 (the setting write); none (logged) when read' },
+  { code: 'STS-TLS-0066',
+    summary: 'A client certificate a certificate sign-in profile covers is ' +
+      'outside it: its keyUsage, its extendedKeyUsage, or the certificate ' +
+      'policies RFC 5280 policy processing carries through its path are ' +
+      'not the profile\'s, so it names nobody (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-TLS-0067',
+    summary: 'A client certificate\'s bindings name more than one account: ' +
+      'one method found several people, two methods found different ' +
+      'people, or the certificate is stored on one person and carries a ' +
+      'PIV card UUID another holds; it names nobody (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469)' },
+  { code: 'STS-TLS-0068',
+    summary: 'A client certificate a certificate sign-in profile covers is ' +
+      'bound to nobody: none of the profile\'s binding methods found an ' +
+      'account (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-TLS-0069',
+    summary: 'A value written to stsCertificateBinding is not a certificate ' +
+      'sign-in binding in the grammar certificate_binding.ts canonicalises ' +
+      '(certificate-sha256:, issuer-serial:, issuer-ski:, spki-sha256:, ' +
+      'issuer-subject: or subject:); nothing was written (#2012).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-TLS-0070',
+    summary: 'A certificate sign-in binding written to stsCertificateBinding ' +
+      'is already held by another entry of the realm, which would make one ' +
+      'certificate name two people; nothing was written (#2012).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-TLS-0071',
+    summary: 'A certificate sign-in was refused because the realm requires ' +
+      'a verified revocation status (certSignIn.requireRevocation) and the ' +
+      'status was unknown or not consulted (#2012).',
+    spec: 'HTTP 200 (GET /tls/sign-in, session.refusedOnRevocation); the ' +
+      'sign-in screen\'s STS-AUTHN-0464' },
+  { code: 'STS-TLS-0072',
+    summary: 'A request carried an RFC 9440 Client-Cert or Client-Cert-Chain ' +
+      'header from a sender that is not a trusted TLS-terminating proxy ' +
+      '(tls.trustedProxyCertificates and tls.trustedProxyAddresses), so ' +
+      'both were removed before anything read them (#2012).',
+    spec: 'none (recorded): the request goes on without them' },
+  { code: 'STS-TLS-0073',
+    summary: 'A trusted TLS-terminating proxy forwarded a Client-Cert that ' +
+      'is not an RFC 9440 byte sequence of one certificate, or whose chain ' +
+      'does not verify to the client truststore, so the request presents ' +
+      'no client certificate (#2012).',
+    spec: 'none (logged): the request goes on with no certificate' },
+  { code: 'STS-TLS-0074',
+    summary: 'A certificate sign-in handoff (/authn/certificate/continue) ' +
+      'named no live handoff: unknown, used, expired, or certSignIn.handoff ' +
+      'is off (#2012).',
+    spec: 'HTTP 400' },
+  { code: 'STS-TLS-0075',
+    summary: 'A certificate sign-in handoff arrived without the sign-on ' +
+      'session cookie of the browser that started it, so the certificate ' +
+      'was not bound to that sign-in: the listener does not share the ' +
+      'main port\'s host name and is not under authn.cookieDomain, or ' +
+      'another browser opened the link (#2012).',
+    spec: 'HTTP 403' },
+  { code: 'STS-TLS-0076',
+    summary: 'Only one of tls.trustedProxyCertificates and ' +
+      'tls.trustedProxyAddresses is set, so no forwarded client ' +
+      'certificate is read: a TLS-terminating proxy is trusted by both its ' +
+      'certificate and its address (#2012).',
+    spec: 'none (logged)' },
+  { code: 'STS-TLS-0077',
+    summary: 'A write of tls.trustedProxyCertificates was refused: an entry ' +
+      'is neither the SHA-256 of a certificate (64 hex digits, colons and ' +
+      'a sha256: prefix allowed) nor spki: followed by the SHA-256 of a ' +
+      'SubjectPublicKeyInfo in the same form (#2012).',
+    spec: '' },
+  { code: 'STS-TLS-0078',
+    summary: 'The listener certificate was due for renewal (less than a ' +
+      'third of its validity left, or inside ' +
+      'tls.serverCertificateRenewLeadDays) and the ' +
+      'tls.server-certificate-renew job could not re-issue it (#2220). ' +
+      'The socket goes on presenting the certificate it has.',
+    spec: 'a warning or error log line and a failure audit row' },
+  { code: 'STS-TLS-0079',
+    summary: 'No current OCSP response could be made for the certificate ' +
+      'a listener presents (#2254, tls.ocspStapling): this service\'s own ' +
+      'responder refused or failed, or the signature could not be made. ' +
+      'Handshakes go on without a staple (or with the previous one while ' +
+      'it is still current); none is failed. Logged when it starts, not ' +
+      'per handshake.',
+    spec: 'a warning log line' },
+  { code: 'STS-TLS-0080',
+    summary: 'The OCSP response a listener staples says its certificate is ' +
+      'REVOKED (#2254): the certificate was revoked at this service\'s own ' +
+      'certificate authority and is still being presented. The staple ' +
+      'says so to every client that asks; replace the certificate ' +
+      '(Renew on /admin/pki, or the listener\'s own files).',
+    spec: 'a warning log line' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -20077,6 +20994,28 @@ const CODES = [
       'that is not one is refused rather than read as no header ' +
       '(#1760 phase 3).',
     spec: 'HTTP 400' },
+  { code: 'STS-SSF-0164',
+    summary: 'An Add Subject request on a stream an APPLICATION owns named ' +
+      'a person who has no active session on that application, and ' +
+      'ssf.applicationStreamScope is active-sessions (#2234): no live ' +
+      'sign-on session the application is a relying party of, and no live ' +
+      'GNAP grant the person approved to it. The stream would carry ' +
+      'nothing about them, so the add is refused rather than ignored (SSF ' +
+      '1.0 section 8.1.3.2).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-SSF-0165',
+    summary: 'Whether a person has an active session on an application ' +
+      'could not be decided, because the sessions or the GNAP grants could ' +
+      'not be read (#2234). The event is withheld from that application\'s ' +
+      'stream, and an Add Subject is refused, rather than sent to a ' +
+      'receiver that may not be entitled to it (SSF 1.0 section 10.1).',
+    spec: 'none (logged); the event is not delivered to that stream' },
+  { code: 'STS-SSF-0166',
+    summary: 'pep-policies-changed could not be built or sent for a remote ' +
+      'PEP embedded in an application (#2028). Logged and nothing else: ' +
+      'the event is a hint, the policy change it follows has happened, and ' +
+      'the PEP converges on its fallback poll.',
+    spec: 'none (a log line)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -20554,6 +21493,52 @@ const CODES = [
       'approval on the portal could not be queued; the request still waits ' +
       'there (#432 phase 6).',
     spec: 'log only' },
+  { code: 'STS-MAIL-0240',
+    summary: 'A message whose template mail.encryptionRequired names was ' +
+      'not queued: the person has chosen no mail encryption, so ' +
+      'nothing could encrypt it. The use\'s own refusal handling ' +
+      'applies (#1955).',
+    spec: 'log only (the use refuses as for any unsent message)' },
+  { code: 'STS-MAIL-0241',
+    summary: 'A message was not queued because the encryption the person ' +
+      'chose cannot be honoured now (no usable OpenPGP encryption ' +
+      'key, no S/MIME certificate that can receive); it is not ' +
+      'sent in the clear against their choice (#1955).',
+    spec: 'log only (the use refuses as for any unsent message)' },
+  { code: 'STS-MAIL-0242',
+    summary: 'An encrypted message cannot be carried by the realm\'s ' +
+      'transport: Azure Communication Services takes structured ' +
+      'content and cannot send a MIME entity this service composed ' +
+      '(#1955).',
+    spec: 'log only' },
+  { code: 'STS-MAIL-0243',
+    summary: 'An encrypted message could not be encrypted at send time ' +
+      '(the stored key or certificate no longer reads); it is a ' +
+      'dead letter, never sent in the clear (#1955).',
+    spec: 'log only' },
+  { code: 'STS-MAIL-0244',
+    summary: 'A message was not queued because the realm\'s outbox already ' +
+      'holds mail.maxRows unsent messages; nothing already queued is ' +
+      'dropped to make room (#2220).',
+    spec: 'none — the sender is told the message was refused' },
+  { code: 'STS-MAIL-0245',
+    summary: 'A DKIM selector switch is held back (#2220): ' +
+      'mail.dkimNextSelector\'s key cannot sign, or mail.dkimSwitchAt has ' +
+      'passed and DNS does not answer the next selector with its key. ' +
+      'Messages are signed with the current selector until it does.',
+    spec: 'RFC 6376 section 3.6.1 (log only)' },
+  { code: 'STS-MAIL-0246',
+    summary: 'A credential expiry reminder could not be queued, or the ' +
+      'mail.credential-expiry job could not read the realm\'s expiry ' +
+      'index or record what it told; the next run tries again (#2247).',
+    spec: 'none — logged' },
+  { code: 'STS-MAIL-0247',
+    summary: 'The credential expiry index was not kept in step with a ' +
+      'write of a person\'s entry: its watcher was refused or threw, a ' +
+      'certificate on the entry could not be read, or the index row ' +
+      'could not be written. That person is not reminded of what changed ' +
+      'until their entry is next written (#2247).',
+    spec: 'none — logged' },
   // ===== I18N ==============================================================
   { code: 'STS-I18N-0001',
     summary: 'A catalog file under common/locales or a built-in mail ' +
@@ -20636,6 +21621,12 @@ const CODES = [
   { code: 'STS-I18N-0015',
     summary: 'POST /authn/language came from a page of another site (#1442).',
     spec: 'HTTP 403' },
+  { code: 'STS-I18N-0016',
+    summary: 'A refusal named a `refusals` catalog key the English catalog ' +
+      'does not have — a sentence a store kept under another build, or a ' +
+      'rollback — so the English it was given, or a general sentence, was ' +
+      'sent instead of the key, with no catalog message beside it (#2006).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -21912,6 +22903,14 @@ const CODES = [
   { code: 'STS-GNAP-0605',
     summary: 'A GNAP push interaction finish timed out.',
     spec: '' },
+  { code: 'STS-GNAP-0606',
+    summary: 'A GNAP push interaction finish URI is not one the outbound ' +
+      'policy will dial: federation.outbound is off, its host is not in ' +
+      'security.outboundAllowedHosts, or (in product mode) the name ' +
+      'resolves to a loopback, private, link-local or reserved address ' +
+      '(ASVS 5.0.0 1.3.6). Refused at the grant request, and nothing is ' +
+      'sent at the push.',
+    spec: 'invalid_interaction (HTTP 400) at the grant request' },
   { code: 'STS-GNAP-0650',
     summary: 'A GNAP monitor event is not in gnap_monitor.js\'s vocabulary ' +
       'and was not counted — a programming error.',
@@ -22746,6 +23745,857 @@ const CODES = [
       'register, so a person made again under the name owns it. Remove it ' +
       'on the Devices page.',
     spec: '' },
+  { code: 'STS-DEVICE-0054',
+    summary: 'A person\'s credential for the administrative surface — a ' +
+      'token to the admin console, or one carrying an admin:* scope — was ' +
+      'refused by the issuance policy\'s device-required-admin rule: the ' +
+      'realm requires its administrators to use a compliant registered ' +
+      'device (devices.requireCompliantDeviceForAdmin, on in product, ' +
+      'armed once an administrator signed in from one) and this did not ' +
+      'come from their own (or an application\'s) compliant, ' +
+      'uncompromised device (#2179).',
+    spec: 'the token endpoint\'s access_denied, whose description says ' +
+      'the admin console requires a compliant registered device' },
+  // ===== HWTOKEN ===========================================================
+  { code: 'STS-HWTOKEN-0001',
+    summary: 'A hardware token\'s serial was offered with an evidence ' +
+      'source that is not attestation (the FIDO enterprise ' +
+      'attestation, a PIV key attestation or a vendor import); ' +
+      'nothing was recorded (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0002',
+    summary: 'An attestation named no vendor and serial the hardware token ' +
+      'register can key a token by; nothing was recorded (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0003',
+    summary: 'A credential of an unknown kind, or with an empty reference, ' +
+      'was offered to the hardware token register (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0004',
+    summary: 'A hardware token\'s credential named a person with no ' +
+      'directory entry to hold it (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0005',
+    summary: 'The lost-key act named a hardware token that is not in the ' +
+      'realm\'s register, or (at the portal) not held by the caller ' +
+      '(#1955).',
+    spec: 'HTTP 404 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0006',
+    summary: 'The lost-key act named a hardware token already reported ' +
+      'lost (#1955).',
+    spec: 'HTTP 409 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0007',
+    summary: 'A credential on a hardware token reported lost could not be ' +
+      'retired: its kind\'s retire action refused or threw. The ' +
+      'token is marked lost; the credential named on the audit row ' +
+      'is still live and must be removed by hand (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0008',
+    summary: 'A retire action for a hardware token credential kind was ' +
+      'refused at installation: it named an unknown kind, no label ' +
+      'or no retire function (#1955, rule 3e).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0009',
+    summary: 'A credential on a hardware token reported lost is of a kind ' +
+      'no retire action is installed for, so it was not retired and ' +
+      'is still live (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0010',
+    summary: 'At the portal\'s lost-key act a credential on the token was ' +
+      'registered by another person, so it was left for an ' +
+      'administrator to retire (#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0011',
+    summary: 'A passkey was written and the hardware token register ' +
+      'could not record the token its attestation named; the key ' +
+      'stands, and the token is recorded when it is next registered ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-HWTOKEN-0012',
+    summary: 'A hardware token act named an action that is not one of ' +
+      'the page\'s (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-HWTOKEN-0013',
+    summary: 'The hardware token list or the lost-key act failed with ' +
+      'an unexpected error at /admin-api; the log line has the stack ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-HWTOKEN-0014',
+    summary: 'The directory offered the token entries library no ' +
+      'locate(), locateAsync(), write() or holdersAsync(), so nothing was ' +
+      'installed: no hardware, OATH or YubiKey OTP token is written onto ' +
+      'its holder\'s entry until one is, and every index write is marked ' +
+      'pending (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0015',
+    summary: 'A token\'s value could not be written onto its holder\'s ' +
+      'entry (stsHardwareToken, stsOathToken or stsYubiOtpToken); the ' +
+      'index row is marked pending and the hardware-tokens.entries job ' +
+      'writes it again (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0016',
+    summary: 'The hardware-tokens.entries job, or the manual rebuild of ' +
+      'the token indexes from the entries, could not read a store or the ' +
+      'directory; nothing more was done this run (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0017',
+    summary: 'A hardware, OATH or YubiKey OTP token value written onto a ' +
+      'person\'s entry by a door other than its own module was not what ' +
+      'the index recorded for them, so it was put back as recorded or ' +
+      'taken off, and audited with the writer: a serial is recorded only ' +
+      'from attestation and a token assigned only by its inventory (#2051).',
+    spec: 'none — audited' },
+  // ===== OATH ==============================================================
+  { code: 'STS-OATH-0001',
+    summary: 'An HOTP code (or a pair given to resynchronise) was not ' +
+      'the token\'s number of digits; it was refused (#1955).',
+    spec: 'RFC 4226 section 5.3' },
+  { code: 'STS-OATH-0002',
+    summary: 'A person\'s HOTP credential could not be read (not JSON ' +
+      'this service wrote, or a secret sealed under another ' +
+      'key-encryption key); its code was refused rather than the ' +
+      'person let through on one factor (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0003',
+    summary: 'An HOTP code matched no counter in the look-ahead window; ' +
+      'it was refused (#1955).',
+    spec: 'RFC 4226 section 7.4' },
+  { code: 'STS-OATH-0004',
+    summary: 'Two codes given to resynchronise an HOTP token were not ' +
+      'consecutive codes of it within the resync window; nothing ' +
+      'was changed (#1955).',
+    spec: 'RFC 4226 section 7.4' },
+  { code: 'STS-OATH-0005',
+    summary: 'An HOTP code matched a counter that had already been ' +
+      'accepted, by another node, another worker or a request ' +
+      'racing this one; it was refused as a replay (#1955).',
+    spec: 'RFC 4226 section 7.2' },
+  { code: 'STS-OATH-0006',
+    summary: 'An HOTP code matched and could not be proved unspent, ' +
+      'because the store could not be asked to advance its ' +
+      'counter; it was refused (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0007',
+    summary: 'An HOTP code, a resynchronisation or a removal was asked ' +
+      'of somebody who holds no HOTP credential (or not the token ' +
+      'named) (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0008',
+    summary: 'An HOTP enrolment or a token claim was refused because the ' +
+      'authentication policy has one-time code tokens (hotp) off ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0009',
+    summary: 'An HOTP enrolment was confirmed after it had expired, or ' +
+      'none was pending (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0010',
+    summary: 'An HOTP secret could not be sealed under the ' +
+      'key-encryption key, so it was not written (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0011',
+    summary: 'The credential store threw or refused while an HOTP ' +
+      'credential was read or written (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0012',
+    summary: 'No credential store is installed, so an HOTP credential ' +
+      'could not be enrolled or kept (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0013',
+    summary: 'An HOTP enrolment was asked for no name, or for a name ' +
+      'holding a control character, which no person has (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0014',
+    summary: 'In product mode an HOTP enrolment was refused for a name ' +
+      'with no directory entry (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0020',
+    summary: 'A PSKC seed file was not XML this service will parse (not ' +
+      'well formed, a document type or entity declaration, or too ' +
+      'large); nothing was imported (#1955).',
+    spec: 'RFC 6030' },
+  { code: 'STS-OATH-0021',
+    summary: 'A PSKC seed file\'s document element was not a version 1.0 ' +
+      'KeyContainer in the urn:ietf:params:xml:ns:keyprov:pskc ' +
+      'namespace; nothing was imported (#1955).',
+    spec: 'RFC 6030 section 4' },
+  { code: 'STS-OATH-0022',
+    summary: 'A key in a PSKC seed file names an algorithm that is not ' +
+      'HOTP or TOTP, or a response format that is not 6 to 8 ' +
+      'decimal digits, or a TOTP time origin other than 0; that ' +
+      'key was skipped (#1955).',
+    spec: 'RFC 6030 section 4.3.4' },
+  { code: 'STS-OATH-0023',
+    summary: 'A PSKC seed file names an encryption, MAC or ' +
+      'key-derivation algorithm this service does not open (or an ' +
+      'encryption key by a certificate, section 6.3); nothing was ' +
+      'imported (#1955).',
+    spec: 'RFC 6030 section 6' },
+  { code: 'STS-OATH-0024',
+    summary: 'A PSKC seed file carries its secrets in plaintext and ' +
+      'product mode refuses that unless pskc.allowPlaintextImport ' +
+      'is on; nothing was imported (#1955).',
+    spec: 'RFC 6030 section 6' },
+  { code: 'STS-OATH-0025',
+    summary: 'A PSKC seed file is encrypted and the import supplied no ' +
+      'pre-shared key (or no password, for a passphrase-based ' +
+      'file), or a key of the wrong length; nothing was imported ' +
+      '(#1955).',
+    spec: 'RFC 6030 section 6.1' },
+  { code: 'STS-OATH-0026',
+    summary: 'A PSKC seed file\'s MAC did not verify: the key or ' +
+      'password is wrong, or the file was altered; nothing was ' +
+      'imported (#1955).',
+    spec: 'RFC 6030 section 6.1.1' },
+  { code: 'STS-OATH-0027',
+    summary: 'A PSKC encrypted value did not decrypt (a key that is ' +
+      'wrong, or a value that is not an IV and whole blocks), or ' +
+      'carries no ValueMAC where its cipher has no integrity of ' +
+      'its own; nothing was imported (#1955).',
+    spec: 'RFC 6030 section 6.1' },
+  { code: 'STS-OATH-0028',
+    summary: 'A key package in a PSKC seed file names no device serial ' +
+      '(DeviceInfo/SerialNo), which is what a token is kept and ' +
+      'claimed by; that key was skipped (#1955).',
+    spec: 'RFC 6030 section 4.3.1' },
+  { code: 'STS-OATH-0029',
+    summary: 'A PSKC seed file holds more key packages than one import ' +
+      'takes, or none; nothing was imported (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0030',
+    summary: 'A key in a PSKC seed file is already in this realm\'s ' +
+      'token inventory (the same vendor, serial and key id); it ' +
+      'was skipped (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0040',
+    summary: 'No token in this realm\'s OATH inventory has that key ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0041',
+    summary: 'An OATH token was assigned or claimed that is already ' +
+      'assigned to somebody (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0042',
+    summary: 'An OATH token was assigned to a name with no directory ' +
+      'entry in this realm (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0043',
+    summary: 'A person\'s claim of an imported OATH token named a serial ' +
+      'no unassigned token has, or a code none of that serial\'s ' +
+      'tokens produced; nothing was assigned (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0044',
+    summary: 'An imported OATH token was assigned or claimed while the ' +
+      'authentication policy has its kind (totp or hotp) off ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0045',
+    summary: 'The OATH token inventory could not be read or written ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OATH-0046',
+    summary: 'An imported token\'s secret could not be sealed under the ' +
+      'key-encryption key, so the token was not kept (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0047',
+    summary: 'A lost hardware token\'s OATH credential could not be ' +
+      'retired (#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0049',
+    summary: 'An imported OATH token that is assigned was asked to be ' +
+      'removed; it is retired by reporting the token lost instead ' +
+      '(#1955).',
+    spec: '' },
+  { code: 'STS-OATH-0050',
+    summary: 'An Account API act on a one-time code token was refused: ' +
+      'unknown, or too many attempts in the code budget (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-OATH-0051',
+    summary: 'A claim of an imported HOTP token was refused: the code it ' +
+      'presented was already spent by another request, so it proves ' +
+      'nothing about who holds the token (#1955).',
+    spec: 'HTTP 400 (the portal or the Account API)' },
+  // ===== YUBIOTP ===========================================================
+  { code: 'STS-YUBIOTP-0001',
+    summary: 'A YubiKey OTP was not 32 to 48 even modhex characters, or ' +
+      'it named no public identity (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0002',
+    summary: 'A person holds a YubiKey OTP credential this process ' +
+      'cannot read, so it was refused rather than ignored (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0003',
+    summary: 'A YubiKey OTP did not decrypt, failed its CRC, or carried ' +
+      'another public or private identity than the one enrolled ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0004',
+    summary: 'A YubiKey OTP\'s use and session counters were not strictly ' +
+      'above the last accepted pair, so it was a replay (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0005',
+    summary: 'A YubiKey OTP matched and its counter could not be spent ' +
+      'in the store, so it was refused (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0006',
+    summary: 'A YubiKey OTP was checked for a person who holds none ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0007',
+    summary: 'Enrolling, assigning or claiming a YubiKey OTP was refused ' +
+      'because yubiotp.offered is off or the authentication policy ' +
+      'disallows yubico-otp. A credential already held is still ' +
+      'checked (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0008',
+    summary: 'A YubiKey OTP enrolment had expired before it was ' +
+      'confirmed (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0009',
+    summary: 'A YubiKey OTP secret or a YK-VAL client key could not be ' +
+      'sealed under the key-encryption key, so it was not kept ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0010',
+    summary: 'A YubiKey OTP credential could not be written to the ' +
+      'directory (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0011',
+    summary: 'No credential store is installed, so a YubiKey OTP ' +
+      'credential cannot be kept (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0012',
+    summary: 'YK-VAL was asked while yubiotp.ykval is off, so the ' +
+      'endpoint answered OPERATION_NOT_ALLOWED (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0013',
+    summary: 'A YK-VAL verify request omitted its nonce or its id, or a ' +
+      'known client\'s request omitted h (#1955 P5, #2094).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0014',
+    summary: 'A YK-VAL verify request\'s HMAC-SHA1 did not match the ' +
+      'client key (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0015',
+    summary: 'A YK-VAL verify request named a client id this realm has ' +
+      'not been given (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0016',
+    summary: 'A YK-VAL nonce was reused inside five minutes ' +
+      '(#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0017',
+    summary: 'A YK-VAL verify request\'s OTP did not match an enrolled ' +
+      'public identity (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0018',
+    summary: 'A YK-VAL verify request replayed an OTP whose counters ' +
+      'were already spent (#1955 P5).',
+    spec: 'YK-VAL 2.0' },
+  { code: 'STS-YUBIOTP-0019',
+    summary: 'A plaintext YubiKey CSV was refused in product mode ' +
+      'unless yubiotp.allowPlaintextImport is on (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0020',
+    summary: 'A YubiKey CSV could not be read as serial, public id, ' +
+      'private id and AES key (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0021',
+    summary: 'An inventoried YubiKey OTP\'s secret could not be opened ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0022',
+    summary: 'An assigned YubiKey OTP was asked to be removed; it is ' +
+      'retired by reporting the token lost (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0023',
+    summary: 'No YubiKey OTP with that serial is in this realm\'s ' +
+      'inventory (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0024',
+    summary: 'A person\'s claim of a YubiKey OTP named a serial no ' +
+      'unassigned token has, or an OTP that token did not produce ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0025',
+    summary: 'A YubiKey OTP carried a zero use counter and a zero ' +
+      'session counter, which this service does not accept ' +
+      '(#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0026',
+    summary: 'A YubiKey public identity is already enrolled for ' +
+      'somebody else (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0027',
+    summary: 'YK-VAL or an LDAP bind could not finish checking a ' +
+      'YubiKey OTP (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0028',
+    summary: 'A lost hardware token\'s YubiKey OTP credential could not ' +
+      'be retired (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0029',
+    summary: 'A YK-VAL client id was not 1 to 16 digits, or that client ' +
+      'already exists (#1955 P5).',
+    spec: '' },
+  { code: 'STS-YUBIOTP-0030',
+    summary: 'An operator asked to clear a YubiKey OTP for a person who ' +
+      'holds none (#1955 P5).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-YUBIOTP-0031',
+    summary: 'A YK-VAL nonce could not be proved unused: the cluster claim ' +
+      'it is spent under had no store to ask, so the request was not ' +
+      'checked (#1955).',
+    spec: 'YK-VAL 2.0 BACKEND_ERROR' },
+  { code: 'STS-YUBIOTP-0032',
+    summary: 'A YK-VAL verify named a YubiKey OTP of a disabled account; ' +
+      'it is answered as a bad OTP and nothing is spent (#1955).',
+    spec: 'YK-VAL 2.0 BAD_OTP' },
+  { code: 'STS-YUBIOTP-0033',
+    summary: 'A YK-VAL verify request\'s otp is not in a YubiKey OTP\'s ' +
+      'format (32 to 48 modhex characters); it is BAD_OTP before any ' +
+      'client is looked up, the reference server\'s order (#2094).',
+    spec: 'YK-VAL 2.0 BAD_OTP' },
+  { code: 'STS-YUBIOTP-0034',
+    summary: 'A YK-VAL verify request\'s nonce is not 16 to 40 letters ' +
+      'and digits; it is MISSING_PARAMETER before any client is looked ' +
+      'up, the reference server\'s order (#2094).',
+    spec: 'YK-VAL 2.0 MISSING_PARAMETER' },
+  { code: 'STS-YUBIOTP-0035',
+    summary: 'The imported YubiKey OTP inventory could not be listed for ' +
+      'Directory → Hardware tokens or GET /admin-api/hardware-tokens/' +
+      'yubiotp: the store or the person\'s entry threw (#2071).',
+    spec: 'HTTP 500' },
+  // ===== PIV ===============================================================
+  { code: 'STS-PIV-0001',
+    summary: 'A shipped PIV attestation certificate ' +
+      '(common/pki_piv_anchors.json) did not match its pinned ' +
+      'SHA-256 and is not used (#1955).',
+    spec: '' },
+  { code: 'STS-PIV-0002',
+    summary: 'Refused under paranoid PKI mode for piv-attestation: a ' +
+      'YubiKey PIV key attestation chain; nothing established what ' +
+      'the use case needs, or the use case itself refused (a ' +
+      'self-signed leaf, an anchor out of reach).',
+    spec: 'the use case\'s refusal (#1360, #1955)' },
+  { code: 'STS-PIV-0003',
+    summary: 'Refused under paranoid PKI mode for piv-card: an outside PIV ' +
+      'or CAC card\'s certificate mapped by its card UUID; the ' +
+      'leaf\'s keyUsage or validity failed, or the use case itself ' +
+      'refused.',
+    spec: 'the use case\'s refusal (#1360, #1955)' },
+  { code: 'STS-PIV-0004',
+    summary: 'A PIV attestation could not be read: the request\'s ' +
+      'id-aa-attestation attribute is no AttestationBundle, the ' +
+      'form\'s two certificates are not one slot certificate and an ' +
+      'f9 certificate, or a server-generated key carried one ' +
+      '(#1955).',
+    spec: 'HTTP 400; EST, SCEP and ACME refuse the request' },
+  { code: 'STS-PIV-0005',
+    summary: 'A PIV attestation certifies a different public key from the ' +
+      'certificate request\'s (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0006',
+    summary: 'A PIV attestation does not chain to a PIV attestation anchor ' +
+      'of the realm (piv.attestationAnchors, Yubico\'s roots by ' +
+      'default), or the realm has none (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0007',
+    summary: 'A PIV attestation names no serial number (Yubico extension ' +
+      '1.3.6.1.4.1.41482.3.7), so no hardware token can be recorded ' +
+      'from it (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0008',
+    summary: 'A PIV attestation is of another slot than the PIV profile ' +
+      'asked is for (9a piv-auth, 9c piv-sign, 9d ' +
+      'piv-key-management, 9e piv-card-auth) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0009',
+    summary: 'The PIV enrolment form was sent without a certificate ' +
+      'request, without a PIV profile, or for a person the caller ' +
+      'may not enrol (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-PIV-0010',
+    summary: 'A PIV profile was asked without a PIV attestation in a realm ' +
+      'that requires one (piv.requireAttestation) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0011',
+    summary: 'An attested PIV key\'s PIN policy is weaker than the realm ' +
+      'requires (piv.pinPolicy) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0012',
+    summary: 'An attested PIV key\'s touch policy is weaker than the realm ' +
+      'requires (piv.touchPolicy) (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0013',
+    summary: 'A piv-card-auth (slot 9e) certificate was refused at a ' +
+      'sign-in, because that key works without a PIN: the authentication ' +
+      'policy\'s smartCardCardAuth row is off (it follows ' +
+      'piv.cardAuthSignIn while unset, #2031) (#1955).',
+    spec: 'the TLS sign-in and PKINIT refusals' },
+  { code: 'STS-PIV-0014',
+    summary: 'A certificate was issued from a verified PIV attestation and ' +
+      'the hardware token register could not record its token; the ' +
+      'certificate stands and earns no hardware claim (#1955).',
+    spec: '' },
+  { code: 'STS-PIV-0016',
+    summary: 'A PIV enrolment or key-recovery act failed with an ' +
+      'unexpected error; the log line has the stack (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-PIV-0020',
+    summary: 'A piv-key-management key was to be escrowed and no ' +
+      'key-encryption key is held to seal it, so it was neither ' +
+      'generated nor kept (#1955, D7).',
+    spec: 'HTTP 503' },
+  { code: 'STS-PIV-0021',
+    summary: 'EST /serverkeygen was asked for a piv-key-management key in ' +
+      'a realm that does not escrow them (piv.keyEscrow): a ' +
+      'server-generated 9d key exists only to be escrowed (#1955, ' +
+      'D7).',
+    spec: 'HTTP 501' },
+  { code: 'STS-PIV-0022',
+    summary: 'An escrowed key was asked for and no escrowed ' +
+      'piv-key-management key is held for that certificate on that ' +
+      'person (#1955, D7).',
+    spec: 'HTTP 404' },
+  { code: 'STS-PIV-0023',
+    summary: 'An administrator\'s recovery of an escrowed key was refused ' +
+      'by the access-control policy: the caller does not hold ' +
+      'PIV_KEY_RECOVERY (roles.pivKeyRecoveryGroup), or no policy ' +
+      'decider is installed (#1955, D7).',
+    spec: 'HTTP 403' },
+  { code: 'STS-PIV-0024',
+    summary: 'An escrowed key could not be opened (its data encryption key ' +
+      'is not held, or the sealed value is damaged) (#1955, D7).',
+    spec: 'HTTP 503' },
+  { code: 'STS-PIV-0025',
+    summary: 'An escrowed certificate could not be attached to a hardware ' +
+      'token: the token is not the caller\'s, is lost, or the ' +
+      'certificate is not an escrowed one of theirs (#1955, D7).',
+    spec: 'HTTP 404' },
+  { code: 'STS-PIV-0030',
+    summary: 'An outside PIV or CAC card\'s certificate, from an issuer in ' +
+      'piv.externalIssuers, was not mapped: it asserts none of ' +
+      'piv.externalPolicyOids, or does not carry exactly one ' +
+      'urn:uuid subjectAltName (#1955, D8).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-PIV-0031',
+    summary: 'An outside PIV or CAC card\'s certificate names a card UUID ' +
+      'that is in stsPivCardUuid on no person of the realm (#1955, ' +
+      'D8).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-PIV-0032',
+    summary: 'An outside PIV or CAC card\'s card UUID is in stsPivCardUuid ' +
+      'on more than one person, so it names nobody (#1955, D8).',
+    spec: 'the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469)' },
+  { code: 'STS-PIV-0034',
+    summary: 'A value written to stsPivCardUuid is not a card UUID in ' +
+      'RFC 9562 form (or is the nil UUID); nothing was written (#1955, ' +
+      'D8).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-PIV-0035',
+    summary: 'A card UUID written to stsPivCardUuid is already held by ' +
+      'another entry of the realm, which would make the card name two ' +
+      'people; nothing was written (#1955, D8).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-PIV-0036',
+    summary: 'A PIV attestation\'s subject names no slot, and the profile ' +
+      'asked is a PIV slot profile or one that signs in (tls-client, ' +
+      'tls-server-client, smartcard-logon), for which the slot is the ' +
+      'point of the check (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0037',
+    summary: 'A PIV attestation of slot 9e, the Card Authentication key that ' +
+      'works without a PIN, was offered for a profile other than ' +
+      'piv-card-auth (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0038',
+    summary: 'A PIV certificate a post-login re-issue replaced could not be ' +
+      'revoked (superseded) when its successor was first used to sign in: ' +
+      'the certificate authority refused, or the record could not be read. ' +
+      'The row is kept, so the next sign-in with the new certificate tries ' +
+      'again; until then the old certificate is still valid (#2009, D5).',
+    spec: 'none (logged; the sign-in goes on)' },
+  { code: 'STS-PIV-0039',
+    summary: 'A certificate a post-login PIV re-issue enrolled for one ' +
+      'person was used to start a session for another. Nothing is revoked: ' +
+      'a person\'s certificates are revoked only by their own new ' +
+      'certificate (#2009, D5).',
+    spec: 'none (logged; the sign-in goes on)' },
+  // ===== SSHCA =============================================================
+  { code: 'STS-SSHCA-0001',
+    summary: 'The SSH user CA\'s public key or its KRL was asked for on the ' +
+      'plain-HTTP revocation listener, where neither is served: the CA key ' +
+      'is a trust anchor and the KRL is unsigned, so plain HTTP would let ' +
+      'anybody on the path replace them (#1955).',
+    spec: 'HTTP 404, text/plain' },
+  { code: 'STS-SSHCA-0002',
+    summary: 'An SSH certificate principal named a group whose name is a ' +
+      'person\'s uid in the realm, or a system account such as root, which ' +
+      'a server would sign the member in as (#1955).',
+    spec: 'HTTP 403' },
+  { code: 'STS-SSHCA-0003',
+    summary: 'An SSH security-key attestation was sent without the ' +
+      'challenge ssh-keygen was given, which the attestation signed, so ' +
+      'it could not be verified (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-SSHCA-0004',
+    summary: 'An administrator\'s SSH certificate act named nobody of the ' +
+      'realm\'s directory (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-SSHCA-0005',
+    summary: 'A person\'s SSH user certificates could not be read or ' +
+      'revoked: the register threw (#1955).',
+    spec: 'HTTP 500 or 503' },
+  { code: 'STS-SSHCA-0006',
+    summary: 'The directory offered the SSH user certificate register no ' +
+      'locate() or write(), so nothing was installed: no certificate is ' +
+      'written onto its holder\'s entry (stsSshUserCertificate) until one ' +
+      'is, and the register still holds and publishes every certificate ' +
+      '(#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0007',
+    summary: 'A person\'s entry could not be brought in step with the SSH ' +
+      'user certificates the register holds for them: the certificate was ' +
+      'issued or revoked in the register, which is authoritative, and the ' +
+      'ssh-user-ca.entries job tries the entry again (#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0008',
+    summary: 'The ssh-user-ca.entries job could not read the register of ' +
+      'issued SSH user certificates, or record what it found, so no entry ' +
+      'was brought in step this run; the next run tries again (#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0009',
+    summary: 'An SSH user certificate written onto a person\'s entry by a ' +
+      'door other than the CA was refused and taken off again: its serial ' +
+      'was never issued by this realm, was issued to somebody else, was ' +
+      'revoked (a revocation is permanent) or has expired, or the value ' +
+      'differs from what the CA issued. Audited with the writer (#2050).',
+    spec: 'none — audited' },
+  { code: 'STS-SSHCA-0010',
+    summary: 'An SSH user certificate was removed from its holder\'s entry, ' +
+      'which revokes it, and the revocation could not be recorded or the ' +
+      'KRL rebuilt; the entry no longer names it and the next KRL build ' +
+      'tries again (#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0011',
+    summary: 'An administrator\'s issuance of a person\'s SSH user ' +
+      'certificate (POST /admin-api/hardware-tokens/issue-ssh) threw ' +
+      'rather than issuing or refusing; nothing was answered as issued ' +
+      '(#2071).',
+    spec: 'HTTP 500' },
+  // ===== OPENPGP ===========================================================
+  { code: 'STS-OPENPGP-0001',
+    summary: 'An OpenPGP public key offered for registration did not ' +
+      'read: it was empty, larger than the 64 KiB this service ' +
+      'reads, more than one key, or not an OpenPGP key at all ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0002',
+    summary: 'A SECRET OpenPGP key was offered for registration; nothing ' +
+      'was stored. The person is told to export the public key ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0003',
+    summary: 'An OpenPGP key offered for registration is revoked or has ' +
+      'expired (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0004',
+    summary: 'An OpenPGP key, or the subkey that made its proof, uses an ' +
+      'algorithm openpgp.algorithms does not name (DSA, ElGamal, a ' +
+      'Brainpool curve, SLH-DSA, or any other name absent from that ' +
+      'list), or RSA shorter than openpgp.minRsaBits, or has no valid ' +
+      'signing key, or fails openpgp.pqcOnly or ' +
+      'openpgp.pqcAlongsideClassical at registration (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0005',
+    summary: 'No valid user id of an OpenPGP key offered for registration ' +
+      'carries the address on the person\'s entry (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0006',
+    summary: 'A person with no mail address asked for an OpenPGP ' +
+      'registration challenge, or offered a key; a key is ' +
+      'registered for the address its user id names (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0007',
+    summary: 'The proof of possession offered with an OpenPGP key is not ' +
+      'a readable cleartext-signed message (gpg --clearsign) ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0008',
+    summary: 'The proof of possession offered with an OpenPGP key does ' +
+      'not verify, or was made by a key that is not a signing key ' +
+      'of it (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0009',
+    summary: 'The text an OpenPGP proof of possession signs is not the ' +
+      'challenge this service issued the person (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0010',
+    summary: 'An OpenPGP proof of possession was signed before the ' +
+      'challenge was issued or after now, beyond ' +
+      'openpgp.signatureSkewS (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0011',
+    summary: 'No value of a person\'s userSMIMECertificate holds a ' +
+      'certificate that can receive S/MIME now (expired, an ' +
+      'unsupported key, a key usage or extended key usage that ' +
+      'excludes it), so mail to them cannot be S/MIME-encrypted ' +
+      '(#1955).',
+    spec: 'log only' },
+  { code: 'STS-OPENPGP-0012',
+    summary: 'An OpenPGP key was offered with no outstanding challenge ' +
+      'for the person, a lapsed one, or one already spent by ' +
+      'another request (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0013',
+    summary: 'An OpenPGP operation named a person with no entry in the ' +
+      'realm (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0014',
+    summary: 'An OpenPGP operation named an unknown action, or an unknown ' +
+      'mail encryption choice (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-OPENPGP-0015',
+    summary: 'A person with no OpenPGP key registered asked to remove or ' +
+      'publish one (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0016',
+    summary: 'A person chose OpenPGP for their mail while no registered ' +
+      'key of theirs has an encryption key valid now (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0017',
+    summary: 'A person chose S/MIME for their mail while their ' +
+      'userSMIMECertificate holds no certificate that can receive ' +
+      '(#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0018',
+    summary: 'An S/MIME certificate offered for a person\'s entry is not ' +
+      'a certificate, cannot receive S/MIME now, or does not name ' +
+      'the address on the entry (#1955).',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0019',
+    summary: 'An OpenPGP key, a publication choice, a mail encryption ' +
+      'choice or an S/MIME certificate verified but could not be ' +
+      'written to the person\'s entry (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0020',
+    summary: 'An OpenPGP operation was asked before the directory filled ' +
+      'its slot (ldap/ldap_server.js), so no person could be read ' +
+      '(#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0021',
+    summary: 'A Web Key Directory request named a domain or a hashed ' +
+      'local part that is not one (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0022',
+    summary: 'A Web Key Directory request named a domain no realm serves: ' +
+      'openpgp.wkd is off, or no realm\'s openpgp.wkdDomains (or ' +
+      'own domain) is it (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0023',
+    summary: 'A Web Key Directory lookup threw; the client is told the ' +
+      'key could not be read (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0024',
+    summary: 'A Web Key Directory request named an address with no ' +
+      'published key: nobody holds it, the person did not opt in, ' +
+      'the key was removed or replaced, or it expired (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-OPENPGP-0025',
+    summary: 'An OpenPGP operation of the account API or the management ' +
+      'API threw (#1955).',
+    spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0026',
+    summary: 'A post-quantum OpenPGP key (RFC 9980), or a proof signed ' +
+      'with one, could not have its ML-DSA half checked on this ' +
+      'runtime, so the key was not stored and the proof was not ' +
+      'accepted. The EdDSA half alone is not enough.',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0027',
+    summary: 'A write turned on openpgp.pqcOnly and ' +
+      'openpgp.pqcAlongsideClassical together. Post-quantum only ' +
+      'accepts a post-quantum key; alongside requires a post-quantum ' +
+      'key and a separate classical one. The write was refused.',
+    spec: 'HTTP 400 (the settings write)' },
+  { code: 'STS-OPENPGP-0028',
+    summary: 'An S/MIME message to an ML-KEM certificate could not be ' +
+      'built: this runtime cannot encapsulate (ML-KEM needs OpenSSL ' +
+      '3.5). The message was not sent under a classical algorithm ' +
+      'instead.',
+    spec: 'the mail send; STS-MAIL-0243 carries the sentence' },
+  { code: 'STS-OPENPGP-0029',
+    summary: 'The proof of possession offered with an OpenPGP key carries ' +
+      'more than one signature. A proof is signed once, by one key, so ' +
+      'that the signer and the creation time judged are the signature ' +
+      'that verified.',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0030',
+    summary: 'A person\'s mail address changed and the OpenPGP key whose ' +
+      'user ids name only the former address could not be retired from ' +
+      'their entry, or an S/MIME choice whose certificate does not name ' +
+      'the new address could not be put back to none. Mail is still not ' +
+      'encrypted to either for the new address: a key or certificate is ' +
+      'used only for an address it names.',
+    spec: 'none (a log line; the directory write that changed the address ' +
+      'is unaffected)' },
+  { code: 'STS-OPENPGP-0031',
+    summary: 'A post-quantum OpenPGP key was registered at the post-login ' +
+      'mail-encryption activity, and the classical key it replaced could ' +
+      'not be kept beside it on the person\'s entry (#2009, D3): the new ' +
+      'key stands and the classical one is replaced, as a registration ' +
+      'replaces a key.',
+    spec: 'none (a log line; the registration succeeds)' },
+  { code: 'STS-OPENPGP-0032',
+    summary: 'The job post-login.mail-classical-retire could not remove a ' +
+      'classical OpenPGP key whose kept time had passed (#2009, D3). It ' +
+      'is already left out of the Web Key Directory and every page, and ' +
+      'the next run tries again.',
+    spec: 'none (a log line and the run\'s result)' },
+  { code: 'STS-OPENPGP-0033',
+    summary: 'An OpenPGP key registered where a post-quantum one is asked ' +
+      'for (the post-login mail-encryption activity, #2009) has an ' +
+      'encryption key that is not one of RFC 9980\'s ML-KEM composites. ' +
+      'Refused before its proof is checked; nothing is spent or written.',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-OPENPGP-0034',
+    summary: 'A userSMIMECertificate value written onto a person\'s entry ' +
+      'holds no certificate this service can read, so it was taken off ' +
+      'again and audited with the writer: an S/MIME certificate on the ' +
+      'entry is the master mail is encrypted to (#2050).',
+    spec: 'none — audited' },
+  { code: 'STS-OPENPGP-0035',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) with a ' +
+      'public key that is not an RFC 9935 ML-KEM key: not a PEM ' +
+      'SubjectPublicKeyInfo, another algorithm, parameters present, or a ' +
+      'public key of the wrong length. Nothing was encapsulated.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0036',
+    summary: 'An ML-KEM S/MIME certificate was asked for (#2220) where ' +
+      'this runtime cannot encapsulate to ML-KEM ' +
+      '(`crypto.smimeKemAvailable()`), so no proof of possession could ' +
+      'be asked for and nothing was issued.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0037',
+    summary: 'An ML-KEM S/MIME certificate was asked to be issued (#2220) ' +
+      'with no outstanding proof-of-possession challenge for the person, ' +
+      'or one that lapsed (`openpgp.challengeLifetimeS`), or one already ' +
+      'answered. Ask for a new challenge.',
+    spec: 'none (HTTP 400 from /account-api)' },
+  { code: 'STS-OPENPGP-0038',
+    summary: 'The secret sent back for an ML-KEM S/MIME proof of ' +
+      'possession (#2220) is not the one this service encapsulated to the ' +
+      'key — it was not recovered with the private key (`openssl pkeyutl ' +
+      '-decap`), or is not 32 octets of hex or base64. The challenge is ' +
+      'spent; nothing was issued. Audited.',
+    spec: 'none (HTTP 400 from /account-api) — audited' },
+  { code: 'STS-OPENPGP-0039',
+    summary: 'The realm\'s EST Issuing CA did not issue the ML-KEM S/MIME ' +
+      'certificate a person proved possession of (#2220): the email ' +
+      'profile is not in est.allowedProfiles, the entry holds ' +
+      'pki.enrollmentMaxCertificatesPerEntry certificates, or the ' +
+      'authority refused. The refusal\'s own sentence says which.',
+    spec: 'none (HTTP 400 from /account-api)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -23200,8 +25050,10 @@ const CODES = [
       'allowed in development (#1450).',
     spec: '' },
   { code: 'STS-XACML-0052',
-    summary: 'The issuance gate\'s decider threw; issuance was ALLOWED ' +
-      'because a throw is a defect rather than a decision.',
+    summary: 'The issuance gate\'s decider threw, a defect rather than a ' +
+      'decision: in development the issuance is allowed, so a mock stays ' +
+      'fixable; in product it is refused (STS-XACML-0183, ASVS 5.0.0 ' +
+      '16.5.3).',
     spec: '' },
   { code: 'STS-XACML-0053',
     summary: 'The role register threw while resolving a party\'s roles; only ' +
@@ -24083,6 +25935,251 @@ const CODES = [
       '(#1827, phase 3).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0303',
+    summary: 'A role was written with a membership mode other than static ' +
+      'or dynamic-selectable (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0304',
+    summary: 'A dynamic selectable role was written with a member or a ' +
+      'conferring client (#1072): such a role is held by nobody and offered ' +
+      'at sign-in, so the write was refused, whether it made a role with ' +
+      'members dynamic or added a member to a dynamic role.',
+    spec: '' },
+  { code: 'STS-XACML-0305',
+    summary: 'A console or native role was to be made dynamic selectable ' +
+      '(#1072); their holders are fixed, so the write was refused.',
+    spec: '' },
+  { code: 'STS-XACML-0306',
+    summary: 'A dynamic role\'s selection was neither optional nor ' +
+      'required (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0307',
+    summary: 'A dynamic role\'s exclusive group was not a name of up to 64 ' +
+      'letters, digits and . _ : - (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0308',
+    summary: 'A role only applications may hold was to be made dynamic ' +
+      'selectable (#1072); a dynamic role is chosen by a person at sign-in.',
+    spec: '' },
+  { code: 'STS-XACML-0309',
+    summary: 'The selection of a static role was to be set (#1072); only a ' +
+      'dynamic selectable role is chosen at sign-in.',
+    spec: '' },
+  { code: 'STS-XACML-0310',
+    summary: 'A dynamic role\'s eligibility policy (xacmlRole, #1072) was ' +
+      'to be made the root of the repository; it is decided alone, for ' +
+      'one role, so the write was refused.',
+    spec: '' },
+  { code: 'STS-XACML-0311',
+    summary: 'A dynamic role\'s eligibility was asked about, or its policy ' +
+      'set, for a role this realm does not hold (#1072); nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0312',
+    summary: 'A static role was asked about as a dynamic one, or given an ' +
+      'eligibility policy (#1072); only a dynamic selectable role is offered.',
+    spec: '' },
+  { code: 'STS-XACML-0313',
+    summary: 'A dynamic role has no eligibility policy (#1072), so nobody is ' +
+      'eligible for it.',
+    spec: '' },
+  { code: 'STS-XACML-0314',
+    summary: 'A dynamic role names an eligibility policy that is not in ' +
+      'ou=policies (#1072); nobody is eligible for it.',
+    spec: '' },
+  { code: 'STS-XACML-0315',
+    summary: 'A dynamic role names a policy that is not its own: it carries ' +
+      'another role\'s xacmlRole, or none (#1072). It is never adopted, and ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0316',
+    summary: 'A dynamic role\'s eligibility policy is disabled (#1072); ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0317',
+    summary: 'A dynamic role\'s eligibility policy does not parse (#1072); ' +
+      'nobody is eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0318',
+    summary: 'A dynamic role\'s eligibility could not be decided: the PDP ' +
+      'met a processing or syntax error, or the decision threw (#1072). The ' +
+      'person is not eligible.',
+    spec: '' },
+  { code: 'STS-XACML-0319',
+    summary: 'A person is not eligible for a dynamic role: its policy did ' +
+      'not answer Permit, or no person was named (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0320',
+    summary: 'A dynamic role that belongs to one application was asked about ' +
+      'for a sign-in to another (#1072); it is offered only on its own ' +
+      'application\'s.',
+    spec: '' },
+  { code: 'STS-XACML-0321',
+    summary: 'A dynamic role\'s eligibility policy was given as neither or ' +
+      'both of document (XACML XML) and alfa (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0322',
+    summary: 'A dynamic role would not take the reference to its new ' +
+      'eligibility policy (#1072); a new policy was taken back.',
+    spec: '' },
+  { code: 'STS-XACML-0324',
+    summary: 'The reader of a session\'s chosen dynamic roles threw while ' +
+      'roles were resolved (#1072); no dynamic role was held.',
+    spec: '' },
+  { code: 'STS-XACML-0325',
+    summary: 'A sign-in\'s role step was submitted with a role it did not ' +
+      'offer (#1072): fabricated, from another realm, application or ' +
+      'sign-in, or not eligible when the step was drawn. Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0326',
+    summary: 'A sign-in\'s role step was submitted with two roles of one ' +
+      'exclusive group (#1072). Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0327',
+    summary: 'A sign-in\'s role step was submitted without any of the ' +
+      'required roles it offered (#1072). Nothing was chosen.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0328',
+    summary: 'A role chosen at a sign-in\'s role step was no longer eligible ' +
+      'when it was submitted (#1072); the step is drawn again.',
+    spec: 'HTTP 400' },
+  { code: 'STS-XACML-0329',
+    summary: 'A session was refused at a door that cannot draw the role ' +
+      'step (federation, a wallet, SPNEGO, a certificate) because a ' +
+      'required dynamic role was offered to the person (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0330',
+    summary: 'A sign-in held for the role step had no pending sign-in to ' +
+      'draw the step on, so it was refused (#1072).',
+    spec: '' },
+  { code: 'STS-XACML-0331',
+    summary: 'A remote PEP\'s heartbeat was refused: a member its entry ' +
+      'stores carries a value the service cannot hold (fuzz run #595) — ' +
+      'a counter that is not a non-negative integer of at most 2^53 - 1, ' +
+      'a text member that is not a string or carries a control ' +
+      'character, or signals, settings or listeners that are not an ' +
+      'object or null. Nothing of it is recorded; the refusal names the ' +
+      'member.',
+    spec: 'none — 400 invalid_request on POST /xacml/pep/heartbeat' },
+  { code: 'STS-XACML-0332',
+    summary: 'A flow that cannot draw the role step — the password grant, ' +
+      'a token exchange, the RFC 7523 or RFC 7522 grant, the device grant, ' +
+      'CIBA, WS-Trust, a Kerberos ticket or an LDAP bind — was refused ' +
+      'because the application (or the realm, where it names none) would ' +
+      'require the person to choose a dynamic role (#1072, rcbj\'s ' +
+      'decision 5).',
+    spec: 'access_denied at the token endpoint (RFC 6749 section 5.2); ' +
+      'wst:RequestFailed; KDC_ERR_POLICY (RFC 4120 section 7.5.9); LDAP ' +
+      'unwillingToPerform (RFC 4511 section 4.1.9)' },
+  { code: 'STS-XACML-0333',
+    summary: 'Single sign-on into an application that requires a dynamic ' +
+      'role was not answered from the session, which chose none for it (a ' +
+      'sign-in for another application, or at a door that names none): the ' +
+      'person was sent to sign in again and choose, or, where the request ' +
+      'forbids asking (prompt=none, IsPassive), it was refused (#1072).',
+    spec: 'interaction_required (OIDC Core section 3.1.2.6) with ' +
+      'prompt=none; NoPassive with IsPassive' },
+  { code: 'STS-XACML-0334',
+    summary: 'set-pep-application or clear-pep-application (or ' +
+      'issue-pep-credential with an application) named no remote PEP, or a ' +
+      'name that is nobody in this realm\'s ou=users: an embedded PEP\'s ' +
+      'binding is written on the entry it signs in as (#2025).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0335',
+    summary: 'set-pep-application named a person who is not a service ' +
+      'account, or a service account that does not hold REMOTE_PEPS: only ' +
+      'a remote PEP\'s identity is bound to an application (#2025).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0336',
+    summary: 'set-pep-application (or issue-pep-credential with an ' +
+      'application) named no application, or one this realm\'s registry ' +
+      'does not hold, so nothing was bound (#2025).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0337',
+    summary: 'An embedded PEP\'s binding could not be written or removed: ' +
+      'the directory is not available or refused the write (#2025). Nothing ' +
+      'changed.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0338',
+    summary: 'A policy document was refused at write: a regexp-match ' +
+      'function\'s literal pattern is longer than 1024 characters, uses a ' +
+      'backreference, or applies a quantifier to a group that is itself ' +
+      'quantified or an alternation, the shape that makes a match take ' +
+      'exponential time (#2220). A policy stored before the rule still ' +
+      'loads; the console lists the pattern among its problems.',
+    spec: 'console: 303 back to the page with error=…; /admin-api: HTTP ' +
+      '400 { ok: false, errors }' },
+  { code: 'STS-XACML-0339',
+    summary: 'A regexp-match was Indeterminate at evaluation: its pattern ' +
+      'uses a backreference or a nested quantifier (one stored before ' +
+      'STS-XACML-0338, written by ldapmodify, or fetched from an ' +
+      'attribute), or the value was longer than 4096 characters (#2220). ' +
+      'Logged once per pattern; the remote PEP decides alike.',
+    spec: 'XACML 3.0 section B.8 processing-error (Indeterminate)' },
+  { code: 'STS-XACML-0340',
+    summary: 'A remote PEP registered (or sent a heartbeat) as kind ' +
+      'embedded, and its entry is bound to no application ' +
+      '(stsPepApplication, set-pep-application): an embedded PEP is ' +
+      'admitted only for the application an administrator bound it to ' +
+      '(#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 ' +
+      'access_denied' },
+  { code: 'STS-XACML-0341',
+    summary: 'A remote PEP registered (or sent a heartbeat) as kind ' +
+      'embedded naming no application, or an application other than the ' +
+      'one its entry is bound to: a PEP key copied into another ' +
+      'application cannot pose as that application\'s PEP (#2026). ' +
+      'Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 ' +
+      'access_denied' },
+  { code: 'STS-XACML-0342',
+    summary: 'A remote PEP sent a protocolVersion this service does not ' +
+      'support (the supported set is 1), or an embedded PEP sent none ' +
+      '(#2026). Nothing was recorded; the PEP\'s package must be upgraded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0343',
+    summary: 'A remote PEP sent mode with kind container (or no kind, ' +
+      'which is container): central and local are an embedded PEP\'s ' +
+      'modes (#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0344',
+    summary: 'A remote PEP sent a kind that is neither container nor ' +
+      'embedded, or registered as embedded with a mode that is neither ' +
+      'central nor local, or a policyEvents report outside none, ' +
+      'requested, excluded and down (#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0345',
+    summary: 'GET /xacml/pep/policies?scope=bound-application was asked by ' +
+      'a caller that is not a registered embedded PEP in local mode bound ' +
+      'to the application it registered for (#2027): the pull scoped to ' +
+      'an application, which carries that application\'s own policy, is ' +
+      'answered to that application\'s local PEP and nobody else. Nothing ' +
+      'was sent.',
+    spec: 'GET /xacml/pep/policies: HTTP 403 access_denied' },
+  { code: 'STS-XACML-0346',
+    summary: 'GET /xacml/pep/policies named a scope this service does not ' +
+      'have: repository (or none) and bound-application are the two (#2027).',
+    spec: 'GET /xacml/pep/policies: HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0347',
+    summary: 'Whether an application enforces fine-grained authorization ' +
+      'could not be read while building its local PEP\'s scoped pull ' +
+      '(#2027), so the PEP was sent the realm root and its closure, which ' +
+      'is what AuthZEN decides the application by when it cannot read it ' +
+      'either. Logged.',
+    spec: 'none (a log line; the pull is answered)' },
+  { code: 'STS-XACML-0348',
+    summary: 'Whether what an embedded remote PEP pulls moved could not be ' +
+      'decided after a change to the policies or the AuthZEN catalogue ' +
+      '(#2028), so no pep-policies-changed was sent for it. Logged and ' +
+      'nothing else: the change itself stands, and the PEP converges on its ' +
+      'fallback poll.',
+    spec: 'none (a log line)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24306,11 +26403,13 @@ const CODES = [
     summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
       'it had pulled both the policies and the AuthZEN catalogue, so it ' +
       'cannot map a request as the service does (#1179).',
-    spec: 'HTTP 503, an error message' },
+    spec: 'HTTP 403, an error message (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0044',
     summary: 'An AuthZEN request reached a remote PEP whose edge PDP is ' +
-      'turned off (PEP_AUTHZEN=false) (#1179).',
-    spec: 'HTTP 501, an error message' },
+      'turned off (PEP_AUTHZEN=false) (#1179). AuthZEN 1.0 prescribes no ' +
+      'status for a switched-off API, so the edge answers 403 (#2208; ' +
+      '501 before).',
+    spec: 'HTTP 403, an error message' },
   { code: 'STS-XPEP-0045',
     summary: 'The remote PEP\'s AuthZEN metadata was asked for with no PDP ' +
       'identifier to name (no identifier set, and plain HTTP or no usable ' +
@@ -24345,7 +26444,7 @@ const CODES = [
     summary: 'An AuthZEN request reached the remote PEP\'s edge PDP before ' +
       'it had pulled the callers from the PDP, and no PEP_AUTHZEN_CALLERS ' +
       'is configured to decide meanwhile (#1189).',
-    spec: 'HTTP 503, an error message' },
+    spec: 'HTTP 403, an error message (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0051',
     summary: 'The client certificate an AuthZEN caller presented to the ' +
       'remote PEP\'s edge PDP verified, and its SHA-256 is not one the ' +
@@ -24373,26 +26472,31 @@ const CODES = [
       'authorization to the service: the service could not be reached, ' +
       'or did not answer within PEP_AUTHZEN_FORWARD_TIMEOUT_MS (#564). ' +
       'The evaluation is an error, never false.',
-    spec: 'HTTP 502 (504 on a timeout), or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0056',
     summary: 'The service refused the remote PEP itself when its edge PDP ' +
       'forwarded an AuthZEN evaluation about an application that ' +
       'enforces fine-grained authorization (401 or 403): the PEP\'s ' +
       'directory entry must hold AUTHZEN_PEPS and have the application ' +
       'in its stsAuthzenApplication scope (#564).',
-    spec: 'HTTP 502, or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0057',
     summary: 'The service answered an error to an AuthZEN evaluation the ' +
       'remote PEP\'s edge PDP forwarded (an application that enforces ' +
-      'fine-grained authorization): its status and message are passed to ' +
-      'the caller, never turned into false (#564).',
-    spec: 'the service\'s own status and message, or a batch item\'s ' +
-      'context.error' },
+      'fine-grained authorization), never turned into false (#564): a ' +
+      '400 or 413 is passed to the caller with the service\'s message, ' +
+      'and any other status — a 5xx included — is a PEP failure, 403 with ' +
+      'the service\'s status and message (#2208).',
+    spec: 'HTTP 400 or 413 as the service answered, otherwise HTTP 403; or ' +
+      'a batch item\'s context.error' },
   { code: 'STS-XPEP-0058',
     summary: 'The service answered 200 to an AuthZEN evaluation the remote ' +
       'PEP\'s edge PDP forwarded, with something that is not an AuthZEN ' +
       'decision (no boolean decision) (#564).',
-    spec: 'HTTP 502, or a batch item\'s context.error' },
+    spec: 'HTTP 403 (a PEP failure, #2208), or a batch item\'s ' +
+      'context.error' },
   { code: 'STS-XPEP-0059',
     summary: 'The AuthZEN catalogue the remote PEP pulled carried an ' +
       'fgaApplications member that is not an array of application ' +
@@ -24488,7 +26592,7 @@ const CODES = [
       'liveness, or the token endpoint): unreachable, a status that is not ' +
       'an answer, or no endpoint named in the pull. The request is refused, ' +
       'never admitted (#1760).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0076',
     summary: 'The reverse proxy refused an EncryptedAssertion presented as a ' +
       'SAML credential: neither the proxy nor the service holds a service ' +
@@ -24543,7 +26647,7 @@ const CODES = [
       'PEP_PROXY_MAX_SESSIONS live sessions are held (none is evicted, ' +
       'which would sign somebody else out), or no random value could be ' +
       'drawn (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0086',
     summary: 'The reverse proxy\'s decision refused the request: the policy ' +
       'this PEP holds, under its bias and obligation rule, did not permit ' +
@@ -24572,17 +26676,18 @@ const CODES = [
       'redirect URI that is not https or loopback, a public client), or the ' +
       'service\'s discovery document could not be read, so nobody can be ' +
       'signed in there (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0091',
     summary: 'The upstream URL the reverse proxy built for a request would ' +
       'not stay on the configured upstream\'s origin and path, so the ' +
       'request is not sent (#1760).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0092',
     summary: 'PEP_PROXY_UPSTREAM_CA could not be read or would not load, so ' +
       'an https upstream is verified against the system\'s anchors alone; ' +
       'or the client to the upstream would not build (#1760).',
-    spec: 'HTTP 502 when the client would not build; otherwise none' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208) when the ' +
+      'client would not build; otherwise none' },
   // ===== AUTHZEN ===========================================================
   { code: 'STS-XPEP-0093',
     summary: 'The reverse proxy refused a request on a route whose ' +
@@ -24606,25 +26711,29 @@ const CODES = [
       'notOnOrAfter), could not be reached, or the pull named no such ' +
       'endpoint. The request is refused, NEVER forwarded without the ' +
       'identity (#1760, D11).',
-    spec: 'HTTP 403 when the service said 403, otherwise HTTP 502' },
+    spec: 'HTTP 403, access_denied: the policy\'s refusal when the ' +
+      'service said 403, otherwise a PEP failure (#2208)' },
   { code: 'STS-XPEP-0096',
     summary: 'A value the reverse proxy would have sent as identity was ' +
       'refused: a claim holding CR, LF or NUL, a list member holding the ' +
       'route\'s separator, an object, or a token or cookie that is not a ' +
       'header value (#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0097',
     summary: 'The reverse proxy could not establish the application\'s ' +
       'session for a saml-mode route: the ACS the service named is not an ' +
       'absolute http(s) URL, could not be reached, answered 400 or more, or ' +
-      'set no cookie (#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+      'set no cookie (#1760, D11). The application\'s own failure — its ACS ' +
+      'unreachable or answering 5xx — is a gateway error; anything else is ' +
+      'a PEP failure (#2208).',
+    spec: 'HTTP 502, bad_gateway, when the ACS cannot be reached or ' +
+      'answers 5xx; otherwise HTTP 403, access_denied' },
   { code: 'STS-XPEP-0098',
     summary: 'The reverse proxy had no evidence to ask the identity ' +
       'endpoint with: a Basic answer that carried no ticket, or a proxy ' +
       'session whose relying party or access token could not be had ' +
       '(#1760, D11).',
-    spec: 'HTTP 502, bad_gateway' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208)' },
   { code: 'STS-XPEP-0099',
     summary: 'The CAEP/RISC stream of a session route\'s relying party ' +
       'has not answered a poll within PEP_PROXY_SIGNALS_STALE_MS (the ' +
@@ -24691,8 +26800,10 @@ const CODES = [
   { code: 'STS-XPEP-0110',
     summary: 'A remote PEP proxy account page was asked for something it ' +
       'does not answer: no such page, or an add whose return path is not ' +
-      'on a session route with multipleAccounts (#1760).',
-    spec: 'HTTP 404' },
+      'on a session route with multipleAccounts (#1760); or, unreachable ' +
+      'in practice, an add whose sign-in established someone instead of ' +
+      'starting, a PEP failure (#2208).',
+    spec: 'HTTP 404; HTTP 403 for the PEP failure' },
   { code: 'STS-XPEP-0111',
     summary: 'A remote PEP proxy account act named an account the ' +
       'browser\'s set does not hold (#1760).',
@@ -24740,8 +26851,8 @@ const CODES = [
       'most once a minute, and once more when the first configuration ' +
       'arrives; a configuration received empty or switched off is ' +
       'STS-XPEP-0065 (#1760).',
-    spec: 'HTTP 503, temporarily_unavailable, with Retry-After (the poll ' +
-      'interval in seconds, at least 1)' },
+    spec: 'HTTP 403, access_denied (a PEP failure, #2208; it was 503), ' +
+      'with Retry-After (the poll interval in seconds, at least 1)' },
   { code: 'STS-XPEP-0119',
     summary: 'A remote PEP could not apply one part of a listener\'s ' +
       'tuning. A TLS knob the library refused keeps the acceptor already ' +
@@ -24883,6 +26994,54 @@ const CODES = [
       'admitted everybody. A tuning with a trust source, or without the ' +
       'requirement, serves again.',
     spec: 'none — an error in the PEP\'s log; the listener serves nothing' },
+  { code: 'STS-XPEP-0138',
+    summary: 'A caller asked this edge PDP for one of the AuthZEN Search ' +
+      'APIs (POST /access/v1/search/subject, resource or action). Those ' +
+      'are answered by the service, which holds the directory and the ' +
+      'resource and action catalogues. This edge answers 403 (#2208; 501 ' +
+      'before: AuthZEN 1.0 prescribes no status for an API a PDP does ' +
+      'not serve, only that it is absent from the metadata), before ' +
+      'admission and without reading the body, and does not advertise ' +
+      'the paths. The code is logged and not sent. A turned-off edge, or ' +
+      'one that has not pulled, answers that condition first ' +
+      '(STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, ' +
+      'STS-AUTHZEN-0014). HEAD stays 404.',
+    spec: 'AuthZEN Authorization API 1.0 sections 8 and 9.1.1; HTTP 403' },
+  { code: 'STS-XPEP-0139',
+    summary: 'A caller asked this edge PDP for the Access Request and ' +
+      'Approval Profile (POST /access/v1/access-requests, GET of its ' +
+      'schema or of a task, POST or DELETE of a task\'s cancel). The ' +
+      'service holds the approval store. This edge does not support the ' +
+      'profile, publishes no access_request_endpoint, and answers 403 ' +
+      '(#2208; 501 before: the profile prescribes no status for a PDP ' +
+      'that does not support it) with the ' +
+      'evaluation error object, not problem+json, before admission and ' +
+      'without reading the body, and does not advertise the paths. A ' +
+      'POST to the task path without /cancel stays 404. The code is ' +
+      'logged and not sent. context.approval on an evaluation is not ' +
+      'this refusal: it is recognized and not used (STS-AUTHZEN-0084).',
+    spec: 'AuthZEN Access Request and Approval Profile; HTTP 403' },
+  { code: 'STS-XPEP-0140',
+    summary: 'An access evaluation was one of the OAuth token-exchange ' +
+      'binding\'s tuples while the realm\'s authzen.tokenExchange is on ' +
+      '(as the pulled catalogue says; a catalogue that does not say is ' +
+      'read as on): a gate (resource type audience and an action ' +
+      'issue:<token type>:<grant>, whatever the grant), a scope tuple ' +
+      '(resource type protected_resource), lone or not, or a resource ' +
+      'type the realm declares as an authorization_details type in a ' +
+      'request that also carries a token-exchange gate ' +
+      '(issue:<registered token type>:token_exchange). The service ' +
+      'answers those by the binding\'s fixed rules, which need delegation ' +
+      'and the directory. This edge answers 403 for that item (a PEP ' +
+      'failure: it cannot decide it; 501 before #2208) — the whole ' +
+      'response when the request was one evaluation, and context.error ' +
+      'on a batch item — does not forward it, and records it to the ' +
+      'service\'s audit log (authzen.remote.decision). The code is logged ' +
+      'and not sent. While the binding is off every such tuple is an ' +
+      'ordinary evaluation, as at the service; either way a context ' +
+      'member the binding reads, on a tuple that is not the binding\'s, ' +
+      'is 400 STS-AUTHZEN-0101.',
+    spec: 'AuthZEN OAuth token-exchange binding; HTTP 403' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -24951,12 +27110,13 @@ const CODES = [
   { code: 'STS-AUTHZEN-0013',
     summary: 'An AuthZEN request reached a realm where authzen.enabled, or ' +
       'xacml.enabled whose engine it decides with, is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208: AuthZEN 1.0 prescribes ' +
+      'no status for a switched-off API; 501 before)' },
   { code: 'STS-AUTHZEN-0014',
     summary: 'An AuthZEN request reached a realm that has no sts-authzen-api ' +
       'application, the API\'s resource object; an operator who removes it ' +
       'turns the API off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0015',
     summary: 'An AuthZEN caller presented no client certificate, where ' +
       'authzen.callerAuthentication is mtls or mtls+bearer.',
@@ -25070,7 +27230,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0039',
     summary: 'An AuthZEN access evaluations request reached a realm where ' +
       'authzen.batchEnabled is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0040',
     summary: 'The AuthZEN metadata document could not be signed for its ' +
       'signed_metadata, which was left out; the plain document was served.',
@@ -25093,7 +27253,7 @@ const CODES = [
   { code: 'STS-AUTHZEN-0044',
     summary: 'An AuthZEN search reached a realm where authzen.searchEnabled ' +
       'is off.',
-    spec: 'HTTP 501, an error message' },
+    spec: 'HTTP 403, an error message (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0045',
     summary: 'An AuthZEN search named more candidates than ' +
       'authzen.searchMaxCandidates; only the first were decided and the ' +
@@ -25129,7 +27289,7 @@ const CODES = [
     summary: 'An AuthZEN access request, task status or cancellation reached ' +
       'a realm where authzen.accessRequests (the Access Request and ' +
       'Approval Profile, #1180) is off.',
-    spec: 'HTTP 501, application/problem+json' },
+    spec: 'HTTP 403, application/problem+json (#2208; 501 before)' },
   { code: 'STS-AUTHZEN-0071',
     summary: 'An AuthZEN access request was not a JSON object with subject, ' +
       'resource and action objects, carried a member the profile does ' +
@@ -25142,28 +27302,30 @@ const CODES = [
       'a requestable denial.',
     spec: 'HTTP 400, urn:openid:authzen:access-request:error:not_requestable' },
   { code: 'STS-AUTHZEN-0073',
-    summary: 'An AuthZEN access request\'s denial carried no binding_token ' +
-      '(this PDP keeps no record to resolve an evaluation_id ' +
-      'against), or one that did not verify as this realm\'s, for ' +
-      'this endpoint.',
+    summary: 'An AuthZEN access request named an evaluation_id this realm ' +
+      'has no requestable denial for, or a binding_token that did not ' +
+      'verify as this realm\'s, for this endpoint.',
     spec: 'HTTP 400, urn:openid:authzen:access-request:error:' +
       'invalid_denial_binding' },
   { code: 'STS-AUTHZEN-0074',
     summary: 'An AuthZEN access request did not match the denial its ' +
-      'binding_token names: another caller, a different subject, ' +
-      'resource, action or authorization-relevant context member, or ' +
-      'a denial.expires_at not echoed unchanged.',
+      'binding_token or evaluation_id names: another caller, a ' +
+      'different subject, resource, action or authorization-relevant ' +
+      'context member, a binding_hash that does not match, an ' +
+      'evaluation_id that is not the binding_token\'s, or a ' +
+      'denial.expires_at not echoed unchanged.',
     spec: 'HTTP 400, urn:openid:authzen:access-request:error:' +
       'invalid_denial_binding' },
   { code: 'STS-AUTHZEN-0075',
-    summary: 'An AuthZEN access request arrived after its requestable denial ' +
-      'expired (the earlier of the binding_token\'s exp and ' +
-      'denial.expires_at, with 30 seconds of skew).',
+    summary: 'An AuthZEN access request arrived after its requestable ' +
+      'denial expired (the earlier of the denial\'s exp and ' +
+      'denial.expires_at, the recorded values when named by ' +
+      'evaluation_id, with 30 seconds of skew).',
     spec: 'HTTP 410, urn:openid:authzen:access-request:error:expired_denial' },
   { code: 'STS-AUTHZEN-0076',
     summary: 'An AuthZEN access request reused an Idempotency-Key, or a ' +
-      'binding_token, already used by the same caller for a request ' +
-      'whose body differs.',
+      'denial (its binding_token or its evaluation_id), already used ' +
+      'by the same caller for a request whose body differs.',
     spec: 'HTTP 409, urn:openid:authzen:access-request:error:' +
       'duplicate_request' },
   { code: 'STS-AUTHZEN-0077',
@@ -25177,9 +27339,9 @@ const CODES = [
     spec: 'HTTP 503, application/problem+json' },
   { code: 'STS-AUTHZEN-0079',
     summary: 'An AuthZEN access request\'s callback was not an object with ' +
-      'an https endpoint registered for the caller ' +
-      '(appAuthzenCallbackUri or stsAuthzenCallbackUri); a callback ' +
-      'URL is never taken from a request alone.',
+      'an https endpoint registered for the calling application ' +
+      '(appAuthzenCallbackUri); a callback URL is never taken from a ' +
+      'request alone.',
     spec: 'HTTP 400, application/problem+json' },
   { code: 'STS-AUTHZEN-0080',
     summary: 'An AuthZEN access request task was asked about, or cancelled, ' +
@@ -25202,9 +27364,13 @@ const CODES = [
       'context.business_justification.',
     spec: 'HTTP 400, application/problem+json' },
   { code: 'STS-AUTHZEN-0084',
-    summary: 'An AuthZEN evaluation presented a context.approval this realm ' +
-      'cannot resolve, or one issued to another caller; it was not ' +
-      'used and the evaluation was decided as not approved.',
+    summary: 'An AuthZEN evaluation presented a context.approval this ' +
+      'realm cannot resolve, one issued to another caller, or an ' +
+      'approval.state whose signature or approval id does not verify; ' +
+      'it was not used and the evaluation was decided as not approved. ' +
+      'A remote PEP\'s edge PDP, which holds no approval store, records ' +
+      'it for every approval presented to it, and answers the same ' +
+      'context (#1205).',
     spec: 'context.reason approval_unverifiable, next_action none' },
   { code: 'STS-AUTHZEN-0085',
     summary: 'An AuthZEN evaluation presented a context.approval that was ' +
@@ -25216,9 +27382,9 @@ const CODES = [
       'used.',
     spec: 'context.reason out_of_scope' },
   { code: 'STS-AUTHZEN-0087',
-    summary: 'A requestable AuthZEN denial\'s binding_token could not be ' +
-      'signed, so the denial was answered as an ordinary false with ' +
-      'no access_request.',
+    summary: 'A requestable AuthZEN denial\'s binding_token or ' +
+      'binding_hash could not be made, so the denial was answered as ' +
+      'an ordinary false with no access_request.',
     spec: 'none — logged; decision: false' },
   { code: 'STS-AUTHZEN-0088',
     summary: 'The access-control policy (action approve-access-request on ' +
@@ -25235,13 +27401,15 @@ const CODES = [
     spec: 'none — the portal\'s or console\'s refusal' },
   { code: 'STS-AUTHZEN-0091',
     summary: 'An AuthZEN access request\'s callback could not be delivered ' +
-      '(the outbound policy refused the URL, or the endpoint did not ' +
-      'answer 2xx); the task status endpoint remains the record, and ' +
-      'nothing is retried.',
+      '(the outbound policy refused the URL, the endpoint did not ' +
+      'answer 2xx, or the notification could not be signed). A network ' +
+      'error, a timeout or an HTTP 5xx is tried again, up to the ' +
+      'attempt bound; the task status endpoint remains the record.',
     spec: 'none — logged and audited' },
   { code: 'STS-AUTHZEN-0092',
     summary: 'The authzen.access-requests scheduler job failed while ' +
-      'expiring or removing access requests.',
+      'expiring or removing access requests, or while retrying a ' +
+      'callback.',
     spec: 'none — logged; the job\'s run is failed' },
   { code: 'STS-AUTHZEN-0093',
     summary: 'The approvers of an AuthZEN access request could not be ' +
@@ -25271,7 +27439,9 @@ const CODES = [
     summary: 'An AuthZEN request that is not one of the token-exchange ' +
       'binding\'s gate or scope tuples, or that arrived while ' +
       'authzen.tokenExchange is off, carried a context member only ' +
-      'the binding\'s fixed rules read (#1181).',
+      'the binding\'s fixed rules read (#1181). A remote PEP\'s edge PDP ' +
+      'refuses the same requests the same way, from the switch its ' +
+      'pulled catalogue carries (#1205).',
     spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
   { code: 'STS-AUTHZEN-0102',
     summary: 'An AuthZEN token-exchange binding tuple named a subject.type ' +
@@ -25379,6 +27549,226 @@ const CODES = [
       'xacml.pepAuthentication is certificate, which accepts a remote PEP ' +
       'only by its client certificate (#1827).',
     spec: 'HTTP 401, WWW-Authenticate: DPoP error="invalid_token"' },
+  { code: 'STS-AUTHZEN-0122',
+    summary: 'An AuthZEN access request submission did not carry ' +
+      'Content-Type: application/json, which AuthZEN 1.0 section 10.1 ' +
+      'requires; refused before its body was read (#936).',
+    spec: 'HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), ' +
+      'application/problem+json (RFC 9457)' },
+  { code: 'STS-AUTHZEN-0123',
+    summary: 'An RFC 8693 token exchange was not issued because ' +
+      'authzen.externalPdpUrl is empty, will not parse, is not absolute ' +
+      'https, or carries a userinfo, query or fragment. The external ' +
+      'AuthZEN PDP was not dialled (#1200).',
+    spec: 'HTTP 503 temporarily_unavailable (the client is not told the ' +
+      'code or the address)' },
+  { code: 'STS-AUTHZEN-0124',
+    summary: 'An RFC 8693 token exchange was not issued because the ' +
+      'external AuthZEN PDP gave no answer: federation.outbound is off, ' +
+      'the PDP was unreachable or timed out, the dial threw, or the PDP ' +
+      'answered a non-2xx. The local decision is not issued in its place ' +
+      '(#1200).',
+    spec: 'HTTP 503 temporarily_unavailable' },
+  { code: 'STS-AUTHZEN-0125',
+    summary: 'An RFC 8693 token exchange was not issued because the ' +
+      'external AuthZEN PDP refused a subject or requesting-party gate. ' +
+      'Which gate is not told to the client (#1200).',
+    spec: 'HTTP 400 invalid_target when the exchange named the audience ' +
+      'or resource the gate refused, invalid_grant otherwise (RFC 8693 ' +
+      'section 2.2.2); invalid_request until the review of #1200' },
+  { code: 'STS-AUTHZEN-0126',
+    summary: 'An RFC 8693 token exchange was not issued because the ' +
+      'external AuthZEN PDP answered 2xx with a body that is not the ' +
+      'batch\'s decision: not JSON, a missing or differently sized ' +
+      'evaluations array, an item that is not an object, a decision that ' +
+      'is not a boolean, or an item carrying context.error (#1200).',
+    spec: 'HTTP 503 temporarily_unavailable' },
+  { code: 'STS-AUTHZEN-0127',
+    summary: 'An RFC 8693 token exchange was not issued because the client ' +
+      'certificate or key for the external AuthZEN PDP is empty, ' +
+      'unreadable, outside security.fileRoots, or not a PEM, or a named ' +
+      'CA file is. The PDP was not dialled (#1200).',
+    spec: 'HTTP 503 temporarily_unavailable' },
+  { code: 'STS-AUTHZEN-0128',
+    summary: 'An AuthZEN authorization-detail tuple named somebody other ' +
+      'than the exchange subject. The binding adds requesting-party ' +
+      'tuples for scopes on a Txn-Token only, so a cell for the party is ' +
+      'the same refusal; answered false (#1201).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0129',
+    summary: 'An AuthZEN authorization-detail cell is not granted: its ' +
+      'type could not be read or is no longer declared, or, where the ' +
+      'type\'s application enforces fine-grained authorization, the cell ' +
+      'is not covered by the subject token\'s authorization_details or ' +
+      'the subject token was not issued here (#1201).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0130',
+    summary: 'An application that enforces fine-grained authorization ' +
+      'refused an AuthZEN authorization-detail cell of one of its types; ' +
+      'answered false (#1201).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0131',
+    summary: 'The authorization-detail types could not be read while an ' +
+      'AuthZEN token-exchange batch was planned or a cell was decided, so ' +
+      'no detail tuple is recognized from that read (#1201).',
+    spec: 'none — logged; a cell already recognized is answered false ' +
+      '(STS-AUTHZEN-0129)' },
+  { code: 'STS-AUTHZEN-0132',
+    summary: 'An AuthZEN token-exchange subject gate was given an ' +
+      'issuance audience that is not an array of that gate\'s resource ' +
+      'id. It would broaden the target, so it is not sent (#1201).',
+    spec: 'none — logged; the envelope is sent without it' },
+  { code: 'STS-AUTHZEN-0133',
+    summary: 'An AuthZEN token-exchange subject gate was given an ' +
+      'issuance claim that is reserved, is not on the subject token, or ' +
+      'is wider than the subject token\'s value. It is not sent (#1201).',
+    spec: 'none — logged; the envelope is sent without that claim' },
+  { code: 'STS-AUTHZEN-0134',
+    summary: 'An AuthZEN token-exchange subject gate was given an empty ' +
+      'issuance audience, which withdraws that gate\'s target; answered ' +
+      'false (#1201).',
+    spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0135',
+    summary: 'An AuthZEN access request\'s callback will not be delivered ' +
+      'again: the attempt bound is spent, or the failure cannot succeed ' +
+      '(an HTTP status below 500, or a URL the outbound policy ' +
+      'refuses). The task\'s own status is unchanged. The task status ' +
+      'endpoint remains the record (#1202).',
+    spec: 'none — logged and audited' },
+  { code: 'STS-AUTHZEN-0136',
+    summary: 'An access request callback was refused because the caller ' +
+      'was not an application (#1202). Retired by the review of #1202 ' +
+      '(2026-11-23): a person\'s or service account\'s ' +
+      'stsAuthzenCallbackUri is written and honoured again, as in 1.1.0, ' +
+      'under rcbj\'s decision 4 on #1180.',
+    spec: '', retired: true },
+  { code: 'STS-AUTHZEN-0137',
+    summary: 'An access request callback override was refused: attempts ' +
+      'or backoff was not an integer in range (attempts 1 to 20, ' +
+      'backoff 60 to 86400), or a token was not attempts=N or ' +
+      'backoff=S, or one of them was repeated, or it was set for a ' +
+      'person or a service account, whose callbacks take the realm\'s ' +
+      'settings (#1202).',
+    spec: 'the console\'s refusal' },
+  { code: 'STS-AUTHZEN-0138',
+    summary: 'The requester of a revoked AuthZEN access approval could ' +
+      'not be mailed; the revocation stands (#1203).',
+    spec: 'none — logged' },
+  { code: 'STS-AUTHZEN-0139',
+    summary: 'A requestable AuthZEN denial could not be recorded. The ' +
+      'binding_token is still issued; an evaluation_id-only ' +
+      'submission of that denial cannot be resolved (#1204).',
+    spec: 'none — logged; the denial is still requestable by its token' },
+  { code: 'STS-AUTHZEN-0140',
+    summary: 'An AuthZEN approval\'s state could not be signed. The ' +
+      'approval stands by id, and the task result omits state (#1204).',
+    spec: 'none — logged; the approval is still looked up by id' },
+  { code: 'STS-AUTHZEN-0141',
+    summary: 'A person was refused the revocation of an AuthZEN access ' +
+      'approval on the portal because somebody else gave it: the portal ' +
+      'revokes only an approval the signed-in person gave (#1203).',
+    spec: 'HTTP 400 on POST /account-api/access-requests' },
+  { code: 'STS-AUTHZEN-0142',
+    summary: 'An AuthZEN access request\'s approval could not be stored, ' +
+      'so the task moved to failed rather than to approved (#1202). The ' +
+      'failed callback is sent where it was asked for.',
+    spec: 'the approver\'s refusal; the task status failed' },
+  { code: 'STS-AUTHZEN-0143',
+    summary: 'A pending AuthZEN access request moved to failed because ' +
+      'the approvers its advice names (configured static roles, groups, ' +
+      'the application\'s owners) resolve to nobody but its subject ' +
+      '(#1202). A computed or dynamic role, or a directory that cannot be ' +
+      'read, is never taken for nobody. Noticed by the ' +
+      'authzen.access-requests job.',
+    spec: 'the task status failed' },
+  { code: 'STS-AUTHZEN-0144',
+    summary: 'The requestable denial store of a realm is full ' +
+      '(authzen.accessRequestMaxDenials), so a new denial is not recorded ' +
+      'by evaluation_id; it is still requestable by its binding_token ' +
+      '(#1204). Logged when the store fills, not per denial.',
+    spec: 'none — logged and audited once' },
+  { code: 'STS-AUTHZEN-0145',
+    summary: 'The authorization-detail types could not be read while the ' +
+      'AuthZEN catalogue a remote PEP pulls was built, so it carries ' +
+      'tokenExchangeDetailTypes as null (#1205). An edge PDP reads that ' +
+      'closed: while the token-exchange binding is on, every resource ' +
+      'type other than audience and protected_resource beside a ' +
+      'token-exchange gate is a detail tuple it answers 501 ' +
+      '(STS-XPEP-0140). The next pull that can read them sends the list.',
+    spec: 'none — logged; the catalogue is still sent' },
+  { code: 'STS-AUTHZEN-0146',
+    summary: 'The hosted access request form (/portal/access-request, ' +
+      '#1204) was opened or submitted with an evaluation_id this realm ' +
+      'holds no requestable denial record for: never issued, removed a ' +
+      'day after its window, or not recorded because the store was full.',
+    spec: 'the profile\'s section 16, form_url; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0147',
+    summary: 'The hosted access request form or ticket was opened by ' +
+      'somebody who is not the subject of the denial or the request it ' +
+      'names (the subject\'s type is one of authzen.resolveSubjectTypes ' +
+      'and its id one of the person\'s names). The same answer as a ' +
+      'request that does not exist (#1204).',
+    spec: 'the profile\'s sections 13.1 and 13.3.3; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0148',
+    summary: 'The hosted access request form was opened or submitted after ' +
+      'the requestable denial\'s window had passed (#1204).',
+    spec: 'the profile\'s section 13.2, expired_denial; the portal ' +
+      'answers 410' },
+  { code: 'STS-AUTHZEN-0149',
+    summary: 'An access request was submitted on the hosted form while ' +
+      'authzen.accessRequestForm (or the profile) is off (#1204).',
+    spec: 'none — the portal answers 403' },
+  { code: 'STS-AUTHZEN-0150',
+    summary: 'A Catalogs Document or Catalog Endpoint of the AuthZEN access ' +
+      'request catalogs (#1204) was asked for a denial this realm did not ' +
+      'record, whose advice lists no entitlements, or by a caller it was ' +
+      'not answered to or that is no longer scoped to its application.',
+    spec: 'the CATALOG companion\'s sections 7 and 11; 404 problem+json' },
+  { code: 'STS-AUTHZEN-0151',
+    summary: 'A Catalog Endpoint call carried a cursor this endpoint did ' +
+      'not issue for the same search (#1204).',
+    spec: 'the CATALOG companion\'s section 7; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0152',
+    summary: 'An access request for a denial whose catalog lists ' +
+      'entitlements carried no requested_access.entitlement, or one the ' +
+      'catalog does not list (#1204).',
+    spec: 'the CATALOG companion\'s section 10.3; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0153',
+    summary: 'The access request catalogs were called while ' +
+      'authzen.accessRequestCatalogs (or the profile) is off (#1204).',
+    spec: 'none — 403 problem+json (#2208; 501 before)' },
+  { code: 'STS-AUTHZEN-0154',
+    summary: 'An access request\'s client.actor named a chain the caller\'s ' +
+      'own credential does not authorize: neither one link that is the ' +
+      'caller itself nor, link for link, the act chain of its own access ' +
+      'token (#1204, the ACTOR companion).',
+    spec: 'the ACTOR companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0155',
+    summary: 'An access request\'s client.actor or client.source was ' +
+      'malformed: a link without its id or sub, a non-string or overlong ' +
+      'member, a chain deeper than 8, or an external_url that is not https ' +
+      '(#1204).',
+    spec: 'the ACTOR companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0156',
+    summary: 'A bulk access request carried a top-level resource or action ' +
+      'beside items (#1204).',
+    spec: 'the BULK companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0157',
+    summary: 'A bulk access request\'s items were not 1 to ' +
+      'authzen.accessRequestMaxBulkItems objects (#1204).',
+    spec: 'the BULK companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0158',
+    summary: 'A bulk access request carried a top-level denial, or an item ' +
+      'without its own: this service issues no bundle denial (#1204).',
+    spec: 'the BULK companion\'s section 3.3; invalid_denial_binding' },
+  { code: 'STS-AUTHZEN-0159',
+    summary: 'A bulk access request\'s items named denials about different ' +
+      'applications (#1204).',
+    spec: 'none — 400 problem+json' },
+  { code: 'STS-AUTHZEN-0160',
+    summary: 'A bulk access request carried a callback, which this service ' +
+      'does not take on a bulk request (#1204).',
+    spec: 'none — 400 problem+json' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
@@ -27312,6 +29702,115 @@ const CODES = [
       'was written (#1668).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-ADMIN-0951',
+    summary: 'An operator\'s import of a legacy U2F security key named ' +
+      'nobody (#1955).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0952',
+    summary: 'An operator\'s import of a legacy U2F security key was ' +
+      'refused; the inner code says why — the AppID, the key handle, the ' +
+      'public key, the counter, or the writer\'s own rules (#1955).',
+    spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0953',
+    summary: 'A certificate handed to the console\'s certificate inspection ' +
+      'helper (POST /admin-api/console/certificates/inspect) held no PEM ' +
+      'certificate, or more text or more certificates than it reads. ' +
+      'Nothing is kept (#2080).',
+    spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
+  { code: 'STS-ADMIN-0954',
+    summary: 'A PEM block handed to the console\'s certificate inspection ' +
+      'helper could not be read as an X.509 certificate. Nothing is kept ' +
+      '(#2080).',
+    spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
+  { code: 'STS-ADMIN-0955',
+    summary: 'The console\'s certificate inspection helper was asked for an ' +
+      'action it does not have; the refusal names the one it has ' +
+      '(#2080).',
+    spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
+  { code: 'STS-ADMIN-0956',
+    summary: '/admin-api/truststores was asked for an action it does not ' +
+      'have; the refusal names the seven it has (#2118).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0957',
+    summary: 'A named truststore write was not made and the truststore ' +
+      'registry gave no code of its own for why: the directory carried out ' +
+      'nothing (#2118).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0969',
+    summary: 'A password reset for a Kerberos keytab was refused because the ' +
+      'person must change their password at their next sign-in (pwdReset), ' +
+      'where passwords are verified: the KDC refuses that password, so the ' +
+      'keytab would not work, and the reset no longer clears the forced ' +
+      'change (#2160). Nothing was changed.',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-ADMIN-0970',
+    summary: 'A decision on a held administrator act (two-person approval, ' +
+      '#2166) named no act this realm holds, or an action POST ' +
+      '/admin-api/approvals does not have.',
+    spec: 'HTTP 404 (or 400 for an unknown action) { ok: false, errors }' },
+  { code: 'STS-ADMIN-0971',
+    summary: 'The administrator who asked for a held act tried to approve or ' +
+      'refuse it themselves; a second, different administrator must ' +
+      '(#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0972',
+    summary: 'A held administrator act was approved or refused by a caller ' +
+      'that is not a person: an application\'s token, or nobody where ' +
+      'the management API is open (#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0973',
+    summary: 'A held administrator act was approved or refused by a person ' +
+      'whose token does not carry the authority the act needs (Admin ' +
+      'Write, or Security Administrator for a security change) ' +
+      '(#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0974',
+    summary: 'A held administrator act was approved, refused or withdrawn ' +
+      'after it expired (admin.dualControlLifetimeHours); it is never ' +
+      'run (#2166).',
+    spec: 'HTTP 409 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0975',
+    summary: 'A high-risk administrator act was neither held nor run: the ' +
+      'realm already holds the most acts awaiting a second ' +
+      'administrator it keeps (#2166).',
+    spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0976',
+    summary: 'A high-risk administrator act ran without a second ' +
+      'administrator, though two-person approval is on: nobody but ' +
+      'its requester holds the authority it needs, and the act runs ' +
+      'rather than locking the realm out (#2166). Recorded, not ' +
+      'refused.',
+    spec: 'none (an audit row; the act\'s own answer)' },
+  { code: 'STS-ADMIN-0977',
+    summary: 'A high-risk administrator act ran without a second ' +
+      'administrator, though two-person approval is on: the ' +
+      'management API is open (adminApi.authRequired off, development ' +
+      'only) and names no administrator (#2166). Recorded, not ' +
+      'refused.',
+    spec: 'none (an audit row; the act\'s own answer)' },
+  { code: 'STS-ADMIN-0978',
+    summary: 'A held administrator act was approved, refused or withdrawn ' +
+      'after it had already been decided or withdrawn (#2166).',
+    spec: 'HTTP 409 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0979',
+    summary: 'A held administrator act was approved, and not run: the ' +
+      'administrator who asked for it no longer holds the authority ' +
+      'it needs (#2166).',
+    spec: 'HTTP 409 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0980',
+    summary: 'A held administrator act was approved and run, and the act ' +
+      'itself was refused when it ran against the state as it is now; ' +
+      'its own answer is `result` (#2166).',
+    spec: 'HTTP 409 { ok: false, errors, result }' },
+  { code: 'STS-ADMIN-0981',
+    summary: 'Somebody other than the administrator who asked for a held act ' +
+      'tried to withdraw it; they may refuse it instead (#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0982',
+    summary: 'The two-person approval expiry job (admin.dual-control) failed ' +
+      'in a realm; the job reports the run failed and a read still ' +
+      'applies each deadline (#2166).',
+    spec: 'none (logged; the scheduler\'s run row)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -27798,6 +30297,14 @@ const CODES = [
       'at another operation (#1827). Refused at the gate itself, so that ' +
       'the separation does not depend on xacml.enforceAccess.',
     spec: 'HTTP 403, an error message' },
+  { code: 'STS-API-0148',
+    summary: 'A management API caller made more changes than its write ' +
+      'budget allows in an adminApi.writeWindowS window, counted by the ' +
+      'token\'s subject: adminApi.writesPerSubject for a person\'s token, ' +
+      'adminApi.programWritesPerSubject for a client_credentials or ' +
+      'service account\'s. Further changes are refused until the window ' +
+      'passes; reads go on (#2247, ASVS 5.0.0 2.4.2).',
+    spec: 'HTTP 429 {ok:false, errors} with Retry-After' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -28373,6 +30880,11 @@ const CODES = [
       'recorded, and its failure count could not be cleared (ASVS 5.0.0 ' +
       '2.3.3).',
     spec: '' },
+  { code: 'STS-PORTAL-0638',
+    summary: 'A person set a new password from a reset link and their ' +
+      'other sessions could not be ended; the password is set (#2123, ' +
+      'ASVS 5.0.0 7.4.3).',
+    spec: '' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
@@ -28462,6 +30974,15 @@ const CODES = [
   { code: 'STS-ACCOUNT-0023',
     summary: 'A token was refused because the person it names no longer exists.',
     spec: 'HTTP 401' },
+  { code: 'STS-ACCOUNT-0024',
+    summary: 'A signed-in person made more writes to their own account ' +
+      '(profile edits, credentials enrolled or removed, consents ' +
+      'withdrawn, device changes: every act of /account-api that is not ' +
+      'a GET) than account.writesPerSubject allows in an ' +
+      'account.writeWindowS window, counted by the token\'s subject; ' +
+      'further writes are refused until the window passes, and reads go ' +
+      'on (#2167, ASVS 5.0.0 2.4.2).',
+    spec: 'HTTP 429 { ok: false, errors, messages } with Retry-After' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -28536,6 +31057,13 @@ const CODES = [
   { code: 'STS-LOGOUT-0015',
     summary: 'Ending another session was refused because the sign-in was not recent enough.',
     spec: 'HTTP 403' },
+  { code: 'STS-LOGOUT-0016',
+    summary: 'A sign-out with the realm\'s keys in the HSM could not sign, ' +
+      'off the event loop, the SAML 2.0 LogoutRequests or a federation ' +
+      'partner\'s sign-out of one of its sessions, so none is offered for ' +
+      'that session (or the partner is not told); the sign-out itself goes ' +
+      'on (#1955).',
+    spec: '' },
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +
       '(#713).',
@@ -29508,6 +32036,24 @@ const CODES = [
       'Logged at the request; remove the certificate from all but one ' +
       '(#1668).',
     spec: 'none (logged; the request is then refused STS-WSTRUST-0075)' },
+  { code: 'STS-REG-0374',
+    summary: 'An oauthAuthorizationDetailsType definition was refused at ' +
+      'write: its schema uses a JSON Schema keyword outside the subset a ' +
+      'limits schema may use, or a pattern in its schema or its limits is ' +
+      'longer than 1024 characters, uses a backreference, applies a ' +
+      'quantifier to a group that is itself quantified or an alternation, ' +
+      'or does not compile (#2220). A definition the application already ' +
+      'holds is not refused, and is still used; /admin/mode reports it ' +
+      'on the access-type-schemas row.',
+    spec: 'console: the refusal banner; /admin-api: HTTP 400 { ok: false, ' +
+      'errors }' },
+  { code: 'STS-REG-0375',
+    summary: 'An application listed in oauth2.clientSecretAutoRotate was ' +
+      'not rotated by the daily job (#2220): its new secret could not be ' +
+      'pushed to its secret destination, or the rotation was refused. ' +
+      'Nothing changed; the old secret still authenticates and the job ' +
+      'tries again the next day.',
+    spec: 'Log line and audit row' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger was refused to a subject that is not a person, ' +
       'is not named, or did not authenticate.',
@@ -29898,6 +32444,25 @@ const CODES = [
       'before #1579 bounded it), so it is answered without its document and ' +
       'parameters, and a run of it is refused for its query.',
     spec: 'recorded' },
+  { code: 'STS-REPORT-0061',
+    summary: 'A report over a source for report administrators only ' +
+      '(auditEvents, authActivity, credentialHolders: the catalog marks ' +
+      'them adminOnly) was refused because the caller — or, for a ' +
+      'scheduled run, the definition\'s owner — does not hold ' +
+      'REPORT_ADMIN, or the access-control policy refused the source: a ' +
+      'query, a job, a definition saved or run, or a result downloaded ' +
+      '(#2126, ASVS 5.0.0 8.2.3). A definition saved before stays ' +
+      'visible to its owner.',
+    spec: 'forbidden (HTTP 403); recorded for a scheduled run, whose ' +
+      'occurrence is consumed' },
+  { code: 'STS-REPORT-0062',
+    summary: 'A caller of the Reports API made more expensive acts (an ad ' +
+      'hoc query or preview, a job queued, a saved definition run, a ' +
+      'result downloaded) than report.actsPerSubject allows in a ' +
+      'report.actWindowS window, counted by the token\'s subject; further ' +
+      'acts are refused until the window passes, and the other ' +
+      'operations go on (#2167, ASVS 5.0.0 2.4.2).',
+    spec: 'too_many_requests (HTTP 429) with Retry-After' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +
@@ -29979,7 +32544,28 @@ const CODES = [
     summary: 'A syslog audit destination was refused because product mode needs tls.',
     spec: 'HTTP 400' },
   { code: 'STS-AUDIT-0017',
-    summary: 'A realm in product mode has no audit export destination, so its audit log stays with the service.' }
+    summary: 'A realm in product mode has no audit export destination, so its audit log stays with the service.' },
+  { code: 'STS-AUDIT-0018',
+    summary: 'Audit events could not be written to sts_audit, the ' +
+      'append-only audit table: they are kept for the next try, and past ' +
+      'a bound the oldest are let go and counted (#1616).' },
+  { code: 'STS-AUDIT-0019',
+    summary: 'This service\'s database role can change or delete rows of ' +
+      'sts_audit (it owns the table, or holds UPDATE, DELETE or TRUNCATE ' +
+      'on it), so the audit log is not append-only (ASVS 5.0.0 16.4.2); ' +
+      '/admin/mode reports the requirement as not met. The service runs ' +
+      '(#1616).' },
+  { code: 'STS-AUDIT-0020',
+    summary: 'sts_audit could not be read for the audit page, which shows ' +
+      'this process\'s own events instead (#1616).' },
+  { code: 'STS-AUDIT-0021',
+    summary: 'The append-only audit log\'s start (this process\'s events ' +
+      'read back, the old ring copied) or its retention run failed; the ' +
+      'service runs and retention is asked again on the next run (#1616).' },
+  { code: 'STS-AUDIT-0022',
+    summary: 'sts_audit is there and the two functions rows leave it ' +
+      'through are not, so retention cannot remove old rows: the schema ' +
+      'script was not run as the table owner (#1616).' }
   // ===== END ===============================================================
 ];
 
@@ -30222,7 +32808,7 @@ function escapeCell(text) {
 }
 
 /**
- * Generates `docs/v1.1.0/error-codes.md` from the table.
+ * Generates `docs/v1.2.0/error-codes.md` from the table.
  *
  * @returns the page's Markdown
  */
@@ -30356,7 +32942,7 @@ function markdown() {
 
 /**
  * Returns the path of the generated documentation page,
- * `docs/v1.1.0/error-codes.md`.
+ * `docs/v1.2.0/error-codes.md`.
  *
  * @returns the absolute path
  */
@@ -30366,7 +32952,7 @@ function docsPath() {
   log.debug("Leaving docsPath().");
   // The latest documentation version's folder; the frozen releases beside
   // it are never regenerated (docs/CLAUDE.md, *The versioned site*).
-  return path.join(__dirname, '..', 'docs', 'v1.1.0', 'error-codes.md');
+  return path.join(__dirname, '..', 'docs', 'v1.2.0', 'error-codes.md');
 }
 
 /**
@@ -30413,11 +32999,11 @@ if (require.main === module) {
       current = '';
     }
     if (current !== markdown()) {
-      console.error('[error_codes] docs/v1.1.0/error-codes.md is stale. Run: ' +
+      console.error('[error_codes] docs/v1.2.0/error-codes.md is stale. Run: ' +
                     'node common/error_codes.js --docs');
       process.exit(1);
     }
-    console.log('docs/v1.1.0/error-codes.md matches the table (' +
+    console.log('docs/v1.2.0/error-codes.md matches the table (' +
         CODES.length + ' codes)');
   } else {
     console.log(JSON.stringify({ subsystems: SUBSYSTEMS, codes: CODES }, null,

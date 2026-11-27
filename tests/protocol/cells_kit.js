@@ -38,8 +38,12 @@
 // ===========================================================================
 "use strict";
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const path = require("path");
@@ -361,7 +365,7 @@ async function drive(jar, url, clientRedirect) {
     hops.push({ url: at, status: r.status, location: r.location,
                 set: r.set });
     if (r.status >= 300 && r.status < 400 && r.location) {
-      if (r.location.indexOf(clientRedirect) === 0) {
+      if (urls.isAt(r.location, clientRedirect)) {
         const back = new URL(r.location);
         log.debug("Leaving drive(). Sent to the client.");
         return { code: back.searchParams.get("code") || "",
@@ -445,13 +449,49 @@ async function publicClient(realmBase, clientId, redirectUri) {
     fields: { oauthClientId: clientId, oauthRedirectUri: [redirectUri],
               oauthTokenEndpointAuthMethod: "none",
               oauthGrantType: ["authorization_code", "refresh_token"],
-              oauthScope: ["openid", "profile"] }
+              oauthScope: ["openid", "profile"],
+              // What `authorizeUrl()` asks for, declared (#2169): in product
+              // a client that declares none is issued `openid` alone
+              // (#1589).
+              oauthAllowedScope: ["openid", "profile"] }
   });
   assert.ok(created.status === 200 ||
             /already in this registry/i.test(created.raw),
     "registering the client " + clientId + " answered " + created.status +
     ": " + created.raw.slice(0, 300));
   log.debug("Leaving publicClient().");
+}
+
+/**
+ * The URL of the cell `homeCell` names, with the realm prefix `base`
+ * carries: `base` itself where `homeCell` is empty, names the cell `base`
+ * is already at, or names no cell of this stack.
+ *
+ * @param base - a cell's URL, realm prefix included
+ * @param homeCell - a cell id, or ''
+ * @returns the home cell's URL, realm prefix included
+ */
+function homeBase(base, homeCell) {
+  log.debug("Entering homeBase(). " + homeCell);
+  const cells = cellsFromEnv();
+  if (!homeCell || !cells) {
+    log.debug("Leaving homeBase(). Where it was asked.");
+    return base;
+  }
+  const home = homeCell === cells.ids.a ? cells.a
+    : (homeCell === cells.ids.b ? cells.b : "");
+  // At a cell's URL, or under it: never a cell whose URL merely begins
+  // the other's (`https://cell` and `https://cell2`).
+  const at = function (url) {
+    return base === url || base.indexOf(url + "/") === 0;
+  };
+  const asked = at(cells.a) ? cells.a : (at(cells.b) ? cells.b : "");
+  if (!home || !asked || home === asked) {
+    log.debug("Leaving homeBase(). Already at home, or no cell of ours.");
+    return base;
+  }
+  log.debug("Leaving homeBase(). " + home);
+  return home + base.slice(asked.length);
 }
 
 /**
@@ -465,9 +505,11 @@ async function publicClient(realmBase, clientId, redirectUri) {
  */
 async function createPerson(base, username, password, homeCell) {
   log.debug("Entering createPerson(). " + username);
+  // A TEMPORARY password first, then the person's own (#2160): a typed
+  // one is temporary in product, so `own_password.js` has them choose it.
   const body = {
     username: username, invent: false, credential: "password",
-    password: password,
+    password: ownPassword.temporaryFor(password),
     attributes: { cn: "Cells " + username, givenName: "Cells",
                   sn: username, displayName: "Cells " + username,
                   mail: username + "@cells.example.test" }
@@ -476,6 +518,19 @@ async function createPerson(base, username, password, homeCell) {
     body.homeCell = homeCell;
   }
   const out = await api(base, "POST", "/users/create", body);
+  if (out.status === 200 && out.body && out.body.ok !== false) {
+    // AT THE HOME CELL (#2236): a creation naming another cell is relayed
+    // there, and the cell it was asked at holds nobody by that name — its
+    // `set-password` answers "There is nobody called …", and its sign-in
+    // screen restarts the sign-in at home rather than asking for a new
+    // password. Both are asked at the home cell's own address.
+    const home = homeBase(base, homeCell);
+    await ownPassword.ownPassword(home, username, password,
+      function (who, value) {
+        return api(home, "POST", "/users/set-password",
+                   { user: who, password: value });
+      });
+  }
   log.debug("Leaving createPerson(). " + out.status);
   return out;
 }

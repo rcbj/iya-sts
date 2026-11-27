@@ -1411,15 +1411,41 @@ class SsfTransmitters {
                          header: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering SsfTransmitters.verifies().");
-    if (!state.config || !state.config.jwks_uri) {
+    // WHICH KEYS COUNT (#2149): the `ssf-set` use case's list. By default the
+    // keys at the jwks_uri the partner's configuration names, as before; a
+    // key set bound to this relationship adds its keys, and a list without
+    // `registered-keys` leaves the discovered jwks_uri out.
+    const sources: Json = require('../common/truststores')
+      .keySources('ssf-set', { kind: 'federation', id: state.fedId });
+    const discovered = !!(state.config && state.config.jwks_uri);
+    if ((!sources.registered || !discovered) && !sources.sets.length) {
       log.debug("Leaving SsfTransmitters.verifies(). No keys known.");
-      return { ok: false, why: 'the partner\'s configuration was never ' +
-                               'discovered' };
+      return { ok: false, why: sources.registered ?
+        'the partner\'s configuration was never discovered' :
+        'no key set bound to this partner is named by the ssf-set use case' };
     }
-    const got: Json = await this.deps.jwks().ensure(state.config.jwks_uri,
-                                                    header.kid || '');
-    const keys = got && got.jwks && Array.isArray(got.jwks.keys)
-      ? got.jwks.keys : [];
+    const keys: Json[] = [];
+    const fetchKeys = async (uri: string): Promise<void> => {
+      log.debug("Entering fetchKeys().");
+      const got: Json = await this.deps.jwks().ensure(uri, header.kid || '');
+      (got && got.jwks && Array.isArray(got.jwks.keys) ? got.jwks.keys : [])
+        .forEach(function (k: Json) {
+          keys.push(k);
+        });
+      log.debug("Leaving fetchKeys().");
+    };
+    if (sources.registered && discovered) {
+      await fetchKeys(String(state.config.jwks_uri));
+    }
+    for (const set of sources.sets) {
+      if (set.uri) {
+        await fetchKeys(String(set.uri));
+      } else {
+        (set.keys || []).forEach(function (k: Json) {
+          keys.push(k);
+        });
+      }
+    }
     const candidates = keys.filter(function (k: Json) {
       return !header.kid || k.kid === header.kid;
     }).filter(function (k: Json) {

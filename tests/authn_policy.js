@@ -103,6 +103,9 @@ function builtIn(t) {
           p.emailLinkPrimary === false && p.emailLinkSecondFactor === false,
           'A2. both email mechanisms are OFF by default (NIST SP 800-63B-4 ' +
           'section 3.1.3.1)');
+  t.check(p.hotpSecondFactor === false && p.yubicoOtpSecondFactor === false,
+          'A2b. a one-time code token (HOTP) and a YubiKey OTP are listed ' +
+          'and OFF by default');
   t.check(p.passwordPrimary === true && p.requireSecondFactor === 'if-held',
           'A3. a password is a first factor and a second is required of ' +
           'those who hold one');
@@ -143,9 +146,11 @@ function saves(t) {
       .problems.length === 1,
             'B4. an emailed code valid for more than ten minutes is refused');
     const noWayIn = {};
-    authnPolicy.MECHANISMS.forEach(function (m) {
-      if (m.primary !== null) {
-        noWayIn[m.id + 'Primary'] = false;
+    // The field key is not the mechanism id plus a suffix: `yubico-otp`
+    // (#1955 P5) is `yubicoOtpSecondFactor`. FIELDS already holds the key.
+    authnPolicy.FIELDS.forEach(function (field) {
+      if (field.role === 'primary') {
+        noWayIn[field.key] = false;
       }
     });
     const refused = authnPolicy.save('default', withDefaults(noWayIn));
@@ -155,9 +160,9 @@ function saves(t) {
             'realm\'s administrators included, could sign in',
             JSON.stringify(refused.errors));
     const noSecond = {};
-    authnPolicy.MECHANISMS.forEach(function (m) {
-      if (m.secondFactor !== null) {
-        noSecond[m.id + 'SecondFactor'] = false;
+    authnPolicy.FIELDS.forEach(function (field) {
+      if (field.role === 'second-factor') {
+        noSecond[field.key] = false;
       }
     });
     noSecond.requireSecondFactor = 'always';
@@ -325,7 +330,8 @@ function kinds(t) {
             'F2. the actions are every kind\'s, the password policy\'s by ' +
             'the names they always had', view.actions.join(','));
     const saved = adminActions.policiesAction(Object.assign(
-      { action: 'save-authn-policy' }, withDefaults()), { via: 'api' });
+      { action: 'save-authn-policy' }, withDefaults(),
+      { profile: 'default' }), { via: 'api' });
     t.check(saved.ok && saved.kind === 'authn' &&
             saved.profile.from === 'realm',
             'F3. save-authn-policy is handed to the authentication policy',
@@ -376,7 +382,8 @@ function kinds(t) {
               'F4. a kind registered later is on the page, in the JSON and ' +
               'in the actions with no other edit');
       const done = adminActions.policiesAction(
-        { action: 'save-widget-policy', widgets: '7' }, { via: 'api' });
+        { action: 'save-widget-policy', profile: 'default', widgets: '7' },
+        { via: 'api' });
       t.check(done.ok && store.w === 7,
               'F5. and its save is dispatched to its own module',
               JSON.stringify(done));

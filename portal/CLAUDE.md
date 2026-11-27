@@ -6,7 +6,10 @@
 (#446). `/portal` and every path under it answer one document
 (`portal.ts`), which loads `/portal/portal.js` — the runtime and every page's
 renderer — and `/portal/portal.css`. The runtime signs in as the PUBLIC client
-`sts-user-portal` (PKCE, `account:manage`, every token DPoP-bound to a key the
+`sts-user-portal` (PKCE, `account:read owner:read` since #2168 — the first
+write asks `account:manage` or `owner:write` by a second authorization,
+`common/CLAUDE.md` 3cl, and an owner's edit controls are drawn on
+`owner:read`, OWNER_WRITE being held on OWNER_READ's condition — every token DPoP-bound to a key the
 browser cannot export, held in memory), draws every page from an
 `/account-api` operation and sends every form to the operation that mirrors
 it. `account-api/CLAUDE.md` argues the API, its gate and its answer
@@ -31,7 +34,7 @@ a page DOES, which did not change:
 | a CSRF token on every form (A07) | gone with the cookie it guarded: a request is a DPoP-bound token and a proof by a key no other page holds |
 | a write answers 303 with `?done=` | it answers `{ ok, message }` in the person's language; a secret shown once is a `view` drawn in place |
 | every page here but a few is `script-src 'none'`, and a page that "has no script" or "runs no script" | every `/portal/*` path is the one shell under `script-src 'self'` and `connect-src 'self'`, and every page runs `/portal/portal.js`; what "no script" still means is that the page needs nothing in the browser beyond drawing its answer and sending its forms |
-| `/authn/webauthn.js` on `/portal/keys`, `/portal/activate`, `/portal/devices`; `/portal/copy.js` on `/portal/mfa` | the runtime runs the ceremonies and reveals the Copy buttons (`web_portal_webauthn.ts`); the four scripted-page rows are one in the root `CLAUDE.md` |
+| `/authn/webauthn.js` on `/portal/keys`, `/portal/activate`, `/portal/devices`; `/portal/copy.js` on `/portal/mfa` | the runtime runs the ceremonies and reveals the Copy buttons (`web_portal_webauthn.ts`); the four scripted-page rows are one in the root `CLAUDE.md`. **Since #2220** a ceremony asks `WebWebAuthn.missing()` first and, in a browser without WebAuthn, says `browser.noPasskeys` inside `#wa-data`, hides `#wa-go` and sends nothing (the finish would draw over it, #961's lesson); Copy goes through `common/web_clipboard.ts`, falling back to `execCommand('copy')` and saying a failure on the button; a step that must leave the page keeps its choices (`common/web_page_state.ts`); and `start()` asks for session storage beside WebCrypto |
 | the `Location`-header bug and `oidc_rp.js`'s choke point | the runtime builds its own authorization request under the realm's prefix |
 | `NAV` in `portal.ts` | `NAV` in `web_portal_kit.ts`, read by the frame and by `paths()` |
 | the console-session adoption (2026-09-30) | DROPPED: single sign-on through `/oauth2/authorize` covers it |
@@ -1052,7 +1055,8 @@ authorization request and the sign-out's address are the bytes they were.
   they authorize, and with two accounts signed in "you" is no longer
   obvious. So, with more than one live account in the browser's list, the
   request names the account it will be approved as (`device-as`,
-  `portalDevice.request.as`); otherwise the page is the one it was. A
+  `portalDevice.request.as`); the page also shows every requested RFC 8707
+  resource before approval. A
   `verification_uri_complete` opened in a new tab has no account of its own
   and signs in as any tab does: the picker where nothing chooses.
 * **THE LIST IS FETCHED ONLY WHERE THE SHELL SAYS SO** (`data-sts-accounts`,
@@ -2065,6 +2069,94 @@ pre-authorized offer).
   default is not recorded as a choice, so a change of the setting before
   the wallet redeems still applies. `oid4vc/CLAUDE.md` has where it goes.
 
+## `/portal/tokens-and-keys`: A TAB PER KIND, OVER THE EXISTING CARDS (#2053, 2026-11-23)
+
+rcbj: "The user portal needs to provide a page where a user can register
+each of these application artifacts." Under *How I sign in*: Hardware
+tokens, OATH tokens, YubiKey OTP, PIV, SSH user certificates, and OpenPGP
+and S/MIME — the names and order of a person's Credentials sub-tabs on the
+console (#2052). `web_tokens_and_keys.ts` draws each tab with the card of
+the page that already had it (`web_tokens.ts`'s `heldCard()`,
+`claimCard()`, `enrolCard()`, `certificatesCard()`, `escrowCard()`;
+`web_mfa.ts`'s `hotpCard()`, `yubiCard()`; `web_openpgp.ts`'s body), so
+there is one copy of each. **#2308 took Security keys (`/portal/tokens`)
+and OpenPGP and mail encryption (`/portal/openpgp`) out of the column**,
+because each was that copy a second time. Their cards and account-api
+operations stay; a bookmark of either address is sent to the matching tab
+(`#tk-hardware-tokens`, `#tk-openpgp`); the forms still post to those
+paths. `/portal/mfa` is unchanged.
+
+**Two runtime parts made it possible, both general.** A page may
+`compose` other GET operations into its view (each member that view, or a
+refusal its tab draws), and name in `members` where a form posts → the
+member its answer replaces (`''` for the page's own): a card's form still
+posts to its own page and so to its own `/account-api` operation, and
+`answered()` puts the answer back into this page, which keeps its address
+and its tab. A post that answers no view (SSH's) keeps its answer as
+`<member>Answer` while the page is asked again, which is how an issued
+certificate is shown once. And a form may name fields the operation
+takes as a list or an integer (`data-array`, `data-integer`;
+`PortalRuntime.typedFields()`), since the account API refuses a string
+there. The tabs are fragments the stylesheet shows (`.ptabs`, `:target`).
+
+The page is drawn from `GET /account-api/tokens-and-keys` (the tokens
+view; its own operation because a page is drawn from the one GET that
+mirrors it) and composes `GET /account-api/mfa`, `/account-api/openpgp`
+and `/account-api/ssh/certificates`. **SSH is the one new card**: the
+list with Revoke and an issue form over the existing SSH operations,
+which take `account:manage` beside `ssh:certificate`; their POSTs mirror
+`/portal/ssh` and `/portal/ssh/revoke`, which are form targets and no
+page. `tests/portal_tokens_and_keys.js` holds it.
+
+## `/portal/tokens`: A PERSON'S SECURITY KEYS AND SMART CARDS (#1955 P1, 2026-11-20)
+
+**#2308 took this page out of the column.** The cards are the Hardware
+tokens tab, the claim on the OATH tab, and the PIV tab of
+`/portal/tokens-and-keys`. The address opens the Hardware tokens tab.
+What follows is the account API, which the forms still post to.
+
+Under *How I sign in*, beside Passkeys, until then: the physical tokens
+the register
+(`common/hardware_tokens.ts`) records the person as holding, drawn by
+`web_tokens.ts` from `GET /account-api/tokens` (`account_tokens.ts`), and
+one act, **I lost this key** (`POST /account-api/tokens`, `action: lost`,
+`recentAuth`). The token key is the one identifier from the body; the act
+runs with `onlyHolder` set to the token's subject, so another person's
+token matches nothing (A01) and a credential somebody else registered on
+the same key is left for an administrator. A person whose lost key was
+their only way in is told to use an activation link or recovery codes,
+because the removal passes the last-way-in guard. The words are
+`portalTokens`'s.
+
+**SINCE #1955 P4 THE PAGE ALSO CLAIMS AN IMPORTED ONE-TIME CODE TOKEN**:
+`action: claim` on the same operation, with the serial printed on the token
+and a code it shows now (`common/oath_tokens.ts`'s `claim()`). The username
+is the token's subject's, the serial and the code the only things from the
+body; it spends the `mfa-code` budget (STS-OATH-0050 when that is out), a
+wrong serial and a wrong code are one refusal (STS-OATH-0043), and the code
+is spent. CAEP credential-change `create` is sent.
+
+**`/portal/mfa` HAS AN HOTP CARD BESIDE THE APP'S (#1955 P4)**: `hotp-start`,
+`hotp-confirm`, `hotp-resync` (two consecutive codes, `code` and `code2`)
+and `hotp-remove` on `changeMfa`, `account_mfa.ts`'s `hotpAct()`. The view's
+`hotp` card carries the pending enrolment's QR code (an `otpauth://hotp`
+URI with its counter, drawn as TOTP's is) and the `ykman otp hotp` command
+that programs a YubiKey's second OTP slot. Confirm and resync spend the
+`mfa-code` budget; remove ends the sessions its codes signed in (#722,
+`{ kind: 'hotp' }`). CAEP's credential type is this service's
+`urn:iya:sts:credential-type:hotp-token`: a token is not an `app`.
+
+**#1955 P2 adds the PIV enrolment form and the escrowed keys** to the same
+page and the same door (`actOnTokens`, `recentAuth`): `enrol-piv` issues the
+CALLER a PIV slot certificate from a request and its YubiKey PIV attestation
+(`common/piv_enrolment.ts`; the target is the token's subject, never the
+body's), `recover-key` hands the caller their own escrowed 9d key, and
+`attach-key` notes which of their tokens it was loaded on. What an act made
+is on the answer's view once (`issued`, `recovered`, as the certificates
+page's `fresh`). A refusal is held to the statuses whose answers carry a
+`view` (400, 404, 409, 503): a profile the core refused (its 403) is a 400
+here, because the account API's 403 is the gate's.
+
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
 The entries in `ou=devices` the person owns, the applications that used
@@ -2206,6 +2298,20 @@ step-up (`STS-GNAP-0862`: a person named on a request is not thereby the
 owner of what it names) and reads the lowered limits back (`0866` raised,
 `0867` failing the type's schema), all before the answer is claimed.
 
+## `/portal/access-request`: A PERSON'S OWN AUTHZEN ACCESS REQUESTS (#1204)
+
+**The hosted form of an AuthZEN requestable denial (`form_url`) and a
+request's ticket (`links.ticket`)**, two `/account-api` operations
+(`portal_access_request.ts`) drawn by `web_access_request.ts`, behind
+`authzen.accessRequestForm`. A page of its own beside
+`/portal/access-requests`, never a section of it: that page is where a
+person decides somebody ELSE's request as an approver, and this one is
+where they make and follow their OWN. The query names a denial
+(`evaluation_id`) or a request (`request`), never a person; the library
+answers only the denial's or the request's subject, and the same 0147
+whether or not the thing exists. Nothing on it names who approves.
+`authzen/CLAUDE.md` has the library's half.
+
 ## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
 
 The setup phase of OpenID Connect Claims Aggregation, the person's own. Every
@@ -2277,7 +2383,13 @@ can be chosen from.
 `stsPasswordResetExpires`, `security.passwordResetTtlMinutes`), REMOVES the
 current password into the history, signs the person out everywhere, and hands
 the administrator `…/portal/reset-password?user=<name>&token=<token>` once.
-This page spends it. It is `/portal/activate`'s shape and for its reasons, with
+This page spends it. **Spending it SIGNS THE PERSON OUT EVERYWHERE** (#2123,
+ASVS 5.0.0 7.4.3, rcbj 2026-11-24): `AccountReset.endEverySession()` asks
+`logout.terminate()` for every session of the identity, as the administrator's
+reset does. That matters for a link the person asked for at
+`/portal/forgot-password`, which removes nothing when it is issued. A failure is
+said (`STS-PORTAL-0638`) and does not undo the password. It is
+`/portal/activate`'s shape and for its reasons, with
 three differences:
 
 * **GET checks the link before drawing the form** (rate limited on
@@ -2472,3 +2584,21 @@ would need the policy widened, and nothing else wants it. The limits arrive on
 the Overview's `photo.limits` and are the server's to enforce:
 `common/CLAUDE.md` (3db).
 
+
+## `/portal/openpgp`: A PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (#1955 P6, 2026-11-20)
+
+**#2308 took this page out of the column.** The cards are the OpenPGP and
+S/MIME tab of `/portal/tokens-and-keys`, and the address opens that tab.
+The account API below is unchanged, and the forms still post here.
+
+Until then, under *How I sign in*, beside Security keys, drawn by
+`web_openpgp.ts` from
+`GET /account-api/openpgp` (`account_openpgp.ts`): the registered key, the
+registration (ask for a challenge, sign it with `gpg --clearsign` — the card
+signs on a YubiKey — paste key and signed text), the Web Key Directory
+opt-in, the S/MIME certificate and the mail encryption choice. Seven acts on
+`POST /account-api/openpgp` (`challenge`, `register`, `remove`, `publish`,
+`withdraw`, `mail-encryption`, `smime`), all `recentAuth`: what mail to a
+person is encrypted to decides who can read their reset links. The username
+is always the token's subject. The logic is `common/openpgp_keys.ts`
+(`common/CLAUDE.md`); the words are `portalOpenpgp`'s, every base catalog.

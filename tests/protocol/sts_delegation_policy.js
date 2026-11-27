@@ -37,11 +37,15 @@
 // OWNED HERE (local: true): the policy is this repository's own.
 // ---------------------------------------------------------------------------
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -459,7 +463,7 @@ async function tokenExchange() {
                        JSON.stringify(claims.act));
     assert.strictEqual(claims.act.iss, claims.iss, "the act entry names " +
                        "this issuer (#471): " + JSON.stringify(claims));
-    assert.ok([].concat(claims.aud).indexOf(TARGET) >= 0,
+    assert.ok(urls.holds(claims.aud, TARGET),
               JSON.stringify(claims.aud));
   });
   r = await exchange(BACK, forMid);
@@ -529,7 +533,7 @@ async function tokenExchange() {
         function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 300));
           assert.ok(!claims.act, JSON.stringify(claims.act));
-          assert.ok([].concat(claims.aud).indexOf(url(MID)) >= 0,
+          assert.ok(urls.holds(claims.aud, url(MID)),
                     JSON.stringify(claims.aud));
         });
   // Authority lost since the subject token was issued. The CLIENT is R
@@ -676,14 +680,20 @@ async function test() {
   // ESB and BACK are WS-Trust requesters too: a person entry of the same
   // name holds the password their UsernameToken carries. The realm's
   // attribute policy (#396) requires givenName, sn and mail of every person
-  // in product mode.
+  // in product mode. Temporary, then each one's own (#2160,
+  // `own_password.js`): a UsernameToken is refused a temporary password.
   for (const who of [ALICE, BOB, CAROL, ESB, BACK]) {
     await ok(realmApi + "/users/create",
              { username: who, invent: false, credential: "password",
-               password: PASSWORD,
+               password: ownPassword.temporaryFor(PASSWORD),
                attributes: { cn: who, givenName: who, sn: who,
                              mail: who + "@" + REALM + ".example.net" } },
              "created " + who);
+    await ownPassword.ownPassword(realmBase, who, PASSWORD,
+      function (one, value) {
+        return call("POST", realmApi + "/users/set-password",
+                    { user: one, password: value });
+      });
   }
   // Every application is a WS-Trust relying party (its URL its AppliesTo,
   // so a token about somebody can be issued FOR it) and a confidential

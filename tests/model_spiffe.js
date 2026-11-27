@@ -225,7 +225,10 @@ function handCheck(t) {
   const written = sentences.filter(function (one) {
     // A sentence as the source would hold it: its first words, opening a
     // string literal. One too short to tell from anything else is skipped.
-    const head = one.slice(0, 20).replace(/'/g, '\\\'');
+    // As a single-quoted literal writes it: the backslash first, so the
+    // one each quote gains is not escaped again.
+    const head = one.slice(0, 20).replace(/\\/g, '\\\\')
+      .replace(/'/g, '\\\'');
     return head.length >= 15 && all.indexOf('\'' + head) >= 0;
   });
   t.check(sentences.length >= 14 && written.length === 0,

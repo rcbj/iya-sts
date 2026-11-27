@@ -68,6 +68,8 @@ import ProfilePhoto = require('../common/profile_photo');
 // What a request may name and hold (#1483): a leaf that registers nothing.
 import RequestHeaders = require('../common/request_headers');
 import ModelZod = require('../common/model_zod');
+// A refusal as a catalog sentence (#2006): the write budget's (#2167).
+import Sentence = require('../common/sentence');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -87,9 +89,13 @@ const SHAPE_CODES: Record<string, string> = {
 const BASE = '/account-api';
 const PORTAL = '/portal';
 /**
- * The one scope this API takes.
+ * The scope every operation of this API takes.
  */
 const SCOPE = 'account:manage';
+/**
+ * The scope a read takes instead (#2168): what the portal signs in with.
+ */
+const READ_SCOPE = 'account:read';
 /**
  * The portal's client.
  */
@@ -161,12 +167,30 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_devices');
   },
+  // #1955 P1: /portal/tokens, the person's hardware tokens, beside devices.
+  function () {
+    return require('../portal/account_tokens');
+  },
+  // #1955 P3: SSH user certificates are API operations, not a portal page.
+  function () {
+    return require('./ssh_user_ca');
+  },
+  // #1955 P6: /portal/openpgp, the person's OpenPGP key, its Web Key
+  // Directory publication and their mail encryption, beside the tokens.
+  function () {
+    return require('../portal/account_openpgp');
+  },
   function () {
     return require('../portal/portal_ciba');
   },
   // #1180: /portal/access-requests, beside the sign-in requests.
   function () {
     return require('../portal/portal_access_requests');
+  },
+  // #1204: /portal/access-request, an AuthZEN denial's hosted form and a
+  // request's ticket, beside the approvers' page.
+  function () {
+    return require('../portal/portal_access_request');
   },
   function () {
     return require('../portal/portal_device');
@@ -221,6 +245,12 @@ interface AccountApiDeps {
  * The account API: the user portal's only door.
  */
 class AccountApi {
+  /**
+   * The API's own version, for the document's `info.version` where the
+   * build may not be shown (#2142).
+   */
+  static readonly API_VERSION = '1';
+
   private table: AccountOperation[] | null = null;
   // Each operation's declared parameters, built once: the check below runs
   // on every request and the conversion from zod is not free.
@@ -401,6 +431,23 @@ class AccountApi {
    * @param body - the answer
    * @returns nothing
    */
+  /**
+   * The answer an operation marked `recentAuth` gets in place of its own
+   * when the person's sign-in is too old: a 200 that sends the portal to
+   * sign in again (#2289). The one place it is built, so that the models
+   * that must accept it are held to this shape (`tests/account_step_up_
+   * models.js`).
+   *
+   * @returns `{ ok: false, stepUp: { prompt, maxAge } }`
+   */
+  stepUpAnswer(): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.stepUpAnswer().");
+    log.debug("Leaving AccountApi.stepUpAnswer().");
+    return { ok: false, stepUp: { prompt: 'login',
+                                  maxAge: this.recentAuthSeconds() } };
+  }
+
   // How recent a sign-in must be to change how somebody signs in (#1515, ASVS
   // 5.0.0 7.5.1), in seconds. Zero means it is not asked.
   private recentAuthSeconds(): number {
@@ -496,8 +543,12 @@ class AccountApi {
   document(req: Json): Json {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AccountApi.document().");
+    // OpenAPI requires `info.version`; where the build may not be shown
+    // (#2142) it is this API's own, as the reports API's document says.
     const doc = AccountApiSpec.document({
-      baseUrl: baseUrlOf(req), version: version.load().version });
+      baseUrl: baseUrlOf(req),
+      version: mode.publishesBuildDetail() ? version.load().version :
+        AccountApi.API_VERSION });
     log.debug("Leaving AccountApi.document().");
     return doc;
   }
@@ -518,10 +569,22 @@ class AccountApi {
     const t = this.translatorFor(username);
     const portal = i18n.catalogData(t.negotiated, 'portal');
     const chooser = i18n.catalogData(t.negotiated, 'chooser');
+    // THE REFUSALS THIS API WORDS AS CATALOG SENTENCES (#2167): only the
+    // rate limits' area, not the whole namespace — the portal's other
+    // refusals are English (#2006 lists them), and the sign-in screen's
+    // hundreds of sentences would only make every page heavier.
+    const refusals = i18n.catalogData(t.negotiated, 'refusals');
     const catalogs: Json = {};
     Object.keys(portal.catalogs).forEach(function (tag) {
+      const limits: Json = {};
+      const all = refusals.catalogs[tag] || {};
+      Object.keys(all).forEach(function (key) {
+        if (key.indexOf('refusals.limits.') === 0) {
+          limits[key] = all[key];
+        }
+      });
       catalogs[tag] = Object.assign({}, portal.catalogs[tag],
-                                    chooser.catalogs[tag] || {});
+                                    chooser.catalogs[tag] || {}, limits);
     });
     log.debug("Leaving AccountApi.localeData(). " + t.locale);
     return { negotiated: portal.negotiated, catalogs: catalogs,
@@ -529,13 +592,19 @@ class AccountApi {
   }
 
   /**
-   * The build, as every page's foot says it.
+   * The build, as every page's foot says it: both empty where the build may
+   * not be shown (#2142) — a person is not an administrator, and
+   * `/account-api/locale` is anybody's.
    *
    * @returns `{ version, buildInfo }`
    */
   versionData(): Json {
     const { log } = this.deps;
     log.debug("Entering AccountApi.versionData().");
+    if (!mode.publishesBuildDetail()) {
+      log.debug("Leaving AccountApi.versionData(). Not shown.");
+      return { version: '', buildInfo: '' };
+    }
     const v = version.load();
     log.debug("Leaving AccountApi.versionData().");
     return { version: v.version, buildInfo: version.buildInfo(v) };
@@ -918,24 +987,41 @@ class AccountApi {
       return null;
     }
     const carried = String(claims.scope || '').split(/\s+/).filter(Boolean);
-    if (carried.indexOf(SCOPE) < 0) {
+    // `account:manage`, or a narrower scope THIS operation names instead
+    // (the #1955 review, `ssh:certificate`): the first one the token
+    // carries is the one the client must still declare.
+    // AND ON A READ, `account:read` (#2168, ASVS 5.0.0 10.2.3): the portal
+    // signs in with it and asks a second authorization for `account:manage`
+    // the first time it writes. Never on any other method, so a read token
+    // changes nothing; `account:manage` still reaches every operation, so a
+    // token or a client from before is answered as it was.
+    const reading = req.method === 'GET' || req.method === 'HEAD';
+    const accepted = [SCOPE].concat(Array.isArray((op as Json).scopes)
+      ? (op as Json).scopes.map(String) : [])
+      .concat(reading ? [READ_SCOPE] : []);
+    const used = accepted.filter(function (one: string): boolean {
+      return carried.indexOf(one) >= 0;
+    })[0] || '';
+    if (!used) {
       log.debug("Leaving AccountApi.authenticate(). No account:manage.");
       res.set('WWW-Authenticate', 'DPoP error="insufficient_scope", scope="' +
-              SCOPE + '"');
+              accepted.join(' ') + '"');
       this.refuse(res, 403, 'STS-ACCOUNT-0013',
         'That access token does not carry "' + SCOPE + '", which every ' +
-        'operation of this API takes.', { error: 'insufficient_scope' });
+        'operation of this API takes' + (accepted.length > 1
+          ? ' (or here "' + accepted.slice(1).join('", "') + '")' : '') +
+        '.', { error: 'insufficient_scope' });
       return null;
     }
     // THE CLIENT MUST STILL DECLARE IT (#110's rule, asked again on every
     // call): an allowance taken off a client stops the tokens it holds.
-    if (!lazy.scopePolicy().declares(issuedTo, SCOPE)) {
+    if (!lazy.scopePolicy().declares(issuedTo, used)) {
       log.debug("Leaving AccountApi.authenticate(). Undeclared.");
       this.refuse(res, 403, 'STS-ACCOUNT-0014',
         'The client this token was issued to, ' + JSON.stringify(issuedTo) +
-        ', no longer holds a delegated permission grant of "' + SCOPE +
+        ', no longer holds a delegated permission grant of "' + used +
         '" (urn:sts:account-api:' +
-        SCOPE + ' on sts-account-api, #1141).',
+        used + ' on sts-account-api, #1141).',
         { error: 'forbidden' });
       return null;
     }
@@ -1040,8 +1126,12 @@ class AccountApi {
       res.locals.apiCaller = { name: (caller as Json).username };
       if (op.recentAuth && !this.signedInRecently(caller)) {
         log.debug("Leaving AccountApi.run(). Sign in again.");
-        return this.json(res, 200, { ok: false, stepUp: {
-          prompt: 'login', maxAge: this.recentAuthSeconds() } });
+        return this.json(res, 200, this.stepUpAnswer());
+      }
+      if (op.method !== 'GET' && await this.overWriteBudget(req, res,
+                                                             caller)) {
+        log.debug("Leaving AccountApi.run(). Over the write budget.");
+        return undefined;
       }
     }
     // WHAT THE REQUEST NAMES AND HOLDS (#1483, `/admin-api`'s #1476 rule):
@@ -1133,6 +1223,50 @@ class AccountApi {
       log.debug("Leaving AccountApi.run(). Threw.");
       return undefined;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // THE WRITE BUDGET OF ONE PERSON (#2167, ASVS 5.0.0 2.4.2). Every operation
+  // that takes a token and is not a GET changes the person's own account —
+  // a profile edit, a credential enrolled or removed, a consent withdrawn, a
+  // device changed — and until this each was bounded only by the ceiling
+  // on one ADDRESS (`common/request_budget.ts`). So they count, after the
+  // gate has proved who is calling, in a bucket keyed by the token's
+  // subject in this realm (`websecurity.subjectActShared()`), of
+  // `account.writesPerSubject` in `account.writeWindowS`. A GET is not
+  // counted: reading one's own account stays under the address ceiling
+  // only, and a person over the write budget can still see their account.
+  // The refusal is a 429 with Retry-After, and its sentence is a catalog
+  // message the portal draws in its own language (#2006).
+  // -------------------------------------------------------------------------
+  /**
+   * Counts a write against its person's budget, and refuses one over it.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param caller - who the token names
+   * @returns a promise of true when the request was refused
+   */
+  async overWriteBudget(req: Json, res: Json,
+                        caller: AccountCaller): Promise<boolean> {
+    const { log, config, websecurity } = this.deps;
+    log.debug("Entering AccountApi.overWriteBudget().");
+    const counted = await websecurity.subjectActShared('account-write', req,
+      String(caller.realm || '') + '|' + String(caller.sub || ''),
+      Number(config.value('account.writesPerSubject')),
+      Number(config.value('account.writeWindowS')), 'STS-ACCOUNT-0024');
+    if (counted.ok) {
+      log.debug("Leaving AccountApi.overWriteBudget(). Within it.");
+      return false;
+    }
+    const said = counted.said ||
+      Sentence.say('refusals.limits.tooManyActs',
+                   { seconds: counted.retryAfterS || 1 });
+    res.set('Retry-After', String(counted.retryAfterS || 1));
+    this.refuse(res, 429, 'STS-ACCOUNT-0024', [String(said)],
+                { messages: Sentence.messagesOf([said]) });
+    log.debug("Leaving AccountApi.overWriteBudget(). Refused.");
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -1267,10 +1401,12 @@ export = {
   AccountApi: AccountApi,
   BASE: BASE,
   SCOPE: SCOPE,
+  READ_SCOPE: READ_SCOPE,
   installInstance: (instance: AccountApi): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   operations: slot.forward('operations'),
+  stepUpAnswer: slot.forward('stepUpAnswer'),
   document: slot.forward('document'),
   paths: slot.forward('paths')
 };

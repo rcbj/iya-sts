@@ -33,6 +33,9 @@
 // standing (*No job removes a realm*, `tests/CLAUDE.md`).
 // ===========================================================================
 
+// An address compared by parsing it, not searched for as text
+// (`url_match.js`).
+const urls = require("./url_match.js");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -452,7 +455,7 @@ async function pass() {
         "for its own audience", function () {
           const claims = issued(r, "D1");
           assert.strictEqual(claims.sub, aliceSub);
-          assert.ok([].concat(claims.aud).indexOf(url(FRONT)) >= 0,
+          assert.ok(urls.holds(claims.aud, url(FRONT)),
                     JSON.stringify(claims.aud));
         });
   const acts = await call("GET", realmApi + "/delegation?per=50");

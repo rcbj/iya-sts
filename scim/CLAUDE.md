@@ -934,7 +934,7 @@ count stop stays: it is what ended the loop while the page repeated.
 Everything above is a SERVICE PROVIDER. `scim_client.ts` is a CLIENT of
 somebody else's: per realm, any number of clients, each pushing this realm's
 people and groups to one remote SCIM service provider over RFC 7644. rcbj's
-decisions are on #552 and the user's half is `docs/v1.1.0/scim.md`, *The outbound
+decisions are on #552 and the user's half is `docs/v1.2.0/scim.md`, *The outbound
 SCIM client*; what follows is why it is built the way it is.
 
 **A CLIENT IS AN APPLICATION ENTRY, NOT A SETTING AND NOT A STORE OF ITS
@@ -1162,7 +1162,7 @@ cap on a `Retry-After`; and the summary log line (`STS-SCIMC-0013`).
 
 rcbj's three decisions are on #553 (one jurisdiction attribute per client,
 providers without PATCH supported through the owner cell, a GLOBAL pause);
-the user's half is `docs/v1.1.0/scim.md`, *In a service deployed as cells*. **In a
+the user's half is `docs/v1.2.0/scim.md`, *In a service deployed as cells*. **In a
 service that is one cell every answer below is the single-cell one** —
 `multi()` is false, `pushingCells()` is `['']`, the transfer question is not
 asked, no operation is called — and `tests/scim_client.js` runs unchanged to

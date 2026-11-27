@@ -448,12 +448,20 @@
     "text": "一种公钥令牌，持有者可以像 macaroon 一样离线收窄它，但任何持有根公钥的人都能验证它。其授权逻辑是令牌内携带的 Datalog，因此验证方总是在时间和迭代次数的限制下运行。"
   },
   "crypto.standards.cms.coverage": {
-    "en": "abe1a25e47d96baf",
-    "text": "partial：带一个签名者和已签名属性的 SignedData，按接收到的属性字节验证，按 DER 排序写入；带 KeyTransRecipientInfo（RSA PKCS#1 v1.5 和 OAEP）和 AES-CBC 内容的 EnvelopedData；带证书和 CRL 的退化型仅证书 SignedData。没有 KeyAgreeRecipientInfo，没有认证数据或压缩数据，没有副署签名。"
+    "en": "f750e6cf7ac566b2",
+    "text": "partial：带一个签名者和签名属性的 SignedData，按收到的属性字节验证，写入时按 DER 排序；带 KeyTransRecipientInfo（RSA PKCS#1 v1.5 和 OAEP）及 AES-CBC 内容的 EnvelopedData；包含证书和 CRL 的退化型仅证书 SignedData；用于 S/MIME 邮件（#1955）时，以 OAEP SHA-256 KeyTransRecipientInfo、ECDH KeyAgreeRecipientInfo，或对 ML-KEM 证书以 KEMRecipientInfo 写入的 EnvelopedData。不支持认证数据或压缩数据，不支持副署签名。"
   },
   "crypto.standards.cms.what": {
-    "en": "0f35f026a507dc11",
-    "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求方签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求方的 CertRep。"
+    "en": "05b9f7ff9bec76df",
+    "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求者签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求者的 CertRep。自 #1955 起，也用于加密邮件的 S/MIME EnvelopedData，为 EC 接收者增加 KeyAgreeRecipientInfo（dhSinglePass-stdDH-sha256kdf，AES-256 密钥封装），为 RSA 接收者增加 OAEP SHA-256 KeyTransRecipientInfo，并为 ML-KEM 证书增加 KEMRecipientInfo。无法封装的运行时不会退回 RSA 或 ECDH。"
+  },
+  "crypto.standards.openpgp.coverage": {
+    "en": "d27e08a2f317c75c",
+    "text": "partial：读取 v4 和 v6 可传输公钥、验证明文签名、加密 PGP/MIME 邮件，通过 openpgp.js 完成；RFC 9980 复合密钥在此读取并核验两部分。Web 密钥目录（Web Key Directory）的高级与直接查找方式及策略文件。不支持签名、解密、Web Key Service 提交、密钥服务器和 SLH-DSA。"
+  },
+  "crypto.standards.openpgp.what": {
+    "en": "039de4dd3b49b9ab",
+    "text": "个人自己的公钥，凭持有证明注册，并可按本人选择在 Web 密钥目录中发布；也是其邮件加密所用的密钥。"
   },
   "crypto.families.pki.signs": {
     "en": "fdcf723f4622f28f",
@@ -678,6 +686,78 @@
   "crypto.families.reporting.algorithms.3.how": {
     "en": "9d40176053fec31b",
     "text": "SHA-256，与制品一起保存，并在读取时检查"
+  },
+  "crypto.families.openpgp.signs": {
+    "en": "0f38445050f33bd1",
+    "text": "无。注册时的签名是本人的签名，加密邮件不签名（DKIM 对外层邮件签名，与对每封邮件的处理相同）。"
+  },
+  "crypto.families.openpgp.verifies": {
+    "en": "e571039950254fa8",
+    "text": "注册时的持有证明：一个明文签名（gpg --clearsign），签署的内容正是本服务向此人发出的质询，由所注册密钥中具备签名能力的密钥在质询发出后（openpgp.signatureSkewS）作出，且当时有效；密钥本身既未吊销也未过期，并带有包含该条目地址的有效用户 ID。支持 RFC 9580 v6 和 RFC 4880 v4 密钥，由 openpgp.js 读取。S/MIME 证书只检查有效性、密钥和用途，不检查证书链：它只用于选择邮件的加密对象。 RFC 9980 复合密钥由本服务自己的读取器读取并核验两部分；openpgp.js 不解析它们。"
+  },
+  "crypto.families.openpgp.encrypts": {
+    "en": "92940be7441a9817",
+    "text": "邮件，在本人选择或领域要求时（mail.encryptionRequired）：PGP/MIME（RFC 3156）加密至该密钥的加密密钥，由 openpgp.js 选择方式（v4 密钥用 SEIPD 加 AES，v6 密钥用 AEAD）；S/MIME（RFC 8551）作为 CMS EnvelopedData，内容加密使用 AES-256-CBC，内容密钥以 RSAES-OAEP（SHA-256）或 ECDH（dhSinglePass-stdDH-sha256kdf，AES-256 密钥封装）保护。 ML-KEM 证书（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：内容密码保持 AES-256-CBC，无法封装的运行时不会退回 RSA 或 ECDH。"
+  },
+  "crypto.families.openpgp.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.openpgp.hashes": {
+    "en": "c51e067261932787",
+    "text": "对小写化的本地部分计算 SHA-1，并以 z-base-32 编码，这是 Web 密钥目录为地址命名的方式（由草案规定的名称，从不用于保证完整性）。密钥指纹采用 RFC 9580 的定义（v6 为 SHA-256，v4 为 SHA-1）。"
+  },
+  "crypto.families.openpgp.keys": {
+    "en": "201cc09e750d0c79",
+    "text": "自身没有密钥。本人的公钥保存在其条目上（stsOpenPgpKey），从不保存私钥，注册时会拒绝私钥；YubiKey OpenPGP 卡上的密钥与文件中的密钥无法区分，因此不会将任何密钥记录为绑定硬件。"
+  },
+  "crypto.families.openpgp.algorithms.0.what": {
+    "en": "b7a04c64879be952",
+    "text": "已注册密钥，签名"
+  },
+  "crypto.families.openpgp.algorithms.0.how": {
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519、ML-DSA-87+Ed448（RFC 9980），然后是 Ed25519、Ed448、ECDSA P-256/P-384/P-521、至少 openpgp.minRsaBits 位的 RSA（至少 3072）"
+  },
+  "crypto.families.openpgp.algorithms.1.what": {
+    "en": "9f7b65405a49bedd",
+    "text": "已注册密钥，加密"
+  },
+  "crypto.families.openpgp.algorithms.1.how": {
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519、ML-KEM-1024+X448（RFC 9980），然后是 X25519、X448、Curve25519 以及 P-256/P-384/P-521 上的 ECDH、至少 openpgp.minRsaBits 位的 RSA"
+  },
+  "crypto.families.openpgp.algorithms.2.what": {
+    "en": "66b873543aebf01b",
+    "text": "拒绝"
+  },
+  "crypto.families.openpgp.algorithms.2.how": {
+    "en": "4c8437ead9bd7364",
+    "text": "DSA、ElGamal、Brainpool 曲线、SLH-DSA"
+  },
+  "crypto.families.openpgp.algorithms.3.what": {
+    "en": "429d783fabc235c9",
+    "text": "S/MIME 内容"
+  },
+  "crypto.families.openpgp.algorithms.3.how": {
+    "en": "8c2686ee3dd3948f",
+    "text": "AES-256-CBC（CMS EnvelopedData）"
+  },
+  "crypto.families.openpgp.algorithms.4.what": {
+    "en": "cc09e2a5306928f5",
+    "text": "S/MIME 密钥传输"
+  },
+  "crypto.families.openpgp.algorithms.4.how": {
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256；ECDH stdDH SHA-256 KDF，AES-256 封装；ML-KEM（RFC 9935）作为 KEMRecipientInfo，HKDF-SHA-256 与 AES-Wrap"
+  },
+  "crypto.families.openpgp.algorithms.5.what": {
+    "en": "727e1a6e39e36a93",
+    "text": "Web 密钥目录名称"
+  },
+  "crypto.families.openpgp.algorithms.5.how": {
+    "en": "a2b773a0ce72bc44",
+    "text": "SHA-1，z-base-32"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
@@ -1388,24 +1468,24 @@
     "text": "不签名任何离开本服务的内容。HOTP 值本身就是截断的 HMAC——RFC 4226 第 5.3 节——因此该协议族先计算带密钥的 MAC 再进行比较，这就是该原语与这里其他所有签名一起放在 common/crypto.js 中、而不是放在决定策略的模块中的原因。"
   },
   "crypto.families.one-time-passwords-totp.verifies": {
-    "en": "071552dc11014cdd",
-    "text": "所出示的代码，方法是为偏差窗口内的每个时间步计算 HMAC 并以恒定时间比较。即使已经匹配，也会有意计算每一个时间步：提前返回会使耗时取决于匹配的是哪个时间步，这比特意做成恒定时间的数字比较更容易成为预言机。"
+    "en": "302891e951b96222",
+    "text": "所出示的验证码：为偏差窗口内的每个时间步长计算 HMAC，并以恒定时间比较。即使已匹配，也会刻意计算每一个步长：提前返回会让耗时取决于匹配的是哪一个步长，这比本处刻意做成恒定时间的数字比较更容易被利用。HOTP 验证码（RFC 4226，#1955）以同样方式在其计数器之后的前瞻窗口内校验，随后在存储中以 compare-and-set 推进计数器。PSKC 种子文件的 ValueMAC（RFC 6030 第 6.1.1 节：基于密文的 HMAC-SHA1 或 SHA-2 MAC），在解密其密钥之前校验。"
   },
   "crypto.families.one-time-passwords-totp.encrypts": {
     "en": "c18d0d11279cb6c0",
     "text": "在产品模式下，静态存储的共享机密——通过 common/keystore.js，使用保护签名密钥的同一个密钥加密密钥以 AES-256-GCM 加密。在开发模式下以 base32 存储，因为那里的密钥加密密钥每次运行都会重新生成，封存就意味着认证器会在下次重启时悄无声息地失效。"
   },
   "crypto.families.one-time-passwords-totp.decrypts": {
-    "en": "d2cefc498eff5443",
-    "text": "同一个机密，用于验证代码。**这是本服务中唯一可以被读回的凭据**——密码是 scrypt 哈希，只能用于比较，而验证一次性代码意味着要计算它。这不是 RFC 6238 的弱点；这正是“共享机密”的含义，也正是该机制在这里只能作为第二因素、永远不能成为第一因素的原因。"
+    "en": "f197370676038df3",
+    "text": "供应商的 PSKC 种子文件（RFC 6030）：使用随上传提供的预共享密钥，或使用 PBKDF2 从其密码派生的密钥，以 AES-CBC 或 AES Key Wrap 解密，两者都不保留。同一个密钥，用于校验验证码。**这是本服务中唯一可以被读回的凭据**——密码是 scrypt 哈希，只能用于比对，而校验一次性验证码意味着要计算它。这不是 RFC 6238 的弱点；这正是“共享密钥”的含义，也正是该机制在此处是第二因素、永远不能成为第一因素的原因。"
   },
   "crypto.families.one-time-passwords-totp.hashes": {
     "en": "decb0b31d14255e5",
     "text": "SHA-1、SHA-256 或 SHA-512，仅用于 HMAC 内部。"
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "512b47bf629fcfe5",
-    "text": "它从不告诉任何人当前代码是什么，也从不在登录界面为任何人注册——注册意味着要显示一个机密，因此只在此人已通过身份验证或持有激活链接的地方进行。没有作为身份验证机制的基于计数器的 HOTP，也没有重新同步协议：偏差窗口就是为时钟漂移所提供的全部手段。"
+    "en": "313115cd82b83d1b",
+    "text": "它从不告诉任何人当前验证码是什么，也从不在登录界面为任何人注册——注册意味着会看到密钥，因此只在本人已通过身份验证或持有激活链接的地方进行。时钟漂移的 TOTP 只提供偏差窗口，别无其他。基于计数器的（HOTP）令牌通过两个连续的验证码重新同步，绝不只凭一个。它从不保留种子文件的密钥或密码，也从不打开为证书加密的文件。 HOTP（RFC 4226）和 PSKC 种子（RFC 6030）没有后量子 MAC：MAC 是 HMAC-SHA-1、SHA-256 或 SHA-512。"
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1422,6 +1502,50 @@
   "crypto.families.one-time-passwords-totp.algorithms.3.what": {
     "en": "e08e19def21e22b2",
     "text": "实时设置"
+  },
+  "crypto.families.yubico-otp.signs": {
+    "en": "c340996ced9d9758",
+    "text": "离开本服务的内容没有，除了 YK-VAL 客户端在 /wsapi/2.0/verify 上核验的 HMAC-SHA1。OTP 本身是一个 16 字节块的 AES-128-ECB，解密后再比较，因此该原语位于 common/crypto.js。"
+  },
+  "crypto.families.yubico-otp.verifies": {
+    "en": "f7cf070e5067a77f",
+    "text": "出示的 OTP：公开身份选定凭据，块在其 AES-128 密钥下解密，CRC-16 余数为 0xf0b8，且私有身份相符。使用计数器与会话使用计数器作为一个值，必须严格高于上次接受的值。不检查时间戳。当 yubiotp.ykval 开启时，在每种模式下核验 YK-VAL 请求的 HMAC-SHA1。"
+  },
+  "crypto.families.yubico-otp.encrypts": {
+    "en": "3802bf3b62081ea2",
+    "text": "静态的 AES 密钥与私有身份，作为一个密封的 JSON 值，在产品模式下置于密钥加密密钥之下。开发模式下密钥加密密钥每次运行生成，因此该值以明文存储并标明这一点。"
+  },
+  "crypto.families.yubico-otp.decrypts": {
+    "en": "560652ba098dd545",
+    "text": "该密封值，用于核验 OTP。服务器持有 AES 密钥，因此登录为 amr otp，从不为 hwk。"
+  },
+  "crypto.families.yubico-otp.hashes": {
+    "en": "761a28a6805e3023",
+    "text": "无。CRC 为 CRC-16，多项式 0x8408。YK-VAL 签名为 HMAC-SHA1。"
+  },
+  "crypto.families.yubico-otp.whatItDoesNot": {
+    "en": "f93ab78e99cd9d8d",
+    "text": "它从不调用 YubiCloud。它从不检查时间戳。在 yubiotp.offered 关闭时它从不登记槽位，在 yubiotp.ykval 关闭时它从不应答 YK-VAL。它从不记录编程行或客户端的 HMAC 密钥。 它没有后量子参数：OTP 是对一个 16 字节块的 AES-128-ECB。"
+  },
+  "crypto.families.yubico-otp.algorithms.0.what": {
+    "en": "6c0e6acd35694622",
+    "text": "OTP"
+  },
+  "crypto.families.yubico-otp.algorithms.1.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "字母表"
+  },
+  "crypto.families.yubico-otp.algorithms.2.what": {
+    "en": "ee4fcdc3401859da",
+    "text": "CRC"
+  },
+  "crypto.families.yubico-otp.algorithms.3.what": {
+    "en": "c8dae6371b33b8d6",
+    "text": "重放"
+  },
+  "crypto.families.yubico-otp.algorithms.4.what": {
+    "en": "7ff6cc8a39bc9224",
+    "text": "YubiCloud"
   },
   "crypto.families.recovery-codes.signs": {
     "en": "e07d5c09c87dcaf1",
@@ -1596,12 +1720,12 @@
     "text": "它发出的每一张证书，使用本领域的 EST 签发 CA 密钥，通过 common/pki.js 的 issueEnrolled() 签名——这里所有其他证书也出自同一个编码器。它返回的仅含证书的 CMS 消息是退化形式：带证书而无签名者的 SignedData，因此它们自身不带签名，其可信度来自其中的证书。"
   },
   "crypto.families.est.verifies": {
-    "en": "d40d37c4bd83de49",
-    "text": "PKCS#10 持有证明——请求用其自身公钥做出的签名，包括传统算法和后量子算法，在 common/cert_enrollment.ts 中验证——以及在证书身份验证时，客户端证书到本领域中间 CA 和服务根 CA 的路径，并查询吊销状态。/serverkeygen 模板不验证：其密钥会被替换。"
+    "en": "6b27c8877d509c46",
+    "text": "PKCS#10 持有证明——请求以其自身公钥所作的签名，经典与后量子均可，位于 common/cert_enrollment.ts——以及在证书身份验证时，客户端证书到本领域 Intermediate 和服务 Root 的路径，并查询吊销状态。/serverkeygen 模板不验证：其密钥会被替换。请求中的 YubiKey PIV 密钥证明（#1955，此处以及通过 ACME 和 SCEP）：f9 证书对插槽证书所作的 ECDSA 或 RSA 签名，以及 f9 证书到领域 PIV 证明信任锚的路径，均经由验证入口完成。"
   },
   "crypto.families.est.encrypts": {
-    "en": "2f48e10a9ad6494d",
-    "text": "服务器生成的密钥对的私钥，凡在密钥加密密钥比进程存活更久之处，都以 AES-256-GCM 在其下封存到条目上。它不会针对客户端加密（RFC 7030 section 4.4.1.2）：提出该要求的请求会被拒绝，密钥仅在 TLS 内传输。"
+    "en": "a18df4311029b728",
+    "text": "服务器生成的密钥对的私钥，在该密钥会比进程存活更久的情况下，以 AES-256-GCM 在密钥加密密钥下密封保存于条目上；托管的 piv-key-management 密钥（#1955）在每种模式下都如此，否则根本不生成。它“不会”为客户端加密（RFC 7030 第 4.4.1.2 节）：要求这样做的请求会被拒绝，密钥只在 TLS 内传输。"
   },
   "crypto.families.est.decrypts": {
     "en": "8d5c676935439726",
@@ -1906,5 +2030,9 @@
   "crypto.param.totp.encoding": {
     "en": "d9613131364834bc",
     "text": "RFC 4648 base32，无填充，符合 otpauth Key Uri Format 的要求。"
+  },
+  "crypto.families.est.algorithms.4.what": {
+    "en": "4dd4db2fd60c28f7",
+    "text": "已验证的 PIV 证明签名"
   }
 }

@@ -232,8 +232,8 @@
     "text": "Logga det genererade startlösenordet"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen."
+    "en": "8591cfda7dde139a",
+    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen. En förtroendesfärs fil lägger till ett bindestreck och sfärens id till det namnet. En senare start tar bort en fil när lösenordet i den inte längre öppnar dess konto."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -272,8 +272,24 @@
     "text": "Hur nyligen inloggningen måste ha skett för en känslig ändring (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "4bfb2112a9f37a5d",
-    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+    "en": "b20d406d9605d06f",
+    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. Detsamma gäller när en administratör tilldelar eller tar bort en roll, skapar, ändrar eller tar bort en förtroendesfär, agerar på PKI:n, signeringsnycklarna, nyckelkrypteringsnyckeln eller målen för utskick av hemligheter, eller ändrar någon inställning (#2161). Detsamma gäller när en applikation, en federationsrelation, en SAML-tjänsteleverantör, en åtkomstpolicy, en grupp, en namngiven policy, de claims en token bär eller något annat som avgör vem som kan logga in, vad de utfärdas eller vart det går ändras (#2247). 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+  },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Kontoändringar per person och fönster"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Hur många ändringar en inloggad person får göra i sitt eget konto via /account-api (portalen) under ett fönster på account.writeWindowS: profiländringar, registrerade eller borttagna inloggningsuppgifter, återkallade samtycken, enhetsändringar. Räknas per tokenens subjekt, inte per adress, så personer bakom samma adress delar det inte. Därutöver avvisas en ändring med 429 och Retry-After tills fönstret har passerat; läsning av kontot fortsätter. 0 betyder ingen gräns, standardvärdet i utvecklingsläge. Produktläget har 300 som standard."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Fönster för kontoändringar (sekunder)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "Fönstret som account.writesPerSubject räknas i, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -347,6 +363,30 @@
     "en": "26b0298f1a2bd460",
     "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
   },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Visa det exakta bygget för personer som inte är administratörer"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Om den exakta versionen, byggnumret, byggtiden och commit syns där någon annan än en administratör kan läsa dem: sidfoten på varje sida, API:erna för inloggning, portal och rapporter och deras OpenAPI-dokument, och User-Agent i de förfrågningar tjänsten gör till partner. auto, standard, visar dem i utvecklingsläge och döljer dem i produktläge, där dokumenten i stället anger API:ets egen version och User-Agent bara är produktnamnet; on och off tvingar fram det i båda lägena. Konsolen och hanterings-API:et visar alltid bygget."
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Begär att stå på HSTS-förladdningslistan"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Lägger till preload i Strict-Transport-Security, som bara produktläget skickar, så att värdnamnet kan skickas in till webbläsarnas förladdningslista på hstspreload.org. Förladdning binder hela den registrerbara domänen och varje underdomän till HTTPS i alla webbläsare, och att lämna listan tar månader. Skickas bara medan Tillämpa HSTS på underdomäner är på."
+  },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Vidarebefordra rapporter om CSP-överträdelser till"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Av när den är tom, standardvärdet. En https-URL som tar emot varje rapport om en överträdelse av Content Security Policy som tjänsten tar emot, som JSON: sfären, direktivet, sidans sökväg utan frågan, det blockerade ursprunget och dispositionen, aldrig rapporten så som webbläsaren skickade den. Skickas enligt samma regler för utgående anrop som federationens bakkanaler."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Acceptera ett påstående utan målgrupp"
@@ -378,6 +418,22 @@
   "malwareScan.timeoutMs|description": {
     "en": "59a643baa5f14b91",
     "text": "Hur länge tjänsten väntas på. En stor fil får en sekund mer per mebibyte."
+  },
+  "malwareScan.concurrency|label": {
+    "en": "ec01d0c5653c3ac7",
+    "text": "Samtidiga skanningar"
+  },
+  "malwareScan.concurrency|description": {
+    "en": "1b454790aa12de45",
+    "text": "Hur många filer en process skickar till skannern samtidigt, var och en över en egen anslutning. Övriga väntar på sin tur."
+  },
+  "malwareScan.queueLimit|label": {
+    "en": "c9a6ca8013fb8577",
+    "text": "Väntande skanningar"
+  },
+  "malwareScan.queueLimit|description": {
+    "en": "e7b856c0947d51e6",
+    "text": "Hur många filer som får vänta på en skanning utöver dem som pågår. En fil därutöver avvisas med 503 (STS-CORE-0182), som när skannern inte svarar."
   },
   "malwareScan.caFile|label": {
     "en": "15e0140ac004309d",
@@ -424,8 +480,8 @@
     "text": "Tillåt ett administratörsnamn som är standard i produktläge"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "53da4f7ba4ff5dcc",
-    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
+    "en": "7007ae597c41e813",
+    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö. En förtroendesfärs fil lägger till ett bindestreck och sfärens id till det namnet. En senare start tar bort en fil när lösenordet i den inte längre öppnar dess konto."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +492,8 @@
     "text": "Konto för initial administratör"
   },
   "admin.bootstrapUsername|description": {
-    "en": "9b6fe650632ee79d",
-    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna. En förtroendesfärs fil lägger till ett bindestreck och sfärens id till det namnet. En senare start tar bort en fil när lösenordet i den inte längre öppnar dess konto."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -1315,6 +1371,46 @@
     "en": "f034b2f597ec08a5",
     "text": "Hur länge en hemlighet som har VISATS men ännu inte bekräftats med en kod förblir tillgänglig. Den hålls åtskild — i minnet, eller förseglad i lagret där flera processer delar ett — och skrivs aldrig till katalogen förrän en kod bevisar att appen verkligen har den: en obekräftad hemlighet på någons post vore en andra faktor som hen inte kan producera, vilket är en utelåsning snarare än en kontroll. Tio minuter är tillräckligt länge för att hitta en telefon och kort nog för att en övergiven registrering inte ska bli kvar."
   },
+  "hotp.digits|label": {
+    "en": "e878ad21c60b7f59",
+    "text": "HOTP-kodlängd (siffror)"
+  },
+  "hotp.digits|description": {
+    "en": "a62b054d7e8d650e",
+    "text": "Hur många siffror en NY registrering av en räknarbaserad token (RFC 4226) ger: en YubiKey-OTP-plats som programmeras från portalen tar 6 eller 8. En token som importerats från leverantörens PSKC-fil behåller den längd filen anger."
+  },
+  "hotp.window|label": {
+    "en": "0b307d73f8b8efcb",
+    "text": "HOTP-framförhållning (koder)"
+  },
+  "hotp.window|description": {
+    "en": "b12c6aec525f377e",
+    "text": "Framförhållningen i RFC 4226 avsnitt 7.4: hur många tryck på en räknarbaserad token som aldrig nådde den här tjänsten som förlåts. En kod vid den lagrade räknaren eller upp till så många efter den godtas, och räknaren flyttas förbi den; en kod före den godtas aldrig. Noll godtar bara nästa kod. Gäller direkt, för varje registrering."
+  },
+  "hotp.resyncWindow|label": {
+    "en": "15000f3de3322f0d",
+    "text": "HOTP-fönster för omsynkronisering (koder)"
+  },
+  "hotp.resyncWindow|description": {
+    "en": "4bc7180cc29f1f53",
+    "text": "Hur långt fram två PÅ VARANDRA FÖLJANDE koder söks när en person synkroniserar om en token som hamnat utanför framförhållningen (RFC 4226 avsnitt 7.4). Två koder i rad är mycket svårare att gissa än en, och det är det som gör den större sökningen säker. Gäller direkt."
+  },
+  "yubiotp.offered|label": {
+    "en": "9f41692d832fec07",
+    "text": "Erbjud registrering av YubiKey-OTP"
+  },
+  "yubiotp.offered|description": {
+    "en": "5a0403877f662a53",
+    "text": "Om en person får registrera en YubiKey-OTP-plats, och om en administratör får tilldela en eller en person göra anspråk på en. Av som standard. En uppgift som redan innehas kontrolleras fortfarande vid steget för engångskoden. AES-nyckeln stannar på den här tjänsten, så inloggningen är amr otp och aldrig hwk."
+  },
+  "yubiotp.ykval|label": {
+    "en": "f309f289c5ecddcd",
+    "text": "Svara på YK-VAL 2.0-verifieringsslutpunkten"
+  },
+  "yubiotp.ykval|description": {
+    "en": "eba10509dc6d104d",
+    "text": "Om GET och POST /wsapi/2.0/verify kontrollerar en YubiKey-OTP för en klient som signerade begäran (YK-VAL 2.0). Av som standard, och vägen svarar då OPERATION_NOT_ALLOWED. På kontrolleras klient-id och HMAC-SHA1 i varje läge, inklusive utveckling. Ingen begäran skickas till YubiCloud."
+  },
   "backupCodes.count|label": {
     "en": "91b6e4a086244cce",
     "text": "Koder i en uppsättning"
@@ -1378,6 +1474,14 @@
   "webauthn.allowedOrigins|description": {
     "en": "cba85726ee4e8673",
     "text": "De ursprung — schema, värd och port, ingen sökväg — som en WebAuthn-ceremoni godtas från, kommaseparerade. **TOMT, standardvärdet, härleder det enda ursprunget från adressen som tjänsten nåddes på**, vilket är vad den alltid har gjort och vad global.publicBaseUrl redan låser när den är satt. Satt är det hela listan: en clientDataJSON vars ursprung inte finns på den vägras oavsett vilken Host begäran bar. Namnge flera där en autentiseringsuppgift används från syskonvärdar under en delad webauthn.rpId."
+  },
+  "webauthn.u2fAppIds|label": {
+    "en": "b0b6d4158c6357e8",
+    "text": "Äldre U2F-AppID:n"
+  },
+  "webauthn.u2fAppIds|description": {
+    "en": "e17d7febccd7d076",
+    "text": "FIDO U2F-AppID:n — https-URL:erna som en äldre U2F-förlitande part registrerade sina säkerhetsnycklar under — vars autentiseringsuppgifter får importeras till personers poster och användas för att logga in här, kommaseparerade. **TOMT, standard, betyder att funktionen är av**: ingenting kan importeras, ingen ceremoni bär tillägget appid eller appidExclude (WebAuthn Level 3 avsnitt 10.1.1 och 10.1.2), och en importerad nyckel loggar inte in någon. Ett AppID används bara vid ett RP ID det hör till: dess värd är RP ID:t, eller så är det ena ett suffix av det andra. Där värden skiljer sig från ursprungets hämtar webbläsaren AppID-URL:en efter en TrustedFacets-lista som nämner detta ursprung, som den äldre tjänsten måste fortsätta att tillhandahålla. En importerad nyckel är bara en andra faktor: en U2F-nyckel kan inte verifiera personen. U2F är ECDSA över P-256 och har ingen postkvantalgoritm."
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -1727,6 +1831,14 @@
     "en": "80863e8241a6ca0b",
     "text": "Vilken nyckel som signerar den här sfärens dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter och deras Token Status List Tokens. `dedicated` — standardvärdet — är en egen nyckel per algoritmfamilj, som inte används till något annat, under ett certifikat vars subjectAltName anger varje utfärdaridentifierare som sfären svarar på som en URI (inget DNS-namn), med den utökade nyckelanvändningen id-kp-documentSigning (RFC 9336) och inget som en TLS-stack skulle godta, så att en plånbok kan jämföra autentiseringsuppgiftens iss med dess x5c (HAIP 1.0 avsnitt 6.1.1). Certifikatet utfärdas på nytt när utfärdaridentifierarna ändras (global.publicBaseUrl, tls.hostnames, en lyssnare). `realm-key` signerar dem med sfärens allmänna JOSE-nyckel, som 1.0.0 gjorde, vars certifikat inte anger någon utfärdare. Autentiseringsuppgifter som redan utfärdats förblir verifierbara i båda fallen. ldp_vc och mso_mdoc påverkas inte."
   },
+  "keys.credentialSignerRotationIntervalDays|label": {
+    "en": "f10b5d70a5764f44",
+    "text": "Rotera nyckeln för signering av intyg var (dagar)"
+  },
+  "keys.credentialSignerRotationIntervalDays|description": {
+    "en": "d33dbf1823ba9d6a",
+    "text": "Hur länge en dedikerad intygssignerares nyckel (keys.credentialSigner dedicated) signerar innan jobbet keys.credential-signer-rotate skapar nästa nyckel i dess familj, som signerar från och med då. Nyckeln den ersätter signerar inget mer och ligger kvar i intygsutfärdarens JWKS och DID-dokument, så varje intyg den signerat fortsätter att verifieras. Räknas från när jobbet först såg nyckeln. 0 stänger av schemat. Endast produktläge."
+  },
   "keys.encryptionKemAlgs|label": {
     "en": "c0f9d68cc4ea0925",
     "text": "Postkvantsäkra / hybrida dekrypteringsnycklar"
@@ -1734,6 +1846,22 @@
   "keys.encryptionKemAlgs|description": {
     "en": "0b5ca1b36593b356",
     "text": "De ML-KEM- och HPKE-JWE-algoritmer som den här sfären har en dekrypteringsnyckel för — ett nyckelpar per algoritm, publicerat i sfärens JWKS (`use: enc`, med `alg`) och annonserat i `request_object_encryption_alg_values_supported` och `assertion_encryption_alg_values_supported`, så att en klient kan kryptera ett request-objekt eller ett RFC 7523 / 7522-intyg till den här sfären med postkvantsäker eller PQ/T-hybrid nyckeletablering. HPKE-10-KE är X-Wing (ML-KEM-768 + X25519). Att kryptera TILL en klient som registrerat en av dessa algoritmer kräver inget här. **Tomt som standard, och ett val för administratören:** varenda en av dessa algoritmer kommer från ett Internet-Draft (draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), och en AKP-nyckel i en JWKS är en nyckeltyp som många klienters JOSE-bibliotek ännu inte kan tolka — vissa vägrar hela nyckeluppsättningen. Namnge en algoritm här bara där klienterna som läser sfärens JWKS är kända för att klara det. Att ta bort en slutar publicera och godta den; att namnge den igen återför samma nyckel."
+  },
+  "keys.encryptionKeyRotationIntervalDays|label": {
+    "en": "f684e6be0638febe",
+    "text": "Ersätt nycklarna för dekryptering av begäranden var (dagar)"
+  },
+  "keys.encryptionKeyRotationIntervalDays|description": {
+    "en": "05778720ce520a0e",
+    "text": "Hur länge krypteringsnycklarna för begäranobjekt, OpenID4VCI-nyckeln för kryptering av begäranden och KEM-dekrypteringsnycklarna behålls innan jobbet keys.encryption-key-rotate ersätter dem. Den nya nyckeln publiceras genast (/oauth2/jwks, intygsutfärdarens metadata) och den den ersätter dekrypterar fortfarande i keys.encryptionKeyOverlapDays. Räknas från när jobbet först såg nyckeln. 0 stänger av schemat. Endast produktläge."
+  },
+  "keys.encryptionKeyOverlapDays|label": {
+    "en": "4607319a85b6d9ea",
+    "text": "En ersatt nyckel för dekryptering av begäranden dekrypterar fortfarande i (dagar)"
+  },
+  "keys.encryptionKeyOverlapDays|description": {
+    "en": "197ba842157d213c",
+    "text": "Hur länge en nyckel för dekryptering av begäranden som keys.encryption-key-rotate ersatt fortsätter att öppna det en klient krypterat till den innan den läste den nya nyckeln. Den publiceras ingenstans under tiden, och signing.retire tar bort den när tiden har gått."
   },
   "keys.offerKemEncryption|label": {
     "en": "763805d175ca5f1e",
@@ -1876,8 +2004,8 @@
     "text": "Leverantör av nyckelkrypteringsnyckel"
   },
   "keys.kekProvider|description": {
-    "en": "b48b052bc689c8e3",
-    "text": "Var nyckelkrypteringsnyckeln som omsluter varje datakrypteringsnyckel finns. `file`, `aws`, `gcp`, `azure` och `vault` LÄSER in en 32-bytes nyckel i den här processen från en monterad fil eller ett hemlighetslager; `file` är standard eftersom den inte kräver något. `vault-transit` (Vault eller OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) och `azure-keys` (en nyckel i Key Vault eller Managed HSM; keys.kekVault är dess valv) är nyckelhanteringstjänster: nyckeln lämnar dem ALDRIG, keys.kekRef namnger den, och KMS:en omsluter och packar upp varje datanyckel — ett anrop per datanyckel vid start, inget per värde. Varje leverantör utom `file` laddar sitt officiella SDK först när det behövs, och det är avsiktligt INTE ett beroende för tjänsten; ett saknat SDK rapporteras med namnet på paketet som ska installeras."
+    "en": "bf4e717bed6b7e03",
+    "text": "Var nyckelkrypteringsnyckeln som omsluter varje datakrypteringsnyckel finns. `file`, `aws`, `gcp`, `azure` och `vault` LÄSER in en 32-bytes nyckel i den här processen från en monterad fil eller ett hemlighetslager; `file` är standard eftersom den inte kräver något. `vault-transit` (Vault eller OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) och `azure-keys` (en nyckel i Key Vault eller Managed HSM; keys.kekVault är dess valv) är nyckelhanteringstjänster: nyckeln lämnar dem ALDRIG, keys.kekRef namnger den, och KMS:en omsluter och packar upp varje datanyckel — ett anrop per datanyckel vid start, inget per värde. `pkcs11` är detsamma med nyckeln i en hårdvarusäkerhetsmodul (en YubiHSM 2, SoftHSM2 eller valfri PKCS#11-modul, keys.pkcs11Module), med keys.kekRef som en PKCS#11-URI. Varje leverantör utom `file` laddar sitt officiella SDK först när det behövs, och det är avsiktligt INTE ett beroende för tjänsten; ett saknat SDK rapporteras med namnet på paketet som ska installeras."
   },
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
@@ -1924,8 +2052,8 @@
     "text": "Referens till nyckelkrypteringsnyckel"
   },
   "keys.kekRef|description": {
-    "en": "a5a5b6e7f2c06fdc",
-    "text": "Vad molnleverantörerna namnger hemligheten med: ett namn eller ARN i AWS Secrets Manager, ett GCP-resursnamn (projects/<p>/secrets/<s>, med /versions/latest tillagt när ingen version anges), ett hemlighetsnamn i Azure Key Vault, eller en lässökväg i HashiCorp Vault. Används inte av leverantören `file`."
+    "en": "b28c82e37153639d",
+    "text": "Vad molnleverantörerna namnger hemligheten med: ett namn eller ARN i AWS Secrets Manager, ett GCP-resursnamn (projects/<p>/secrets/<s>, med /versions/latest tillagt när ingen version anges), ett hemlighetsnamn i Azure Key Vault, eller en lässökväg i HashiCorp Vault. För `pkcs11` en PKCS#11-URI enligt RFC 7512, pkcs11:token=<token label>;object=<key label>. Används inte av leverantören `file`."
   },
   "keys.kekRef|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -2035,6 +2163,22 @@
     "en": "9e958c2b8e53dde0",
     "text": "Hur länge en enskild avsökning bakom /admin/secrets får vänta på att ett hemlighetslager svarar. Var och en av dem är en LÄSNING av metadata — en stat av nyckelfilen, en sys-slutpunkt, en KV-versionshistorik, en DescribeSecret — och ingen av dem hämtar någonsin ett hemligt värde. Gränsen finns så att öppnandet av en konsolsida aldrig kan hänga på någon annans lager; en avsökning som tar slut visas som en rad som säger det, precis som en som vägrades."
   },
+  "keys.storeTimeoutMs|label": {
+    "en": "20ac272d9acd81a2",
+    "text": "Tidsgräns för anrop till hemlighetslagret (ms)"
+  },
+  "keys.storeTimeoutMs|description": {
+    "en": "57e004843be723de",
+    "text": "Hur länge ett försök till ett anrop till OpenBao eller Vault, AWS KMS eller Secrets Manager, Google Cloud KMS eller Secret Manager, eller Azure Key Vault får vänta; ges till varje SDK som dess egen tidsgränsinställning."
+  },
+  "keys.storeAttempts|label": {
+    "en": "1ec30049200c784a",
+    "text": "Försök per anrop till hemlighetslagret"
+  },
+  "keys.storeAttempts|description": {
+    "en": "80ba17a1e178df33",
+    "text": "Hur många gånger totalt ett anrop till ett hemlighetslager eller en nyckeltjänst görs: molnens SDK:ers egen gräns för omförsök, och för OpenBao eller Vault görs ett anrop som inte fick något svar, ett 5xx eller ett 429 om efter en kort paus (STS-KEYS-0214 när varje försök misslyckades). Ett 4xx upprepas aldrig."
+  },
   "keys.kekRegion|label": {
     "en": "295e09c8d1998aed",
     "text": "AWS-region"
@@ -2047,13 +2191,149 @@
     "en": "d51b3caaa6125e92",
     "text": "läses en gång vid start"
   },
+  "keys.pkcs11Module|label": {
+    "en": "0fb904cb6844253b",
+    "text": "PKCS#11-modul"
+  },
+  "keys.pkcs11Module|description": {
+    "en": "dd4fdc39cd1aed44",
+    "text": "Sökvägen till PKCS#11-modulen som leverantören `pkcs11` laddar: /usr/lib/x86_64-linux-gnu/pkcs11/yubihsm_pkcs11.so för en YubiHSM 2 (med yubihsm-connector igång och YUBIHSM_PKCS11_CONF pekande på dess konfiguration), /usr/lib/softhsm/libsofthsm2.so för SoftHSM2. Den kräver paketet pkcs11js, som avsiktligt inte är ett beroende för tjänsten."
+  },
+  "keys.pkcs11Module|restartReason": {
+    "en": "34a60604acae5870",
+    "text": "modulen laddas en gång, vid start"
+  },
+  "keys.pkcs11Mechanism|label": {
+    "en": "f9f19afe01ab43ad",
+    "text": "Hur HSM:en omsluter en datanyckel"
+  },
+  "keys.pkcs11Mechanism|description": {
+    "en": "85ff0e656695f323",
+    "text": "Mekanismen som en ny datanyckel omsluts med i HSM:en. `auto` tar CKM_AES_GCM där modulen erbjuder den (SoftHSM2 och de flesta nätverks-HSM:er), därefter CKM_AES_KEY_WRAP_PAD, därefter YubiHSM 2:s egen CKM_YUBICO_AES_CCM_WRAP (dess wrap-key-objekt). En datanyckel som omslöts före en ändring går fortfarande att packa upp: den lagrade formen namnger sin mekanism."
+  },
+  "keys.pkcs11Mechanism|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "nyckelkrypteringsnyckeln nås en gång, vid start"
+  },
+  "keys.pkcs11GenerateKey|label": {
+    "en": "c9dac3afbed86d44",
+    "text": "Skapa HSM-nyckeln vid första användning"
+  },
+  "keys.pkcs11GenerateKey|description": {
+    "en": "82a5d89dd1a4c872",
+    "text": "På: en nyckelkrypteringsnyckel som PKCS#11-URI:n namnger och som tokenet inte innehåller genereras där: AES-256, känslig och INTE extraherbar. Bara frontprocessen genererar; för ett kluster, skapa i stället nyckeln med HSM:ens eget verktyg, eftersom två noder som startar samtidigt skulle skapa två. Av, standard: en saknad nyckel stoppar starten."
+  },
+  "keys.pkcs11GenerateKey|restartReason": {
+    "en": "091df5146f3d6f79",
+    "text": "nyckelkrypteringsnyckeln nås en gång, vid start"
+  },
+  "keys.pkcs11Sessions|label": {
+    "en": "4a2da0042402bee1",
+    "text": "PKCS#11-sessioner per process"
+  },
+  "keys.pkcs11Sessions|description": {
+    "en": "f5b20f8d3e577d1a",
+    "text": "Hur många sessioner varje process och varje förfrågningsarbetare högst håller öppna mot ett token, där var och en kör en HSM-operation åt gången. En YubiHSM 2 har 16 sessioner totalt, delade av varje process på varje nod: håll produkten av detta värde, processerna och noderna under det."
+  },
+  "keys.pkcs11Sessions|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11TimeoutMs|label": {
+    "en": "2d3ea98f93ad5ed7",
+    "text": "Tidsgräns för HSM-operation (ms)"
+  },
+  "keys.pkcs11TimeoutMs|description": {
+    "en": "23fae337dc8febe4",
+    "text": "Hur länge en HSM-operation, och väntan på en session att köra den i, får ta innan den avvisas (STS-KEYS-0216). En session vars operation överskred den kasseras när modulen svarar. 0 för ingen gräns."
+  },
+  "keys.pkcs11TimeoutMs|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11QueueLimit|label": {
+    "en": "581e37da1fc9aa1a",
+    "text": "Väntande HSM-operationer per token"
+  },
+  "keys.pkcs11QueueLimit|description": {
+    "en": "7c4efba46b60e794",
+    "text": "Hur många HSM-operationer som får vänta på en session i ett token i en process eller arbetare. En därutöver avvisas genast (STS-KEYS-0215)."
+  },
+  "keys.pkcs11QueueLimit|restartReason": {
+    "en": "191cc9621b9dbdd3",
+    "text": "tokenet öppnas en gång, vid start"
+  },
+  "keys.pkcs11PinProvider|label": {
+    "en": "3e1d9c989bcacc3d",
+    "text": "Var PKCS#11-PIN-koden läses från"
+  },
+  "keys.pkcs11PinProvider|description": {
+    "en": "1c344b0b12c35ec4",
+    "text": "Hemlighetslagret som HSM-tokenets PIN-kod läses från, aldrig en inställnings värde: en monterad fil, AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault eller Vault/OpenBao, nått så som keys.kek* anger. För en YubiHSM 2 är PIN-koden autentiseringsnyckelns id med fyra hexsiffror följt av dess lösenord (0001password). Ett JSON-objekt med PIN-koder per tokenetikett betjänar token med olika PIN-koder. `none` loggar inte in på något."
+  },
+  "keys.pkcs11PinProvider|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.pkcs11PinRef|label": {
+    "en": "de50e9f1904c80fc",
+    "text": "Var PKCS#11-PIN-koden finns"
+  },
+  "keys.pkcs11PinRef|description": {
+    "en": "dffce1d68f8495de",
+    "text": "Var PIN-koden finns, i den leverantör som keys.pkcs11PinProvider namnger: en sökväg, ett ARN, en resurs eller en lässökväg i Vault. Den har ingen reserv."
+  },
+  "keys.pkcs11PinRef|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.pkcs11PinField|label": {
+    "en": "55008836b9ff61fe",
+    "text": "Fältet som PKCS#11-PIN-koden finns i"
+  },
+  "keys.pkcs11PinField|description": {
+    "en": "f333042737800292",
+    "text": "Den medlem i en JSON-hemlighet som innehåller PIN-koden. Tomt tar hela värdet."
+  },
+  "keys.pkcs11PinField|restartReason": {
+    "en": "f1e6cf36c574e774",
+    "text": "PIN-koden läses en gång, när tokenet öppnas"
+  },
+  "keys.signingKeyStore|label": {
+    "en": "e6e0b403d7b8a000",
+    "text": "Var en sfärs signeringsnycklar skapas"
+  },
+  "keys.signingKeyStore|description": {
+    "en": "5cc22ee909529ecc",
+    "text": "`software`, standard, skapar en sfärs signeringsnycklar i den här processen och håller dem förseglade i lagret. `pkcs11` skapar dess klassiska — RS256-nyckeln, XML-nyckeln och de P-256-, P-384-, P-521-, secp256k1- och Ed25519-nycklar som modulen kan skapa — i den HSM som keys.signingKeyToken namnger, icke-extraherbara, och signerar där; en nyckel som modulen inte kan skapa, och varje postkvantnyckel, stannar i mjukvara. Det gäller en nyckeluppsättning som skapas eller roteras efter ändringen, kräver ett nyckellager som består (produktionsläge), och varje process och nod behöver tokenet. Kan sättas per sfär."
+  },
+  "keys.signingKeyToken|label": {
+    "en": "a6e7fb05dd49b8a9",
+    "text": "HSM-tokenet som signeringsnycklar skapas på"
+  },
+  "keys.signingKeyToken|description": {
+    "en": "0bd2c707f6ff2e69",
+    "text": "PKCS#11-URI:n för det token som en sfär med keys.signingKeyStore `pkcs11` skapar sina signeringsnycklar på: pkcs11:token=<token label>, med serial= eller slot-id= där två token delar etikett. Modulen, PIN-koden och sessionerna är inställningarna keys.pkcs11*. Tomt öppnar inget token."
+  },
+  "keys.signingKeyToken|restartReason": {
+    "en": "1a04369397b30563",
+    "text": "tokenet öppnas en gång, vid start, i varje process"
+  },
+  "keys.pkcs11SynchronousSign|label": {
+    "en": "66785a52cf616805",
+    "text": "Tillåt blockerande PKCS#11-anrop"
+  },
+  "keys.pkcs11SynchronousSign|description": {
+    "en": "328ad6368a172a36",
+    "text": "Av, standard: inget som görs med en av sfärens nycklar i HSM:en väntar på händelseloopen. Varje dörr (en JWS eller åtkomsttoken, en XML-signatur, ett SAML-intyg, ett WS-Federation-svar, en WS-Trust-token, en XML- eller JWE-dekryptering, en nyckeluppsättnings certifikat) använder bindningens asynkrona `C_SignAsync`, `C_DecryptAsync` och `C_DeriveKeyAsync`. Ett blockerande anrop vägras (`STS-KEYS-0209`): det är vad en modul utan asynkront anrop får. På, det uttryckliga medgivandet till blockerande anrop: en sådan modul anropar `C_Sign`, `C_Decrypt` eller `C_DeriveKey` och händelseloopen väntar på token. Kan ställas in per sfär."
+  },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
     "text": "Varifrån cellens nyckelkrypteringsnyckel läses"
   },
   "keys.cellKekProvider|description": {
-    "en": "f779ece8f10a07ec",
-    "text": "Leverantören av DEN HÄR CELLENS nyckelkrypteringsnyckel, som förseglar det som cellen lagrar av sitt eget (#98). Fem leverantörer, som för `keys.kekProvider`. `none` förseglar cellnivån under tjänstens nyckelkrypteringsnyckel, vilket är korrekt för encellsläge och för ett test; en flercellsdriftsättning i produktionsläge VÄGRAR att starta med det, eftersom en kopia av en cells rader då skulle gå att öppna i varje annan."
+    "en": "73b7f0bab09392e8",
+    "text": "Leverantören av DEN HÄR CELLENS nyckelkrypteringsnyckel, som förseglar det som cellen lagrar av sitt eget (#98). Fem leverantörer, som för `keys.kekProvider`, och `pkcs11`, cellens egen HSM. `none` förseglar cellnivån under tjänstens nyckelkrypteringsnyckel, vilket är korrekt för encellsläge och för ett test; en flercellsdriftsättning i produktionsläge VÄGRAR att starta med det, eftersom en kopia av en cells rader då skulle gå att öppna i varje annan."
   },
   "keys.cellKekProvider|restartReason": {
     "en": "bfe49ff259fac42d",
@@ -2196,6 +2476,66 @@
     "text": "URL:en till Azure Key Vault eller HashiCorp Vault-slutpunkten som den föregående nyckeln läses från. Den har ingen reservlösning."
   },
   "keys.previousKekVault|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
+  "keys.previousCellKekProvider|label": {
+    "en": "b684380cea943f81",
+    "text": "Varifrån den föregående cellnyckelkrypteringsnyckeln läses"
+  },
+  "keys.previousCellKekProvider|description": {
+    "en": "2c446e99007305d7",
+    "text": "För att rotera den här cellens nyckelkrypteringsnyckel: peka keys.cellKek* på den NYA nyckeln och den här på den GAMLA, och starta. Varje datakrypteringsnyckel i den här cellen som fortfarande är omsluten under den gamla nyckeln omsluts på nytt under den nya och skrivs tillbaka; när varje nod i cellen har startat så, sätt tillbaka den till none. Vägras utan cellnyckel."
+  },
+  "keys.previousCellKekProvider|restartReason": {
+    "en": "bfe49ff259fac42d",
+    "text": "nyckeln läses en gång, innan lagret återställs"
+  },
+  "keys.previousCellKekRef|label": {
+    "en": "3005efe8d22382c7",
+    "text": "Platsen för den föregående cellnyckelkrypteringsnyckeln"
+  },
+  "keys.previousCellKekRef|description": {
+    "en": "7dabf5450569d0c6",
+    "text": "Var den föregående cellnyckeln finns, hos den leverantör som keys.previousCellKekProvider namnger: en sökväg, ett ARN, en resurs eller en lässökväg i Vault. Den har ingen reservlösning."
+  },
+  "keys.previousCellKekRef|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
+  "keys.previousCellKekField|label": {
+    "en": "32d7a4c8adad9b79",
+    "text": "Fältet som den föregående cellnyckeln finns i"
+  },
+  "keys.previousCellKekField|description": {
+    "en": "0a2a4a33f38c099d",
+    "text": "Den medlem i en JSON-hemlighet som innehåller den föregående cellnyckeln. Tomt tar hela värdet."
+  },
+  "keys.previousCellKekField|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
+  "keys.previousCellKekRegion|label": {
+    "en": "6fa1fc7293fb03fb",
+    "text": "Den föregående cellnyckelns AWS-region"
+  },
+  "keys.previousCellKekRegion|description": {
+    "en": "77df05d60a09ad4b",
+    "text": "AWS-regionen som den föregående cellnyckeln läses från. Tomt använder SDK:ts egen upplösning."
+  },
+  "keys.previousCellKekRegion|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
+  "keys.previousCellKekVault|label": {
+    "en": "7e478e821a026b27",
+    "text": "Den föregående cellnyckelns Key Vault-URL"
+  },
+  "keys.previousCellKekVault|description": {
+    "en": "b4edf20999ed96c3",
+    "text": "URL:en till Azure Key Vault eller HashiCorp Vault-slutpunkten som den föregående cellnyckeln läses från. Den har ingen reservlösning."
+  },
+  "keys.previousCellKekVault|restartReason": {
     "en": "d51b3caaa6125e92",
     "text": "läses en gång vid start"
   },
@@ -2867,6 +3207,14 @@
     "en": "b4af599a6caff599",
     "text": "RFC 8705-halvan av raden ovan, vid samma ytor: en uppvisad åtkomsttoken måste bära `cnf[\"x5t#S256\"]` och anslutningen måste bära det certifikatet. **Det kräver att huvudporten är bunden som HTTPS** (global.https), och felsökarens lyssnare började BE OM ett klientcertifikat 2026-09-15 så att en bunden token över huvud taget kan visas upp där — det efterfrågas, krävs aldrig. En token som tjänsten inte utfärdat hålls till samma regel: bindningen den bär kontrolleras även om själva token inte kan verifieras."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Utfärda endast avsändarbundna åtkomsttoken"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "AV SOM STANDARD, och tänkt att förbli av om inte varje klient i realmen kan binda sina token (ASVS 5.0.0 10.3.5 och 10.4.14, #2183). På utfärdar tokenslutpunkten en åtkomsttoken endast till en begäran som binder den: ett DPoP-bevis (RFC 9449) eller anslutningens klientcertifikat (RFC 8705), vilket som helst, för varje grant. Auktoriseringsslutpunkten avvisar en response_type som skulle utfärda en token i webbläsaren (implicit och hybrid `token`), som aldrig skulle kunna bindas. En klient som skickar ingetdera avvisas med invalid_dpop_proof som namnger denna inställning. De två raderna ovan avvisar en obunden token vid resurserna; denna vägrar att utfärda den."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Öppen dynamisk klientregistrering (produktionsläge)"
@@ -2923,6 +3271,22 @@
     "en": "c20e5f5d3aa6062e",
     "text": "Hur många klienthemligheter en applikation får ha samtidigt (var och en en post i oauthClientSecret med egen utgång). Att lägga till eller rotera in en hemlighet utöver detta vägras (STS-REG-0208); ta bort en först. Utgångna hemligheter räknas tills det dagliga jobbet oauth2.client-secret-expiry tar bort dem."
   },
+  "oauth2.clientSecretAutoRotate|label": {
+    "en": "5648a905a52fd2e8",
+    "text": "Rotera de här klienternas hemligheter automatiskt"
+  },
+  "oauth2.clientSecretAutoRotate|description": {
+    "en": "8de02a04d04ed064",
+    "text": "De applikationer vars klienthemlighet det dagliga jobbet oauth2.client-secret-expiry ROTERAR innan den går ut, kommaseparerade. Varje post är en `client_id`, eller `client_id=destination/secret-name` för att skicka den nya hemligheten till den hemlighetsdestinationen (Katalog → Hemlighetsdestinationer) innan den förbinds; en överföring som misslyckas roterar ingenting och görs om nästa dag. Utan destination läser klienten sin nya hemlighet från sin klientkonfigurationsslutpunkt enligt RFC 7592. Den gamla hemligheten autentiserar fortfarande under oauth2.clientSecretOverlapS. sts-api-client roteras aldrig här. Tomt: ingen klient roteras, och var och en varnas för i förväg innan den går ut."
+  },
+  "oauth2.clientSecretAutoRotateDays|label": {
+    "en": "c394ad824438ba39",
+    "text": "Rotera en listad klients hemlighet så här många dagar i förväg"
+  },
+  "oauth2.clientSecretAutoRotateDays|description": {
+    "en": "3bac82e2b21d247b",
+    "text": "Hur lång tid innan dess primära klienthemlighet går ut som en applikation som listas i oauth2.clientSecretAutoRotate roteras. En hemlighet som aldrig går ut roteras aldrig."
+  },
   "oauth2.clientSecretExpiryWarningDays|label": {
     "en": "c9ef11b5ea3ad5e7",
     "text": "Varna för en klienthemlighet som går ut så här många dagar i förväg"
@@ -2936,8 +3300,8 @@
     "text": "Klienthemlighetens livslängd (dagar)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat, eller skapandeformuläret gör det för ett programs första hemlighet. NOLL, standardvärdet, är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
+    "en": "0282a861551627b6",
+    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat, eller skapandeformuläret gör det för ett programs första hemlighet. Standardvärdet är 365 dagar (ASVS 5.0.0 13.3.4); NOLL är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -3139,6 +3503,158 @@
     "en": "72d46974270d0c03",
     "text": "Hur många skapanden, borttagningar, utträngningar och efterlevnadsändringar av enheter som den här sfären sparar för Övervakning → Enheter. Den äldsta tas bort när en ny registreras utöver gränsen."
   },
+  "hardwareTokens.hardwareClaims|label": {
+    "en": "8373111eef4bf812",
+    "text": "Vad som ger anspråk på maskinvarunyckel"
+  },
+  "hardwareTokens.hardwareClaims|description": {
+    "en": "82f545cd2dea952b",
+    "text": "Vad som låter en PKINIT-inloggning göra anspråk på en hårdvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standard och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel denna tjänst inte genererade, eller registrerade attesteringsbevis. `evidence`: endast en nyckel som en hårdvarutokens attestering täcker, och en passkey får hwk endast när dess attestering verifierats och är betrodd (annars swk). En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smartkort, endast från bevis i båda fallen, och endast för certifikatets innehavare."
+  },
+  "pskc.allowPlaintextImport|label": {
+    "en": "a098f07c2a04a83b",
+    "text": "Godta PSKC-fröfiler i klartext i produktläget"
+  },
+  "pskc.allowPlaintextImport|description": {
+    "en": "7efe34e872e4772e",
+    "text": "Om en administratör i produktläget får importera en PSKC-fröfil (RFC 6030) vars tokenhemligheter INTE är krypterade. Av som standard: en sådan fil har varit en lista över fungerande andra faktorer på varje disk och i varje brevlåda den har passerat, och en leverantör kan kryptera den under en förutdelad nyckel eller ett lösenord (avsnitt 6.1 och 6.2). Utvecklingsläget godtar en oavsett."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV-attesteringsrötter (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Rötterna som en YubiKey-PIV-nyckelattestering måste kedja till, som ett PEM-paket. Tomt använder de två som Yubico publicerar (Yubico PIV Root CA Serial 263751, och Yubico Attestation Root 1 för firmware 5.7.4 och senare), levererade i common/pki_piv_anchors.json och fästa där med SHA-256, tillsammans med Yubicos PIV-mellancertifikat. Ett certifikat här ersätter de levererade rötterna."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Kräv en PIV-attestering för PIV-profilerna"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "På: en begäran om ett piv-auth-, piv-sign-, piv-key-management- eller piv-card-auth-certifikat avvisas om den inte bär en YubiKey-PIV-attestering som kan verifieras (STS-PIV-0010). En deponerad piv-key-management-nyckel från EST /serverkeygen är undantaget: den här tjänsten genererade den. Av, standardvärdet: en sådan begäran utan attestering utfärdas utan maskinvarubevis; en begäran som bär en attestering som inte kan verifieras avvisas i båda fallen."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Svagaste PIN-policy som en attesterad PIV-nyckel får ha"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Vad attesteringens PIN-policy minst måste vara. `once`: PIN-koden en gång per session (en Bio-nyckels match-once räknas); `always`: PIN-koden före varje användning (match-always räknas). `any`, standardvärdet, kräver ingen PIN-policy. En nyckel vars attestering är svagare avvisas (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Svagaste beröringspolicy som en attesterad PIV-nyckel får ha"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Vad attesteringens beröringspolicy minst måste vara. `cached`: en beröring som kommer ihåg i 15 sekunder; `always`: en beröring vid varje användning. `any`, standardvärdet, kräver ingen. En nyckel vars attestering är svagare avvisas (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Låt ett piv-card-auth-certifikat logga in"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "e9e37c8e6becb7ee",
+    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på. En nyckel på plats 9e certifieras endast under piv-card-auth (STS-PIV-0037) och får aldrig hwk eller sc."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Deponera piv-key-management-nycklar"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "På: EST /serverkeygen för profilen piv-key-management behåller den genererade privata nyckeln, förseglad under nyckelkrypteringsnyckeln, så att innehavaren (på portalen, efter en ny inloggning) eller en administratör med rollen för återställning av PIV-nycklar kan återställa den och dekryptera gammal e-post när ett kort har gått förlorat. Avvisas där ingen nyckelkrypteringsnyckel finns (STS-PIV-0020). En deponerad nyckel är aldrig maskinvarubevis. Av, standardvärdet: /serverkeygen avvisar profilen piv-key-management (STS-PIV-0021), så en 9d-nyckel genereras på kortet och förvaras ingen annanstans."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Externa utfärdande PIV- eller CAC-CA:er som mappas via kort-UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "De utfärdande CA:er vars PIV- eller CAC-kortcertifikat loggar in en person via FIPS 201-kort-UUID: ett klientcertifikat som en av dem har utfärdat direkt, som anger en policy i piv.externalPolicyOids och bär exakt ett urn:uuid-subjectAltName, mappas till den enda person vars stsPivCardUuid innehåller det UUID:t. Aldrig via namnet, och ingen post skapas. CA:n måste också finnas i ett förtroendelager för klienter, annars avvisar handskakningen den först. Tomt, standardvärdet, mappar ingenting."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "PIV Authentication-policyer som ett externt kort måste ange"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Certifikatpolicyerna, av vilka ett externt korts certifikat måste ange en för att mappas via sitt kort-UUID: som standard id-fpki-common-authentication (Federal PKI Common Policys PIV Authentication) och id-fpki-certpcy-pivi-hardware (PIV-I). Lägg till en CAC-utfärdares egna maskinvarupolicyer här."
+  },
+  "openpgp.wkd|label": {
+    "en": "1f05a7518c3d2275",
+    "text": "Publicera nycklar i Web Key Directory"
+  },
+  "openpgp.wkd|description": {
+    "en": "7822103f89ac59b3",
+    "text": "Besvara Web Key Directory (draft-koch-openpgp-webkey-service) för den här sfärens e-postdomäner: /.well-known/openpgpkey/<domain>/hu/<hash> (den avancerade metoden, på openpgpkey.<domain>) och /.well-known/openpgpkey/hu/<hash> (den direkta metoden), och respektive policyfil. Bara nyckeln för en person som har valt att delta på portalen besvaras. Avstängt som standard."
+  },
+  "openpgp.wkdDomains|label": {
+    "en": "d1c4b728593ff000",
+    "text": "E-postdomäner som Web Key Directory betjänar"
+  },
+  "openpgp.wkdDomains|description": {
+    "en": "ad64f7216191123c",
+    "text": "E-postdomänerna som den här sfärens Web Key Directory svarar för, kommaseparerade. Tomt, standardvärdet, betyder sfärens egen DNS-domän. En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först."
+  },
+  "openpgp.challengeLifetimeS|label": {
+    "en": "dbf558cf0b4b8f90",
+    "text": "Registreringsutmaningens livslängd (sekunder)"
+  },
+  "openpgp.challengeLifetimeS|description": {
+    "en": "e9130c8e82368cc6",
+    "text": "Hur länge den utmaning som en person signerar med gpg --clearsign för att registrera en OpenPGP-nyckel är giltig. Den förbrukas en gång, och en person har en åt gången."
+  },
+  "openpgp.signatureSkewS|label": {
+    "en": "d927cf1f04bd9d51",
+    "text": "Tillåten klockavvikelse för bevissignaturen (sekunder)"
+  },
+  "openpgp.signatureSkewS|description": {
+    "en": "2772763d3d363b6d",
+    "text": "Hur mycket den signerande datorns klocka får avvika från tjänstens: ett bevis signerat tidigare än utmaningen utfärdades, eller senare än nu, med mer än så avvisas (STS-OPENPGP-0010)."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Accepterade algoritmer"
+  },
+  "openpgp.algorithms|description": {
+    "en": "f51a30de72243d25",
+    "text": "De OpenPGP-algoritmer en nyckel får använda, i prioritetsordning. Först RFC 9980:s postkvantalgoritmer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, liksom SLH-DSA-SHAKE-128s, SLH-DSA-SHAKE-128f och SLH-DSA-SHAKE-256s på en v6-nyckel; ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, samt rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). Standardvärdet nämner alla dessa."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Registrera endast postkvantnycklar"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "b0c222dfa3cda337",
+    "text": "På måste en nyregistrerad nyckel använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519, ML-DSA-87+Ed448 eller någon av de tre SLH-DSA-algoritmerna för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot e-post. Kan inte vara på medan openpgp.pqcAlongsideClassical är det (STS-OPENPGP-0027). Av som standard."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Postkvantnyckel vid sidan av en klassisk"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "På innebär att en nyregistrerad nyckel måste bära både en postkvantalgoritm och en separat klassisk algoritm. Ett kompositnamn som ML-DSA-65+Ed25519 räknas bara som postkvant, så den klassiska halvan är en annan nyckel, till exempel en Ed25519- eller X25519-undernyckel bredvid. En redan registrerad nyckel lämnas som den är. Kan inte vara på samtidigt som openpgp.pqcOnly (STS-OPENPGP-0027). Av som standard."
+  },
+  "openpgp.minRsaBits|label": {
+    "en": "f3dc9f85de143630",
+    "text": "Minsta RSA-nyckel för OpenPGP"
+  },
+  "openpgp.minRsaBits|description": {
+    "en": "cd16018c848ce538",
+    "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448, samt RFC 9980-kompositerna ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 och ML-KEM-1024+X448 accepteras när openpgp.algorithms nämner dem. DSA, ElGamal, Brainpool-kurvorna och SLH-DSA accepteras aldrig (STS-OPENPGP-0004)."
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Godta CSV-filer med YubiKey-OTP i klartext i produktläget"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Om en administratör i produktläget får importera en CSV med YubiKey-OTP-hemligheter (serienummer, publik identitet, privat identitet, AES-nyckel). Av som standard: filen är en lista över fungerande andra faktorer. Utvecklingsläget godtar en oavsett. Hemligheterna förseglas när filen godtas, och filen behålls inte."
+  },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
     "text": "Efterlevnadsrapporter per flödesbegäran"
@@ -3274,6 +3790,14 @@
   "devices.requireCompliantDevice|description": {
     "en": "0199e95e9d4fd037",
     "text": "AVSTÄNGT SOM STANDARD I BÅDA LÄGENA (#164 beslut 3). Påslaget avvisar utfärdandepolicyn varje token, intyg, biljett och session som inte kom från subjektets egen (eller en applikations) registrerade enhet, igenkänd genom en av dess nycklar, KOMPATIBEL och inte komprometterad (STS-DEVICE-0037). Konsolen och portalen — där en person registrerar en enhet — är undantagna i den inbyggda policyn. En ingång utan enhetsbevis (en Kerberos-biljett, ett lösenordsgrant utan DPoP) avvisas. Per sfär, som varje inställning."
+  },
+  "devices.requireCompliantDeviceForAdmin|label": {
+    "en": "accd5e669497d943",
+    "text": "Administratörer behöver en kompatibel registrerad enhet"
+  },
+  "devices.requireCompliantDeviceForAdmin|description": {
+    "en": "de625836b2a5c41f",
+    "text": "Om en PERSON får en behörighet för administrationsytan — en token till administrationskonsolen, eller en som bär ett admin:*-omfång för /admin-api — endast från en egen (eller en applikations) kompatibel registrerad enhet, även attesterad där devices.compliantDeviceAttested kräver det (STS-DEVICE-0054). **`auto` är på i produktläge och av i utveckling**; `on` och `off` tvingar det. Frågas vid tokenslutpunkten, vid varje grant och varje förnyelse. Program (klientuppgifter, tjänstekonton) frågas aldrig. INGEN UTELÅSNING: kravet AKTIVERAS i en sfär första gången en konsoladministratör får en sådan behörighet från en kompatibel enhet; fram till dess släpps varje administratör in som tidigare, och när det väl är aktiverat förblir det aktiverat. Registrera en enhet på sidan Enheter i användarportalen, låt den markeras som kompatibel under Katalog > Enheter eller av er enhetshantering, och logga in med nyckeln eller certifikatet på den. Per sfär, som varje inställning."
   },
   "devices.compliantDeviceAttested|label": {
     "en": "90baceaf602a2650",
@@ -3707,6 +4231,62 @@
     "en": "a28c6bc9859fc3aa",
     "text": "Den postkvantnyckel som en certifikatutfärdare som den här tjänsten bygger bär BREDVID sin klassiska, i de icke-kritiska tilläggen subjectAltPublicKeyInfo, altSignatureAlgorithm och altSignatureValue i ITU-T X.509 (2019) klausul 9.8 — ett hybridcertifikat. **AVSTÄNGT (`none`) SOM STANDARD** (rcbj, 2026-09-26): ett hybridcertifikat är för stort eller för okänt för ett antal produkter — libest avvisar varje enroll-svar över 4 KB, vilket varje hybridlöv är — så standarden är den ursprungliga hierarkin, där varje användningsfall och varje signatur har sitt eget klassiska nyckelpar. Ange ett värde så signerar varje utfärdare som byggs därefter varje certifikat den utfärdar två gånger: klassiskt i de vanliga fälten, som varje validerare läser, och med den här nyckeln över preTBSCertificate, som en hybridmedveten validerare läser. Den här tjänsten är en sådan: ett certifikat som utfärdats av en utfärdare med en alternativ nyckel MUST bära en giltig alternativ signatur för att verifieras här (STS-PKI-0201, STS-PKI-0202), så den klassiska signaturen ensam är aldrig en väg förbi. ML-DSA-87 (FIPS 204, kategori 5) är det rekommenderade värdet, eftersom en utfärdare lever längre än de nycklar den certifierar. Värdet läses vid NÄSTA bygge av en nivå; en hierarki behåller det den byggdes med. SLH-DSA (FIPS 205) erbjuds för ett hashbaserat ankare och kostar SEKUNDER per signatur, dvs. per utfärdat certifikat. VARNING: med `none` är utfärdarna endast klassiska, och deras certifikat kan förfalskas av en angripare med kvantdator."
   },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algoritmer för SSH-användar-CA"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "5c4c22c2ab500fd4",
+    "text": "Vilka algoritmer certifikatutfärdaren för SSH-användare får använda, i prioritetsordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett överföringsnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. Den OpenSSH-rad för TrustedUserCAKeys som tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En motpart som inte förstår ML-DSA fortsätter att lita på den raden. ML-DSA-utfärdarens nyckel publiceras på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-utfärdaren skapas bara när den här körmiljön kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska utfärdaren svarar fortfarande), om inte pki.sshUserCaPqcOnly är på."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "SSH-användarcertifikat är endast postkvantum"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "dcbf21b3230dcf07",
+    "text": "När den är på signeras ett nytt SSH-användarcertifikat av ML-DSA-utfärdaren och av inget annat. Standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat, så bara en SSH-server byggd för att verifiera ssh-mldsa-65, som litar på nyckeln på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, godtar dessa certifikat. Standardraden på den sökvägen förblir den klassiska nyckeln. När sfären saknar ML-DSA-utfärdare (körmiljön kan inte generera ML-DSA, eller ssh-mldsa-65 finns inte i pki.sshUserCaAlgorithms) avvisas begäran (STS-PKI-0297) i stället för att besvaras med ett klassiskt certifikat. Redan utfärdade klassiska certifikat fortsätter att verifieras. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "SSH-användarcertifikat bär också ett postkvantcertifikat"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "På innebär att ett nytt SSH-användarcertifikat utfärdas två gånger när ML-DSA-auktoriteten finns: det klassiska certifikatet, som en OpenSSH-klient använder, och ett ML-DSA-certifikat bredvid. Kan inte vara på samtidigt som pki.sshUserCaPqcOnly (STS-PKI-0296). Av som standard. En komposit är inget begrepp OpenSSH har; det klassiska certifikatet och ML-DSA-certifikatet är två signaturer, inte en hybridsignatur."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Längsta SSH-användarcertifikat utan hårdvarubevis (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som inget verifierat hårdvarubevis täcker: en vanlig nyckel, eller en sk-säkerhetsnyckel som skickats utan betrodd attestering. Begäran får be om mindre. Fem minuter som standard."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Längsta SSH-användarcertifikat med hårdvarubevis (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som ett verifierat hårdvarubevis täcker: en sk-säkerhetsnyckel vars attestering verifierats och är betrodd, eller en nyckel som ett attesterat PIV-certifikat certifierar. Begäran får be om mindre. En timme som standard, vilket också är det högsta."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Tillägg som ett SSH-användarcertifikat bär"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "De OpenSSH-certifikattillägg (PROTOCOL.certkeys) som ett nytt SSH-användarcertifikat bär, kommaseparerade. Standard är ssh-keygens egen uppsättning; ett certifikat utan tillägg låter innehavaren logga in utan terminal, vidarebefordran eller rc-fil. no-touch-required kan läggas till. Ett namn som OpenSSH inte definierar tas bort."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Grupper vars namn får vara SSH-principaler"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "De katalog­grupper vars common name en medlem får begära som principal i ett SSH-certifikat, kommaseparerade, var och en fortfarande avgjord av åtkomstpolicyn (resurs ssh-user-ca, åtgärd issue-ssh-principal). Tomt, standardvärdet, betyder ingen: ett certifikat namnger bara personens uid, eftersom en grupp inte ger något bara genom att vara en grupp. En grupp vars namn är en persons uid eller ett systemkonto som root avvisas oavsett detta."
+  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "Standardnamn på organisation (O=)"
@@ -3755,6 +4335,30 @@
     "en": "81c5c9dd24774a4b",
     "text": "Hur länge varje utfärdande CA gäller när bygget inte anger någon livslängd. Noll är profilen `issuing-ca`:s fem år. Begränsas till dess mellanliggande CA:s utgångstid."
   },
+  "pki.caRenewal|label": {
+    "en": "fd8efebaaed5b924",
+    "text": "Förnya CA-certifikat innan de går ut"
+  },
+  "pki.caRenewal|description": {
+    "en": "e9d37f99f96f81ec",
+    "text": "Om det dagliga jobbet pki.ca-renew förnyar roten, varje mellanliggande CA och varje utfärdande CA inom dess framförhållning (pki.rootRenewalLeadDays, pki.caRenewalLeadDays) med SAMMA nyckel och subjekt, så att varje certifikat den signerat fortsätter att verifieras och en fästning på dess nyckel håller. En förnyad rot publiceras bredvid den den ersatte, på /pki/ca/service/root-previous.cer, tills den går ut. En importerad CA förnyas aldrig. Av: inget förnyar en CA och den går ut som före 1.2.0."
+  },
+  "pki.rootRenewalLeadDays|label": {
+    "en": "b2a6247b70dc9f6a",
+    "text": "Förnya roten så här länge innan den går ut (dagar)"
+  },
+  "pki.rootRenewalLeadDays|description": {
+    "en": "b9f01a42001aea74",
+    "text": "Hur långt innan rot-CA:n går ut pki.ca-renew förnyar den, högst halva dess livslängd. Lång som standard (tre år), eftersom en förnyad rot är ett nytt förtroendeankarcertifikat som varje förlitande part bör få innan det gamla går ut."
+  },
+  "pki.caRenewalLeadDays|label": {
+    "en": "2205375f20405fdb",
+    "text": "Förnya en mellanliggande eller utfärdande CA så här länge innan den går ut (dagar)"
+  },
+  "pki.caRenewalLeadDays|description": {
+    "en": "6c9a0f3c0a948b49",
+    "text": "Hur långt innan en mellanliggande eller utfärdande CA går ut pki.ca-renew förnyar den, högst halva dess livslängd. En CA kan inte överleva sin överordnade, så en vars överordnade går ut först väntar på dennas förnyelse."
+  },
   "pki.maxStoredObjects|label": {
     "en": "acb13f6d8764a59e",
     "text": "Certifikat och nycklar som arbetsbänkens lager behåller, per sfär"
@@ -3768,16 +4372,16 @@
     "text": "Självutfärdade nyckelpar som en person får begära per fönster"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "Hur många gånger en person får trycka på Generera på /portal/signing-key under ett fönster på security.rateLimitWindowS. Att generera ett nyckelpar är hundratals millisekunder CPU på den tråd som varje protokoll här besvaras på, vilket är skälet till att det över huvud taget begränsas."
+    "en": "8395545b6fa2f69c",
+    "text": "Hur många gånger en person får trycka på Generera på /portal/signing-key under ett fönster på security.rateLimitWindowS. Att generera ett nyckelpar är hundratals millisekunder CPU på den tråd som varje protokoll här besvaras på, vilket är skälet till att det över huvud taget begränsas. Räknas per realm: samma användarnamn i en annan realm är en annan person med en egen kvot."
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "Självutfärdade nyckelpar som en adress får begära per fönster"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "Samma gräns räknad per klientADRESS för alla bakom den. Den är en egen rad eftersom en driftsättning vars användare når den genom en enda NAT eller proxy delar en adress, och fem för ett helt kontor är ett annat tal än fem för en person."
+    "en": "8e71583151b79b18",
+    "text": "Samma gräns räknad per klientADRESS för alla bakom den. Den är en egen rad eftersom en driftsättning vars användare når den genom en enda NAT eller proxy delar en adress, och fem för ett helt kontor är ett annat tal än fem för en person. Räknas per realm: utfärdanden i en realm förbrukar inget av en annan realms kvot, så det tal en realm sätter gäller bara dess egna."
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",
@@ -4098,6 +4702,22 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "Användningsfall `pkinit`: klientcertifikatet i en RFC 4556 AS-REQ. Kontrollen var redan full (kedja till sfärens identitets-CA:er, giltighet med krb5.clockSkew, id-pkinit-KPClientAuth eller Microsofts EKU för smartkort, återkallelse); paranoid gör den till ett enda anrop av dörren, så den är samma kod som för varje annat användningsfall. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: en attesteringskedja för en YubiKey-PIV-nyckel"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Användningsfall `piv-attestation` (#1955): platsens attesteringscertifikat och f9-attesteringscertifikatet vid en PIV-registrering. Paranoid kontrollerar giltighetsfönstret vid nuvarande tidpunkt, sökvägen till piv.attestationAnchors och återkallelse där kedjan anger en lista. Av: endast detta användningsfall kör sökvägskontrollen utan fältkontrollerna, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: ett externt PIV- eller CAC-kort som mappas via kort-UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Användningsfall `piv-card` (#1955): ett klientcertifikat från en utfärdande CA i piv.externalIssuers, mappat via sitt kort-UUID. Paranoid kontrollerar keyUsage digitalSignature och lövcertifikatets giltighetsfönster utöver utfärdarkontrollen ett steg upp. Av: endast detta användningsfall kör bara utfärdarkontrollen, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -4476,8 +5096,8 @@
     "text": "Högsta autentiseringsålder (s)"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "Hur länge sedan en klient autentiserades, i sekunder, innan en auktoriseringsbegäran måste autentisera igen, även när begäran inte skickar max_age. 0, standardvärdet, lägger inte till någon egen gräns, så en vanlig klient är oförändrad. Läses vid varje auktoriseringsbegäran: den skriver inte om en session som redan är lagrad. Administratörskonsolen (sts-admin-console), användarportalen (sts-user-portal) och rapportprogrammet (sts-report) bär var sitt eget värde och tar det kortare av det och authn.sessionLifetimeS, så att höja den här inställningen eller sessionens livslängd förlänger aldrig de tre, och att sänka authn.sessionLifetimeS förkortar dem fortfarande. En överskridning per klient är oauthMaxAuthAgeS. Det här är inte en tokens livslängd och den finns inte på /admin/token-lifetimes (#825)."
+    "en": "163792a8531f4514",
+    "text": "Hur länge sedan en klient autentiserades, i sekunder, innan en auktoriseringsbegäran måste autentisera igen, även när begäran inte skickar max_age. 0, standardvärdet, lägger inte till någon egen gräns, så en vanlig klient är oförändrad. Läses vid varje auktoriseringsbegäran: den skriver inte om en session som redan är lagrad. Administratörskonsolen (sts-admin-console), användarportalen (sts-user-portal) och rapportprogrammet (sts-report) bär var sitt eget värde och tar det kortare av det och authn.sessionLifetimeS, så att höja den här inställningen eller sessionens livslängd förlänger aldrig de tre, och att sänka authn.sessionLifetimeS förkortar dem fortfarande. En överskridning per klient är oauthMaxAuthAgeS. Det här är inte en tokens livslängd: /admin/token-lifetimes visar den under livslängderna, tillsammans med resten av dess grupp (#825, #2070)."
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
@@ -4695,6 +5315,14 @@
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 avsnitt 4:s globala policy: auktoriseringsslutpunkten avvisar, med invalid_request och 400 på den här servern, varje begäran som inte bär en request_uri som den här tjänsten utfärdat vid /oauth2/par. Publiceras som require_pushed_authorization_requests. AVSTÄNGT som standard, eftersom varje klient som skickar en vanlig auktoriseringsbegäran skulle avvisas. En klient kan begära samma sak av sig själv med oauthRequirePushedAuthorizationRequests på sin post (require_pushed_authorization_requests vid registreringen), och en namngiven auktoriseringsservers profil kan publicera det."
   },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "Acceptera authorization_details endast i en pushad begäran"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "AV SOM STANDARD (ASVS 5.0.0 10.4.15, #2185). På avvisar auktoriseringsslutpunkten, med invalid_request och en 400 på denna server, en begäran som bär RFC 9396 authorization_details och inte kom via en request_uri utfärdad vid /oauth2/par, så att en rik auktoriseringsbegäran aldrig färdas i webbläsarens adress. Ett signerat begäranobjekt som skickas som värde avvisas också: det färdas också i webbläsaren. En begäran utan authorization_details påverkas inte; raden ovan gör varje begäran pushad."
+  },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
     "text": "Livslängd för pushad request_uri (sekunder)"
@@ -4766,6 +5394,14 @@
   "oauth2.keyBinding|description": {
     "en": "2394ee67a689920d",
     "text": "Utför OpenID Connect Key Binding 1.0 (#150). På: discovery-dokumentet listar scopet `bound_key`, en klient som inte deklarerar några scopes får be om det, och en begäran om det måste ange `dpop_jkt` och använda kodflödet (avvisas annars, STS-OAUTH-0704 och 0705); ID-tokenet namnger då DPoP-nyckeln (`cnf.jwk`, `typ: dpop+id_token`), tokenbegäran måste bevisa den med `c_s256`, och varje förnyelse måste komma från samma nyckel. **Av finns det inte, och tjänsten är enbart OpenID Connect Core**: `bound_key` annonseras inte, en begäran som innehåller det avvisas inte — scopet ignoreras och beviljas inte, så som Core behandlar ett scope en OP inte agerar på — och inget ID-token binds. Stäng av det där förlitande parter begär varje annonserat scope och inte känner till Key Binding (#315). Ett beviljande som redan var bundet innan det stängdes av behåller sin nyckelkontroll vid förnyelse."
+  },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "Scopes för en klient som inte deklarerar några"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "81354ac467a58be0",
+    "text": "Vad produktionsläget utfärdar till en klient vars oauthAllowedScope inte listar något — typiskt en som registrerat sig själv (RFC 7591) utan scope-medlem. openid, standardvärdet sedan 1.2.0: enbart openid, så varje annat scope måste deklareras (ASVS 5.0.0 10.4.11). identity: OpenID Connects identitets-scopes — openid, profile, email, address och phone — samt bound_key så länge OpenID Connect Key Binding är på, men aldrig offline_access eller ett OpenID4VCI-scope. legacy: vad utgåvor före 1.2.0 gav — identitets-scopes, offline_access (uppdateringstokens som överlever sessionen) och den här sfärens OpenID4VCI-credential-scopes; uppgraderingsskriptet 1.1.0 lagrar det en gång, i standardsfären, som varje sfär utan eget värde faller tillbaka på, när lagret innehöll någon applikation; /admin/mode varnar så länge det gäller. Utvecklingsläget utfärdar vilket scope en klient än ber om, oavsett vad detta säger; den här tjänstens skyddade scopes kräver alltid en deklaration. (#1589)"
   },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
@@ -4927,6 +5563,22 @@
     "en": "296a8d5721391215",
     "text": "cn för den katalogrupp vars medlemmar är säkerhetsadministratörer: endast de får ändra en policy under Katalog → Policyer, ange en policy för ett program, en grupp eller en person, tilldela den här rollen eller agera på kontot för en person som har den. Admin Write ensamt får inte det. ROLLEN INNEFATTAR ADMIN READ och inget annat, så den kan innehas av någon som annars inte är administratör. Standardområdets grupp är tjänstens säkerhetsadministratörer, över alla områden; ett områdes egen grupp begränsar sina medlemmar till det området."
   },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Tvåpersonsgodkännande för högriskåtgärder"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "På utförs inte en högriskåtgärd av en administratör när den första administratören begär den: att ta bort en sfär, ge en administratörsroll, byta nyckel för eller återkalla en CA, ersätta ett förtroendeankare, rotera, importera eller avveckla en signeringsnyckel, rotera nyckelkrypteringsnyckeln och slå av den här inställningen. Den hålls kvar under Väntande godkännanden tills en andra, annan administratör med samma behörighet godkänner den — då körs den som den förstas åtgärd — eller avslår den. När färre än två personer skulle kunna besluta om en åtgärd körs den direkt och granskningsloggen anger att ingen godkände den, så att en sfär aldrig kan låsas ute. Av, standardvärdet, körs varje åtgärd när dess administratör begär den."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Hur länge en kvarhållen åtgärd väntar på en andra administratör (timmar)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Hur länge en åtgärd som hålls kvar för tvåpersonsgodkännande väntar på ett beslut. Därefter har åtgärden löpt ut och körs aldrig; den som begärde den frågar igen."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Kräv en åtkomsttoken på /admin-api"
@@ -4954,6 +5606,30 @@
   "adminApi.audience|description": {
     "en": "60a2c7771a002257",
     "text": "Det som anspråket `aud` måste ange för att en token ska godtas här. Standard är hanterings-API:ets bas-URL — global.publicBaseUrl följd av /admin-api där den är angiven, och annars den här processens eget schema, värd och port. Medan den har det standardvärdet godtas även en token med /admin-api som målgrupp under den värd som begäran kom in på, vilket är vad en klient får genom att begära `resource=<base>/admin-api` vid tokenslutpunkten (RFC 8707) under vilket namn den än nådde den här tjänsten. Ange den för att fästa ett enda värde där en driftsättning nås under flera namn."
+  },
+  "adminApi.writesPerSubject|label": {
+    "en": "7f076e66a69ba003",
+    "text": "Ändringar per person och fönster i hanterings-API:t"
+  },
+  "adminApi.writesPerSubject|description": {
+    "en": "d5f0da3ec14d6325",
+    "text": "Hur många ändringar en inloggad administratör får göra via /admin-api (administrationskonsolen inräknad) inom ett fönster på adminApi.writeWindowS. Räknas per tokenens subjekt, inte per adress. Varje POST som skriver räknas; läsningar gör det inte. Därefter avvisas en ändring med 429 och Retry-After tills fönstret har passerat, och läsning fortsätter. Ett programs token räknas i stället av adminApi.programWritesPerSubject. 0 betyder ingen gräns, standardvärdet i utveckling. Produktläget använder 1200 som standard."
+  },
+  "adminApi.programWritesPerSubject|label": {
+    "en": "a7a966658bd4e30b",
+    "text": "Ändringar per program och fönster i hanterings-API:t"
+  },
+  "adminApi.programWritesPerSubject|description": {
+    "en": "3616c5b36e7bce05",
+    "text": "Hur många ändringar ett program får göra via /admin-api inom ett fönster på adminApi.writeWindowS: en client_credentials-token, räknad per klient, eller ett tjänstekontos, räknad per subjekt. Därefter avvisas en ändring med 429 och Retry-After tills fönstret har passerat. 0, standardvärdet i alla lägen, betyder ingen gräns, eftersom en provisionering eller en migrering legitimt gör tusentals ändringar på några minuter; sätt det till vad dina program behöver."
+  },
+  "adminApi.writeWindowS|label": {
+    "en": "8a9add139755d4d5",
+    "text": "Fönster för ändringar i hanterings-API:t (sekunder)"
+  },
+  "adminApi.writeWindowS|description": {
+    "en": "fac34881657f2e55",
+    "text": "Fönstret som adminApi.writesPerSubject och adminApi.programWritesPerSubject räknas inom, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
   },
   "admin.openWhenEmpty|label": {
     "en": "942c3548bf198f33",
@@ -5166,6 +5842,38 @@
   "federation.outboundTimeoutMs|description": {
     "en": "6a4ac147d740738b",
     "text": "Hur länge man väntar på att en partner ska svara innan man ger upp. Den spelar större roll än en tidsgräns brukar eftersom webbläsaren VÄNTAR på den — en federerad inloggning är en person som tittar på en tom flik medan den här tjänsten löser in en kod — så den är kort nog för att en död partner ska ge en felsida i stället för att hänga, och felet anger tidsgränsen. Den var 5000 fram till 2026-08-30, och det som ändrades är att partnern här OFTAST ÄR DEN HÄR PROCESSEN: en förtroendesfär är en logisk kopia av den här tjänsten, och det första någon begär av en helt ny sfär är dess JWKS — vilket är det som skapar sfärens elva postkvantnycklar, varav en är en SLH-DSA-SHAKE-128s-nyckelgenerering på ungefär fem sekunder. 5000 var en budget som bara fungerade eftersom den här tjänsten FÖRR BLOCKERADE medan den svarade: med händelseloopen stoppad kunde timern som upprätthöll budgeten inte utlösas förrän svaret redan var klart. Nycklarna genereras nu på libuvs trådpool (common/pq_native.js) och förvärms när en sfär skapas, så den vanliga hämtningen tar millisekunder — detta är budgeten för den som kommer medan en sfär fortfarande håller på att födas."
+  },
+  "federation.outboundMaxSockets|label": {
+    "en": "4d988a6f41b26e78",
+    "text": "Utgående anslutningar per mål"
+  },
+  "federation.outboundMaxSockets|description": {
+    "en": "51fc0caebadf9d33",
+    "text": "Hur många anslutningar en process håller öppna samtidigt mot ett mål (en partner, en mottagare, en klients URL), för varje utgående HTTP-anrop. En förfrågan därutöver väntar på en anslutning, inom sin totala tidsfrist, och en varning loggas när förfrågningar först börjar vänta (STS-HTTP-0032). Anslutningar hålls vid liv och återanvänds."
+  },
+  "federation.outboundMaxTotalSockets|label": {
+    "en": "df5b927406d79b5e",
+    "text": "Utgående anslutningar totalt"
+  },
+  "federation.outboundMaxTotalSockets|description": {
+    "en": "6a861a29aafb0924",
+    "text": "Hur många utgående HTTP-anslutningar en process håller öppna totalt. En förfrågan därutöver väntar på en anslutning, inom sin totala tidsfrist (STS-HTTP-0032). Aldrig mindre än federation.outboundMaxSockets."
+  },
+  "federation.outboundDeadlineMs|label": {
+    "en": "b740b47139b9c2e5",
+    "text": "Total tidsfrist för utgående anrop (ms)"
+  },
+  "federation.outboundDeadlineMs|description": {
+    "en": "53034b1d500b4b71",
+    "text": "Det längsta ett utgående HTTP-anrop får ta totalt: väntan på en anslutning, uppkopplingen, handskakningen och hela svaret. De andra tidsgränserna gäller inaktivitet, så en motpart som svarar långsamt skulle annars hålla ett anrop öppet. Ett anrop vars egen tidsgräns är längre får den i stället. Vid tidsfristen avslutas anropet som en tidsgränsöverskridning (STS-HTTP-0033)."
+  },
+  "federation.outboundConnectTimeoutMs|label": {
+    "en": "e344ea40af6cc02e",
+    "text": "Tidsgräns för utgående uppkoppling (ms)"
+  },
+  "federation.outboundConnectTimeoutMs|description": {
+    "en": "a9d9eab2e62edca9",
+    "text": "Hur länge en ny utgående anslutning får ta att koppla upp, med sin TLS-handskakning. En anslutning som återanvänds från poolen tidmäts inte. Vid gränsen avslutas anropet som en tidsgränsöverskridning (STS-HTTP-0034)."
   },
   "federation.outboundAllowHttp|label": {
     "en": "b487c6a4f0c898f0",
@@ -5759,6 +6467,46 @@
     "en": "ffc141f1ac37ec59",
     "text": "Hur engångsinnehållsnyckeln i ett WS-Trust-svar omsluts till mottagarens RSA-publika nyckel. `rsa-oaep` är XML Encryption 1.1:s RSA-OAEP med SHA-256 och MGF1-SHA-256; `rsa-oaep-mgf1p` är OAEP över SHA-1. En mottagare vars certifikat är EC krypteras till med ECDH-ES-nyckelöverenskommelse vad det här än säger. En applikations wstrustKeyTransportAlgorithm åsidosätter detta. `rsa-1_5` är RSAES-PKCS1-v1_5 och är brutet, och det erbjuds eftersom en driftsatt begärare kanske inte godtar något annat. VARNING: rsa-1_5 är endast utvecklingsläge — i produktläge ignoreras det där det läses, på den här inställningen och på en applikations wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p används, loggas en gång, STS-CORE-0106), och att ställa in det avvisas (STS-CORE-0103, STS-REG-0193). Ett wst:EncryptWith-element får namnge den här algoritmen endast medan svarskryptering är på."
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "Kräv en signerad begäran"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "Om ett RequestSecurityToken vars AppliesTo inte namnger någon egen applikation måste bära en WS-Security-meddelandesignatur. En applikations wstrustSignRequest åsidosätter detta för en begäran vars AppliesTo namnger den, och dess wstrustSignRequestElements namnger vad signaturen dessutom måste täcka utöver SOAP Body. På är en begäran utan godtagen signatur, eller en vars signatur inte täcker ett namngivet element, ett wsse:FailedCheck. Utvecklingsläget tror på en signatur, som det alltid har gjort."
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "Signera ett svar"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "Om ett RequestSecurityTokenResponse bär en wsu:Timestamp och en WS-Security-meddelandesignatur över den och SOAP Body, gjord med den här sfärens XML-signeringsnyckel och som namnger dess certifikat i ett BinarySecurityToken. En applikations wstrustSignResponse åsidosätter detta, och dess wstrustSignResponseElements namnger vad signaturen täcker i stället för Body. Ett fel skickas osignerat. WSDL:ens bindning bär sp:IncludeTimestamp medan detta är på. På, och signaturen inte kan göras, är begäran ett fel i båda lägena."
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "Ordning för svarsskydd"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "Den ordning i vilken ett WS-Trust-svar signeras och krypteras när båda är på. `sign-then-encrypt` signerar klartexten och är standard i WS-SecurityPolicy; `encrypt-then-sign` signerar chiffertexten, och WSDL:ens bindning bär då sp:EncryptBeforeSigning. wsse:Security-huvudet skrivs i den ordning en mottagare behandlar det. En applikations wstrustResponseProtectionOrder åsidosätter detta."
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "Kryptera ett svars signatur"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "Om ds:Signature i ett WS-Trust-svar också krypteras (WS-SecurityPolicys sp:EncryptSignature), till svarets mottagare. Läses bara medan svaret signeras och sedan krypteras. WSDL:ens bindning bär sp:EncryptSignature medan detta är på. En applikations wstrustEncryptSignature åsidosätter detta."
+  },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "Kryptera ett svar till ett certifikat oavsett dess keyUsage"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "Om ett WS-Trust-svar får krypteras till ett certifikat vars keyUsage varken tillåter keyEncipherment eller keyAgreement — oftast begärans signeringscertifikat: den här sfärens certifikat för meddelandesignering tillåter bara digitalSignature. Bara den kontrollen hoppas över; certifikatets giltighet, sökväg och spärrstatus kontrolleras fortfarande där paranoid PKI-läge kontrollerar dem. Av som standard. En applikations wstrustRecipientIgnoresKeyUsage åsidosätter detta."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
@@ -5802,6 +6550,46 @@
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
     "text": "tjänstens rot läggs in i lyssnarnas förtroendelager för klienter när deras TLS-kontext byggs"
+  },
+  "certSignIn.profiles|label": {
+    "en": "45c9a918accd04eb",
+    "text": "Profiler för certifikatinloggning (JSON)"
+  },
+  "certSignIn.profiles|description": {
+    "en": "4a9b75892efe6f41",
+    "text": "En JSON-array med profiler för certifikatinloggning för klientcertifikat från utfärdare som den här tjänsten inte driver. Var och en är {\"id\", \"issuers\", \"keyUsage\", \"extendedKeyUsage\", \"policies\", \"bindings\", \"lowAffinity\"}: issuers är SHA-256 av varje täckt CA:s SubjectPublicKeyInfo, och ett certifikat vars validerade sökväg innehåller en av dem täcks av den första sådana profilen; keyUsage de bitar det måste bära alla; extendedKeyUsage de syften av vilka det måste bära ett; policies de policyer av vilka policybehandlingen enligt RFC 5280 måste bära en genom dess sökväg (policymappningar respekteras); bindings de metoder som namnger dess konto (certificate-sha256, issuer-serial, issuer-ski, spki-sha256 och card-uuid, och endast med lowAffinity true namnmetoderna upn, email, issuer-subject och subject; certificate-sha256 och issuer-serial som standard). Varje metod tillfrågas; två konton, eller inget, loggar inte in någon. Bindningar lagras i stsCertificateBinding på personen. TOMT, standard, täcker inget certifikat: ett externt certifikat är posten som lagrar det i userCertificate, eller ett PIV-kort via piv.externalIssuers, som tidigare."
+  },
+  "certSignIn.requireRevocation|label": {
+    "en": "d14071167a900fe4",
+    "text": "Kräv en verifierad återkallelsestatus vid certifikatinloggning"
+  },
+  "certSignIn.requireRevocation|description": {
+    "en": "13f77eb21eb17caf",
+    "text": "Om ett klientcertifikat loggar in en person endast med en verifierad återkallelsestatus: varje certifikat i dess sökväg uppslaget och inget på en lista. auto, standard, kräver det i produktläge och lämnar utveckling åt pki.revocationCheck, som tidigare; on kräver det i alla lägen, så att en status som soft-fail skulle godta (okänd, eller inte tillfrågad) nekar inloggningen (STS-TLS-0071). Det avgör endast inloggningar: /tls/sign-in, inloggningsskärmen och certifikatöverlämningen."
+  },
+  "certSignIn.handoff|label": {
+    "en": "37bcae84a89e5ef8",
+    "text": "Erbjud en certifikatinloggning på en egen lyssnare"
+  },
+  "certSignIn.handoff|description": {
+    "en": "2cd83e3c2c6b4cb0",
+    "text": "Påslaget erbjuder inloggningsskärmen ”Logga in med smartkort eller certifikat”, som skickar webbläsaren till /authn/certificate/continue på den lyssnare som den värdade applikationen certificate-sign-in är mappad till (listeners.applications) — en anpassad lyssnare vars clientAuth begär ett certifikat — och tillbaka till skärmen, som fortsätter som certifikatets innehavare. Certifikatet binds till den väntande inloggningen och till webbläsarens inloggningssession, så lyssnaren måste dela huvudportens värdnamn eller båda ligga under authn.cookieDomain. Med tls.mainPortDisableOptionalClientCertificate påslaget begär huvudporten då inget certifikat av någon anslutning, och de andra vägarna in ser aldrig någon fråga. Avstängt, standard, erbjuder skärmen endast certifikatet på dess egen anslutning."
+  },
+  "tls.trustedProxyCertificates|label": {
+    "en": "56e567aa855102b5",
+    "text": "Klientcertifikat för TLS-terminerande proxyservrar (SHA-256)"
+  },
+  "tls.trustedProxyCertificates|description": {
+    "en": "16cfd6503c70990f",
+    "text": "SHA-256-fingeravtrycken för de klientcertifikat som en TLS-terminerande proxy presenterar när den ansluter hit. I hex (kolon och prefixet sha256: tillåts). spki: före samma hex fäster i stället SHA-256 för certifikatets SubjectPublicKeyInfo, som en förnyelse med samma nyckel behåller; en felaktig post avvisas (STS-TLS-0077). För en begäran på en anslutning som presenterar ett av dem, från en adress i tls.trustedProxyAddresses, verifieras dess huvuden Client-Cert och Client-Cert-Chain enligt RFC 9440 här mot klientens förtroendelager och återkallelse, och det certifikatet står för handskakningens vid varje dörr. Båda inställningarna krävs; från varje annan avsändare tas de två huvudena bort och registreras (STS-TLS-0072) och läses aldrig. TOMT, standard, läser ett certifikat endast från handskakningen."
+  },
+  "tls.trustedProxyAddresses|label": {
+    "en": "4bc0cf2135bd81af",
+    "text": "Adresser för TLS-terminerande proxyservrar"
+  },
+  "tls.trustedProxyAddresses|description": {
+    "en": "92e72546afce7f59",
+    "text": "De adresser eller CIDR-intervall som en proxy i tls.trustedProxyCertificates ansluter från (10.0.0.0/8, fd00::/8). Båda inställningarna krävs innan ett vidarebefordrat klientcertifikat läses. Ett värde som varken är en adress eller ett intervall ignoreras och loggas, vidgas aldrig."
   },
   "tls.hostnames|label": {
     "en": "fbb4cf44ba96aa51",
@@ -6010,6 +6798,30 @@
   "tls.sessionTicketRotationS|description": {
     "en": "74971dd9b68d3a40",
     "text": "I ett aktivt-aktivt kluster förseglar varje nods LDAPS-lyssnare och huvudport (om inte tls.mainPortSharedTickets är avstängt) sessionsbiljetter under en gemensam nyckel, så att en biljett som en nod utfärdat kan återupptas på en annan (debuggerns lyssnare behåller en nyckel per nod). Detta är hur ofta, i sekunder, jobbet tls.ticket-key-rotate ersätter den; nyckeln som ersätts tas bort, så en återupptagen sessions hemligheter kan återvinnas från en uppfångad biljett endast medan dess nyckel lever, och en klient vars biljett är äldre gör en fullständig handskakning. Nyckeln sparas i lagret, förseglad under nyckelkrypteringsnyckeln. 0 stänger av delningen, och utanför aktivt-aktivt läge delas ingenting: en enda svarande nod återupptar med OpenSSL:s egna nycklar per lyssnare, som aldrig lämnar processen."
+  },
+  "tls.serverCertificateRenewal|label": {
+    "en": "79fc4f383ec66592",
+    "text": "Förnya lyssnarcertifikatet utan omstart"
+  },
+  "tls.serverCertificateRenewal|description": {
+    "en": "229dc416d38b253a",
+    "text": "Om det timvisa jobbet tls.server-certificate-renew förnyar certifikatet som huvudporten, LDAPS och felsökaren presenterar, med samma nyckel, när mindre än en tredjedel av giltighetstiden återstår (eller det ligger inom tls.serverCertificateRenewLeadDays), och lägger det på varje socket utan omstart. Varje nod förnyar sitt eget. Av: det förnyas bara vid en start och med konsolens Förnya. Ett certifikat du anger i tls.certificateFile förnyar du själv."
+  },
+  "tls.serverCertificateRenewLeadDays|label": {
+    "en": "52b56b407d8bbd91",
+    "text": "Förnya lyssnarcertifikatet så här länge innan det går ut (dagar, 0 = vid en tredjedel av giltighetstiden)"
+  },
+  "tls.serverCertificateRenewLeadDays|description": {
+    "en": "c30ac0820cd16ec6",
+    "text": "Förnya lyssnarcertifikatet så många dagar innan det går ut, när det är tidigare än den punkt där en tredjedel av giltighetstiden återstår. 0, standard, behåller tredjedelen."
+  },
+  "tls.ocspStapling|label": {
+    "en": "17283b228fc0078d",
+    "text": "Häfta ett OCSP-svar på varje lyssnare"
+  },
+  "tls.ocspStapling|description": {
+    "en": "c3f8d87c13309658",
+    "text": "Om huvudporten, LDAPS, felsökaren och varje anpassad lyssnare svarar en klient som frågar efter certifikatets status (RFC 6066 status_request, i TLS 1.2 och 1.3) med ett häftat OCSP-svar. Svaret är det som den här tjänstens egen OCSP-svarare ger för lyssnarens certifikat, skapat i den process som håller socketen, utan nätverkshämtning, och förnyat av jobbet tls.ocsp-staple-refresh före dess nextUpdate. Ett certifikat från en utomstående utfärdare (tls.certificateFile eller en anpassad lyssnares egna filer) häftas inte. När inget aktuellt svar kan skapas fortsätter handskakningen utan det; den misslyckas aldrig. **`auto` är på i produktläge och av i utveckling** (mode.staplesOcsp()); `on` och `off` tvingar det i båda lägena."
   },
   "tls.mainPortSharedTickets|label": {
     "en": "45d51dcfeed6926f",
@@ -7371,6 +8183,14 @@
     "en": "0ef945c098a1eeac",
     "text": "Hur länge en förtroendesfärs krbtgt-nyckel — nyckeln som varje Ticket-Granting Ticket förseglas under — förblir aktuell innan jobbet krb5.krbtgt-rotate ersätter den med en ny slumpmässig nyckel vid nästa kvno. Nyckeln den ersätter behålls (krb5.retainedKeyVersions, under krb5.retainedKeyTtlS) så att en TGT som utfärdats ett ögonblick före rotationen fortfarande fungerar tills den går ut, och jobbet roterar aldrig medan det fönstret är öppet. 180 dagar är den vanliga rekommendationen för Active Directory. 0 stänger av schemalagd rotation; en manuell rotation (/admin/kerberos/principals, POST /admin-api/kerberos/principals/rotate-krbtgt) fungerar fortfarande. Endast produktläge. Med krb5.retainedKeyVersions på 0 förblir jobbet också av, eftersom en rotation som inte behöll något skulle logga ut varje Kerberos-användare i sfären utan förvarning."
   },
+  "krb5.serviceKeyRotationIntervalDays|label": {
+    "en": "c23efe3d6946aad4",
+    "text": "Rotera den här tjänstens egen mottagarnyckel var (dagar)"
+  },
+  "krb5.serviceKeyRotationIntervalDays|description": {
+    "en": "f3aac78fc5e12c88",
+    "text": "Hur gammal en tjänstprincipalnyckel får bli innan jobbet krb5.service-key-rotate ersätter den med en ny slumpnyckel på nästa kvno, och behåller den den ersätter (krb5.retainedKeyVersions, i krb5.retainedKeyTtlS) så att redan utfärdade biljetter fortsätter att fungera, och aldrig medan det fönstret är öppet. Bara nyckeln som den här tjänsten skapade för sin egen mottagare roteras: en nyckel vars keytab lämnats ut till en annan tjänst rapporteras som förfallen på /admin/scheduler, och att rotera den, vilket lämnar ut den nya keytab-filen, förblir operatörens handling. Räknas från nyckelns senaste rotation eller dess skapande. 0 stänger av schemat. Endast produktläge."
+  },
   "krb5.pkinit|label": {
     "en": "01ac5ce947b833a1",
     "text": "PKINIT (förautentisering med certifikat)"
@@ -7386,6 +8206,14 @@
   "krb5.pkinitRequireFreshness|description": {
     "en": "77b517dda5eb4231",
     "text": "Om en PKINIT-begäran måste bära en färskhetstoken enligt RFC 8070 — en som den här KDC:n utfärdat i KDC_ERR_PREAUTH_REQUIRED inom klockavvikelsen. Det är det som hindrar ett AuthPack som signerats i förväg på ett lånat smartkort från att användas senare. MIT Kerberos 1.17 och senare samt Heimdal skickar en när de ombeds. VARNING: av hålls en PKINIT-begäran bara till sin egen tidsstämpel och återuppspelningskontrollen."
+  },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT kräver paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Om en PKINIT-begäran måste bära Microsofts paChecksum2 (MS-PKCA avsnitt 2.2.3) — begärandekroppens SHA-256, SHA-384 eller SHA-512 bredvid den SHA-1-paChecksum som RFC 4556 kräver. En paChecksum2 som skickas kontrolleras i vilket fall som helst, och en över SHA-1 avvisas i produktläge. Av som standard, eftersom MIT Kerberos inte skickar någon; Windows 11 och Windows Server 2022 23H2 och senare gör det. På avvisas en klient som inte skickar någon — anonym PKINIT inräknad — med KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
   },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
@@ -7518,6 +8346,22 @@
   "ldap.timeLimit|description": {
     "en": "b74ec7b68f9251f2",
     "text": "Tidsgränsen på serversidan för en sökning, i sekunder, vilket är det som ger LDAP_TIME_LIMIT_EXCEEDED; en klients egen kortare timeLimit vinner. Posterna som skickats före den är svaret, markerat som ofullständigt."
+  },
+  "ldap.maxMessageBytes|label": {
+    "en": "2125609eee24d878",
+    "text": "Största meddelande från en bunden klient (byte)"
+  },
+  "ldap.maxMessageBytes|description": {
+    "en": "786113088024809e",
+    "text": "Det största LDAP-meddelande en klient som har bundit får skicka, i byte, räknat från längden som dess BER-huvud anger: en anslutning vars nästa meddelande anger mer stängs innan något av det läses (STS-LDAP-0227). Sökresultat skickas av servern och räknas inte. 5 MiB som standard, gränsen som varje HTTP-kropp har här."
+  },
+  "ldap.maxMessageBytesBeforeBind|label": {
+    "en": "5ff37d3f77caf60f",
+    "text": "Största meddelande före en bindning (byte)"
+  },
+  "ldap.maxMessageBytesBeforeBind|description": {
+    "en": "b8225e3eda93275b",
+    "text": "Det största LDAP-meddelande en klient får skicka innan den har bundit, i byte: en bindning, StartTLS eller en sökning efter rot-DSE. Över det stängs anslutningen innan något av meddelandet läses (STS-LDAP-0227). 128 KiB som standard, dubbelt så stort som den största Kerberos-token en SASL-bindning kan bära. Aldrig mer än ldap.maxMessageBytes i praktiken."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
@@ -8008,8 +8852,8 @@
     "text": "AuthZEN aktiverat"
   },
   "authzen.enabled|description": {
-    "en": "9989f6296bde3aaa",
-    "text": "När den är på svarar AuthZEN Authorization API under /access/v1. När den är av förblir dess rutter REGISTRERADE och svarar 501, precis som XACML:s: funktionen är av, URL:en är inte fel. Den fattar beslut med XACML-motorn, så den svarar 501 även medan xacml.enabled är av. En anropare behöver fortfarande rollen AUTHZEN_PEPS (roles.authzenPepGroup) och ett applikationsomfång innan den får veta något."
+    "en": "ab2a36497d9bc637",
+    "text": "När den är på svarar AuthZEN Authorization API under /access/v1. När den är av förblir dess rutter REGISTRERADE och svarar 403: funktionen är av, URL:en är inte fel. Den fattar beslut med XACML-motorn, så den svarar 403 även medan xacml.enabled är av. En anropare behöver fortfarande rollen AUTHZEN_PEPS (roles.authzenPepGroup) och ett applikationsomfång innan den får veta något."
   },
   "authzen.callerAuthentication|label": {
     "en": "0d54f64fbd17edd1",
@@ -8032,8 +8876,8 @@
     "text": "Batchutvärderingar påslagna"
   },
   "authzen.batchEnabled|description": {
-    "en": "09e89f17a1789b12",
-    "text": "När det är på besvarar POST /access/v1/evaluations flera åtkomstutvärderingar i en begäran (avsnitt 7), och metadatadokumentet namnger den. Av svarar vägen 501 och metadatan utelämnar den; /access/v1/evaluation påverkas inte."
+    "en": "30f1730e7cc2e19f",
+    "text": "När det är på besvarar POST /access/v1/evaluations flera åtkomstutvärderingar i en begäran (avsnitt 7), och metadatadokumentet namnger den. Av svarar vägen 403 och metadatan utelämnar den; /access/v1/evaluation påverkas inte."
   },
   "authzen.maxEvaluations|label": {
     "en": "807685616b938e0f",
@@ -8080,8 +8924,8 @@
     "text": "Search APIs aktiverade"
   },
   "authzen.searchEnabled|description": {
-    "en": "70c3885264cc1776",
-    "text": "När det är på svarar de tre AuthZEN-sökningarna under /access/v1/search (subjekt, resurs, åtgärd), och metadatan namnger dem. En sökning avgör varje kandidat som den här tjänsten kan namnge med sfärens rotpolicy och svarar med de tillåtna: subjekten är sfärens personer i katalogen, resurserna dess applikationer, API:er och delegeringsrelationer, åtgärderna de namn som policyn jämför action-id med. Av svarar vägarna 501."
+    "en": "058f0be9c553b3f0",
+    "text": "När det är på svarar de tre AuthZEN-sökningarna under /access/v1/search (subjekt, resurs, åtgärd), och metadatan namnger dem. En sökning avgör varje kandidat som den här tjänsten kan namnge med sfärens rotpolicy och svarar med de tillåtna: subjekten är sfärens personer i katalogen, resurserna dess applikationer, API:er och delegeringsrelationer, åtgärderna de namn som policyn jämför action-id med. Av svarar vägarna 403."
   },
   "authzen.searchMaxCandidates|label": {
     "en": "2975f92129e80bb1",
@@ -8112,8 +8956,8 @@
     "text": "Åtkomstbegäranden och godkännanden"
   },
   "authzen.accessRequests|description": {
-    "en": "8d07cfb7d8cb2450",
-    "text": "AuthZEN Access Request and Approval Profile (ett utkast), med dess callback-komplement. När den är på besvaras ett Deny vars XACML-svar bär advice urn:sts:xacml:advice:access-request med false och context.access_request; en PEP skickar in den till POST /access/v1/access-requests, en godkännare som advice anger avgör den i portalen eller konsolen, och ett godkännande som presenteras vid nästa utvärdering når rotpolicyn som betrodda fakta. Metadata anger endpoint och capability. Ett nekande utan advice kan aldrig begäras. När den är av svarar rutterna 501 och inget nekande kan begäras."
+    "en": "2851b5ede62f62db",
+    "text": "AuthZEN Access Request and Approval Profile (ett utkast), med dess callback-komplement. När den är på besvaras ett Deny vars XACML-svar bär advice urn:sts:xacml:advice:access-request med false och context.access_request; en PEP skickar in den till POST /access/v1/access-requests, en godkännare som advice anger avgör den i portalen eller konsolen, och ett godkännande som presenteras vid nästa utvärdering når rotpolicyn som betrodda fakta. Metadata anger endpoint och capability. Ett nekande utan advice kan aldrig begäras. När den är av svarar rutterna 403 och inget nekande kan begäras."
   },
   "authzen.accessRequestDenialLifetimeS|label": {
     "en": "c9cf8e4874b316a2",
@@ -8162,6 +9006,126 @@
   "authzen.accessRequestMaxPending|description": {
     "en": "6b3f5e73f6fcafaf",
     "text": "Det högsta antalet åtkomstbegäranden en sfär rymmer som väntande; efter det avvisas en inskickning med 503 tills några avgjorts eller gått ut."
+  },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Begärbara avslag som en sfär registrerar"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Det högsta antalet begärbara avslag som en sfär registrerar per evaluation_id (#1204). Därutöver registreras inte ett nytt avslag, och det kan fortfarande begäras med sitt binding_token; jobbet för åtkomstbegäranden tar bort en post en dag efter dess fönster."
+  },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Visningstips för åtkomstbegäranden"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval-profilens visningstips (#1204): ett begärbart avslag bär access_request.display och ett Task Handle bär task.display, var och en med en titel och en beskrivning. Avslagets är advicens display-title och display-description, ordagrant, annars tjänstens egna ord på det språk som Accept-Language ber om. De är tips för en människa och aldrig policy. Av: inget av dem skickas."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Värdat formulär för åtkomstbegäranden"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval-profilens värdade formulär (#1204): ett begärbart avslag som den här sfären har registrerat bär form_url, portalsidan /portal/access-request, där avslagets subjekt loggar in och skickar åtkomstbegäran med en motivering; den nekade PEP:en får tillbaka den uppgiften när den skickar samma avslag. Ett Task Handle bär links.ticket, samma sida, där subjektet ser begärans status. Av: inget skickas och sidan gör ingen begäran."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Kataloger för åtkomstbegäranden"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "5809e31e9afa317e",
+    "text": "AuthZEN Access Request Catalog-profilen (#1204): ett registrerat begärbart avslag vars advice listar värden urn:sts:xacml:advice:access-request:entitlement bär request_catalogs_url, dess Catalogs Document och Catalog Endpoint svarar den anropare som avslaget gavs till, en begäran måste välja en av behörigheterna i requested_access.entitlement, och godkännandet för den till policyn som ett betrott faktum. Av: advicens behörigheter ignoreras och de två slutpunkterna svarar 403."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Agerande parter i åtkomstbegäranden"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation-profilen (#1204): en åtkomstbegärans client.actor-kedja verifieras mot anroparens egna autentiseringsuppgift (en länk som är anroparen själv, eller act-kedjan i dess egen åtkomsttoken) och nekas annars, och client.source registreras. Båda visas för godkännarna och i granskningsloggen, och ingen av dem är ett policyfaktum. Av: båda godtas och läses aldrig."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Åtkomstbegäranden i klump"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests-profilen (#1204): en inlämning med items, var och en med sitt eget avslag, kontrolleras post för post som en enskild, och besvaras med ett Task Handle vars status sammanfattar posterna (partial när de slutade olika) och vars poster var och en bär sitt eget resultat. Varje post godkänns och omprövas för sig. Av: items nekas som tidigare."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Poster i en åtkomstbegäran i klump"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Det största antalet poster en åtkomstbegäran i klump får ha (#1204). Var och en räknas mot authzen.accessRequestMaxPending."
+  },
+  "authzen.callbackAttempts|label": {
+    "en": "386af3a6b939029e",
+    "text": "Access request callback attempts"
+  },
+  "authzen.callbackAttempts|description": {
+    "en": "cd69d3fbd5941b9e",
+    "text": "How many times a finished access request's callback is sent, the first included (#1202). A network error, a timeout or an HTTP 5xx is tried again after authzen.callbackBackoffS, by the authzen.access-requests job. An HTTP 4xx, or a URL the outbound policy refuses, is not tried again. An application's appAuthzenCallbackConfig may set another bound for one URL. 1 is one attempt."
+  },
+  "authzen.callbackBackoffS|label": {
+    "en": "fec06743e6cabd16",
+    "text": "Access request callback backoff (seconds)"
+  },
+  "authzen.callbackBackoffS|description": {
+    "en": "43f2cb7740fc7efe",
+    "text": "Hur länge det väntas efter det första misslyckade återanropet för en åtkomstbegäran innan nästa försök (#1202). Varje senare väntetid är dubbelt så lång som den föregående, upp till ett dygn. Jobbet authzen.access-requests körs var 60:e sekund, så en kortare väntetid kunde inte hållas. En applikations appAuthzenCallbackConfig kan ange en längre väntetid för en URL."
+  },
+  "authzen.externalPdp|label": {
+    "en": "8a0af08389fe6cda",
+    "text": "Fråga en extern PDP före ett tokenutbyte."
+  },
+  "authzen.externalPdp|description": {
+    "en": "378c7dcd21a960c7",
+    "text": "AuthZEN-bindningen för OAuth 2.0-tokenutbyte, riktning B: innan den här auktoriseringsservern utfärdar en OAuth-åtkomsttoken för ett RFC 8693-utbyte frågar den den externa PDP som authzen.externalPdpUrl namnger. Den lokala utfärdandepolicyn avgör fortfarande först, och ett avslag den verkställer skickas inte vidare. PDP:n får bara snäva in omfånget och åtkomsttokenens livslängd. Av, standardvärdet, rings ingenting. En Kerberos-token ligger utanför bindningen och skickas inte. Inget svar, eller ett avslag, betyder ingen token."
+  },
+  "authzen.externalPdpUrl|label": {
+    "en": "4702ceb3700a0831",
+    "text": "Adress till den externa AuthZEN-PDP:n."
+  },
+  "authzen.externalPdpUrl|description": {
+    "en": "2d486c955985f5ac",
+    "text": "Den absoluta https-adressen till den externa PDP:ns POST /access/v1/evaluations. En administratör konfigurerar den, och en begäran kan inte namnge den. Den bär inget userinfo, query eller fragment. Tom medan authzen.externalPdp är på vägrar den utbytet. Vanlig http vägras även när federation.outboundAllowHttp är på, eftersom begäran bär tokenanspråk och ett klientcertifikat."
+  },
+  "authzen.externalPdpTimeoutMs|label": {
+    "en": "c40081858bffe671",
+    "text": "Tidsgräns för den externa PDP:n (millisekunder)."
+  },
+  "authzen.externalPdpTimeoutMs|description": {
+    "en": "1c73c2acfe98c703",
+    "text": "Hur länge den externa PDP:n inväntas, i millisekunder. En tidsgräns vägrar utbytet. Det lokala beslutet utfärdas inte i dess ställe."
+  },
+  "authzen.externalPdpClientCertFile|label": {
+    "en": "2da8c5ed72d965bb",
+    "text": "Klientcertifikat för den externa PDP:n."
+  },
+  "authzen.externalPdpClientCertFile|description": {
+    "en": "cae054b4776151a0",
+    "text": "PEM-filen den här auktoriseringsservern visar för den externa PDP:n. Ömsesidig TLS är det enda läget, och PDP:n släpper in certifikatet som en AUTHZEN_PEPS-anropare. I produktläge måste filen ligga i en katalog som security.fileRoots listar. En relativ sökväg är den här processens aktuella katalog. Tom eller oläsbar medan authzen.externalPdp är på vägrar den utbytet."
+  },
+  "authzen.externalPdpClientKeyFile|label": {
+    "en": "8c2c725a67e09874",
+    "text": "Klientnyckel för den externa PDP:n."
+  },
+  "authzen.externalPdpClientKeyFile|description": {
+    "en": "6509f61b7122be79",
+    "text": "PEM-filen med klientcertifikatets privata nyckel. Filen läses när PDP:n rings. Nyckelns byte är inget konfigurationsvärde, så GET /admin-api/config returnerar sökvägen och inte nyckeln. I produktläge måste filen ligga i en katalog som security.fileRoots listar. En relativ sökväg är den här processens aktuella katalog. Tom eller oläsbar medan authzen.externalPdp är på vägrar den utbytet."
+  },
+  "authzen.externalPdpCaFile|label": {
+    "en": "6abdfbc262d71c16",
+    "text": "CA-fil för den externa PDP:n."
+  },
+  "authzen.externalPdpCaFile|description": {
+    "en": "d8328616a3f62cfa",
+    "text": "En valfri PEM-fil med CA-certifikat som används i stället för standardrötterna för att verifiera den externa PDP:n. Tom använder de rötterna. En namngiven och oläsbar fil, eller en som produktläge inte läser under security.fileRoots, vägrar utbytet. En relativ sökväg är den här processens aktuella katalog."
   },
   "uma.enabled|label": {
     "en": "2a3767bd4bc83294",
@@ -8338,6 +9302,14 @@
   "ssf.personStreamsSelfOnly|description": {
     "en": "581ff0b61393c1af",
     "text": "En ström som skapats med en PERSONS inloggningsuppgift — en åtkomsttoken som en klient fått för personen, eller personens eget namn och lösenord över Basic — handlar om den personen enbart: händelser om någon annan levereras inte till den, vad dess subjektslista och default_subjects än säger, och Add Subject vägrar att ange någon annan (403). SSF 1.0 avsnitt 10.1 kräver att bara behöriga parter når de delade signalerna, och en person är behörig för sina egna. Av: en persons ström behandlas som en klients och får, under default_subjects ALL, varje händelse i sfären. En klients egen ström (klientuppgifter), en GNAP-applikations och den här tjänstens egna mottagare påverkas inte."
+  },
+  "ssf.applicationStreamScope|label": {
+    "en": "a0891c9296501668",
+    "text": "Vilka personer en applikations ström får höra om"
+  },
+  "ssf.applicationStreamScope|description": {
+    "en": "49d625a5c9041583",
+    "text": "En ström som en APPLIKATION äger (skapad med dess klientuppgifter, en GNAP-nyckel eller dess certifikat – inte en persons token) bär en CAEP- eller RISC-händelse om en person bara så länge den personen har en aktiv session hos applikationen: en aktiv inloggningssession där applikationen är en förlitande part (en OpenID Connect- eller OAuth-klient, en SAML 2.0- eller 1.1-tjänsteleverantör, en förlitande part för WS-Federation), eller ett aktivt GNAP-medgivande som personen har godkänt för den. Händelsen som AVSLUTAR en sådan session når fortfarande den applikation vars session den avslutade. Händelser utan subjekt, och händelser som inte gäller någon person, påverkas inte, och en Add Subject som namnger en person utan aktiv session hos applikationen avvisas (403). default_subjects förblir ALL, vilket nu betyder varje subjekt med en aktiv session hos mottagarens applikation (SSF 1.0, avsnitt 7.1, 9.2 och 10.1). all är beteendet före #2234: en applikations ström får höra om alla i domänen, vilket en driftsättning som förlitar sig på strömmar för alla subjekt (en MDM- eller EDR-mottagare) väljer medvetet. En persons egen ström (ssf.personStreamsSelfOnly), tjänstens egna mottagare och en GNAP-resursservers ström påverkas inte."
   },
   "ssf.streamStatusOnCreate|label": {
     "en": "edca4896319e6d42",
@@ -8940,8 +9912,8 @@
     "text": "Ta fingeravtryck av webbläsaren vid inloggning"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/v1.1.0/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
+    "en": "c34ba5805bddbb8b",
+    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/v1.2.0/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -9367,6 +10339,14 @@
     "en": "5f61809aa07c4db6",
     "text": "Om en grupp som anges av PERSONENS egen `memberOf` räknas som medlemskap när gruppposten inte listar personen tillbaka. Inget i den här katalogen underhåller memberOf — det är inte ens ett standardattribut — så en klient som skriver det skapar precis den oenigheten, och /admin/groups finns delvis för att VISA den. Den här inställningen avgör vilken sida av den en token tror på. På som standard, eftersom en klient som skrev memberOf och inte fick något anspråk inte har fått veta något om varför; av är hur gruppposten förblir den enda auktoriteten. I båda fallen måste gruppen FINNAS här — en memberOf som inte anger någonting hittar inte på en grupp att lägga i en token."
   },
+  "groups.claimMaxBytes|label": {
+    "en": "c2a99644d1978aa0",
+    "text": "Största gruppanspråk i en token (byte)"
+  },
+  "groups.claimMaxBytes|description": {
+    "en": "2f98b7c4379f0510",
+    "text": "Det mesta gruppanspråket får ta i en åtkomsttoken eller en ID Token, mätt som JSON för dess värden, före base64url. Över det kortas anspråket inte: det blir ett distribuerat anspråk enligt avsnitt 5.6.2 i OpenID Connect Core — `_claim_names` namnger det och `_claim_sources` pekar på denna realms /oauth2/groups, som svarar med hela listan som en signerad JWT för den åtkomsttoken som visas upp. En åtkomsttoken färdas i en header, och en token över 8 KiB avvisas av de flesta servrar (16 KiB av Node.js) med en 431 som inte pekar tillbaka på något. Standardvärdet, 4096, motsvarar ungefär 150 gruppnamn eller 60 DN, så de token människor får i dag är oförändrade. UserInfo och SAML-intygen bär alltid hela listan. 0 stänger av gränsen."
+  },
   "roles.claim|label": {
     "en": "0cccb2ed17abf5e3",
     "text": "Bär ett rollanspråk"
@@ -9374,6 +10354,14 @@
   "roles.claim|description": {
     "en": "05185a4a554d5f71",
     "text": "När den är på namnger varje åtkomsttoken, ID Token, SAML 2.0-intygande och SAML 1.1-intygande de roller som dess subjekt har. PÅ som standard och det ändrar ändå ingenting för de flesta anropare, av samma skäl som gruppanspråket är på som standard: anspråket UTELÄMNAS HELT för den som inte har någon KONFIGURERAD roll, och de sex inbyggda rollerna finns aldrig i det — EVERYBODY och ALL_AUTHENTICATED_USERS gäller för nästan varje token här, så att bära dem skulle lägga till två meningslösa medlemmar i varje token som varje befintlig klient tolkar och inte berätta något för en förlitande part som den inte visste genom att ha token. De finns för att KRÄVAS, inte för att bäras."
+  },
+  "roles.dynamicSelection|label": {
+    "en": "86d2654ef3dec8fd",
+    "text": "Erbjud dynamiska roller vid inloggning"
+  },
+  "roles.dynamicSelection|description": {
+    "en": "68b1b4af3db5e6d8",
+    "text": "Om en person som loggar in får välja dynamiskt valbara roller (#1072): i en sfär som definierar minst en dynamisk roll erbjuder inloggningssidan rutan ”Välj roller för den här inloggningen”, och en markerad ruta visar de roller personens behörighet tillåter. PÅ som standard; appDynamicRoleSelection på ett programs post åsidosätter den för programmet. Av visas ingen ruta, ingen roll erbjuds, ingen obligatorisk dynamisk roll efterfrågas och ingen token bär en dynamiskt vald roll."
   },
   "roles.claimName|label": {
     "en": "d56be861543f5305",
@@ -9422,6 +10410,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Kataloggruppen vars medlemmar har den inbyggda rollen XACML_USER, som är vad de tre egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp och GET /xacml/policies. En anropare som visar ett klientcertifikat som tjänsten VERIFIERAT är någon den kan namnge; medlemskap i den här gruppen är det som gör dem till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger de tre slutpunkterna för alla anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbyggda utfärdande- och åtkomst-PEP:arna med den."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupp som ger rollen PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Katalogruppen vars medlemmar innehar den inbyggda rollen PIV_KEY_RECOVERY (#1955), som åtkomstkontrollpolicyn kräver, utöver Admin Write, för att återställa en annan persons deponerade piv-key-management-nyckel (piv.keyEscrow). Den nyckeln dekrypterar personens e-post, så ingen innehar rollen förrän en administratör lägger till dem i gruppen. Tomt låter ingen återställa en annan persons nyckel; innehavaren återställer sin egen på portalen."
   },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
@@ -10695,6 +11691,66 @@
     "en": "fe511fad2e40a74b",
     "text": "Hur länge en enskild sats bakom /admin/database får köras, som PostgreSQL:s egen statement_timeout på den enda anslutning som sidan lånar. Var och en av dem är en läsning av en katalogvy; gränsen finns så att öppnandet av en konsolsida aldrig kan låsa fast en anslutning ur en pool som den här tjänsten besvarar protokolltrafik från. Den sätts på servern snarare än som en timer här, eftersom en timer skulle överge promise-objektet och lämna både satsen och anslutningen precis där de var."
   },
+  "persistence.poolSize|label": {
+    "en": "2475a81f21b49c54",
+    "text": "Databasanslutningar per process"
+  },
+  "persistence.poolSize|description": {
+    "en": "f1f10c51a196d0a8",
+    "text": "Hur många anslutningar till databasen varje process håller i sin pool. 0, standardvärdet, är dubbla antalet förfrågningsarbetare på noden och aldrig färre än fyra. En anropare därutöver väntar på en ledig anslutning i upp till persistence.poolWaitMs."
+  },
+  "persistence.poolSize|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.poolWaitMs|label": {
+    "en": "9d8b7d4e1ab7615b",
+    "text": "Väntan på en databasanslutning (ms)"
+  },
+  "persistence.poolWaitMs|description": {
+    "en": "752dc81d37a6c566",
+    "text": "Hur länge en anropare väntar på en ledig anslutning i poolen innan den misslyckas. En skrivning som misslyckas så besvaras med 503 (STS-STORE-0066) och dess tömning görs om."
+  },
+  "persistence.poolWaitMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.connectTimeoutMs|label": {
+    "en": "78473bfd6080429b",
+    "text": "Tidsgräns för databasuppkoppling (ms)"
+  },
+  "persistence.connectTimeoutMs|description": {
+    "en": "98896ec25acab0b5",
+    "text": "Hur länge det får ta att upprätta en ny databasanslutning."
+  },
+  "persistence.connectTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.idleTimeoutMs|label": {
+    "en": "64c8eea59ce189f0",
+    "text": "Hur länge en ledig databasanslutning behålls (ms)"
+  },
+  "persistence.idleTimeoutMs|description": {
+    "en": "d0f88a1e570ca2d5",
+    "text": "Hur länge en oanvänd anslutning stannar i poolen innan den stängs."
+  },
+  "persistence.idleTimeoutMs|restartReason": {
+    "en": "e6a5572853081cf6",
+    "text": "lagret öppnas när processen startar"
+  },
+  "persistence.statementTimeoutMs|label": {
+    "en": "d8a8414efb6b84fb",
+    "text": "Tidsgräns för databassatser (ms)"
+  },
+  "persistence.statementTimeoutMs|description": {
+    "en": "31355b0b8e028116",
+    "text": "Det längsta en vanlig databassats får köra innan servern avbryter den (PostgreSQL:s statement_timeout, MariaDB:s max_statement_time), loggat som STS-STORE-0178. 0 för ingen. Att öppna lagret, dess migreringar, återställningen vid start och indexbyggen online omfattas inte; efterfyllnader körs i små omgångar."
+  },
+  "persistence.statementTimeoutMs|restartReason": {
+    "en": "3869568d6c787906",
+    "text": "den sätts på poolen när lagret är öppnat och läst"
+  },
   "persistence.dataDir|label": {
     "en": "5e6050c24c42be85",
     "text": "Datakatalog"
@@ -10791,6 +11847,14 @@
     "en": "81c3618a73d5aca7",
     "text": "läses en gång vid start, innan poolen öppnas"
   },
+  "persistence.databasePasswordRefreshS|label": {
+    "en": "71cad603acb1dbf2",
+    "text": "Läs databaslösenordet på nytt var (sekunder)"
+  },
+  "persistence.databasePasswordRefreshS|description": {
+    "en": "e8fe881acb7df5cc",
+    "text": "Hur ofta varje process läser databaslösenordet på nytt från den hemlighetslagring som `persistence.databasePasswordProvider` namnger (jobbet persistence.database-password-refresh). Ett ändrat lösenord används för varje anslutning som görs efter det, utan omstart; öppna anslutningar fortsätter fungera. Det läses också på nytt direkt när databasen vägrar en inloggning. Att rotera lösenordet i databasen är hemlighetslagringens eller operatörens uppgift, och det gamla måste förbli giltigt där minst så här länge. 0 läser det bara vid start och efter en vägrad inloggning."
+  },
   "persistence.databaseTlsRejectUnauthorized|label": {
     "en": "841bbd79b7f36379",
     "text": "Verifiera databasens certifikat"
@@ -10812,6 +11876,30 @@
     "text": "En PEM-fil med CA-certifikat som är betrodda ENDAST för anslutningarna till databasen, i stället för den här processens standardförtroendelager för dem; inget annat som den här tjänsten ringer upp litar på dem. Den kan i stället ange en katalog, och då läses varje .crt- och .pem-fil i den. Tomt använder standardförtroendelagret (med NODE_EXTRA_CA_CERTS). En fil som anges och inte kan läsas, eller inte innehåller något certifikat, stoppar tjänsten vid start. Compose-stacken sätter den till certifikatet som dess postgres-container genererar, delat skrivskyddat utan nyckeln."
   },
   "persistence.databaseTlsCaFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "anslutningspoolen öppnas innan lyssnaren binder"
+  },
+  "persistence.databaseTlsClientCertFile|label": {
+    "en": "fa75e8950285d8a3",
+    "text": "Fil för databasens klientcertifikat"
+  },
+  "persistence.databaseTlsClientCertFile|description": {
+    "en": "7466cc8c41006cb6",
+    "text": "Ett PEM-certifikat som den här tjänsten visar upp för databasen när den öppnar en anslutning (slutcertifikatet först, sedan de mellanliggande certifikat som databasen inte har). Ange det tillsammans med `persistence.databaseTlsClientKeyFile`. Databasen kan då autentisera anslutningen med enbart certifikatet (PostgreSQL:s metod `cert`, MariaDB:s `REQUIRE X509`), och inget lösenord behövs, eller med certifikatet och lösenordet tillsammans (`clientcert=verify-full`). Tomt, standardvärdet, visar inget. Båda filerna läses om var `persistence.databasePasswordRefreshS`, så att ett förnyat certifikat används för nya anslutningar utan omstart. I produktläge måste filen ligga i en katalog som `security.fileRoots` listar. En fil som inte kan läsas, eller en nyckel som inte hör till det här certifikatet, hindrar tjänsten från att starta."
+  },
+  "persistence.databaseTlsClientCertFile|restartReason": {
+    "en": "61c24dbb3c0a7674",
+    "text": "anslutningspoolen öppnas innan lyssnaren binder"
+  },
+  "persistence.databaseTlsClientKeyFile|label": {
+    "en": "6e68d710ddb9b512",
+    "text": "Fil för databasens klientnyckel"
+  },
+  "persistence.databaseTlsClientKeyFile|description": {
+    "en": "f66e2a3155f25774",
+    "text": "Den okrypterade privata PEM-nyckeln till `persistence.databaseTlsClientCertFile`, läsbar endast för den här tjänsten. Den läses från sökvägen och loggas eller visas aldrig. Ange båda eller ingen."
+  },
+  "persistence.databaseTlsClientKeyFile|restartReason": {
     "en": "61c24dbb3c0a7674",
     "text": "anslutningspoolen öppnas innan lyssnaren binder"
   },
@@ -11035,6 +12123,22 @@
     "en": "43d39d2a6820f37a",
     "text": "förmågekontrollen körs en gång, när noden ansluter"
   },
+  "cluster.secretRotationDays|label": {
+    "en": "e59df7706f052d65",
+    "text": "Rotera de delade hemligheterna var (dagar)"
+  },
+  "cluster.secretRotationDays|description": {
+    "en": "26706d33e99a609c",
+    "text": "Hur ofta jobbet cluster.secret-rotate ersätter varje delad hemlighet som är en nyckel: CSRF-nyckeln, ACME-nonce-nyckeln, mottagarhemligheten för Shared Signals, nyckeln för OpenID Federation-sidan, nyckeln för utloggningsresultatet och DBSC-nyckeln. Ett nytt värde publiceras först och görs aktuellt tio minuter senare, när varje process har läst det, och det gamla accepteras fortfarande under `cluster.secretOverlapS`. Den parvisa subjekthemligheten och bootstrap-namnhemligheten är identifierare och roteras aldrig, och ett värde som sätts med en miljövariabel är operatörens att ändra. 0 stänger av rotationen. En hemlighet som lagrats av en tidigare version dateras vid jobbets första körning och roteras först så här många dagar senare, aldrig vid uppgraderingen."
+  },
+  "cluster.secretOverlapS|label": {
+    "en": "56f03f4859222495",
+    "text": "Acceptera en roterad delad hemlighet i (sekunder)"
+  },
+  "cluster.secretOverlapS|description": {
+    "en": "96ac65ddd35152ce",
+    "text": "Hur länge en delad hemlighet som en rotation har ersatt fortfarande accepteras vid sidan av den nya, så att ett formulär, en nonce, en sidpekare eller en bunden cookie som skapades strax före rotationen fortfarande fungerar efter den. Inget nytt skapas med den. Ett dygn som standard."
+  },
   "cells.id|label": {
     "en": "db92ccbae85e2674",
     "text": "Den här cellen"
@@ -11114,6 +12218,14 @@
   "cells.relayTimeoutMs|description": {
     "en": "839a4a009d203829",
     "text": "Hur lång tid en begäran som vidarebefordrats till en annan cell, eller ett anrop på kanalen mellan celler, får ta innan den besvaras som att den andra cellen är onåbar (och hanteras som `cells.homeUnreachable` anger)."
+  },
+  "cells.maxAnswerBytes|label": {
+    "en": "ce0f0b1bb50db989",
+    "text": "Största svar mellan celler (byte)"
+  },
+  "cells.maxAnswerBytes|description": {
+    "en": "4e9b7eccf89d2304",
+    "text": "Det mesta ett synkront anrop till en annan cell får svara. Därutöver stängs anslutningen och anropet misslyckas (STS-CELL-0212)."
   },
   "cells.deliveryAttempts|label": {
     "en": "21319261bb5dfcce",
@@ -11347,6 +12459,14 @@
     "en": "de6b9c78cb258e07",
     "text": "Hur många personer varje attributkälla läser per körning av den schemalagda uppdateringen (attribute-sources.refresh, varje minut), och fortsätter efter den senaste nästa gång. Ett större värde gör ett varv klart snabbare och håller en nod längre per körning."
   },
+  "attributeSources.poolSize|label": {
+    "en": "ae828954ac50f510",
+    "text": "Anslutningar per källa"
+  },
+  "attributeSources.poolSize|description": {
+    "en": "7f2ee1c2c2e820d5",
+    "text": "Hur många anslutningar varje process håller mot en attributkälla. En uppslagning därutöver väntar på en anslutning inom källans egen tidsgräns. En ändring gäller från varje källas nästa uppslagning."
+  },
   "mail.transport|label": {
     "en": "7ab200d2c37a037b",
     "text": "E-posttransport"
@@ -11360,8 +12480,8 @@
     "text": "Avsändaradress"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/v1.1.0/mail.md."
+    "en": "a8b259e6c1037325",
+    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/v1.2.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11496,8 +12616,8 @@
     "text": "DKIM-algoritm"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/v1.1.0/mail.md säger det."
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/v1.2.0/mail.md säger det."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -11522,6 +12642,30 @@
   "mail.dkimKeyField|description": {
     "en": "8fcee4b0bf32dfc4",
     "text": "Den medlem i ett JSON-värde som ska tas. Tomt betyder `dkimKey`."
+  },
+  "mail.dkimNextSelector|label": {
+    "en": "8b2ebcfc6d49d347",
+    "text": "Nästa DKIM-selektor"
+  },
+  "mail.dkimNextSelector|description": {
+    "en": "ba39b7209d7ce55c",
+    "text": "För att rotera DKIM-nyckeln: selektorn för den NYA nyckeln, vars post publiceras på <selector>._domainkey.<domain> innan signeringen flyttas till den. Posten som ska publiceras loggas när transporten byggs. Tomt: ingen rotation pågår."
+  },
+  "mail.dkimNextKeyField|label": {
+    "en": "10fb24bb602188ba",
+    "text": "Fältet för nästa DKIM-privata nyckel"
+  },
+  "mail.dkimNextKeyField|description": {
+    "en": "5ddac95db1f40a38",
+    "text": "Den medlem i DKIM-nyckelns hemlighet (den som mail.dkimKeyProvider och mail.dkimKeyRef namnger) som innehåller nästa selektors privata PEM-nyckel. Tomt betyder `dkimNextKey`."
+  },
+  "mail.dkimSwitchAt|label": {
+    "en": "a3492813f0d41ed8",
+    "text": "Signera med nästa DKIM-selektor från"
+  },
+  "mail.dkimSwitchAt|description": {
+    "en": "e3454748b8e3a4b4",
+    "text": "När meddelanden börjar signeras med mail.dkimNextSelector, som en tid enligt ISO 8601 (2026-12-01T00:00:00Z) — och först när DNS svarar på nästa selektors namn med dess nyckel; till dess signerar den nuvarande selektorn, med en varning. Behåll den gamla selektorns post publicerad i en vecka efter bytet, gör sedan nästa selektor till mail.dkimSelector och rensa de här tre. Tomt: byt aldrig."
   },
   "mail.sesRegion|label": {
     "en": "77dd3234d1125f4e",
@@ -11656,8 +12800,8 @@
     "text": "Pågående sändningar"
   },
   "mail.concurrency|description": {
-    "en": "86080e4d629ae818",
-    "text": "Hur många meddelanden en process skickar samtidigt från en genomsökning."
+    "en": "d6de0478b866cf8b",
+    "text": "Hur många meddelanden en process skickar samtidigt, från en genomsökning och vid första försöket efter att ett meddelande köats. Ett meddelande som inte hittar någon ledig plats väntar på nästa genomsökning."
   },
   "mail.retentionS|label": {
     "en": "702330fb54447e8e",
@@ -11672,8 +12816,8 @@
     "text": "Rader i utkorgen per sfär"
   },
   "mail.maxRows|description": {
-    "en": "a57d0129b9341fc8",
-    "text": "Taket för utkorgen, per sfär: den äldsta AVSLUTADE raden tas bort först, och en väntande aldrig."
+    "en": "3b7f698ec30a6ed1",
+    "text": "Taket för utkorgen, per sfär: den äldsta AVSLUTADE raden tas bort först, och en väntande aldrig. Ett meddelande som skulle ta de VÄNTANDE raderna över taket avvisas (STS-MAIL-0244)."
   },
   "mail.ratePerRecipient|label": {
     "en": "333438c4ac06a9cd",
@@ -11707,6 +12851,22 @@
     "en": "50195b20fe00e9fa",
     "text": "Ett meddelande som anger vad det gäller (samma handling på samma konto) skickas en gång inom det här fönstret, hur många dörrar som än rapporterade det. 0 stänger av undertryckningen."
   },
+  "mail.encryptionRequired|label": {
+    "en": "81e5dc8eb5332f2b",
+    "text": "Meddelanden som måste krypteras"
+  },
+  "mail.encryptionRequired|description": {
+    "en": "895bdb616e169134",
+    "text": "Meddelandena, efter mall-id (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised och resten av listan under Övervakning → E-post), som bara skickas krypterade — PGP/MIME till personens OpenPGP-nyckel eller S/MIME till personens certifikat, enligt personens val på portalen. En person som inte har valt något av dem får inget sådant meddelande (STS-MAIL-0240), och den användning som begärde det säger det, som för alla meddelanden som inte skickas. Tomt, standardvärdet, kräver inga; det en person har valt respekteras i båda fallen."
+  },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "S/MIME-innehållskryptering"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "Hur e-post som krypteras till en persons S/MIME-certifikat krypteras. aes256-gcm, standardvärdet, skickar en AuthEnvelopedData enligt RFC 5083 under AES-256-GCM (smime-type=authEnveloped-data, RFC 8551), som en läsare kan se inte har ändrats. aes256-cbc skickar den EnvelopedData under AES-256-CBC som skickades före 1.2.0 (smime-type=enveloped-data), för en mottagare vars e-postklient inte kan läsa AuthEnvelopedData. VARNING: CBC saknar integritetsskydd, och så länge detta är aes256-cbc i produktläge uppfylls inte krav 11.3.3 i ASVS 5.0.0, vilket /admin/mode rapporterar."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Självbetjäning för lösenordsåterställning"
@@ -11720,16 +12880,16 @@
     "text": "Självbetjäningsåterställning kräver en verifierad adress"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/v1.1.0/mail.md innehåller varningen."
+    "en": "af24c1ddaf83c884",
+    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/v1.2.0/mail.md innehåller varningen."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "Självbetjäningsåterställning kräver en återställningskod"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/v1.1.0/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
+    "en": "f0eccb7bb4055b20",
+    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/v1.2.0/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -11747,6 +12907,14 @@
     "en": "4f3937bae763d218",
     "text": "Meddela en person, på adressen på personens post, när kontot inaktiveras, när sessionerna avslutas av en administratör, när lösenordet ändras eller återställs, när en inloggningsuppgift markeras som komprometterad eller när återställning påbörjas. En person kan inte välja bort dessa; en operatör kan stänga av dem här."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Meddelanden om ändrade inloggningsuppgifter"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Meddela en person när en passkey eller säkerhetsnyckel, en autentiseringsapp, ett applösenord, en engångskods- eller YubiKey OTP-token, en uppsättning återställningskoder, ett certifikat, en certifikatkoppling för inloggning, ett S/MIME-certifikat eller en OpenPGP-nyckel som tillhör personen läggs till eller tas bort, av vem och när. Flera ändringar som görs av en handling blir ett meddelande. Av skickar inga av dessa; meddelandet om ändrat lösenord påverkas inte. Inget skickas medan säkerhetsmeddelanden är av eller ingen transport är konfigurerad."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Meddela administratörer om systemhandlingar"
@@ -11754,6 +12922,54 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "När TJÄNSTEN, inte en person, markerar en inloggningsuppgift som komprometterad eller inaktiverar ett konto (riskbedömning), skicka även e-post till varje medlem i sfärens Admin Write-förteckning som har en adress."
+  },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Inloggningsvarningar"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Meddela en person när en inloggning på kontot lyckas men verkar ovanlig – en enhet eller webbläsare, eller ett land, som personen aldrig har loggat in från, ett anonymiseringsnätverk som Tor, nekade lösenord strax innan, eller en risknivå på eller över mail.signInAlertLevel – med när, ungefär var, med vad och hur, och en länk till personens senaste inloggningar; och när lösenord nekas för kontot så många gånger som inloggningsgränsen tillåter (security.rateLimitPerIdentity under security.rateLimitWindowS), oavsett om någon sedan loggar in. Inget skickas medan säkerhetsmeddelanden är av eller ingen transport är konfigurerad."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Nivå för inloggningsvarningar"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "Den lägsta risknivå en lyckad inloggning måste nå för att personen ska meddelas. På LOW meddelas en ny enhet eller ett nytt land oavsett poäng; på MEDIUM, standardvärdet, en inloggning som riskmotorn bedömer som ovanlig; på HIGH bara en som den bedömer mycket sannolikt inte är personens. En inloggning som ingen har tillräcklig historik för att bedöma meddelas bara för det den visar: ett anonymiseringsnätverk eller nekade lösenord."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Fönster för inloggningsvarningar (sekunder)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Hur länge en typ av inloggningsvarning – en ny enhet, ett nytt land, ett anonymiseringsnätverk, nekade lösenord – meddelas en person högst en gång. Utkorgen är registret, så ett fönster längre än mail.retentionS varar bara så länge."
+  },
+  "mail.expiryReminders|label": {
+    "en": "a20d0db8172e755d",
+    "text": "Påminnelser om utgående inloggningsuppgifter"
+  },
+  "mail.expiryReminders|description": {
+    "en": "b66fe4e723905830",
+    "text": "Påminn en person, på adressen i deras post, innan ett certifikat de har upphör att gälla: ett certifikat som den här sfären utfärdade till dem via ACME, EST eller SCEP, ett PIV-smartkortscertifikat, ett S/MIME-certifikat, ett TLS-klientcertifikat eller ett certifikat lagrat för certifikatinloggning. Vart och ett nämns en gång vid var och en av mail.expiryReminderDays, alla certifikat som är aktuella i ett meddelande, med när det upphör att gälla och hur det förnyas. Inget skickas medan säkerhetsmeddelanden är avstängda eller ingen transport är konfigurerad."
+  },
+  "mail.expiryReminderDays|label": {
+    "en": "e824730c0d882894",
+    "text": "Dagar för påminnelser om utgående inloggningsuppgifter"
+  },
+  "mail.expiryReminderDays|description": {
+    "en": "67a0472ca961a04a",
+    "text": "Hur många dagar innan ett certifikat upphör att gälla dess innehavare påminns, en påminnelse vid varje. Ett certifikat som först syns inom en av dem nämns vid den närmaste, och aldrig vid ett steg som redan har passerats. En ändring gäller varje certifikat vid dess nästa påminnelse."
+  },
+  "mail.expiryReminderKinds|label": {
+    "en": "e45861039d82d373",
+    "text": "Inloggningsuppgifter som en utgångspåminnelse nämner"
+  },
+  "mail.expiryReminderKinds|description": {
+    "en": "c52ee45aef22bfa5",
+    "text": "Vilka slags certifikat en utgångspåminnelse nämner: certificate (utfärdat via ACME, EST eller SCEP), piv (ett PIV-platscertifikat), smime (ett S/MIME-certifikat som e-post krypteras till), tls-client (ett TLS-klientcertifikat utfärdat från portalens sida Signeringsnycklar eller av en administratör) och signin-certificate (ett certifikat lagrat i posten för certifikatinloggning). Ett slag som utelämnas följs fortfarande, så att det påminns vid sitt nästa steg när det läggs tillbaka."
   },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
@@ -11834,6 +13050,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Hur många rapportjobb en person får ha igång samtidigt."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Rapportkörningar och nedladdningar per person och fönster"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Hur många kostsamma åtgärder en anropare av Reports API får göra under ett fönster på report.actWindowS: en ad hoc-fråga eller förhandsvisning, ett köat jobb, en sparad definition som körs, ett nedladdat resultat. Räknas per tokenens subjekt, inte per adress. Därutöver avvisas en sådan åtgärd med 429 och Retry-After tills fönstret har passerat; listorna och definitionerna kan fortfarande läsas. 0 betyder ingen gräns, standardvärdet i utvecklingsläge. Produktläget har 240 som standard."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Fönster för rapportåtgärder (sekunder)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "Fönstret som report.actsPerSubject räknas i, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

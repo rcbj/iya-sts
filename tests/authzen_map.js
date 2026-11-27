@@ -37,7 +37,12 @@
 //      catalogue values and requests the remote PEP's edge PDP is held to
 //      (`cargo test -p xacml-pep`), so the service and the container
 //      refuse, supply and map one request one way. The table is the one
-//      place a case is added; neither test owns it.
+//      place a case is added; neither test owns it. Since #1205 it also
+//      holds the Obligations Profile's outcome (S4, against
+//      `authzen_map.rs`) and which tuples the OAuth token-exchange binding
+//      answers, with the binding on and off (S5, against
+//      `authzen_binding.rs`): what the service answers by the fixed rules,
+//      the edge answers 403 (#2208).
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -520,10 +525,10 @@ function theDecision(t) {
 // says — true for a staff subject, false otherwise.
 function thePublishedExample(t) {
   log.debug("Entering thePublishedExample().");
-  t.log.info('=== X. docs/v1.1.0/authzen.md\'s worked example ===');
+  t.log.info('=== X. docs/v1.2.0/authzen.md\'s worked example ===');
   const fs = require('fs');
   const text = fs.readFileSync(require('path').join(__dirname, '..', 'docs',
-                                                     'v1.1.0', 'authzen.md'),
+                                                     'v1.2.0', 'authzen.md'),
                                'utf8');
   const start = text.indexOf('namespace docs {');
   const block = start >= 0 ? text.slice(start, text.indexOf('```', start))
@@ -708,7 +713,103 @@ function theSharedTable(t) {
           'S3. every request case of the shared table (' +
           table.requests.length + ') is refused, supplied and mapped here ' +
           'as the edge PDP does it', different.join('; '));
+  theSharedObligations(t, table);
+  theSharedBinding(t, table);
   log.debug("Leaving theSharedTable().");
+}
+
+// S4: each obligation case's answer through the real `enforce()` and
+// `outcome()`, the PEP's declaration passed only while the case's profile
+// is on — what `authzen.ts` does with `authzen.obligationsProfile`.
+function theSharedObligations(t, table) {
+  log.debug("Entering theSharedObligations().");
+  const surface = require('../xacml/xacml');
+  const wrong = [];
+  (table.obligations || []).forEach(function (one) {
+    const answer = { decision: one.answer.decision, status: {}, advice: [],
+      obligations: one.answer.obligations.map(function (o) {
+        return { id: o.id, assignments: o.assignments.map(function (a) {
+          return { attributeId: a.attributeId, type: model.TYPE.STRING,
+                   value: a.value };
+        }) };
+      }) };
+    const got = map.outcome(answer, surface.enforce(answer, 'deny-biased'),
+                            '', one.profile ? one.supported : null);
+    const handed = got.obligations.map(function (o) {
+      return o.type;
+    });
+    if (got.decision !== one.expect.decision ||
+        JSON.stringify(handed) !== JSON.stringify(one.expect.handed) ||
+        got.obligationProblems.length !== one.expect.problems) {
+      wrong.push(one.what + ': ' + JSON.stringify({
+        decision: got.decision, handed: handed,
+        problems: got.obligationProblems }));
+    }
+  });
+  t.check((table.obligations || []).length >= 8 && !wrong.length,
+          'S4. every obligation case of the shared table (' +
+          (table.obligations || []).length + ') is decided and handed here ' +
+          'as the edge PDP does it', wrong.join('; '));
+  log.debug("Leaving theSharedObligations().");
+}
+
+// S5: each binding case planned by the real `plan()` over the case's
+// settings, then `strayContext()` for an item that is not the binding's —
+// the order `authzen.ts`'s `evaluateOne()` reads them in. The token types
+// a case names are this service's registry, so a case cannot drift from
+// it either.
+function theSharedBinding(t, table) {
+  log.debug("Entering theSharedBinding().");
+  const exchange = require('../authzen/authzen_exchange');
+  const registry = Object.keys(exchange.TOKEN_TYPES).sort();
+  const wrong = [];
+  (table.binding || []).forEach(function (one) {
+    const settings = one.settings;
+    if (JSON.stringify(settings.tokenExchangeTokenTypes) !==
+        JSON.stringify(registry)) {
+      wrong.push(one.what + ': its token types are not this registry');
+      return;
+    }
+    const declared = {};
+    settings.tokenExchangeDetailTypes.forEach(function (type) {
+      declared[type] = { resource: 'https://resource.example' };
+    });
+    const binding = new exchange.AuthzenTokenExchange({
+      log: log,
+      config: { value: function (key) {
+        log.debug("Entering value(). " + key);
+        log.debug("Leaving value().");
+        return key === 'authzen.tokenExchange'
+          ? settings.tokenExchange : undefined;
+      } },
+      loadAuthorizationDetails: function () {
+        log.debug("Entering loadAuthorizationDetails().");
+        log.debug("Leaving loadAuthorizationDetails().");
+        return { declaredTypes: function () {
+          log.debug("Entering declaredTypes().");
+          log.debug("Leaving declaredTypes().");
+          return declared;
+        } };
+      }
+    });
+    const plan = binding.plan(one.items);
+    const kinds = one.items.map(function (body, i) {
+      if (plan.entries[i].kind) {
+        return 'binding';
+      }
+      return exchange.strayContext(body, settings.tokenExchange)
+        ? 'stray' : 'ordinary';
+    });
+    if (JSON.stringify(kinds) !== JSON.stringify(one.kinds)) {
+      wrong.push(one.what + ': ' + JSON.stringify(kinds));
+    }
+  });
+  t.check((table.binding || []).length >= 10 && !wrong.length,
+          'S5. every token-exchange binding case of the shared table (' +
+          (table.binding || []).length + ') is classified here as the ' +
+          'edge PDP classifies it, with the binding on and off',
+          wrong.join('; '));
+  log.debug("Leaving theSharedBinding().");
 }
 
 async function run(t) {

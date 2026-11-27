@@ -1,0 +1,6 @@
+{
+  "denialTitle": "Request access",
+  "denialDescription": "This access can be requested. An approver the policy names decides, and the application asks again afterwards.",
+  "taskTitle": "{status, select, pending {Access request submitted} approved {Access request approved} denied {Access request denied} expired {Access request expired} cancelled {Access request cancelled} failed {Access request failed} other {Access request}}",
+  "taskDescription": "{status, select, pending {The approvers have been asked. The application asks again once one of them decides.} approved {An approver approved this request. The application asks again, carrying the approval.} denied {An approver denied this request.} expired {Nobody decided this request before it expired.} cancelled {This request was cancelled.} failed {This request could not be completed. Ask again.} other {This request is {status}.}}"
+}

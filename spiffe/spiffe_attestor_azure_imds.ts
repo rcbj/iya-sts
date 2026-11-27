@@ -55,6 +55,7 @@ import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
 import agentPath = require('./spiffe_agent_path');
 import outbound = require('../federation/federation_http');
+import truststores = require('../common/truststores');
 
 type NodeAttestationContext =
   import('../types/spiffe-attestation').NodeAttestationContext;
@@ -347,8 +348,9 @@ class AzureImdsAttestor {
                       dnsNames.join(' ') + '], allowed domains=[' +
                       domains.join(' ') + '])');
     }
-    const roots = pki.azureImdsRoots().concat(pki.certificateBundle(String(
-      config.value('spiffe.azureImdsTrustBundle') || '')).certificates);
+    const roots = pki.azureImdsRoots().concat(pki.certificateBundle(
+      truststores.configuredPems('spiffe-attestation-azure').join('\n'))
+      .certificates);
     const path = await CertificateTrust.path('spiffe-attestation', signer.der,
                                              [intermediate.der], roots);
     if (!path.ok) {
@@ -380,8 +382,9 @@ class AzureImdsAttestor {
       log.debug("Leaving AzureImdsAttestor.credential(). Token file.");
       return new sdk.ClientAssertionCredential(tenantId,
         String(tenant.tokenAuth.appId), function () {
-          require('../common/outbound_tls').assertNamedFile(path);
-          return Promise.resolve(fs.readFileSync(path, 'utf8').trim());
+          // Checked and read through one descriptor (#2247).
+          return Promise.resolve(require('../common/outbound_tls')
+            .readNamedFile(path, { fs: fs }).trim());
         });
     }
     log.debug("Leaving AzureImdsAttestor.credential(). Default.");

@@ -40,5 +40,6 @@
   "body.testPush": "Ang <strong>test push</strong> ay nagsusulat ng canary — isang random na password na walang gumagamit — sa isang secret na nakalaan para sa testing; tinatanggihan ang secret na pinagro-rotate-an ng isang service account.",
   "body.add": "Magdagdag ng destination",
   "body.identifier": "Identifier",
-  "body.addButton": "Idagdag"
+  "body.addButton": "Idagdag",
+  "newDestination.button": "Magdagdag ng destination"
 }

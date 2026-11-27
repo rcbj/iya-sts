@@ -49,13 +49,13 @@
 // final (0008, 0021, 0014). The outbox decides what to do with it.
 // ===========================================================================
 
-import fs = require('fs');
 import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import secrets = require('./secrets');
 import crypto = require('./crypto');
 import nodeTls = require('tls');
 import OutboundTls = require('./outbound_tls');
+import truststores = require('./truststores');
 
 type Json = any;
 
@@ -70,6 +70,11 @@ interface OutMessage {
   messageId: string;
   date: Date;
   lang: string;
+  // #1955 P6: `{ kind: 'openpgp', armoredKey }` or `{ kind: 'smime',
+  // certificate (base64 DER) }`, with `outerSubject`; absent is cleartext.
+  // An S/MIME one may carry `contentEncryption` (#2124), the realm's
+  // `mail.smimeContentEncryption` read at the attempt; absent is GCM.
+  encryption?: Json;
 }
 
 // What a transport answers: the provider's id for the message, when it gave
@@ -94,6 +99,15 @@ interface TransportDeps {
   secrets: typeof secrets;
   readFile: (path: string) => string;
   dkimSign: typeof crypto.dkimSign;
+  // #2220: the selector switch's DNS record and its DNS lookup. Optional, so
+  // a test's deps built before them sign with the current selector only.
+  dkimDnsRecord?: typeof crypto.dkimDnsRecord;
+  resolveTxt?: (name: string) => Promise<string[][]>;
+  now?: () => number;
+  // #1955 P6: the two encryptions, `common/crypto.js`'s. Optional, so a
+  // test's deps built before them still compose a cleartext message.
+  openpgpEncrypt?: typeof crypto.openpgpEncrypt;
+  smimeEnvelope?: typeof crypto.smimeEnvelope;
 }
 
 // A failure with its code and whether it is worth another attempt.
@@ -203,11 +217,20 @@ class MailTransports {
         return secrets.readSecretText(spec);
       },
       secrets: secrets,
+      // Checked and read through one descriptor (#2247).
       readFile: function (path: string): string {
-        require('./outbound_tls').assertNamedFile(path);
-        return fs.readFileSync(path, 'utf8');
+        return require('./outbound_tls').readNamedFile(path);
       },
-      dkimSign: crypto.dkimSign
+      dkimSign: crypto.dkimSign,
+      dkimDnsRecord: crypto.dkimDnsRecord,
+      resolveTxt: function (name: string): Promise<string[][]> {
+        return require('dns').promises.resolveTxt(name);
+      },
+      now: function (): number {
+        return Date.now();
+      },
+      openpgpEncrypt: crypto.openpgpEncrypt,
+      smimeEnvelope: crypto.smimeEnvelope
     };
   }
 
@@ -243,6 +266,13 @@ class MailTransports {
   async compose(message: OutMessage): Promise<Buffer> {
     const { log, load } = this.deps;
     log.debug("Entering MailTransports.compose().");
+    if (message.encryption && message.encryption.kind &&
+        message.encryption.kind !== 'none') {
+      const encrypted = await this.composeEncrypted(message);
+      log.debug("Leaving MailTransports.compose(). Encrypted, " +
+                encrypted.length + " bytes.");
+      return encrypted;
+    }
     const MailComposer = load('nodemailer/lib/mail-composer');
     const composer = new MailComposer({
       from: message.fromName
@@ -262,6 +292,136 @@ class MailTransports {
     });
     const raw: Buffer = await composer.compile().build();
     log.debug("Leaving MailTransports.compose(). " + raw.length + " bytes.");
+    return raw;
+  }
+
+  // -------------------------------------------------------------------------
+  // AN ENCRYPTED MESSAGE (#1955 P6, `common/mail.ts` header point 9).
+  //
+  // THE INNER ENTITY is what the cleartext message would have been — its
+  // text and HTML parts as multipart/alternative — carrying the REAL Subject,
+  // From, To, Date and Message-ID as protected headers (`protected-headers=
+  // "v1"`, RFC 9788's legacy display form readers already understand), so a
+  // reader that decrypts shows the real subject.
+  //
+  // THE OUTER MESSAGE carries the neutral subject and nothing of the body:
+  //
+  //   * PGP/MIME (RFC 3156 section 4): multipart/encrypted; protocol=
+  //     "application/pgp-encrypted", a first part `Version: 1` and a second
+  //     application/octet-stream part holding the ASCII-armored OpenPGP
+  //     message, both 7bit.
+  //   * S/MIME (RFC 8551 section 3.3): application/pkcs7-mime;
+  //     smime-type=authEnveloped-data, base64 of the CMS AuthEnvelopedData
+  //     under AES-256-GCM (#2124, ASVS 5.0.0 11.3.3) — or, where
+  //     `mail.smimeContentEncryption` is `aes256-cbc`, smime-type=
+  //     enveloped-data and the CBC EnvelopedData sent before 1.2.0. The
+  //     parameter is `crypto.smimeTypeFor()`'s, so it names what
+  //     `smimeEnvelope()` wrote under the same reading of the setting.
+  //
+  // Both built with nodemailer's MimeNode, file and URL access disabled as
+  // the composer above is. A failure to encrypt is final (STS-MAIL-0243):
+  // another attempt would read the same key, and the message is never sent
+  // in the clear instead.
+  // -------------------------------------------------------------------------
+  /**
+   * Composes an encrypted message: PGP/MIME or S/MIME around the cleartext
+   * message's parts, the real headers protected inside.
+   *
+   * @param message - the message, with `encryption`
+   * @returns the raw bytes
+   * @throws a final send failure (STS-MAIL-0243) when it cannot encrypt
+   */
+  async composeEncrypted(message: OutMessage): Promise<Buffer> {
+    const { log, load } = this.deps;
+    log.debug("Entering MailTransports.composeEncrypted(). " +
+              message.encryption.kind);
+    const MimeNode = load('nodemailer/lib/mime-node');
+    const options = { disableFileAccess: true, disableUrlAccess: true };
+    const build = function (node: Json): Promise<Buffer> {
+      return new Promise(function (resolve, reject): void {
+        node.build(function (e: Json, out: Buffer): void {
+          if (e) {
+            reject(e);
+            return;
+          }
+          resolve(out);
+        });
+      });
+    };
+    const from = message.fromName
+      ? { name: message.fromName, address: message.from } : message.from;
+    const inner = new MimeNode('multipart/alternative', options);
+    inner.setHeader('Content-Type',
+                    'multipart/alternative; protected-headers="v1"');
+    inner.setHeader({ From: from, To: message.to, Subject: message.subject,
+                      Date: message.date, 'Message-ID': message.messageId });
+    inner.createChild('text/plain; charset=utf-8').setContent(message.text);
+    inner.createChild('text/html; charset=utf-8').setContent(message.html);
+    let body: Buffer;
+    try {
+      body = await build(inner);
+    } catch (e) {
+      log.debug("Caught in MailTransports.composeEncrypted(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving MailTransports.composeEncrypted(). Inner.");
+      throw sendError('the message could not be composed for encryption: ' +
+                      ((e && e.message) || e), 'STS-MAIL-0243', false);
+    }
+    const headers = {
+      From: from, To: message.to,
+      Subject: String(message.encryption.outerSubject || '...'),
+      Date: message.date, 'Message-ID': message.messageId,
+      'Auto-Submitted': 'auto-generated',
+      'Content-Language': message.lang || 'en'
+    };
+    let outer: Json;
+    try {
+      if (message.encryption.kind === 'openpgp') {
+        const encrypt = this.deps.openpgpEncrypt || crypto.openpgpEncrypt;
+        const armored = await encrypt(body,
+          String(message.encryption.armoredKey || ''), message.date);
+        outer = new MimeNode('multipart/encrypted', options);
+        outer.setHeader('Content-Type', 'multipart/encrypted; ' +
+                        'protocol="application/pgp-encrypted"');
+        outer.setHeader(headers);
+        outer.createChild('application/pgp-encrypted')
+          .setHeader('Content-Description', 'PGP/MIME version identification')
+          .setHeader('Content-Transfer-Encoding', '7bit')
+          .setContent('Version: 1\r\n');
+        outer.createChild('application/octet-stream; name="encrypted.asc"')
+          .setHeader('Content-Description', 'OpenPGP encrypted message')
+          .setHeader('Content-Disposition', 'inline; filename="encrypted.asc"')
+          .setHeader('Content-Transfer-Encoding', '7bit')
+          .setContent(armored.replace(/\r?\n/g, '\r\n'));
+      } else if (message.encryption.kind === 'smime') {
+        const envelope = this.deps.smimeEnvelope || crypto.smimeEnvelope;
+        const content = crypto.smimeContentEncryption(
+          message.encryption.contentEncryption);
+        const der = await envelope(body, Buffer.from(String(
+          message.encryption.certificate || ''), 'base64'), content);
+        outer = new MimeNode('application/pkcs7-mime; smime-type=' +
+          crypto.smimeTypeFor(content) + '; name="smime.p7m"', options);
+        outer.setHeader(headers);
+        outer.setHeader('Content-Disposition',
+                        'attachment; filename="smime.p7m"');
+        outer.setHeader('Content-Transfer-Encoding', 'base64');
+        outer.setContent(der);
+      } else {
+        // error-code: none — rethrown below as STS-MAIL-0243
+        throw new Error('unknown encryption "' +
+                        String(message.encryption.kind) + '"');
+      }
+    } catch (e) {
+      log.debug("Caught in MailTransports.composeEncrypted(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving MailTransports.composeEncrypted(). Not encrypted.");
+      throw sendError('the message could not be encrypted to its ' +
+                      'recipient: ' + ((e && e.message) || e),
+                      'STS-MAIL-0243', false);
+    }
+    const raw = await build(outer);
+    log.debug("Leaving MailTransports.composeEncrypted(). " + raw.length +
+              " bytes.");
     return raw;
   }
 
@@ -333,6 +493,110 @@ class MailTransports {
   }
 
   // -------------------------------------------------------------------------
+  // A DKIM SELECTOR SWITCH, WITH AN OVERLAP (#2220).
+  //
+  // A DKIM key is replaced by publishing a NEW selector, switching to it, and
+  // keeping the OLD selector's record in DNS until mail signed with it has
+  // been delivered and checked (RFC 6376 section 3.1, M3AAWG's rotation
+  // practice). This service holds the keys and decides which one signs; DNS
+  // is the operator's:
+  //
+  //   1. put the new private key in the DKIM key's secret, under
+  //      `mail.dkimNextKeyField` (`dkimNextKey`), and name its selector in
+  //      `mail.dkimNextSelector` — the record to publish is logged here, at
+  //      info, every time the transport is built;
+  //   2. publish it as the TXT record `<selector>._domainkey.<domain>`;
+  //   3. set `mail.dkimSwitchAt` to when signing should move to it.
+  //
+  // From that moment the transport signs with the next selector, BUT ONLY
+  // ONCE DNS ANSWERS WITH ITS KEY: a record not (yet) published, or carrying
+  // another key, keeps the current selector and says so (STS-MAIL-0245), so
+  // a forgotten step 2 is a warning and not every message failing DMARC.
+  // The transport is rebuilt within an hour (`common/mail.ts`) and when the
+  // moment passes, so the check is made again. Once the switch has held for
+  // a week, the operator makes the next selector the current one
+  // (`mail.dkimSelector`, the key under `mail.dkimKeyField`) and clears the
+  // three settings; the old record can then be withdrawn.
+  // -------------------------------------------------------------------------
+  /**
+   * Decides which DKIM selector and key a transport signs with.
+   *
+   * @param cfg - the realm's mail settings
+   * @param currentKey - the current selector's private key
+   * @returns `{ selector, key }`
+   */
+  async dkimSigning(cfg: Json, currentKey: string): Promise<Json> {
+    const { log, readSecret, secrets, dkimDnsRecord, resolveTxt,
+            now } = this.deps;
+    log.debug("Entering MailTransports.dkimSigning().");
+    const current = { selector: String(cfg.dkimSelector || ''),
+                      key: currentKey };
+    const nextSelector = String(cfg.dkimNextSelector || '').trim();
+    if (!nextSelector || typeof dkimDnsRecord !== 'function' ||
+        !secrets.MAIL_DKIM_NEXT_KEY) {
+      log.debug("Leaving MailTransports.dkimSigning(). No switch.");
+      return current;
+    }
+    const name = nextSelector + '._domainkey.' + String(cfg.dkimDomain);
+    let nextKey = '';
+    let expected: Json = null;
+    try {
+      nextKey = String(await readSecret(secrets.MAIL_DKIM_NEXT_KEY) || '');
+      this.deps.dkimSign('From: probe@' + cfg.dkimDomain + '\r\n\r\n',
+        { domain: cfg.dkimDomain, selector: nextSelector,
+          algorithm: cfg.dkimAlgorithm, privateKeyPem: nextKey });
+      expected = dkimDnsRecord(nextKey);
+    } catch (e) {
+      log.debug("Caught in MailTransports.dkimSigning(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-MAIL-0245') + 'mail: ' +
+               'mail.dkimNextSelector is "' + nextSelector + '" and its key ' +
+               '(mail.dkimNextKeyField) cannot sign, so messages are signed ' +
+               'with the current selector: ' + ((e && e.message) || e));
+      log.debug("Leaving MailTransports.dkimSigning(). Next key unusable.");
+      return current;
+    }
+    log.info('mail: publish the DKIM record for the next selector as the ' +
+             'TXT record ' + name + ': ' + expected.record);
+    const at = Date.parse(String(cfg.dkimSwitchAt || ''));
+    const clock = typeof now === 'function' ? now() : Date.now();
+    if (!isFinite(at) || clock < at) {
+      log.debug("Leaving MailTransports.dkimSigning(). Not yet.");
+      return current;
+    }
+    let published = false;
+    try {
+      const answers = typeof resolveTxt === 'function'
+        ? await withTimeout(resolveTxt(name), 5000, 'the DKIM record lookup')
+        : [];
+      published = (answers || []).some(function (parts: string[]) {
+        const text = (parts || []).join('');
+        const m = /(?:^|;)\s*p=([^;]*)/.exec(text);
+        return !!m && m[1].replace(/\s+/g, '') === expected.p;
+      });
+    } catch (e) {
+      log.debug("Caught in MailTransports.dkimSigning(): " +
+                ((e && e.message) || e));
+      published = false;
+    }
+    if (!published) {
+      log.warn(errorCodes.tag('STS-MAIL-0245') + 'mail: mail.dkimSwitchAt ' +
+               'has passed, but DNS does not answer ' + name + ' with the ' +
+               'next DKIM key, so messages are still signed with the ' +
+               'current selector "' + current.selector + '". Publish: ' +
+               expected.record);
+      log.debug("Leaving MailTransports.dkimSigning(). Not published.");
+      return current;
+    }
+    log.info('mail: messages are signed with the DKIM selector "' +
+             nextSelector + '" from now on; keep the record of "' +
+             current.selector + '" published until mail signed with it has ' +
+             'been delivered.');
+    log.debug("Leaving MailTransports.dkimSigning(). Switched.");
+    return { selector: nextSelector, key: nextKey };
+  }
+
+  // -------------------------------------------------------------------------
   // SMTP (header points 2 and 3).
   // -------------------------------------------------------------------------
   /**
@@ -355,16 +619,27 @@ class MailTransports {
     // Verified, with RFC 9525's host check and the path rules (#201) —
     // `OutboundTls.verifiedOptions()`, the one helper every dialer outside
     // the four families asks. `mail.smtpCaFile` is added beside it below.
-    const tls: Json = Object.assign(OutboundTls.verifiedOptions(null), {
+    // `outbound-smtp`'s truststores where it is assigned (#2118); unassigned,
+    // node's store and mail.smtpCaFile as before.
+    const assigned = truststores.namesFor('outbound-smtp').assigned ?
+      OutboundTls.optionsFor('outbound-smtp') : null;
+    if (assigned && assigned.problem) {
+      throw sendError(assigned.problem.why, 'STS-MAIL-0004', false);
+    }
+    const tls: Json = Object.assign(assigned ||
+                                    OutboundTls.verifiedOptions(null), {
       minVersion: 'TLSv1.2',
       servername: String(cfg.smtpServerName || '') || host
     });
     try {
-      if (cfg.smtpCaFile) {
+      if (cfg.smtpCaFile && !assigned) {
         // BESIDE node's store, as this file's header and the setting say
         // (#1360): `ca` replaces the store, so a relay on a public CA stopped
-        // verifying the moment somebody named a file for a private one.
-        tls.ca = nodeTls.rootCertificates
+        // verifying the moment somebody named a file for a private one. And
+        // beside what `verifiedOptions()` already put there (#2118): writing
+        // node's roots over it dropped the signer truststore under paranoid
+        // PKI mode.
+        tls.ca = (tls.ca || nodeTls.rootCertificates)
           .concat(String(readFile(String(cfg.smtpCaFile))));
       }
       if (cfg.smtpClientCertFile || cfg.smtpClientKeyFile) {
@@ -436,6 +711,12 @@ class MailTransports {
                         'STS-MAIL-0022', false);
       }
     }
+    // THE SELECTOR SWITCH (#2220): which selector and key this transport
+    // signs with — the next one once its moment has come and DNS publishes
+    // it, the current one otherwise.
+    const signing = cfg.dkimDomain
+      ? await this.dkimSigning(cfg, dkimKey)
+      : { selector: String(cfg.dkimSelector || ''), key: dkimKey };
     const nodemailer = load('nodemailer');
     const implicit = cfg.smtpTls === 'implicit';
     const transporter = nodemailer.createTransport({
@@ -458,11 +739,11 @@ class MailTransports {
       name: 'smtp',
       send: async function (message: OutMessage): Promise<SentResult> {
         let raw = await self.compose(message);
-        if (dkimKey) {
+        if (signing.key) {
           try {
             const header = dkimSign(raw, { domain: cfg.dkimDomain,
-              selector: cfg.dkimSelector, algorithm: cfg.dkimAlgorithm,
-              privateKeyPem: dkimKey });
+              selector: signing.selector, algorithm: cfg.dkimAlgorithm,
+              privateKeyPem: signing.key });
             raw = Buffer.concat([Buffer.from(header + '\r\n', 'binary'), raw]);
           } catch (e) {
             throw sendError('the message could not be DKIM-signed: ' +
@@ -663,6 +944,14 @@ class MailTransports {
     return {
       name: 'acs',
       send: async function (message: OutMessage): Promise<SentResult> {
+        if (message.encryption && message.encryption.kind &&
+            message.encryption.kind !== 'none') {
+          // #1955 P6: ACS takes structured content, never a MIME entity
+          // composed here, so an encrypted message is final here rather
+          // than sent in the clear (`mail.ts` refuses it at the queue too).
+          throw sendError('the acs transport cannot carry an encrypted ' +
+                          'message', 'STS-MAIL-0242', false);
+        }
         let result: Json = null;
         try {
           const poller = await client.beginSend({

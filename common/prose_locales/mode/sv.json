@@ -104,8 +104,8 @@
     "text": "Varje scope som en klient ber om utfärdas, oavsett vad dess `oauthAllowedScope` listar. I BÅDA lägena utfärdas admin:read, admin:write, SCIM- och Shared Signals-scopes samt debuggerbehörigheten bara till en klient vars `oauthAllowedScope` listar dem."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Ett scope utanför klientens `oauthAllowedScope` avvisas med invalid_scope vid auktoriserings-, pushed authorization- och tokenslutpunkterna (STS-OAUTH-0578) och tas bort vid en uppdatering eller ett utbyte. En klient som inte listar något får det dokumenterade standardvärdet: openid, profile, email, address, phone, offline_access och den här sfärens OpenID4VCI-scopes. Ett scope som anger en applikation eller en delegerad behörighet behåller sina egna regler."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Ett scope utanför klientens `oauthAllowedScope` avvisas med invalid_scope vid auktoriserings-, pushed authorization- och tokenslutpunkterna (STS-OAUTH-0578) och tas bort vid en uppdatering eller ett utbyte. En klient som inte listar något får vad oauth2.undeclaredClientScopes säger: som standard enbart openid (ASVS 5.0.0 10.4.11); identity lägger till profile, email, address och phone; legacy, vad ett uppgraderat lager behåller, lägger dessutom till offline_access och den här sfärens OpenID4VCI-scopes. Ett scope som anger en applikation eller en delegerad behörighet behåller sina egna regler."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",
@@ -118,6 +118,18 @@
   "mode.requirements.declared-protocols.product": {
     "en": "01bf0ea288cde1c4",
     "text": "Utfärdandepolicyns regel protocol-not-declared avvisar ett utfärdande via en protokollfamilj som applikationen inte är deklarerad för (STS-XACML-0084): en ID Token till en applikation som bara är deklarerad för OAuth 2.0, ett SAML-intyg till en som är deklarerad för OpenID Connect. En applikation som inte är deklarerad för något avvisas inte."
+  },
+  "mode.requirements.access-type-schemas.what": {
+    "en": "193c43a992898ab8",
+    "text": "En åtkomsttyps JSON Schema hålls till en delmängd, och vart och ett av dess mönster till en gräns"
+  },
+  "mode.requirements.access-type-schemas.development": {
+    "en": "65994ed658f64ce1",
+    "text": "En definition som skrivs via konsolen eller hanterings-API:t håller sitt schema till de nyckelord ett gränsschema får använda, och varje mönster till gränsen för ett reguljärt uttryck; allt annat avvisas (STS-REG-0374). En som sparades före den regeln används fortfarande som den sparades, och den här raden rapporterar ASVS 5.0.0 1.3.12 som inte uppfyllt för den."
+  },
+  "mode.requirements.access-type-schemas.product": {
+    "en": "002a94032db09f02",
+    "text": "Detsamma."
   },
   "mode.requirements.uncatalogued-access.what": {
     "en": "cae99ea77ebca46f",
@@ -344,8 +356,8 @@
     "text": "GNAP-push-avslutningar, SSF-push-leveranser, federationens bakkanaler och XACML PEP-knuffar respekterar sina …SkipTlsVerification-inställningar (verifiering avstängd, varnas vid varje begäran) och sina …AllowHttp-inställningar (vanlig http till vilken värd som helst). SPIRE:s spiffe.k8sSkipKubeletVerification respekteras också."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Varje …SkipTlsVerification-inställning, och spiffe.k8sSkipKubeletVerification, IGNORERAS — loggas en gång med sin kod — och avvisas vid skrivning via /admin och /admin-api (STS-CORE-0103); en privat CA nås via familjens …CaFile med verifiering påslagen. Vanlig http avvisas för SSF, federation och XACML oavsett vad …AllowHttp säger, och tillåts för en GNAP-push-avslutning bara till en loopback-adress (RFC 9635 avsnitt 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Varje …SkipTlsVerification-inställning, och spiffe.k8sSkipKubeletVerification, IGNORERAS — loggas en gång med sin kod — och avvisas vid skrivning via /admin och /admin-api (STS-CORE-0103); en privat CA nås via familjens …CaFile med verifiering påslagen. Vanlig http avvisas för SSF, federation och XACML oavsett vad …AllowHttp säger, och tillåts för en GNAP-push-avslutning bara till en loopback-adress (RFC 9635 avsnitt 2.5.2.1) — vilket reglerna för utgående adresser avvisar, så ingen push i vanlig http levereras (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",
@@ -419,66 +431,6 @@
     "en": "7bb2840e2f96210a",
     "text": "Listan läses UTAN 23 (loggas en gång, STS-CORE-0106) och en skrivning som anger den avvisas (STS-CORE-0103). Ingen RC4-nyckel härleds, lagras eller läggs i en keytab för krbtgt, en tjänst eller en person; en nyckel eller en biljett av den enctypen används aldrig; en AS-REQ eller TGS-REQ som inte erbjuder något annat avvisas med KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); en RC4-sessionsnyckel eller -undernyckel i en TGS-REQ, en AP-REQ eller FAST-armering avvisas (STS-KRB-0157, 0158, 0159). AES är det som återstår."
   },
-  "mode.requirements.unscoped-people.what": {
-    "en": "313033517d6bf954",
-    "text": "En person behöver en roll för SCIM och Shared Signals"
-  },
-  "mode.requirements.unscoped-people.development": {
-    "en": "0be4a760d6eebbf0",
-    "text": "Varje autentiserad person får läsa och skriva, oavsett vilket schema som används."
-  },
-  "mode.requirements.unscoped-people.product": {
-    "en": "b88ebd1ed2325b97",
-    "text": "Ett schema utan omfång kräver Admin Read för att läsa och Admin Write för att skriva, om inte security.allowUnscopedPeople är på. OAuth-omfång och ett programs certifikat fungerar som tidigare."
-  },
-  "mode.requirements.named-file-roots.what": {
-    "en": "947df8a88522b407",
-    "text": "En namngiven fil måste ligga i en tillåten katalog"
-  },
-  "mode.requirements.named-file-roots.development": {
-    "en": "249a8365ea4fdbfc",
-    "text": "En fil som en administratör namnger läses varifrån den anger."
-  },
-  "mode.requirements.named-file-roots.product": {
-    "en": "027759d02863b752",
-    "text": "En fil läses bara om dess verkliga sökväg ligger i en katalog som security.fileRoots listar, och svaret säger inte varför en sökväg misslyckades."
-  },
-  "mode.requirements.jwe-cbc.what": {
-    "en": "a9e47c5b53e70f9e",
-    "text": "JWE-innehållskryptering är endast AES-GCM"
-  },
-  "mode.requirements.jwe-cbc.development": {
-    "en": "cca6834a267241c9",
-    "text": "A128CBC-HS256, A192CBC-HS384 och A256CBC-HS512 erbjuds och godtas, och A128CBC-HS256 är standard."
-  },
-  "mode.requirements.jwe-cbc.product": {
-    "en": "b8bdc8b82bb08a9e",
-    "text": "Endast AES-GCM erbjuds eller godtas, och det används när en klient inte namnger enc, om inte crypto.allowCbcJwe är på."
-  },
-  "mode.requirements.legacy-hashes.what": {
-    "en": "06838227a6e37c56",
-    "text": "Otillåtna hashfunktioner används inte"
-  },
-  "mode.requirements.legacy-hashes.development": {
-    "en": "5019d7e87d32f630",
-    "text": "OAEP över SHA-1, SHA-1-nyckelhärledning för PKINIT och HMAC-MD5-kontrollsumman för S4U2Self är tillgängliga."
-  },
-  "mode.requirements.legacy-hashes.product": {
-    "en": "eb55e63c70e4152c",
-    "text": "De är av om inte crypto.allowLegacyHashes är på. TOTP är fortfarande HMAC-SHA-1 som standard, för kompatibilitet med autentiseringsappar, och PKINIT behåller den SHA-1-paChecksum som RFC 4556 definierar."
-  },
-  "mode.requirements.no-default-admin-name.what": {
-    "en": "be402fb23aecd2d4",
-    "text": "Inget konto har ett administratörsnamn som är standard"
-  },
-  "mode.requirements.no-default-admin-name.development": {
-    "en": "ca263c05dbdb69a5",
-    "text": "Startadministratören är admin, som alla tester och genomgångar loggar in som."
-  },
-  "mode.requirements.no-default-admin-name.product": {
-    "en": "35dface5441235f5",
-    "text": "En startadministratör som heter admin, root, sa eller administrator, eller saknar namn, får ett oförutsägbart genererat namn som visas med lösenordet vid första start, om inte admin.allowDefaultUsername är på."
-  },
   "mode.requirements.main-port-https.what": {
     "en": "6469fbe1118f7dc7",
     "text": "Huvudporten använder HTTPS"
@@ -526,6 +478,258 @@
   "mode.requirements.declared-grants.product": {
     "en": "636b38aec05ad6d5",
     "text": "En klient som inte deklarerar några behörighetstyper får bara använda authorization_code och refresh_token, om inte oauth2.allowUndeclaredGrants är på (STS-OAUTH-0598)."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Inget konto har ett administratörsnamn som är standard"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "Startadministratören är admin, som alla tester och genomgångar loggar in som."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "En startadministratör som heter admin, root, sa eller administrator, eller saknar namn, får ett oförutsägbart genererat namn som visas med lösenordet vid första start, om inte admin.allowDefaultUsername är på."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Otillåtna hashfunktioner används inte"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "OAEP över SHA-1, SHA-1-nyckelhärledning för PKINIT och HMAC-MD5-kontrollsumman för S4U2Self är tillgängliga."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "De är av om inte crypto.allowLegacyHashes är på. TOTP är fortfarande HMAC-SHA-1 som standard, för kompatibilitet med autentiseringsappar, och PKINIT behåller den SHA-1-paChecksum som RFC 4556 definierar."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "En namngiven fil måste ligga i en tillåten katalog"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "En fil som en administratör namnger läses varifrån den anger."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "En fil läses bara om dess verkliga sökväg ligger i en katalog som security.fileRoots listar, och svaret säger inte varför en sökväg misslyckades."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "En andra faktor krävs av alla"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "Autentiseringspolicyn avgör, och som standard frågas bara de som har en andra faktor."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Alla behöver en andra faktor, oavsett policy, om inte authn.allowOptionalSecondFactor är på."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Att rensa en andra faktor kräver ett angivet identitetsbevis"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "En administratör kan rensa en faktor genom att ange personen."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "En administratör måste ange hur personens identitet verifierades. Uppgiften skrivs i granskningsloggen."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Protokollindata tolkas strikt"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "En upprepad tokenparameter får sitt sista värde, en partners utloggningstoken behöver ingen uttrycklig typ, vidarebefordrade adresser tros från vem som helst när global.trustProxy är på utan lista, och texten i ett internt fel når anroparen."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "En upprepad tokenparameter avvisas, en partners utloggningstoken måste ha typen logout+jwt om inte federation.allowUntypedLogoutToken är på, vidarebefordrade adresser kräver global.trustedProxies, och texten i ett internt fel stannar i loggen."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Loggar och databas innehåller inga välkända hemligheter"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "På debugnivå innehåller loggen hela förfrågningar och svar, och databasen kan använda ett demonstrationslösenord."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "9dc455e8deb093a6",
+    "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, en signerad token eller ett signerat intyg loggas bara med sin storlek och sitt kontrollvärde, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
+  },
+  "mode.requirements.plaintext-seed-files.what": {
+    "en": "7dfdb35537e3d442",
+    "text": "En leverantörs fröfil för tokens måste vara krypterad"
+  },
+  "mode.requirements.plaintext-seed-files.development": {
+    "en": "406c007742c28ced",
+    "text": "En PSKC-fröfil vars tokenhemligheter är i klartext importeras som en krypterad."
+  },
+  "mode.requirements.plaintext-seed-files.product": {
+    "en": "e3eb9f2bcabf5eaa",
+    "text": "En PSKC-fröfil vars tokenhemligheter är i klartext avvisas om inte pskc.allowPlaintextImport är på; en krypterad öppnas med den nyckel eller det lösenord som angavs vid uppladdningen, och som aldrig sparas."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.what": {
+    "en": "c349a97e52695bea",
+    "text": "En fröfil för YubiKey-OTP får inte vara en lista över AES-nycklar"
+  },
+  "mode.requirements.plaintext-yubiotp-csv.development": {
+    "en": "c1af70a4452cb90f",
+    "text": "En CSV med serienummer, publik identitet, privat identitet och AES-nyckel importeras som vilken annan inventariefil som helst."
+  },
+  "mode.requirements.plaintext-yubiotp-csv.product": {
+    "en": "3f75df0847c0e777",
+    "text": "Den CSV:n avvisas om inte yubiotp.allowPlaintextImport är på. Nycklarna förseglas när filen har godtagits, och själva filen behålls inte."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "Enkel inloggning frågar innan den loggar in en person i ett program"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0, SAML 1.1 och WS-Federation loggar in en person från deras session utan att fråga."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "En person tillfrågas en gång per program innan SAML 2.0, SAML 1.1 eller WS-Federation loggar in dem i det, och svaret sparas. saml2.ssoConsent, saml11.ssoConsent och wsfed.ssoConsent stänger av det per protokoll, och ett programs eget värde åsidosätter dem."
+  },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "Det exakta bygget visas bara för administratörer"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "Varje sidfot, API:erna för inloggning, portal och rapporter och deras OpenAPI-dokument bär versionen, byggnumret, byggtiden och commit, och User-Agent i varje förfrågan tjänsten gör anger versionen."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "Inget av dem bär bygget: sidfoten har ingen versionsrad, ett OpenAPI-dokument anger API:ets egen version och User-Agent är bara produktnamnet. Konsolen och hanterings-API:et visar fortfarande bygget. security.publishBuildInfo satt till on visar det igen."
+  },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Tjänstens hemligheter kommer från ett hemlighetsvalv"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "Nyckelkrypteringsnyckeln får vara en fil, och databaslösenordet får finnas i en fil eller i anslutningssträngen."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Nyckelkrypteringsnycklarna kommer från ett hemlighetsvalv eller en nyckelhanteringstjänst, och databaslösenordet från ett hemlighetsvalv. En fil eller ett lösenord i anslutningssträngen stoppar tjänsten om inte secrets.allowLocalSecrets är på. En tidigare nyckelkrypteringsnyckel får fortfarande vara en fil, så att en driftsättning kan lämna den."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "Granskningsloggen bör lämna tjänsten"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "Inget sägs om export av granskningsloggen."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "Lägg till ett exportmål för granskningsloggen, så att en kopia är utom räckhåll vid ett intrång. Tills ett finns loggar tjänsten en varning för den sfären."
+  },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "Granskningsloggen kan inte ändras med tjänstens egna databasuppgifter"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Där skapat tillstånd sparas varaktigt (begärans workers eller flera noder, eller keys.source=persisted) skrivs loggen som i produktionsläge. Annars ligger den i minnet och försvinner med processen."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Varje händelse är en förseglad rad i sts_audit, där tjänstens databasroll får lägga till och läsa rader och inget annat; gamla rader lämnar tabellen bara genom tabellägarens gallringsfunktion, som behåller minst 1000 i varje sfär. Där rollen kan ändra tabellen — den äger den eller har UPDATE, DELETE eller TRUNCATE på den — rapporteras detta som ej uppfyllt (STS-AUDIT-0019) och tjänsten fortsätter köra."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Filer når skannern krypterade"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "En icap://- eller icaps://-adress kan användas."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "Endast en icaps://-adress används, om inte malwareScan.allowCleartext är på."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Sessioner och RSA-nycklar har striktare standardvärden"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "En session har ingen tidsgräns för inaktivitet, och nya RSA-nycklar är 2048 bitar."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "En session avslutas efter 30 minuters inaktivitet och nya RSA-nycklar är 3072 bitar, om inte en inställning säger annat."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Startlösenordet hålls borta från loggen"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Det genererade lösenordet skrivs till tjänstens logg."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "f6a1cd8269e19c3e",
+    "text": "Det skrivs till en fil som bara den här tjänsten kan läsa, och loggen säger var, om inte admin.logBootstrapPassword är på. En förtroendesfärs fil lägger till ett bindestreck och sfärens id till det namnet. En senare start tar bort en fil när lösenordet i den inte längre öppnar dess konto."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Varje klient måste använda PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "En konfidentiell klient som inte skickar code_challenge loggas bara."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Den avvisas om inte oauth2.allowConfidentialWithoutPkce är på."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "JWE-innehållskryptering är endast AES-GCM"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "A128CBC-HS256, A192CBC-HS384 och A256CBC-HS512 erbjuds och godtas, och A128CBC-HS256 är standard."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "Endast AES-GCM erbjuds eller godtas, och det används när en klient inte namnger enc, om inte crypto.allowCbcJwe är på."
+  },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "S/MIME-e-post är autentiserad kryptering"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "E-post som krypteras till ett S/MIME-certifikat är en AuthEnvelopedData under AES-256-GCM, om inte mail.smimeContentEncryption är aes256-cbc, vilket skickar en EnvelopedData under AES-256-CBC utan integritetsskydd. Ingenting rapporteras i något av fallen."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "Samma sak, och så länge mail.smimeContentEncryption är aes256-cbc rapporterar den här raden att ASVS 5.0.0 11.3.3 inte är uppfyllt."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "En person behöver en roll för SCIM och Shared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Varje autentiserad person får läsa och skriva, oavsett vilket schema som används."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Ett schema utan omfång kräver Admin Read för att läsa och Admin Write för att skriva, om inte security.allowUnscopedPeople är på. OAuth-omfång och ett programs certifikat fungerar som tidigare."
   },
   "mode.requirements.prefixed-cookies.what": {
     "en": "d3919ebba2136f69",
@@ -1103,6 +1307,30 @@
     "en": "1ddc02b9b0701d2a",
     "text": "PÅ (pki.paranoid=auto): common/certificate_trust.ts underkastar varje certifikat — vid en TLS-handskakning i någondera riktningen, under en signatur, som krypteringsmottagare, i ett intyg — en kedja till ett ankare som den här tjänsten fått veta om (förtroendelagret för klienter eller signerare, sfärens CA, en familjs egen inställning), giltighet vid nu, återkallelse, samt de basicConstraints, keyUsage och extendedKeyUsage som dess användningsfall frågar efter; en kontroll som användningsfallet aldrig körde är ett avslag. En pki.paranoid<UseCase>-rad per användningsfall återställer det användningsfallets tidigare beteende när den är av, och ritas röd på /admin/pki/trust (STS-PKI-0239)."
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "En persons behörighet för administrationsytan (konsolen, ett admin:*-omfång) kräver en kompatibel registrerad enhet"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "AV (devices.requireCompliantDeviceForAdmin=auto): en administratör loggar in i konsolen från vilken webbläsare som helst, som tidigare. Sätt den till on för att pröva regeln här."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "PÅ (devices.requireCompliantDeviceForAdmin=auto): utfärdandepolicyns regel device-required-admin avvisar vid tokenslutpunkten varje konsoltoken och varje persons admin:*-token som inte kom från en egen kompatibel registrerad enhet (STS-DEVICE-0054). Den AKTIVERAS per sfär första gången en konsoladministratör får en från en kompatibel enhet, och fram till dess släpps varje administratör in, så en installation utan kompatibel enhet låses aldrig ute; när den väl är aktiverad förblir den aktiverad, och ett program (driftsättningens hanteringsbehörighet) är vägen tillbaka. Katalog > Enheter visar om den här sfären är aktiverad."
+  },
+  "mode.requirements.ocsp-stapling.what": {
+    "en": "f035976359152279",
+    "text": "Varje TLS-lyssnare häftar ett OCSP-svar för certifikatet den presenterar"
+  },
+  "mode.requirements.ocsp-stapling.development": {
+    "en": "10dd3447e85129ee",
+    "text": "AV (tls.ocspStapling=auto): en klient som frågar efter certifikatets status får inget, som tidigare, och frågar själv den svarare som certifikatet anger, om den alls kontrollerar. Sätt tls.ocspStapling=on för att häfta här."
+  },
+  "mode.requirements.ocsp-stapling.product": {
+    "en": "4a9030ffa89486c3",
+    "text": "PÅ (tls.ocspStapling=auto): huvudporten, LDAPS, felsökaren och varje anpassad lyssnare häftar det svar som den här tjänstens egen OCSP-svarare ger för deras certifikat, skapat i den process som håller socketen och förnyat före dess nextUpdate. Ett certifikat från en utomstående utfärdare häftas inte, och ett svar som inte kan skapas lämnar handskakningen utan det (STS-TLS-0079), aldrig misslyckad."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "En GNAP-nyckel bevisad med ömsesidig TLS är ett certifikat som en betrodd utfärdare utfärdat till klienten"
@@ -1211,6 +1439,18 @@
     "en": "335681287a816601",
     "text": "Ett sådant utlåtande vägras (STS-DEVICE-0050): en uppfångad attestering som spelas upp igen i en ny begäran för samma nyckel är inte en nyckel som skapats och hålls i en TPM nu. Ett enhetscertifikat med TPM-attestering utfärdas därför endast över EST, efter /nonce (draft-ietf-lamps-attestation-freshness avsnitt 5.1)."
   },
+  "mode.requirements.pep-proxy-origin.what": {
+    "en": "697bb262238f557f",
+    "text": "En webbläsare når en fjärr-PEP:s omvända proxy över https"
+  },
+  "mode.requirements.pep-proxy-origin.development": {
+    "en": "27973f632a8e4726",
+    "text": "En proxykonfiguration kan ange en publicBaseUrl med vanlig http, så en stack på en maskin behöver inget lyssnarcertifikat för proxyn."
+  },
+  "mode.requirements.pep-proxy-origin.product": {
+    "en": "3c64430130525f3e",
+    "text": "En publicBaseUrl som inte är https avvisas (STS-XACML-0188): sessionsmekanismens inloggning returnerar en auktoriseringskod där och dess sessionscookie är Secure."
+  },
   "mode.notYet.certificate-revocation.what": {
     "en": "90de04e6940f9577",
     "text": "Återkallelse KONSULTERAS för ett uppvisat certifikat (se kravet ovan) och för ett REGISTRERAT certifikat när det verifierar något — registret, OCSP-respondern (en delegerad responders egen status inräknad) och den CRL som ett främmande certifikat namnger, över http, https och ldaps, med delta-CRL:er sammanslagna och indirekta CRL:er lästa per utfärdare, där deras signerare hämtas från listans caIssuers-adress när ingenting här har den. Det som återstår är begränsningar snarare än arbete: en NAKEN nyckel registrerad utan certifikat (en JWK utan x5c) namnger ingen utfärdare och ingen lista, så endast att ta bort den från posten hindrar den från att verifiera; vanlig ldap: ringas upp endast när pki.revocationLdap tillåter det; en distributionspunkt namngiven relativt sin CRL-utfärdare används endast med pki.revocationLdapDirectory satt och varje RDN envärd; och LDAPS 636 ber inte om något klientcertifikat, så ingenting konsulteras där."
@@ -1274,149 +1514,5 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "inställningen är endast för utvecklingsläge."
-  },
-  "mode.requirements.second-factor-everyone.what": {
-    "en": "0fd5536cd700c440",
-    "text": "En andra faktor krävs av alla"
-  },
-  "mode.requirements.second-factor-everyone.development": {
-    "en": "8816e275bdf92a96",
-    "text": "Autentiseringspolicyn avgör, och som standard frågas bara de som har en andra faktor."
-  },
-  "mode.requirements.second-factor-everyone.product": {
-    "en": "1eb106bd8b0a4050",
-    "text": "Alla behöver en andra faktor, oavsett policy, om inte authn.allowOptionalSecondFactor är på."
-  },
-  "mode.requirements.session-key-defaults.what": {
-    "en": "2f8e8efd319d1e4f",
-    "text": "Sessioner och RSA-nycklar har striktare standardvärden"
-  },
-  "mode.requirements.session-key-defaults.development": {
-    "en": "274bb878f654b30c",
-    "text": "En session har ingen tidsgräns för inaktivitet, och nya RSA-nycklar är 2048 bitar."
-  },
-  "mode.requirements.session-key-defaults.product": {
-    "en": "acb90dc0f26a16ec",
-    "text": "En session avslutas efter 30 minuters inaktivitet och nya RSA-nycklar är 3072 bitar, om inte en inställning säger annat."
-  },
-  "mode.requirements.bootstrap-password-file.what": {
-    "en": "e57fcd5b373e9128",
-    "text": "Startlösenordet hålls borta från loggen"
-  },
-  "mode.requirements.bootstrap-password-file.development": {
-    "en": "2181a0af41a41ab3",
-    "text": "Det genererade lösenordet skrivs till tjänstens logg."
-  },
-  "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "Det skrivs till en fil som bara den här tjänsten kan läsa, och loggen säger var, om inte admin.logBootstrapPassword är på."
-  },
-  "mode.requirements.pkce-every-client.what": {
-    "en": "7e2c6f1869e39287",
-    "text": "Varje klient måste använda PKCE"
-  },
-  "mode.requirements.pkce-every-client.development": {
-    "en": "66e8ff75c554aad0",
-    "text": "En konfidentiell klient som inte skickar code_challenge loggas bara."
-  },
-  "mode.requirements.pkce-every-client.product": {
-    "en": "2c34add4c2d2718f",
-    "text": "Den avvisas om inte oauth2.allowConfidentialWithoutPkce är på."
-  },
-  "mode.requirements.malware-scan-tls.what": {
-    "en": "926957ee32cf2309",
-    "text": "Filer når skannern krypterade"
-  },
-  "mode.requirements.malware-scan-tls.development": {
-    "en": "6d81d272e763db8d",
-    "text": "En icap://- eller icaps://-adress kan användas."
-  },
-  "mode.requirements.malware-scan-tls.product": {
-    "en": "dbcd39f827b0a349",
-    "text": "Endast en icaps://-adress används, om inte malwareScan.allowCleartext är på."
-  },
-  "mode.requirements.factor-clear-evidence.what": {
-    "en": "d4453639b3500b23",
-    "text": "Att rensa en andra faktor kräver ett angivet identitetsbevis"
-  },
-  "mode.requirements.factor-clear-evidence.development": {
-    "en": "9c5d644b822f24b9",
-    "text": "En administratör kan rensa en faktor genom att ange personen."
-  },
-  "mode.requirements.factor-clear-evidence.product": {
-    "en": "e473fffee1f00eaa",
-    "text": "En administratör måste ange hur personens identitet verifierades. Uppgiften skrivs i granskningsloggen."
-  },
-  "mode.requirements.strict-protocol-input.what": {
-    "en": "4c536228d39a5730",
-    "text": "Protokollindata tolkas strikt"
-  },
-  "mode.requirements.strict-protocol-input.development": {
-    "en": "da9c69e7fe603705",
-    "text": "En upprepad tokenparameter får sitt sista värde, en partners utloggningstoken behöver ingen uttrycklig typ, vidarebefordrade adresser tros från vem som helst när global.trustProxy är på utan lista, och texten i ett internt fel når anroparen."
-  },
-  "mode.requirements.strict-protocol-input.product": {
-    "en": "85fca28b66faee87",
-    "text": "En upprepad tokenparameter avvisas, en partners utloggningstoken måste ha typen logout+jwt om inte federation.allowUntypedLogoutToken är på, vidarebefordrade adresser kräver global.trustedProxies, och texten i ett internt fel stannar i loggen."
-  },
-  "mode.requirements.no-known-secrets.what": {
-    "en": "f3805d37f47556e7",
-    "text": "Loggar och databas innehåller inga välkända hemligheter"
-  },
-  "mode.requirements.no-known-secrets.development": {
-    "en": "bd225788d94d084d",
-    "text": "På debugnivå innehåller loggen hela förfrågningar och svar, och databasen kan använda ett demonstrationslösenord."
-  },
-  "mode.requirements.no-known-secrets.product": {
-    "en": "9dc455e8deb093a6",
-    "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, en signerad token eller ett signerat intyg loggas bara med sin storlek och sitt kontrollvärde, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
-  },
-  "mode.requirements.secrets-from-store.what": {
-    "en": "51a0285e7263826e",
-    "text": "Tjänstens hemligheter kommer från ett hemlighetsvalv"
-  },
-  "mode.requirements.secrets-from-store.development": {
-    "en": "14c3b25b8289b3fa",
-    "text": "Nyckelkrypteringsnyckeln får vara en fil, och databaslösenordet får finnas i en fil eller i anslutningssträngen."
-  },
-  "mode.requirements.secrets-from-store.product": {
-    "en": "8a3820f8013ed174",
-    "text": "Nyckelkrypteringsnycklarna kommer från ett hemlighetsvalv eller en nyckelhanteringstjänst, och databaslösenordet från ett hemlighetsvalv. En fil eller ett lösenord i anslutningssträngen stoppar tjänsten om inte secrets.allowLocalSecrets är på. En tidigare nyckelkrypteringsnyckel får fortfarande vara en fil, så att en driftsättning kan lämna den."
-  },
-  "mode.requirements.audit-destination.what": {
-    "en": "93abf5e422347728",
-    "text": "Granskningsloggen bör lämna tjänsten"
-  },
-  "mode.requirements.audit-destination.development": {
-    "en": "9e4a085d4195578e",
-    "text": "Inget sägs om export av granskningsloggen."
-  },
-  "mode.requirements.audit-destination.product": {
-    "en": "e082de544e11ddcb",
-    "text": "Lägg till ett exportmål för granskningsloggen, så att en kopia är utom räckhåll vid ett intrång. Tills ett finns loggar tjänsten en varning för den sfären."
-  },
-  "mode.requirements.sso-consent.what": {
-    "en": "2b06d195aa0a395d",
-    "text": "Enkel inloggning frågar innan den loggar in en person i ett program"
-  },
-  "mode.requirements.sso-consent.development": {
-    "en": "e519a44984791111",
-    "text": "SAML 2.0, SAML 1.1 och WS-Federation loggar in en person från deras session utan att fråga."
-  },
-  "mode.requirements.sso-consent.product": {
-    "en": "0a4ee080bb81a76f",
-    "text": "En person tillfrågas en gång per program innan SAML 2.0, SAML 1.1 eller WS-Federation loggar in dem i det, och svaret sparas. saml2.ssoConsent, saml11.ssoConsent och wsfed.ssoConsent stänger av det per protokoll, och ett programs eget värde åsidosätter dem."
-  },
-  "mode.requirements.pep-proxy-origin.what": {
-    "en": "697bb262238f557f",
-    "text": "En webbläsare når en fjärr-PEP:s omvända proxy över https"
-  },
-  "mode.requirements.pep-proxy-origin.development": {
-    "en": "27973f632a8e4726",
-    "text": "En proxykonfiguration kan ange en publicBaseUrl med vanlig http, så en stack på en maskin behöver inget lyssnarcertifikat för proxyn."
-  },
-  "mode.requirements.pep-proxy-origin.product": {
-    "en": "3c64430130525f3e",
-    "text": "En publicBaseUrl som inte är https avvisas (STS-XACML-0188): sessionsmekanismens inloggning returnerar en auktoriseringskod där och dess sessionscookie är Secure."
   }
 }

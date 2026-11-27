@@ -279,6 +279,10 @@ const ISSUANCE_ATTRIBUTE = {
   // (`set`, `add`, `remove`, `update-fields`), by name. Empty for every
   // other action.
   OBJECT_ATTRIBUTE: 'urn:sts:xacml:object-attribute',
+  // On the RESOURCE: the single SSH user-certificate principal whose
+  // issuance is being decided (#1955 P3).
+  SSH_PRINCIPAL: 'urn:sts:xacml:ssh-principal',
+  SSH_PRINCIPAL_KIND: 'urn:sts:xacml:ssh-principal-kind',
   // On the ACTION: what is done to the object — `read`, or the management
   // API action's own name (`add-member`, `remove-owner`, ...).
   ADMIN_ACTION: 'urn:sts:xacml:admin-action',
@@ -299,12 +303,23 @@ const ISSUANCE_ATTRIBUTE = {
   // reads beside it; the subject's groups come from the PIP as
   // OWNER_IDENTITY, looked up by OWNER_SUBJECT (the person by username).
   // -------------------------------------------------------------------------
-  // On the RESOURCE: `definition` or `job`.
+  // On the RESOURCE: `definition` or `job`, and `query` for an ad hoc
+  // query's source question (#2126).
   REPORT_OBJECT_KIND: 'urn:sts:xacml:report-object-kind',
   // On the RESOURCE: the group DNs the definition is shared with (a job's,
   // its definition's), compared as OBJECT_OWNER is. Empty for a row shared
   // with nobody, and for a question about the API rather than a row.
   REPORT_SHARED_GROUP: 'urn:sts:xacml:report-shared-group',
+  // On the RESOURCE (#2126, ASVS 5.0.0 8.2.3): the catalog source the
+  // report reads, sent on the question `report/rights.ts` asks before a
+  // report is defined, run or downloaded — never on a plain read of a
+  // row, so a definition the caller may no longer run stays visible.
+  REPORT_SOURCE: 'urn:sts:xacml:report-source',
+  // On the RESOURCE (#2126): those of the sources the catalog marks
+  // `adminOnly` (auditEvents, authActivity, credentialHolders). The
+  // first and third rules permit a question carrying one only to a
+  // subject holding REPORT_ADMIN. Empty for every other question.
+  REPORT_ADMIN_SOURCE: 'urn:sts:xacml:report-admin-source',
   // -------------------------------------------------------------------------
   // THE ACCESS REQUEST RULE'S VOCABULARY (#1180): an AuthZEN access request
   // a person would approve, deny or revoke (resource
@@ -585,6 +600,8 @@ const PASSKEY_ATTRIBUTE = {
   FACTS: xacmlRequest.VOCABULARY.PASSKEY_FACTS,
   BACKUP_ELIGIBLE: xacmlRequest.VOCABULARY.PASSKEY_BACKUP_ELIGIBLE,
   MIN_PIN_LENGTH: xacmlRequest.VOCABULARY.PASSKEY_MIN_PIN_LENGTH,
+  // The credProtect level the key reported (#1955 P7), 1 for none.
+  CRED_PROTECT: xacmlRequest.VOCABULARY.PASSKEY_CRED_PROTECT,
   SERIAL: xacmlRequest.VOCABULARY.PASSKEY_SERIAL,
   SERIAL_HELD: xacmlRequest.VOCABULARY.PASSKEY_SERIAL_HELD,
   ATTESTATION_TRUSTED: xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_TRUSTED,
@@ -633,7 +650,7 @@ const PASSKEY_ATTRIBUTE = {
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
            'algorithm', 'attestation-algorithm', 'profile-algorithm',
-           'enrolment', 'recovery', 'upgrade'],
+           'enrolment', 'recovery', 'upgrade', 'cred-protect'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -654,6 +671,8 @@ const PASSKEY_ATTRIBUTE = {
                                use: 'STS-AUTHN-0412' },
     // #940: an algorithm the selected profile does not offer.
     'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
+    // #1955 P7: a credProtect level below the enforced one.
+    'cred-protect': { register: 'STS-AUTHN-0559', use: '' },
     // #724: a RECOVER_ACTION question records the `use` column.
     'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
     'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -874,12 +893,71 @@ const DEVICE_ATTRIBUTE = {
   // (`devices.compliantDeviceAttested`). The settings switch the rules; the
   // rules say what they mean.
   REQUIREMENT: 'urn:sts:xacml:device-requirement',
+  // A BOOLEAN (#2179): a PERSON is being issued a credential for the
+  // administrative surface — a token to the console, or one carrying an
+  // admin:* scope, at the token endpoint. A fact the gate gathers
+  // (`common/admin_device_requirement.ts`'s `isAdminSurface()`); the
+  // `device-required-admin` rule reads it while the requirement bag holds
+  // `compliant-admin`. Never true for a program.
+  ADMIN_SURFACE: 'urn:sts:xacml:device-admin-surface',
   // The obligation every device rule carries, so the PEP can tell a Deny
   // about the DEVICE from one about roles — it refuses even where the role
   // question was waived, in both modes — and its one assignment, which
   // rule refused (`compromised` or `not-compliant`).
   OBLIGATION: 'urn:sts:xacml:obligation:device',
   REFUSAL: 'urn:sts:xacml:device-refusal'
+};
+
+// ---------------------------------------------------------------------------
+// THE HARDWARE TOKEN THE SIGN-IN'S CREDENTIAL IS ON (#1955 P1, design X4),
+// sent as environment attributes by `xacml_role_pep.ts` on every browser
+// issuance the gate describes — `common/issuance_gate.js`'s
+// `hardwareTokenFactsOf()`, from the authentication event's snapshot
+// (`authn.ts`'s `hardwareTokenOf()`) brought up to date against the
+// register (`common/hardware_tokens.ts`). With no token only ATTESTED is
+// sent (false), so a rule can require one and a rule about one is
+// inapplicable otherwise. No built-in rule reads them: "administrators sign
+// in with an attested key" is an operator's rule, written against these
+// (or the authentication policy's `attested-hardware` mechanism, which the
+// built-in `authn-mechanism` rule enforces).
+// ---------------------------------------------------------------------------
+/**
+ * The attribute identifiers describing the hardware token an issuance's
+ * authentication used (#1955), sent as environment attributes.
+ */
+const HARDWARE_TOKEN_ATTRIBUTE = {
+  // A BOOLEAN: the credential that answered is on a hardware token the
+  // register recorded from attestation, and the token is still in use (a
+  // token reported lost since is false).
+  ATTESTED: 'urn:sts:xacml:hardware-token-attested',
+  // The register's key for it, `<vendor>/<serial>`.
+  KEY: 'urn:sts:xacml:hardware-token-key',
+  // Its vendor slug (`yubico`) and its model (`YubiKey 5 NFC`), as the
+  // attestation named them.
+  VENDOR: 'urn:sts:xacml:hardware-token-vendor',
+  MODEL: 'urn:sts:xacml:hardware-token-model',
+  // Where its serial came from: `fido-enterprise-attestation`,
+  // `piv-attestation` or `vendor-import`.
+  EVIDENCE: 'urn:sts:xacml:hardware-token-evidence',
+  // A BOOLEAN: the evidence says the credential's key is on a smart card.
+  SMART_CARD: 'urn:sts:xacml:hardware-token-smart-card',
+  // A BOOLEAN: the register records the SUBJECT as the token's holder.
+  HOLDER_MATCHES: 'urn:sts:xacml:hardware-token-holder-matches',
+  // `active` or `lost`.
+  STATUS: 'urn:sts:xacml:hardware-token-status',
+  // WHAT A PIV ATTESTATION SAID OF THE KEY (#1955 P2, design X4), sent only
+  // for an attested token whose evidence said it: the slot key's PIN policy
+  // (`never`, `once`, `always`, `match-once`, `match-always`) and touch
+  // policy (`never`, `cached`, `always`), and the token's firmware
+  // (`5.4.3`), form factor (`usb-a`, `usb-c`, `lightning`, ...) and, a
+  // BOOLEAN sent only when true, its FIPS certification. "An administrator
+  // signs in only with touch always" is a rule over TOUCH_POLICY. The realm's
+  // `piv.pinPolicy` and `piv.touchPolicy` stay the ENROLMENT gate.
+  PIN_POLICY: 'urn:sts:xacml:hardware-token-pin-policy',
+  TOUCH_POLICY: 'urn:sts:xacml:hardware-token-touch-policy',
+  FIRMWARE: 'urn:sts:xacml:hardware-token-firmware',
+  FORM_FACTOR: 'urn:sts:xacml:hardware-token-form-factor',
+  FIPS: 'urn:sts:xacml:hardware-token-fips'
 };
 
 // ---------------------------------------------------------------------------
@@ -1537,8 +1615,12 @@ const TEMPLATES: TemplateRow[] = [
               'while devices.requireCompliantDevice is on, OFF by default ' +
               'in both modes — anything but the subject\'s own (or an ' +
               'application\'s) compliant, uncompromised device, attested ' +
-              'too where devices.compliantDeviceAttested says so. No builds ' +
-              'the policy with no device rule at all.' },
+              'too where devices.compliantDeviceAttested says so. A third ' +
+              'rule (#2179) asks the same of a person\'s credential for the ' +
+              'administrative surface while ' +
+              'devices.requireCompliantDeviceForAdmin is in force (on in ' +
+              'product) and armed. No builds the policy with no device rule ' +
+              'at all.' },
       { name: 'decideProtocols',
         label: 'Refuse a protocol the application is not declared for',
         dflt: 'yes', type: 'string',
@@ -2157,6 +2239,33 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: B.apply(F1 + 'and', required),
           obligations: deviceObligation('not-compliant'), advice: []
+        });
+        // THE ADMINISTRATIVE SURFACE (#2179, ASVS 5.0.0 8.4.2): while the
+        // bag holds `compliant-admin` — the realm's
+        // devices.requireCompliantDeviceForAdmin in force (on in product)
+        // AND armed on first proof — a person's token to the console or
+        // carrying an admin:* scope is refused unless it came from the same
+        // compliant device the rule above asks for. `deviceExempt` does not
+        // apply: the console is exempt from the REALM-WIDE rule, for #226's
+        // reason, and this rule is the console's own, written so that it
+        // cannot lock a realm out (`common/admin_device_requirement.ts`).
+        deviceRules.push({
+          id: options.idBase + ':rule:device-required-admin',
+          effect: model.EFFECT.DENY,
+          description: 'While the realm requires it of its administrators ' +
+                       '(devices.requireCompliantDeviceForAdmin, armed), ' +
+                       'refuse a person\'s credential for the ' +
+                       'administrative surface — the console, an admin:* ' +
+                       'scope — that did not come from their own (or an ' +
+                       'application\'s) compliant, uncompromised registered ' +
+                       'device, attested as well where ' +
+                       'devices.compliantDeviceAttested says so.',
+          target: null,
+          condition: B.apply(F1 + 'and', [
+            deviceIs(DEVICE_ATTRIBUTE.REQUIREMENT, 'compliant-admin'),
+            deviceTrue(DEVICE_ATTRIBUTE.ADMIN_SURFACE),
+            not(compliantDevice)]),
+          obligations: deviceObligation('admin-not-compliant'), advice: []
         });
       }
 
@@ -3070,6 +3179,25 @@ const TEMPLATES: TemplateRow[] = [
                         'profile'),
                not(fact(R2, PK.PROFILE_ALGORITHM_OFFERED, true))]));
       };
+      // A CREDPROTECT LEVEL BELOW THE ENFORCED ONE (#1955 P7), at
+      // register-passkey only and last there: the level the key reported
+      // (1 where it reported none, which question() decided) below the
+      // level the profile asks for, while enforceCredProtect holds. The
+      // authenticator enforces the level at every later assertion, so
+      // there is no use-passkey half.
+      const credProtectRule = function (): any {
+        log.debug("Entering credProtectRule().");
+        log.debug("Leaving credProtectRule().");
+        return pkRule(PK.REGISTER_ACTION, 'cred-protect',
+          'Refuse a passkey whose authenticator protects its credential at ' +
+          'a lower credProtect level (CTAP 2.1 section 12.1) than the ' +
+          'passkey policy asks for, while it enforces it (credProtect, ' +
+          'enforceCredProtect, #1955).',
+          and([carries('cred-protect'),
+               fact(env, pkSetting('enforceCredProtect'), true),
+               below(intBag(R2, PK.CRED_PROTECT),
+                     intBag(env, pkSetting('credProtectLevel')))]));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -3089,6 +3217,7 @@ const TEMPLATES: TemplateRow[] = [
         postQuantumRule(PK.REGISTER_ACTION),
         attestationAlgorithmRule(PK.REGISTER_ACTION),
         profileAlgorithmRule(),
+        credProtectRule(),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',
@@ -3636,7 +3765,10 @@ const TEMPLATES: TemplateRow[] = [
                           'anything but the subject\'s own compliant ' +
                           'device' + (deviceExempt.length
                             ? ' (never for ' + deviceExempt.join(', ') + ')'
-                            : '') + '.'
+                            : '') + '; and, while the realm requires it of ' +
+                          'its administrators (#2179), a person\'s ' +
+                          'credential for the administrative surface from ' +
+                          'anything but a compliant device of their own.'
                         : '') +
                      (decideProtocols
                         ? ' AND ON THE PROTOCOL: in product mode, an ' +
@@ -4261,7 +4393,11 @@ const TEMPLATES: TemplateRow[] = [
           'the report API\'s rows: a report administrator reaches any ' +
           'definition or job, a report user one shared with a group they ' +
           'are in, for the listed actions; an owner reaches their own ' +
-          'through the first rule, and an application only those.',
+          'through the first rule, and an application only those. Since ' +
+          '#2126 a report over a source for administrators (auditEvents, ' +
+          'authActivity, credentialHolders, and any listed below) is ' +
+          'permitted, by both rules, only to a subject holding ' +
+          'REPORT_ADMIN.',
     parameters: [
       { name: 'permitOwner',
         label: 'Permit a subject to act on a resource they own',
@@ -4378,6 +4514,21 @@ const TEMPLATES: TemplateRow[] = [
               'its jobs, download a result), `run` (run it), `write` ' +
               '(change, share or delete it, which the default leaves to ' +
               'the owner and a report administrator).' },
+      // THE REPORT SOURCES FOR ADMINISTRATORS (#2126): the catalog marks
+      // auditEvents, authActivity and credentialHolders `adminOnly`, and the
+      // report gate sends those as `report-admin-source`; this list adds
+      // sources a realm's policy treats the same way, by `report-source`.
+      { name: 'reportAdminSources',
+        label: 'Further report sources only a report administrator may ' +
+               'query',
+        dflt: '', type: 'list',
+        help: 'Comma- or newline-separated catalog source ids (#2126). A ' +
+              'report over one of them — defined, run, previewed, ' +
+              'scheduled or downloaded — is permitted only to a subject ' +
+              'holding REPORT_ADMIN, as it always is for the sources the ' +
+              'catalog marks for administrators (auditEvents, ' +
+              'authActivity, credentialHolders), which this list cannot ' +
+              'open. Empty adds none.' },
       // THE ACCESS REQUEST RULE (#1180): who may approve, deny or revoke an
       // AuthZEN access request — rcbj's decision 2, that self-approval and
       // separation of duties are policy rather than an `if`.
@@ -4387,8 +4538,9 @@ const TEMPLATES: TemplateRow[] = [
         help: 'yes or no. The FOURTH rule (#1180): a person the denying ' +
               'policy\'s advice named — holding its approver role, in its ' +
               'approver group, or an owner of the application — may ' +
-              'approve, deny or revoke that access request (action ' +
-              'approve-access-request on resource authzen-access-request). ' +
+              'approve, deny or revoke that access request (actions ' +
+              'approve-access-request and revoke-access-request on ' +
+              'resource authzen-access-request). ' +
               'No refuses every approver, so no request is ever approved. ' +
               'The first rule never permits this resource.' },
       { name: 'permitAdministratorApproval',
@@ -4554,6 +4706,41 @@ const TEMPLATES: TemplateRow[] = [
         B.value(TYPE.STRING, 'authzen-access-request'),
         B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
                      TYPE.STRING)])]));
+      // A REPORT SOURCE FOR ADMINISTRATORS (#2126, ASVS 5.0.0 8.2.3): a
+      // question carrying an administrators' source — the catalog's mark,
+      // `report-admin-source`, or a source this realm's policy lists in
+      // `reportAdminSources`, by `report-source` — is permitted only to a
+      // subject holding REPORT_ADMIN. A conjunct, so it narrows the owner
+      // too: a REPORT_USE owner may not run their own report over the
+      // audit ring. Every other question carries neither attribute, and is
+      // decided exactly as before.
+      const reportAdminSources = B.listOf(
+        given.reportAdminSources === undefined ? ''
+                                               : given.reportAdminSources);
+      const holdsReportAdmin = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'REPORT_ADMIN'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING)]);
+      const noAdminSource = B.apply(F1 + 'integer-equal', [
+        B.apply(F1 + 'string-bag-size', [
+          B.designator(model.CATEGORY.RESOURCE,
+                       ISSUANCE_ATTRIBUTE.REPORT_ADMIN_SOURCE, TYPE.STRING)]),
+        B.value(TYPE.INTEGER, '0')]);
+      const noListedSource = reportAdminSources.length
+        ? B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.RESOURCE,
+                       ISSUANCE_ATTRIBUTE.REPORT_SOURCE, TYPE.STRING),
+          B.apply(F1 + 'string-bag', reportAdminSources.map(
+            function (one: string): any {
+              return B.value(TYPE.STRING, one);
+            }))])])
+        : null;
+      const reportSourceAllowed = B.apply(F1 + 'or', [
+        holdsReportAdmin,
+        noListedSource ? B.apply(F1 + 'and', [noAdminSource, noListedSource])
+                       : noAdminSource]);
+      conjuncts.push(reportSourceAllowed);
 
       const condition = conjuncts.length === 1
         ? conjuncts[0]
@@ -4741,7 +4928,9 @@ const TEMPLATES: TemplateRow[] = [
                      (sharedActions.join(', ') || '(none)') + ' on one ' +
                      'shared with a group they are in (#1030). An owner ' +
                      'reaches their own through the first rule; an ' +
-                     'application reaches only what it defined.',
+                     'application reaches only what it defined. A report ' +
+                     'over a source for administrators is REPORT_ADMIN\'s ' +
+                     'alone (#2126).',
         // `report-api` is `common/access_gate.ts`'s RESOURCE.REPORT_API,
         // which the report gate sends as the resource-id; written out
         // because this file may not require that module's dependents.
@@ -4757,7 +4946,11 @@ const TEMPLATES: TemplateRow[] = [
                          ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
           holdsRequiredRole,
           isAPerson,
-          B.apply(F1 + 'or', [isReportAdmin, sharedWithTheirGroup])]),
+          B.apply(F1 + 'or', [isReportAdmin, sharedWithTheirGroup]),
+          // An administrators' source (#2126) narrows a share as it
+          // narrows the owner in the first rule: a REPORT_USE member of a
+          // group an audit report is shared with may see it, not run it.
+          reportSourceAllowed]),
         obligations: [], advice: []
       };
 
@@ -4828,6 +5021,10 @@ const TEMPLATES: TemplateRow[] = [
         // `common/access_gate.ts`'s RESOURCE.AUTHZEN_ACCESS_REQUEST and
         // ACTION.APPROVE_ACCESS_REQUEST, written out for the report rule's
         // reason.
+        // `revoke-access-request` (#1203) is ACTION.REVOKE_ACCESS_REQUEST,
+        // permitted wherever an approval is: the same approvers, the same
+        // self-approval rule. A realm that wants the two apart overrides
+        // this document.
         target: B.targetOf([[
           B.match(F1 + 'string-equal',
                   B.value(TYPE.STRING, 'authzen-access-request'),
@@ -4835,6 +5032,10 @@ const TEMPLATES: TemplateRow[] = [
                                TYPE.STRING))], [
           B.match(F1 + 'string-equal',
                   B.value(TYPE.STRING, 'approve-access-request'),
+                  B.designator(model.CATEGORY.ACTION,
+                               model.ATTRIBUTE.ACTION_ID, TYPE.STRING)),
+          B.match(F1 + 'string-equal',
+                  B.value(TYPE.STRING, 'revoke-access-request'),
                   B.designator(model.CATEGORY.ACTION,
                                model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]),
         condition: B.apply(F1 + 'and', approvalConjuncts),
@@ -4891,6 +5092,12 @@ const TEMPLATES: TemplateRow[] = [
                          'a shared group\'s member the listed actions on ' +
                          'one shared with them'
                        : '') +
+                     '. A report over a source the catalog marks for ' +
+                     'administrators' +
+                     (reportAdminSources.length ? ', or over ' +
+                       reportAdminSources.join(', ') : '') +
+                     ', is permitted only to a subject holding ' +
+                     'REPORT_ADMIN (#2126)' +
                      (permitApproval
                        ? '. A fourth rule (#1180) permits the approvers an ' +
                          'AuthZEN access request names to decide it, and ' +
@@ -5572,6 +5779,7 @@ class XacmlTemplates {
    * The device attribute identifiers.
    */
   static readonly DEVICE_ATTRIBUTE = DEVICE_ATTRIBUTE;
+  static readonly HARDWARE_TOKEN_ATTRIBUTE = HARDWARE_TOKEN_ATTRIBUTE;
   static readonly PROTOCOL_ATTRIBUTE = PROTOCOL_ATTRIBUTE;
   /**
    * The transfer questions' action-ids and attribute identifiers (#98).
@@ -5754,6 +5962,7 @@ export = {
   RISK_ATTRIBUTE: XacmlTemplates.RISK_ATTRIBUTE,
   AUTHN_ATTRIBUTE: XacmlTemplates.AUTHN_ATTRIBUTE,
   DEVICE_ATTRIBUTE: XacmlTemplates.DEVICE_ATTRIBUTE,
+  HARDWARE_TOKEN_ATTRIBUTE: XacmlTemplates.HARDWARE_TOKEN_ATTRIBUTE,
   PROTOCOL_ATTRIBUTE: XacmlTemplates.PROTOCOL_ATTRIBUTE,
   TRANSFER_ATTRIBUTE: XacmlTemplates.TRANSFER_ATTRIBUTE,
   PASSKEY_ATTRIBUTE: XacmlTemplates.PASSKEY_ATTRIBUTE,

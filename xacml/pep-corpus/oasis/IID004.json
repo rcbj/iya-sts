@@ -1,0 +1,98 @@
+{
+  "name": "IID004",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IID004:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" \n\t\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \n\t\tPolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID004:policy\" \n\t\tRuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" \n\t\tVersion=\"1.0\" \n\t\t>\n    <Description>\n        Policy for Conformance Test IID004.\n        Purpose: Case: Indeterminate: RuleCombiningAlgorithm DenyOverrides\n    </Description>\n    <Target/>\n    \n    <Rule Effect=\"Deny\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID004:rule1\">\n        <Description>\n            A subject whose name is J. Hibbert may not\n            perform any action on any resource.  NOTAPPLICABLE\n        </Description>\n        <Target>\n            <AnyOf>\n                <AllOf>\n                    <Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n                        <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">J. Hibbert</AttributeValue>\n                        <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:1.0:subject:subject-id\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"true\"/>\n                    </Match>\n                </AllOf>\n            </AnyOf>\n        </Target>\n    </Rule>\n    \n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID004:rule2\">\n        <Description>\n            A subject who is at least 55 years older than Bart\n            Simpson may perform any action on any resource. NOT-APPLICABLE.\n        </Description>\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-greater-than-or-equal\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-subtract\">\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-one-and-only\">\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:age\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#integer\" MustBePresent=\"true\"/>\n                </Apply>\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-one-and-only\">\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:bart-simpson-age\" Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\" DataType=\"http://www.w3.org/2001/XMLSchema#integer\" MustBePresent=\"true\"/>\n                </Apply>\n            </Apply>\n            <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#integer\">55</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    </Rule>\n    \n    <Rule Effect=\"Deny\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID004:rule3\">\n        <Description>\n            A subject whose \"test\" attribute is Zaphod Beedlebrox may not\n            perform any action on any resource.  INDETERMINATE.\n        </Description>\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-one-and-only\">\n                <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:test\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"true\"/>\n            </Apply>\n            <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">Zaphod Beedlebrox</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    </Rule>\n    \n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:age",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#integer",
+                "value": "45"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:bart-simpson-age",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#integer",
+                "value": "10"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Indeterminate",
+    "obligations": [],
+    "advice": []
+  }
+}

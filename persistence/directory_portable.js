@@ -1358,6 +1358,10 @@ function create(deps) {
         tally.secrets += dialect.affected(u) ? 1 : 0;
       }
       for (const one of deps.extraSealed || []) {
+        // A count-only column (the audit log, #1616) is left as it is.
+        if (one.countOnly) {
+          continue;
+        }
         await resealExtra(one, like, limit, reseal, tally, ask, tx);
       }
     }
@@ -1614,7 +1618,7 @@ function create(deps) {
     readPage: function (cursor, limit) {
       log.debug("Entering grantingOps.readPage().");
       const granting = JSON.stringify(
-        require('./directory_codec').GRANTING_ATTRIBUTES);
+        require('./directory_codec').BACKFILL_ATTRIBUTES);
       const pick = 'SELECT realm, dn_key, CASE WHEN JSON_OVERLAPS(' +
         'attr_names, ?) THEN attrs END AS attrs, CASE WHEN JSON_OVERLAPS(' +
         'attr_names, ?) THEN value_keys END AS value_keys FROM ' +

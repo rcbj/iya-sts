@@ -277,6 +277,9 @@ STS_TEST_PEER_CONTAINER_NAME="${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-t
 # The companion (#1760: the application the remote PEP's proxy protects),
 # named for the same reason.
 STS_COMPANION_CONTAINER_NAME="${STS_COMPANION_CONTAINER_NAME:-sts-docker-tests-companion}"
+# The client lab (#2056: real clients and virtual smart cards), named for the
+# same reason.
+STS_CLIENT_LAB_CONTAINER_NAME="${STS_CLIENT_LAB_CONTAINER_NAME:-sts-docker-tests-client-lab}"
 # ---------------------------------------------------------------------------
 # AND THE IMAGE TAGS, WHEN A PROJECT IS NAMED (2026-09-14). A tag is
 # machine-wide like a container name: this launcher builds once and then
@@ -312,6 +315,7 @@ SAML_PYSAML2_IMAGE="${SAML_PYSAML2_IMAGE:-${IMAGE_REGISTRY}/sts-saml-pysaml2:${i
 SAML_KEYCLOAK_IMAGE="${SAML_KEYCLOAK_IMAGE:-${IMAGE_REGISTRY}/sts-saml-keycloak:${imageTag}}"
 TEST_PEER_IMAGE="${TEST_PEER_IMAGE:-${IMAGE_REGISTRY}/sts-test-peer:${imageTag}}"
 STS_COMPANION_IMAGE="${STS_COMPANION_IMAGE:-${IMAGE_REGISTRY}/sts-companion:${imageTag}}"
+CLIENT_LAB_IMAGE="${CLIENT_LAB_IMAGE:-${IMAGE_REGISTRY}/sts-client-lab:${imageTag}}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
@@ -1303,6 +1307,15 @@ COMPOSE_ENV=(
   "STS_COMPANION_CONTAINER_NAME=${STS_COMPANION_CONTAINER_NAME}"
   "COMPANION_ADDRESS=${STS_NETWORK_PREFIX}.49"
   "XACML_PEP_UPSTREAM_URL=http://companion:9700"
+  # ---- the client lab (#2056) ----------------------------------------------
+  # In EVERY local mode: the real clients and the virtual OpenPGP and PIV
+  # cards the realistic jobs (#2057-#2062) drive. Pinned at `.53`, above the
+  # PEP cluster's `.52`, for the conformance suite's reason. The URL is what
+  # tells a job the lab is there; an AWS target names none, and a job that
+  # carries `clientLab: true` is reported skipped.
+  "STS_CLIENT_LAB_CONTAINER_NAME=${STS_CLIENT_LAB_CONTAINER_NAME}"
+  "CLIENT_LAB_ADDRESS=${STS_NETWORK_PREFIX}.53"
+  "CLIENT_LAB_URL=http://client-lab:9610"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"
   # The #444 switch (rcbj, 2026-11-15), `off` unless --with-444 or the host
@@ -1430,7 +1443,8 @@ then
   COMPOSE_ENV+=("IMAGE_MIRROR=${IMAGE_MIRROR}")
 fi
 for peerImage in SAML_SHIB_IMAGE SAML_SSP_IMAGE SAML_PYSAML2_IMAGE \
-                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE STS_COMPANION_IMAGE;
+                 SAML_KEYCLOAK_IMAGE TEST_PEER_IMAGE STS_COMPANION_IMAGE \
+                 CLIENT_LAB_IMAGE;
 do
   if [ -n "${!peerImage:-}" ];
   then
@@ -1514,6 +1528,10 @@ captureContainerLogs()
   # the application behind the remote PEP's proxy.
   captureOneContainerLog "${mode}" companion "00-companion.log" \
     "Companion log"
+  # The client lab's (#2056): its cards' start, and one line per client a
+  # job ran there.
+  captureOneContainerLog "${mode}" client-lab "00-client-lab.log" \
+    "Client lab log"
   # The remote PEP cluster's (2026-11-16), in the modes that start it: each
   # member's own account of its registration, pulls and proxied requests,
   # and the balancer's connection log.
@@ -2703,7 +2721,8 @@ do
   UP_NO_ATTACH=(--no-attach openbao-tls --no-attach openbao-seed
                 --no-attach mailpit-tls --no-attach mailpit
                 --no-attach mariadb-tls
-                --no-attach test-peer --no-attach companion)
+                --no-attach test-peer --no-attach companion
+                --no-attach client-lab)
   # The `cells` mode's one-shot cell-key writer exits 0 by design, and an
   # attached exit ends the mode (see THE TWO ONE-SHOT CONTAINERS below).
   if stsModeIsCells "${MODE}";

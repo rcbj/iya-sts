@@ -257,6 +257,7 @@ const bunyan = require('bunyan');
 
 const service = require('./service');
 const trust = require('./trust');
+const serviceTrust = require('./service_trust');
 const manifest = require('../protocol/MANIFEST.js');
 const coverage = require('./coverage-report');
 
@@ -629,7 +630,9 @@ const SAML_PEER_URLS = {
   keycloak: 'SAML_PEER_KEYCLOAK_URL'
 };
 
-async function refreshTrust(url, current) {
+// `options` is tools/trust.js's (the revocation listener's port, for a
+// service this runner started: trustOptions()).
+async function refreshTrust(url, current, options) {
   log.debug('Entering refreshTrust().');
   let pem = '';
   let read = null;
@@ -637,7 +640,7 @@ async function refreshTrust(url, current) {
     // readTrust() rather than fetchCertificate() since 2026-09-14: the same
     // one fetch in every mode but `cluster`, where it gathers every node's
     // leaf — see its header in tools/trust.js.
-    read = await trust.readTrust(url);
+    read = await trust.readTrust(url, 0, options);
     pem = read.pem;
   } catch (e) {
     // NOT fatal and named rather than swallowed: the service may be mid-restart
@@ -1267,14 +1270,14 @@ const USAGE = (function () {
 // caller cannot act on because the fix is the fetch this runner is about to
 // make.
 //
-// `rejectUnauthorized: false` is right HERE and nowhere else in this suite: the
-// question is whether the port answers, not whether it is trustworthy. The jobs
-// themselves get a real anchor — see tests/tools/trust.js — so an assertion
-// about a certificate is still made against one.
+// VERIFIED SINCE 2026-11-20, and the question is still whether the port
+// answers. The probe dials over the anchors tools/trust.js would try first —
+// the system's roots and the bundle this process holds, once it holds one —
+// and a handshake THIS client refused counts as an answer: a server that
+// sent a certificate is listening on that scheme, which is all this asks.
+// No request is sent over a connection that did not verify; the JOBS get a
+// real anchor (tools/trust.js), and so does this process once it has one.
 //
-// The status is what comes back rather than a boolean, because the caller
-// distinguishes "answered with something" from "nothing there" and 0 is how
-// the second says so.
 function probe(url) {
   log.debug("Entering probe().");
   log.debug("Leaving probe().");
@@ -1287,19 +1290,34 @@ function probe(url) {
       resolve(0);
       return;
     }
-    const mod = target.protocol === 'https:' ? require('https') :
-                require('http');
-    const req = mod.get({
+    const secure = target.protocol === 'https:';
+    const mod = secure ? require('https') : require('http');
+    const options = {
       host: target.hostname,
-      port: target.port || (target.protocol === 'https:' ? 443 : 80),
+      port: target.port || (secure ? 443 : 80),
       path: target.pathname + target.search,
-      rejectUnauthorized: false,
       timeout: 5000
-    }, function (res) {
+    };
+    if (secure) {
+      options.ca = probeAnchors();
+      // A fresh connection: the global agent pools by its options, and a
+      // probe is one request.
+      options.agent = false;
+    }
+    const req = mod.get(options, function (res) {
       res.resume();
       resolve(res.statusCode || 0);
     });
-    req.on('error', function () {
+    req.on('error', function (e) {
+      log.debug("Caught in a callback in probe(): " +
+                ((e && e.message) || e));
+      if (serviceTrust.isUntrusted(e)) {
+        // ANSWERED: the server completed its half of the handshake with a
+        // certificate this client does not trust yet. 1 rather than a
+        // status, since no request was sent.
+        resolve(1);
+        return;
+      }
       resolve(0);
     });
     req.on('timeout', function () {
@@ -1328,6 +1346,36 @@ function probe(url) {
 // service's ROOT and this asks for `/`, which any of the redirects and shells
 // this service serves may answer with. What is being distinguished here is a
 // socket that answers from one that does not.
+// The anchors probe() verifies against: the system's roots and, once this
+// process holds the run's bundle (useBundle()), the service's chain.
+function probeAnchors() {
+  log.debug("Entering probeAnchors().");
+  let held = [];
+  if (serviceTrust.bundlePath()) {
+    try {
+      held = serviceTrust.ca();
+    } catch (e) {
+      // Named and not yet written: the system's roots alone, and a refused
+      // handshake still counts as an answer.
+      log.debug("Caught in probeAnchors(): " + ((e && e.message) || e));
+      held = [];
+    }
+  }
+  log.debug("Leaving probeAnchors(). " + held.length + " held.");
+  return require('tls').rootCertificates.concat(held);
+}
+
+// What tools/trust.js is told about a service: the revocation listener's
+// port when this runner started it on a block of its own, so the service
+// Root is read from there. A launcher's service has its own default, or
+// the PKI_HTTP_PORT the launcher exported.
+function trustOptions(instance) {
+  log.debug("Entering trustOptions().");
+  const port = instance && instance.ports && instance.ports.PKI_HTTP_PORT;
+  log.debug("Leaving trustOptions(). " + (port || 'default'));
+  return port && !process.env.PKI_HTTP_PORT ? { pkiPort: port } : {};
+}
+
 async function waitForExternalService(url, log, timeoutMs) {
   log.debug('Entering waitForExternalService().');
   const deadline = Date.now() + (timeoutMs || 30000);
@@ -1352,9 +1400,9 @@ async function waitForExternalService(url, log, timeoutMs) {
   // would send them to look at the service.
   //
   // The probe above no longer collects an error MESSAGE, and that is not a
-  // loss: with `rejectUnauthorized: false` every remaining cause is "nothing
-  // is listening on that scheme, host and port", which is what the sentence
-  // now says instead of quoting an ECONNREFUSED.
+  // loss: a refused certificate counts as an answer, so every remaining cause
+  // is "nothing is listening on that scheme, host and port", which is what
+  // the sentence now says instead of quoting an ECONNREFUSED.
   const swapped = /^https:/i.test(url)
     ? url.replace(/^https:/i, 'http:')
     : url.replace(/^http:/i, 'https:');
@@ -2250,7 +2298,13 @@ async function main() {
   let trusted = { variables: {} };
   if (instance) {
     try {
-      trusted = await trust.trustTheService(instance.url, runDir, log);
+      trusted = await trust.trustTheService(instance.url, runDir, log,
+                                            trustOptions(instance));
+      // AND THIS PROCESS VERIFIES AGAINST IT TOO (2026-11-20): its own calls
+      // to the service — a realm removed, a cluster restarted — carry a
+      // management-API token, and tools/service_trust.js reads the file at
+      // every call, so refreshTrust()'s rewrite reaches them as well.
+      serviceTrust.useBundle(trusted.pemPath || '');
     } catch (e) {
       log.warn('could not fetch IYA STS\'s certificate from ' +
                instance.url + trust.CERTIFICATE_PATH + ' (' + e.message +
@@ -2424,6 +2478,27 @@ async function main() {
         failures: [], why: why
       });
     }
+    if (job.clientLab && !process.env.CLIENT_LAB_URL) {
+      // A DELIBERATE EXCLUSION, the test peer's (#2056): the client lab is
+      // the real client software and the virtual smart cards this job
+      // drives (tests/client-lab/), and ./run-tests.sh starts it in every
+      // local mode, handing the job CLIENT_LAB_URL. An AWS target, and a
+      // service this runner starts itself, have none.
+      const why = 'no CLIENT_LAB_URL: this run has no client lab ' +
+                  '(tests/client-lab/). ./run-tests.sh brings one up in ' +
+                  'every local mode; a service handed in with ' +
+                  '--service-url — an AWS target — and ./run-coverage.sh ' +
+                  'have none, so in this run the real clients and the ' +
+                  'virtual cards this job drives are unchecked, and what ' +
+                  'stands is the job\'s run in the local modes.';
+      log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
+               why);
+      log.debug('Leaving runOne(). Not run.');
+      return Object.assign({}, job, {
+        status: 'skipped', ms: 0, code: null, assertions: [],
+        failures: [], why: why
+      });
+    }
     if (job.testPeer && !process.env.STS_TEST_PEER_URL) {
       // A DELIBERATE EXCLUSION, as the two above are (#586): the test peer
       // is the far party of the protocol this job drives — a resource
@@ -2504,7 +2579,8 @@ async function main() {
       await serially(async function refreshForJob() {
         log.debug('Entering refreshForJob().');
         if (trusted.tls) {
-          const fresh = await refreshTrust(instance.url, trusted);
+          const fresh = await refreshTrust(instance.url, trusted,
+                                           trustOptions(instance));
           if (fresh) {
             trusted = fresh;
           }
@@ -2577,7 +2653,7 @@ async function main() {
         // THE DIRECTORY'S PORT UNDER THE NAME A JOB LOOKS IT UP BY, AND THAT
         // IS NOT THE NAME THE SERVICE READS IT FROM.
         //
-        // The service takes `LDAP_PORT` (docs/v1.1.0/configuration.md's
+        // The service takes `LDAP_PORT` (docs/v1.2.0/configuration.md's
         // settings table is the authority, and `service.js`'s PORT_VARS uses
         // those spellings);
         // `sts_global_logout.js` reads **`STS_LDAP_PORT`**. Every other

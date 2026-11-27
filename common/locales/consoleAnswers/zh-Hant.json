@@ -122,5 +122,15 @@
   "pepCredential.urn": "名稱",
   "pepCredential.env": "使用以下環境變數啟動 PEP。私密金鑰從未離開產生請求的機器；本服務沒有私密金鑰可以提供。",
   "pepCredential.chain": "憑證及其到服務根憑證的鏈。公開資訊：PEP 進行驗證時不需要它，它也列在該項目的金鑰清單中。",
-  "pepCredential.download": "下載憑證"
+  "pepCredential.download": "下載憑證",
+  "once.pivCertificate": "PIV 憑證",
+  "once.pivKey": "託管的 PIV 金鑰",
+  "piv.keyWarn": "這是此人的私密解密金鑰。它只顯示一次，其復原會記入稽核日誌。請像移交卡片一樣移交它。",
+  "piv.privateKey": "私密金鑰",
+  "piv.certificate": "憑證",
+  "piv.import": "使用下列命令將其寫入 YubiKey 插槽：ykman piv certificates import SLOT cert.pem",
+  "once.sshCertificate": "SSH 使用者憑證",
+  "ssh.certificate": "憑證",
+  "ssh.pqc": "ML-DSA 憑證",
+  "ssh.install": "將其儲存在私密金鑰旁，檔名為金鑰檔名加上 -cert.pub，ssh 會隨金鑰一併出示它。"
 }

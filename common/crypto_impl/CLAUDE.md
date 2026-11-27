@@ -57,9 +57,12 @@ and ML-KEM on node's OpenSSL) rather than on `@noble/post-quantum`;
 | `symmetric_crypto.js` | The AES paths `jose_jwe.js` rests on. |
 | `key_material.js` | Key generation and JWK/PEM conversion. What `x509.js` rests on. |
 | `jose_jwe.js` | JWE, for the same reason. |
+| `pkcs11.js` | **This service's own (#1955 P8).** The PKCS#11 engine: a token's session pool, the three wrapping mechanisms and their versioned stored forms, key-pair generation, `C_SignAsync`, and RSA-OAEP / ECDH asked asynchronously through `C_DecryptAsync` / `C_DeriveKeyAsync`. A blocking `C_Sign`, `C_Decrypt` or `C_DeriveKey` (asked synchronously, or by a module with no asynchronous call) runs only while `keys.pkcs11SynchronousSign` is on; otherwise `STS-KEYS-0209` before the Init call. Since the P8 follow-up (2026-11-23, rcbj: "I do not want this activity to block the main event loop") every service door reaches the asynchronous calls (`crypto.js`'s `…OffLoop()` twins), so off is never a refusal there. The calls pkcs11js has no asynchronous form for (sessions, logins, searches, attribute reads, every `C_*Init`, the `k1` wrap's object, re-initialisation) are made by the module's control thread, `pkcs11_thread.js`; a re-initialisation is made once per module for every token on it, after its operations drain, and once per PROCESS for every thread that met the outage at the same moment (a lock and a generation in a SharedArrayBuffer every Worker inherits through `setEnvironmentData()`; the threads that waited adopt the result), and announced to the process's other threads on a BroadcastChannel so they drop their idle sessions early. `keyPairAsync()` finds a key off the loop for `crypto.resolveHsmKeysAsync()`. Takes the binding (`pkcs11js` or a test's fake) from its caller and requires none; reached only through `crypto.js` section 19 (`common/CLAUDE.md`, *Keys in a hardware security module*). |
+| `pkcs11_thread.js` | **This service's own (#1955 P8 follow-up).** A PKCS#11 module's control thread, started by `pkcs11.js`'s `Pkcs11Control`: it loads the binding again from the file its caller loaded it from and answers `{ id, op, args }` with `pkcs11.js`'s own `CONTROL_OPS`, so the two cannot disagree. Every failure is an answer, never an exception out of the thread. |
 | `crypto_bytes.js` | The byte-level helpers those three rest on. |
 | `bbs2023.js` | The BBS primitives (Sign, Verify, ProofGen, ProofVerify) behind `bbs-2023`, the BLS12-381 G2 Multikey, and, read only, the pre-1.1 private format. The W3C cryptosuite itself is `oid4vc/vc_bbs.ts` since #1878. |
 | `xmldsig.js` | **XML Signature and XML Encryption, and since 2026-08-27 the signer behind every signed document this service emits.** It is not a library somebody found — it is the OTHER END of most of these exchanges: the debugger signs, verifies, encrypts and decrypts with this exact file on its WS-Trust, SAML and Digital Signature pages. Both ends of a SAML exchange now canonicalize with the same code, which matters because a disagreement about c14n is invisible until it is a signature that verifies on one side and not the other. |
+| `openpgp_engine.js` | **openpgp.js, wrapped (#1955 P6, rcbj's D3)**: read ONE public key (never a secret one), describe it, verify a cleartext signature by a signing-capable key of it (exactly one signature, the signer and creation time taken from the one that verified), encrypt to it; `describeKey()` lists every key of it that would sign or be encrypted to, so the policy judges them all. `openpgp_pqc.js` (RFC 9980) believes a binding, a revocation (0x20, 0x28, 0x30), key flags or an expiry only from a signature the primary key verifiably made, and `encryptTo()` encrypts only to the subkey `readPublicKey()` chose, never to the first one of an encryption algorithm. Every call gets its own openpgp.js config, so nothing changes the library's globals; the library is loaded at the first call. The policy — the algorithm allow list, the challenge, freshness, S/MIME — is `common/crypto.js` section 19, the only file that requires this one (`tests/crypto_centralised.js` refuses `openpgp` anywhere else). |
 | `contexts/` | The three JSON-LD contexts `bbs2023.js` reads: the two W3C ones (W3C's, byte for byte) and `iya_identity_v1.json`, this issuer's own since #663. |
 
 **`contexts/` is inside this directory because `bbs2023.js` resolves
@@ -240,3 +243,60 @@ takes the post-quantum path's `opts.signer` / `opts.keyInfoXml` for one. An
 X.509 path that meets an HMAC method refuses it at
 `verifyXmlSignatureValue()`'s key-type check, because no public key is
 `secret`. The rows also appear on `/admin/crypto-metadata`'s XML table.
+
+## XML on node's OpenSSL (#1615, 2026-11-24)
+
+**ASVS 5.0.0 11.2.1 asks for an industry-validated implementation, and
+`xmldsig.js` signed every RSA XML Signature, digested every Reference, ran
+AES for XML Encryption and computed HKDF in forge's JavaScript**, as
+`crypto.js`'s `encryptElement()` ran every SAML assertion's AES. Verification
+and key transport had moved already (#65, 2026-10-03). Now every primitive is
+node's: `rsaSign()` (PKCS#1 v1.5, and PSS with MGF1 over the same hash and a
+digest-length salt), `nodeMd()` (a digest in forge's shape — `create()`,
+`algorithm`, `digestLength`, `update(s[, 'utf8'])`, `digest().getBytes()` —
+so the binary-string plumbing is unchanged), `contentEncrypt()` /
+`contentDecrypt()`, node's HMAC under HKDF, and `selfSignedCertFor()` signing
+its TBSCertificate with OpenSSL (`crypto.js`'s `signCertificateNatively()`
+arrangement). **forge is left for what is not cryptography**: PEM and
+certificate parsing, base64, UTF-8 and binary strings.
+
+* **No octet changed, and `tests/xmldsig_native.js` holds it**: every RSA
+  method `signEnveloped()` and the general engine sign, over a non-ASCII
+  document, is forge's signature byte for byte (PKCS#1 v1.5 is
+  deterministic) or, for PSS, verified by forge; every digest method is
+  forge's digest; every content cipher node seals forge opens. **Nothing was
+  lost (rcbj, 2026-11-24)**, and two methods were GAINED: the registry's
+  `rsa-sha224` and `rsa-ripemd160` rows were in the general engine's table
+  and could not be signed, forge having neither hash.
+* **CBC is unpadded as forge did, by the last octet** (refused when 0, more
+  than a block or more than there is), never by node's PKCS#7 check: XML
+  Encryption section 5.2 lets a sender pad with arbitrary octets (ISO 10126,
+  xmlsec's and Santuario's), and node's own unpadding refuses them.
+* **UTF-8 is still forge's** where it decodes a plaintext: it throws on a
+  malformed sequence, where node's would substitute U+FFFD and hand a
+  different document on.
+* **Post-quantum was never forge's** and is unchanged: ML-DSA, SLH-DSA and
+  HSS/LMS go to the caller's `opts.signer` with the UTF-8 of SignedInfo.
+* **Not in this change**: `symmetric_crypto.js` (the AES under `jose_jwe.js`)
+  still runs forge's ciphers; it is JOSE, not XML.
+
+## Post-quantum in the token and in OpenPGP (#2220, 2026-11-25)
+
+* **`pkcs11.js` makes and signs SLH-DSA** (PKCS#11 3.2's `CKM_SLH_DSA`
+  0x2e, `CKM_SLH_DSA_KEY_PAIR_GEN` 0x2d, `CKK_SLH_DSA` 0x4b, the parameter
+  set on the key) beside ML-DSA, for SLH-DSA-SHA2-128s and -SHAKE-128s.
+  The numbers are written out: pkcs11js 2.1.7 carries the 3.0 headers.
+  `canGenerate()` of a post-quantum key now asks for the generation AND the
+  signing mechanism, because the realm's published set is made in the token
+  where it offers both (`helpers.js`'s `pqPairFor()`), and a key the token
+  could make and not sign with would publish a key that signs nothing.
+  `postQuantumOffer()` says which of the five it offers. SoftHSM2 2.6 offers
+  neither family, so `tests/pkcs11_pq_published_set.js` plays the token.
+* **`openpgp_pqc.js` reads SLH-DSA** (RFC 9980 section 7, ids 32–34):
+  standalone signatures over the dataDigest, v6 keys only, over any digest
+  of at least 256 bits (section 6.2.1; SHA-1 and SHA2-224 refused). The first
+  cut bound each set to one SHA3 digest, which would have refused a valid
+  SHA2-256 signature. `verifyComposite()` hands a standalone algorithm to
+  `verifyStandalone()`, which answers the same shape (`eddsa` true, the
+  SLH-DSA verdict in `mldsa`), so every caller — the self-signatures, a
+  detached signature, a cleartext challenge — is unchanged.

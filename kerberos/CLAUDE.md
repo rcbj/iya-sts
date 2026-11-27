@@ -261,9 +261,9 @@ nothing, follows none of its links in place — the password screen is a full
 navigation that mints its arrival cookie — and draws it again from the same
 state when a language is chosen). The browser translates, in #539's order
 with the pending sign-in's `ui_locales` and a signed-in person's own
-language; the `off` page's sentences and the checks table are English, as a
-refusal and a diagnostic are, and its link back to the password screen is
-translated, where the server drew it in English. **Script is required**
+language; the `off` page's sentences are `refusals.spnego.*` catalog
+messages since #2006, and the checks table stays English, as a diagnostic
+is. **Script is required**
 (rcbj on #569): the `<noscript>` says so and draws nothing else.
 
 **The one header that changed is the Content-Security-Policy**, which a page
@@ -397,7 +397,7 @@ ticket-granting ticket.
 Kerberos policed delegation from msDS-* fields on its own principal table; it
 now asks the issuance policy that decides WS-Trust and RFC 8693 too, over the
 common controls on the directory's entries (`../common/CLAUDE.md` rule 3az,
-`../docs/v1.1.0/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
+`../docs/v1.2.0/delegation.md`). `krb5_delegation.ts` is the Kerberos side, and it
 decides nothing: it names the parties (a service is the application entry
 whose identifier is its `SPN@REALM`, a person their entry), asks
 `delegation_policy.ts`, and holds the two pieces of machinery that are not
@@ -423,7 +423,7 @@ policy. rcbj's decisions on #186, each load-bearing:
   than a mismatch — an S4U2Proxy ticket carries the chain in its PAC
   (S4U_DELEGATION_INFO), and an exchanged token with no `act` carries none —
   and the console's Kerberos rows say it under their mode
-  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/v1.1.0/delegation.md` and
+  (`web_delegation.ts`'s `kerberosModeNote()`), as `docs/v1.2.0/delegation.md` and
   the chain jobs' headers do.
 * **FORWARDABLE EVIDENCE FOR BOTH ROUTES, AND THE REPLY'S FLAG (#492).**
   [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence for classic delegation
@@ -1951,7 +1951,10 @@ each section; the decisions a reader needs here:
 * **THE CODE IS THE SIGN-IN SCREEN'S.** `credentials.verifyTotpAsync()`, its
   entry counter and the cluster counter `authn.totp-step`: one code cannot be
   spent at `/authn/totp` and at the KDC. The order is nonce, PIN, code, so a
-  wrong password never spends a step.
+  wrong password never spends a step. **Since #1955 P4 that door takes an
+  HOTP token's code too** (its counter `authn.hotp-counter`, compare-and-set):
+  `secondFactorDemand().totp` means a code of either kind, so the KDC offers
+  OTP to a person holding only a token, and nothing here learned the kind.
 * **RFC 6560's ASN.1 IS IMPLICIT TAGS** and RFC 6113's, 7751's and 8129's are
   explicit. The codec was written explicit first, the suite's own client agreed,
   and MIT's `kinit` refused the challenge ("ASN.1 structure is missing a required
@@ -2012,6 +2015,17 @@ code, the refusal and PREAUTH_FAILED, FAST and OTP with its own client in
 
 ## PKINIT: A CERTIFICATE AS THE PRE-AUTHENTICATION (#179, 2026-10-05)
 
+**THE AUTHENTICATION POLICY'S `pkinitSmartCard` ROW (#2031, 2026-11-23).**
+A SPNEGO session whose ticket carries this realm's `pkinit-smartcard`
+indicator earns `amr ["hwk","sc"]` (`krb5_tokens.factorsFor()`), and
+`authn.ts`'s `authnPolicyRefusal()` asks the policy's *Kerberos PKINIT with a
+smart card* row for it (STS-AUTHN-0591) rather than `kerberos`. While the
+policy stores no value for that row it follows `kerberosPrimary`. The AS
+exchange itself is not gated by either row, as it never was by `kerberos`;
+the PIV card authentication key is still refused at PKINIT by
+`piv_attestation.signInRefusal()`, which now asks the policy's
+`smartCardCardAuth` row (following `piv.cardAuthSignIn` while unset).
+
 **THE HOLE #173 LEFT.** A product person who holds or owes a second factor is
 refused a ticket on the password alone, and FAST with OTP is the way in for
 an authenticator app. A person whose only second factor is a SECURITY KEY had
@@ -2036,7 +2050,13 @@ decisions a reader needs here:
     hw-authent) only for a smart-card logon certificate whose key this
     service did not generate (`keySource` on the enrolled record). Read by
     `spnego_authn.ts` as `swk` and `hwk`, NEVER `pwd`; one factor, so `acr
-    "1"`.
+    "1"`. **Since #1955 P1 recorded evidence earns it too**: a certificate an
+    active hardware token's attestation covers (`common/hardware_tokens.ts`,
+    `evidenceFor()`) is hardware whatever its EKU, and evidence that the key
+    is on a smart card adds the KDC's own indicator `pkinit-smartcard`, which
+    `Krb5Tokens.factorsFor()` and `decideSignIn()` turn into `sc`. The
+    inference above stands only while `hardwareTokens.hardwareClaims` is
+    `inference`, the default; `evidence` drops it (what P2 switches PIV to).
 * **REACHED THROUGH THE KEY SOURCE, BESIDE FAST** (`setKeySource({ ...,
   fast, pkinit })`, `principals.pkinitProvider()`), for #173's reason:
   `krb5_kdc.js`, `krb5_principals.js` and `krb5_service.js` gained no
@@ -2077,6 +2097,21 @@ decisions a reader needs here:
   * RSA key transport (section 3.2.3.2) is not implemented at all,
     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED: no forward secrecy.
   * DH keys are never reused.
+  * **MS-PKCA's paChecksum2 is checked whenever it is sent** (#2125, ASVS
+    5.0.0 11.4.3, rcbj 2026-11-24): `PAChecksum2 ::= SEQUENCE { checksum [0]
+    OCTET STRING, algorithmIdentifier [1] AlgorithmIdentifier }`, MS-PKCA
+    section 2.2.3, at PKAuthenticator tag [5] — the section says only that
+    it "follows the freshness token", and [5] is Heimdal's number and what
+    Windows sends. SHA-256/384/512 over the same KDC-REQ-BODY bytes as the
+    paChecksum; an unlisted OID, or SHA-1 where `mode.allowsLegacyHashes()`
+    is false, is STS-KRB-0260 (79), a mismatch STS-KRB-0261 (41). It is NOT
+    skipped when unacceptable: MS-PKCA says a present one "will always be
+    validated". `krb5.pkinitRequirePaChecksum2` (off: MIT sends none)
+    refuses a request without one, anonymous included (STS-KRB-0262). **The
+    SHA-1 paChecksum stays required and checked** — RFC 4556 makes it a
+    MUST, and refusing it refuses MIT and Heimdal. There is no PKINIT CLIENT
+    in the service; the in-process test's client sends paChecksum2 when
+    asked (`tests/kerberos_pkinit.js`).
   * The ticket ends no later than the certificate, and renews no later
     than it either (the review of #897).
   * The AuthPack is spent once across the cluster
@@ -2350,7 +2385,7 @@ keeps its password-derived development krbtgt exactly as before.
 **PQC.** No post-quantum Kerberos enctype is standardised; the strongest registered are
 aes256-cts-hmac-sha384-192 (20) and aes256-cts-hmac-sha1-96 (18), and Grover leaves
 AES-256 at about 128 bits, so the rotation needs no new enctype. PKINIT's public-key key
-agreement is the quantum-exposed part and is #179. `docs/v1.1.0/kerberos.md` says so.
+agreement is the quantum-exposed part and is #179. `docs/v1.2.0/kerberos.md` says so.
 
 **TESTS.** `tests/kerberos_krbtgt_rotation.js` (three children: product first start —
 creation, a TGT across a rotation, the timing, FAST armor and cookie across one, the
@@ -2572,7 +2607,7 @@ two-cell stack, `tests/protocol/sts_cells_kerberos.js` (`--modes=cells`, TCP).
 are the sixth claim set of `common/admin_stats.js`, `kerberos-pac`, with a
 per-application override applied to SERVICE tickets; claim ids are
 `ad://ext/<name>:<hex>`; roles go as claims and never as extraSids; a claims
-set is never compressed. `docs/v1.1.0/kerberos.md`, *PAC claims*, is the user's half.
+set is never compressed. `docs/v1.2.0/kerberos.md`, *PAC claims*, is the user's half.
 
 **THE CODEC IS THE PARENT'S, AS EVER.** The NDR encoder and decoder for
 `CLAIMS_SET_METADATA` / `CLAIMS_SET` and the XPRESS Huffman decompressor are in
@@ -2682,6 +2717,23 @@ nobody, so **nothing is owed to the parent project**.
 
 
 ---
+
+## SERVICE PRINCIPAL KEYS ON A SCHEDULE: ONLY THIS SERVICE'S OWN (#2220, 2026-11-25)
+
+`krb5.service-key-rotate` (`krb5_krbtgt_rotation.ts`, beside the krbtgt's two
+jobs, the same shape) replaces a service principal's key through
+`rotateServicePrincipal()` once it is `krb5.serviceKeyRotationIntervalDays`
+old — its age from `rotatedAt`, else `createdAt`, so an upgrade does not
+rotate every acceptor at once — and never while a retained version is still
+inside its window. **ONLY A KEY MADE FOR THIS SERVICE'S OWN ACCEPTOR
+(`generated` = `acceptor`) IS ROTATED.** Every other stored service key was
+handed out once, as a keytab, to a service this one cannot reach; rotating it
+on a timer would leave that service unable to open any new ticket until a
+keytab nobody was given was installed. Those are REPORTED as due in the run's
+result, and rotating them stays the operator's act, which hands the new
+keytab out. `servicesForRotation()` carries the `ownAcceptor` flag rather than
+`listServices()`, whose rows are an `/admin-api` answer held to a closed
+model. `tests/key_renewal.js` C holds it.
 
 ## A ROLE A SERVICE REQUIRES: ITS ENTRY BY EITHER NAME, AT THE TGS AND THE AS (#747, 2026-10-20)
 

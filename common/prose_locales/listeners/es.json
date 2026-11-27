@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "El servicio de inicio de sesión y sus segundos factores, la billetera, los inicios de sesión con SPNEGO y con certificado, y el cierre de sesión."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "Inicio de sesión con certificado"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "La escucha a la que se traspasa un inicio de sesión con certificado: la única solicitud que pide una tarjeta inteligente o un certificado."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "Portal de usuario"
@@ -312,8 +320,8 @@
     "text": "Autoridad de certificación"
   },
   "listeners.applications.pki.what": {
-    "en": "8b280b2baedbdfe6",
-    "text": "CRL, OCSP, los certificados y cadenas de CA, y los documentos de metadatos criptográficos."
+    "en": "227bec56922b2292",
+    "text": "Las CRL, OCSP, los certificados y cadenas de la CA, los documentos de metadatos criptográficos y las claves OpenPGP del Web Key Directory."
   },
   "listeners.applications.kerberos.label": {
     "en": "43c19a093b34b581",

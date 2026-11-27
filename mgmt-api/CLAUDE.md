@@ -1569,6 +1569,20 @@ hides from them, whether the roster is still open — this operation tells it.
   policy" and `write` the same for ADMIN_WRITE, which are held ∩ carried
   (#303). A second reading of the roster here could disagree with the gate
   that has just let the request in.
+* **`holds` IS THE OTHER HALF (#2168).** The console signs in with `admin:read
+  admin:console`, so `write` and `security` are false on its first token for
+  everybody; `holds` is held ∩ DECLARED — the roles the subject holds now
+  whose permission the client may still be issued, whatever this token
+  carries (`heldAdminRoles()`) — and the console draws forms from it and the
+  frame's banner (`consoleGateOf()`) says what the reader may do. It decides
+  nothing: the gate asks held ∩ carried of every call. Beside it the gate
+  names a missing scope on its two refusals a missing scope ends in —
+  `WWW-Authenticate: <scheme> error="insufficient_scope", scope="…"` on
+  STS-API-0005 (the operation's scope, `admin:write` too for a console form
+  helper, `owner:write` beside it for an owner's write) and STS-API-0138
+  (`admin:security`), status, code and body unchanged, and only where the
+  token LACKS the scope (`challengeMissingScope()`), so a subject who lost
+  the role is not sent round a second authorization that cannot help.
 * **THE ROSTER IS ASKED FOR WHAT ONLY IT KNOWS**: whether the console is open
   to anybody, and the bootstrap administrator's state (`console`). Asked for a
   person only, in the token's realm; one that cannot be read reports itself
@@ -1644,6 +1658,74 @@ has nobody to ask. **The same six acts are on that list since #1577**:
 recency, so the two widest removals were the two a stale sign-in could make.
 The console needs nothing per action — `web_runtime.ts` reads the challenge
 off any 401.
+
+**SINCE #2161 (ASVS 5.0.0 7.5.3, rcbj 2026-11-24) THE RECENCY IS ALSO ASKED BY
+FAMILY, AT THE CHOKE POINT.** `REAUTHENTICATED_ACTIONS` stays a list of action
+names that the two handlers check. The other sensitive acts are declared by
+family: `RECENT_SIGN_IN_TAGS` (Admin roles, Roles, Trust realms, PKI,
+Configuration), `RECENT_SIGN_IN_ROUTES` (`/keys`, `/encryption`,
+`/tls/trust`, `/secret-destinations`, whose `Service` or `Directory` tag also
+covers acts that are not sensitive), and `RECENT_SIGN_IN_ACTIONS` (the krbtgt
+rotations and `reset-person-keytab` on `/kerberos/principals`). Every request
+the gate classifies as a Security Administrator's change (#645, kept on
+`res.locals.securityChange`) is asked as well. `registerRoutes()` asks
+`AdminApi.recentSignInFamilyOf()` for every POST, after the body check and
+before the handler, so **a new action or route in one of those families is
+covered without an edit**. Only a `writesNothing` act is left out. **The
+settings are not split into security settings and the rest.** That would be
+a list a new security setting could be left off, so every `config/*` write
+is asked, `global.mode` among them. The window is the same setting, and
+`tests/admin_api_recent_sign_in.js` holds the table and one operation per
+family, stale and fresh. `tests/protocol/console_signin.js`'s `api()` signs
+in again with `prompt=login` on the 401, as the console's popup does, so a
+console job that runs longer than the window keeps working.
+
+**#2247 (ASVS 5.0.0 7.5.3, the Level 3 re-sweep, 2026-11-25) WIDENED THE
+FAMILIES TO EVERY ACT THAT DECIDES WHO CAN SIGN IN, WHAT THEY ARE ISSUED OR
+WHERE IT GOES.** #2161 had missed the XACML/ALFA policies, the federation
+relationships and the applications; a sweep of every other tag added the
+rest. The verdict on each tag, route and action, and the ones deliberately
+NOT asked (the revocations and sign-outs, CAEP/RISC, GNAP's two acts, the
+verifier, provider commands, the scheduler and the other housekeeping), is
+the comment above `RECENT_SIGN_IN_TAGS`, which is the one copy. The rule for
+choosing: **a tag is taken whole** where nearly every act on it is sensitive
+and the rest share an action with ones that are — an application's
+description is changed by the same `set` as its redirect URIs, so splitting
+`set` by attribute would be the list a new attribute is left off; the cost
+is at most one re-sign-in per window, since the window counts from the
+sign-in. **A route** where the tag is shared (`/attribute-sources`,
+`/hardware-tokens`, `/openpgp` under `Directory`; `/kerberos/trusts`,
+`/kerberos/claims`; `/claim-providers`; `/ssf`; `/listeners`;
+`/audit-export`). **Actions** where the route's other acts are ordinary or
+only take away: `/users` (activation link, `stop-requiring-mfa`,
+`add-certificate`, the service-account acts, `set-may-act` and its
+neighbours, `answer-ciba-request`), the RESTORES on `/tokens` and `/logout`,
+and `/mail`'s `save-template`. The two-person replay is untouched: it calls
+the handler directly and `decideHeld()` asks the APPROVER's sign-in first.
+
+## THE WRITE BUDGET (#2247, ASVS 5.0.0 2.4.2)
+
+**Every POST that writes is counted by the token's realm and subject**, in
+`AdminApi.overWriteBudget()`, after the body check and the recent sign-in
+and before a hold (a held act counts once; its replay is not counted), with
+`/account-api`'s mechanism, `websecurity.subjectActShared()` (#2167). A
+person's token counts against `adminApi.writesPerSubject` (1200 in product,
+0 in development) in `adminApi.writeWindowS` (600 s): two writes a second
+for ten minutes, about four times what the busiest console session sends,
+since the console makes one POST per act. **A program — a
+`client_credentials` token, keyed by client, or a service account's
+(`stsServiceAccount`), keyed by subject — is not counted by it** and only
+against `adminApi.programWritesPerSubject`, 0 (no limit) in every mode:
+provisioning bursts are legitimate and their size is the operator's to know.
+All three rows are `perProcess`, so a realm administrator cannot lift the
+budget their own token is counted in. A form helper (`writesNothing`) is not
+counted. Over it: **429, `Retry-After`, `STS-API-0148`**, `{ ok: false,
+errors }` — English, as every refusal here is; the console draws no
+`messages`, so none are sent, and the `default` response model
+(`RefusalFailure`) already holds the answer, so no model changed. The wrapper
+stays synchronous while no budget applies. `docker-compose-run-tests.yml`
+sets `ADMIN_API_WRITES_PER_SUBJECT=0`, as it does #2167's.
+`tests/admin_api_write_budget.js` holds it.
 
 
 ## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)
@@ -2695,7 +2777,7 @@ on the BODY, so the OpenAPI document says `admin:security` only for
 description names the rest. `/me` answers `security`. `sts-api-client` and
 `sts-admin-console` declare it; **an entry seeded before #645 is not
 migrated** (no migrations), and needs a delegated permission grant of
-`urn:sts:admin-api:admin:security` — `docs/v1.1.0/security-administrator.md` says
+`urn:sts:admin-api:admin:security` — `docs/v1.2.0/security-administrator.md` says
 so. The harness's token asks for it (`tests/tools/admin-api-token.js`).
 `admin-ui/CLAUDE.md` 8a-ii has the role.
 
@@ -2952,6 +3034,73 @@ be asked (`STS-LDAP-0139` on the rejection) is 503, anything else 500, both
 `STS-AUTHN-0415`. `list` and `lane` are closed sets, held at the gate (#86).
 `tests/protocol/sts_passkey_report.js` drives it.
 
+## `/admin-api/hardware-tokens` — DIRECTORY → HARDWARE TOKENS (#1955 P1, 2026-11-20)
+
+`mgmt-api/hardware_tokens_api.ts`, spread into the table as the post-login
+activities' are: `GET /admin-api/hardware-tokens` (the page's view: `tokens`,
+`paging`, `capped`, `q`, `status`) and `POST
+/admin-api/hardware-tokens/lost` (`{ key }`, mirroring `POST
+/admin/hardware-tokens`). Both are `common/hardware_tokens.ts`'s. Nothing
+here records a serial: a token reaches the register only from attestation.
+The act's answer lists `retired` and `notRetired` WITHOUT their error codes
+(the codes are on the audit row). Reporting a Security Administrator's token
+lost clears their factors, so `common/security_operations.ts` classifies it
+as a holder change (`admin:security`), the holder read from the register,
+never the body. 404 for no such token (STS-HWTOKEN-0005), 409 for one
+already lost (0006), 400 for an unknown action (0012).
+
+**#1955 P4 adds the imported OATH token inventory** on the same module:
+`GET /admin-api/hardware-tokens/oath` (the OATH tab's view, composed under
+`oq`, `ostatus`, `opage`) and three more actions on the same route,
+`import-pskc` (`{ pskc, preSharedKey | password }`), `assign-oath`
+(`{ key, username }`) and `remove-oath` (`{ key }`), all
+`common/oath_tokens.ts`'s. **THE SEED FILE'S KEY OR PASSWORD REACHES
+`pskc.open()` AND NOTHING ELSE**: no answer, audit row or log line names
+it. An import's `skipped` rows carry the reason in English and no code.
+404 for no such token (STS-OATH-0040), 409 for one already assigned or
+retired (0041) and for removing an assigned one (0049), 400 otherwise with
+the act's own code. `clear-hotp` is on `/admin-api/users` and
+`/admin-api/mfa` beside `clear-totp`, the same evidence rule, a recent
+sign-in (`REAUTHENTICATED_ACTIONS`), and its sessions ended.
+`clear-yubi` (#1955 P5) is on those same two routes: it takes the AES key
+off the entry, retires the public identity, and ends the sessions that
+OTP signed in. A person who holds none is STS-YUBIOTP-0030.
+
+**#1955 P2 adds two acts and one read** (`common/piv_enrolment.ts` argues
+them): `enrol-piv` (`{ username, profile, csr, attestationCertificate?,
+attestationIssuer? }`, a PIV slot certificate for that person over the EST
+Issuing CA, refusals at the core's statuses held to 400/404/409/503),
+`recover-key` (`{ username, serial }`, the escrowed key, 403 STS-PIV-0023
+unless the access-control policy PERMITS it for PIV_KEY_RECOVERY, which is
+asked beside the API's own Admin Write — never instead of it), and `GET
+/admin-api/hardware-tokens/escrowed?username=` (a person's escrowed
+certificates, never a key). The page's view gains `piv` (the profiles EST
+may issue and the two switches) and `escrowed` (the person `q` names), which
+the console's Enrol PIV and Escrowed keys tabs draw. A recovered key is the
+one answer of this resource that carries a private key; `sendJson()` sends
+`no-store` on every answer.
+
+**#2071 adds the two operations the console's tabs lacked** (rule 7 read
+the other way: an operation with no read beside it, and a control with no
+operation). `GET /admin-api/hardware-tokens/yubiotp` (`getYubiOtpTokens`,
+composed under `yq`, `ystatus`, `ypage` for the YubiKey OTP tab and with
+`q` the person for their sub-tab) is `yubiotp_store.list()`: a serial read
+by its key, `status` by the inventory's `st:` index, a username's tokens
+read off THEIR ENTRY (`stsYubiOtpToken`, `token_entries.valuesOfAsync()`),
+never a walk of the directory; the unnarrowed list of an on-demand store
+is its newest thousand and says `capped`. `issue-ssh` (`{ username,
+publicKey, principals?, lifetimeS?, attestation?, attestationChallenge? }`,
+`issueUserSshCertificate`) is `ssh_user_ca.adminIssue()`, which runs the
+person's own `issue()` — the principals theirs, each the policy's question
+about them, the entry written first through the register — with the
+administrator as the audit row's actor (the token's subject, or
+`audit.currentActor()`). It is not behind `pki.personSelfService` or the
+portal's rate limit, which are the self-service door's. 404 nobody
+(STS-SSHCA-0004), 403 a refused principal or group, 400 a refused key or
+lifetime, 503 no CA or not recorded, 500 a throw (STS-SSHCA-0011); a
+failed list is STS-YUBIOTP-0035. Acting on a Security Administrator is
+`admin:security` by the body's `username`, as `revoke-ssh` is.
+
 ## `/admin-api/post-login-activities` — DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123)
 
 `mgmt-api/post_login_activities_api.ts`, spread into the table as the
@@ -3140,3 +3289,35 @@ at a management address is still told where the drawing is rather than called
 an unknown name. `tests/admin_api_request_names.js` holds the rules, the
 wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
 `probeStrictRequests()` holds the running service.
+
+## `/admin-api/openpgp` — DIRECTORY → OpenPGP KEYS (#1955 P6, 2026-11-20)
+
+`mgmt-api/openpgp_api.ts`, spread into the table as the hardware tokens'
+are: `GET /admin-api/openpgp?user=` (one person's key, challenge, Web Key
+Directory publication, S/MIME certificate and mail choice, plus the realm's
+WKD switch and domains) and `POST /admin-api/openpgp/<action>` with `{ user,
+… }` for the portal's seven acts (`issueOpenPgpChallenge`,
+`registerOpenPgpKey`, `removeOpenPgpKey`, `publishOpenPgpKey`,
+`withdrawOpenPgpKey`, `setMailEncryption`, `setSmimeCertificate`). **A
+registration is still the person's proof**: the administrator issues the
+challenge and pastes back what the person signed. The actor is the token's
+subject (#1579). Not a security operation: no OpenPGP key is a way in.
+
+## `POST /admin-api/console/certificates/inspect` — certificate sign-in's reader (#2080)
+
+A console form helper (3cc, a row of one action, `writesNothing`): the PEM
+certificates handed in, each with its subject, issuer, serial, validity,
+SHA-256 and SubjectPublicKeyInfo SHA-256, and with `bindings: true` the
+`stsCertificateBinding` values the first is found by — `spki-sha256`, and
+`issuer-serial` and `issuer-ski` from the first other certificate or client
+trust anchor whose key verifies its signature. It is how the console's
+editors (`admin-ui/CLAUDE.md`, *Certificate sign-in's settings as form
+fields*) show what a certificate is without hashing in a browser.
+**It describes what it is handed**, which `GET /admin-api/certificates`
+deliberately never does; the difference is that this is a POST with the
+administrator's own text, answered to the page that sent it, and that one is
+a link anybody can be sent (`CertificateViews.inspectView()` argues it). At
+most 262144 characters and 64 certificates; none, or a block that is not a
+certificate, is a 400 (`STS-ADMIN-0953`, `STS-ADMIN-0954`). What it leads to
+stays a management operation: `config/set` and `users/add-attribute`.
+`GET /admin-api/tls/trust`'s rows carry `spkiSha256` since the same change.

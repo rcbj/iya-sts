@@ -260,11 +260,21 @@ async function theDocumentIsServedAndWellFormed() {
         method + " " + path + " needs a summary and a description.");
       assert.ok(operation.responses && operation.responses["200"],
         method + " " + path + " should document its 200.");
+      // A REFUSAL IS DOCUMENTED, AND MOST ARE A 400. An operation whose only
+      // refusal is about its referent may document that alone instead: since
+      // #1955, `ykval-client-remove` refuses nothing but an id the realm
+      // holds no client for, and answers that 404 with `errors`. So a POST
+      // documents a 400, or another 4xx; a POST documenting no refusal at all
+      // is still the gap this was written to find.
       if (method === "post") {
-        assert.ok(operation.responses["400"],
-          "POST " + path + " should document its 400 — a refusal is the " +
-          "reply half of these operations that a caller has to handle, and " +
-          "it carries `errors` rather than a status alone.");
+        assert.ok(operation.responses["400"] ||
+                  Object.keys(operation.responses).some(function (code) {
+                    return /^4\d\d$/.test(code);
+                  }),
+          "POST " + path + " should document its 400, or the 4xx it " +
+          "refuses with — a refusal is the reply half of these operations " +
+          "that a caller has to handle, and it carries `errors` rather than " +
+          "a status alone.");
       }
     });
   });
@@ -424,23 +434,40 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
   // catalogs are versioned by — both must be this API's string.
   const home = await fetch(base + "/", { redirect: "manual" });
   const html = await home.text();
-  assert.ok(html.indexOf(' data-sts-version="' + index.version + '"') >= 0,
-    "the front page's shell should carry the version this API reports (" +
-    index.version + "). It is the surface that reported package.json's " +
-    "placeholder patch for every build ever made, so it is checked against " +
-    "the string rather than trusted.");
-  // AND THE FOOTER (2026-11-14), which is the one place a page DRAWS the
-  // version since the in-content version lines went: the facts the browser
-  // redraws it from are on the shell and must be this API's string.
-  assert.ok(html.indexOf(' data-sts-footer-version="' + index.version +
-                         '"') >= 0,
-    "the front page's footer should carry the version this API reports (" +
-    index.version + "), since the footer is where every page shows it.");
   const front = await fetch(base + "/home-api/front");
   const frontView = ((await front.json()) || {}).view || {};
-  assert.strictEqual(frontView.version, index.version,
-    "the front page's view should carry the version this API reports, " +
-    "which is what the page draws (#579).");
+  // IN PRODUCT THE FRONT PAGE CARRIES NO BUILD (#2142, ASVS 5.0.0 13.4.6;
+  // `security.publishBuildInfo`): anybody fetches it. Then every one of the
+  // three is empty — and none of them may still carry the build — while this
+  // API, an administrator's, keeps it (asserted above).
+  const published = html.indexOf(" data-sts-version=\"") >= 0;
+  if (!published) {
+    assert.ok(html.indexOf(index.version) < 0 &&
+              html.indexOf(" data-sts-footer-version=\"\"") >= 0,
+      "with the build kept off the front page (product mode), its shell " +
+      "and footer should carry no version at all; " + index.version +
+      " was found, or the footer's version fact is not empty.");
+    assert.strictEqual(frontView.version, "",
+      "and the front page's view should carry an empty version.");
+    log.info("[version] the front page carries no build (product mode).");
+  } else {
+    assert.ok(html.indexOf(' data-sts-version="' + index.version + '"') >= 0,
+      "the front page's shell should carry the version this API reports (" +
+      index.version + "). It is the surface that reported package.json's " +
+      "placeholder patch for every build ever made, so it is checked " +
+      "against the string rather than trusted.");
+    // AND THE FOOTER (2026-11-14), which is the one place a page DRAWS the
+    // version since the in-content version lines went: the facts the
+    // browser redraws it from are on the shell and must be this API's
+    // string.
+    assert.ok(html.indexOf(' data-sts-footer-version="' + index.version +
+                           '"') >= 0,
+      "the front page's footer should carry the version this API reports (" +
+      index.version + "), since the footer is where every page shows it.");
+    assert.strictEqual(frontView.version, index.version,
+      "the front page's view should carry the version this API reports, " +
+      "which is what the page draws (#579).");
+  }
 
   log.info("[version] OK — " + index.version + " (built " + index.builtAt +
            ", " + (index.stamped ? "stamped at build time" :

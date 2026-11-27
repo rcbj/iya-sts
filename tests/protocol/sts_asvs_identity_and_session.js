@@ -50,6 +50,7 @@ const assert = require("assert");
 const crypto = require("crypto");
 const names = require("./random_username.js");
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 
 var appconfig;
 let appconfigProblem = null;
@@ -306,10 +307,17 @@ function user(tag) {
 
 async function person(rb, name) {
   log.debug("Entering person(). " + name);
+  // Temporary, then the person's own (#2160, `own_password.js`): D signs
+  // in with PW in product.
   await ok(rb + "/admin-api/users/create", { username: name, invent: false,
     attributes: { cn: "Asv " + name, sn: name, givenName: ["Asv"],
                   mail: [name + "@example.test"] },
-    credential: "password", password: PW }, "created " + name);
+    credential: "password", password: ownPassword.temporaryFor(PW) },
+    "created " + name);
+  await ownPassword.ownPassword(rb, name, PW, function (who, value) {
+    return postJson(rb + "/admin-api/users/set-password",
+                    { user: who, password: value });
+  });
   log.debug("Leaving person().");
 }
 
