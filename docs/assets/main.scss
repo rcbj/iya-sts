@@ -14,15 +14,98 @@ $sidebar-width: 270px;
   max-width: none;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 .site-title { line-height: 48px; float: none; display: flex; align-items: center; }
 .site-logo { display: block; height: 48px; width: auto; }
 .site-tagline { color: $grey-color; font-size: $small-font-size; }
 
+// The search box takes the free space, so the version switcher stays at
+// the right edge beside it (_includes/header.html). The panel hangs
+// below the field. The header does not clip it.
+.doc-search {
+  position: relative;
+  margin-left: auto;
+  flex: 1 1 14rem;
+  max-width: 22rem;
+  form { margin: 0; }
+  input[type="search"] {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 4px 8px;
+    border: 1px solid $grey-color-light;
+    border-radius: 4px;
+    font-size: $small-font-size;
+    background: #fff;
+    color: $text-color;
+  }
+}
+.doc-search [hidden] { display: none; }
+.doc-search-panel {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  width: 22rem;
+  max-width: 80vw;
+  max-height: 70vh;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid $grey-color-light;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { margin: 0; }
+}
+.doc-search-page {
+  position: static;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  margin-top: $spacing-unit;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { margin: 0; }
+}
+.doc-search-hit {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+  &:hover,
+  &.doc-search-active {
+    background: lighten($grey-color-light, 5%);
+    text-decoration: none;
+  }
+}
+.doc-search-title { display: block; font-weight: 600; }
+.doc-search-snippet {
+  display: block;
+  color: $grey-color-dark;
+  font-size: $small-font-size;
+}
+.doc-search-status {
+  margin: 0 0 6px 0;
+  color: $grey-color;
+  font-size: $small-font-size;
+}
+.doc-search mark,
+.doc-search-page mark {
+  background: lighten($brand-color, 40%);
+  color: inherit;
+  padding: 0 1px;
+}
+
 // The version switcher, at the right of the header (_includes/header.html).
 .version-switcher {
-  margin-left: auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -141,4 +224,9 @@ $sidebar-width: 270px;
     border-bottom: 1px solid $grey-color-light;
   }
   .sidebar-trigger:checked + .sidebar { display: block; }
+  .doc-search {
+    flex: 1 1 100%;
+    max-width: none;
+    margin-left: 0;
+  }
 }

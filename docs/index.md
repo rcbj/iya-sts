@@ -11,7 +11,9 @@ clients; product mode is deployable.
 
 The documentation is kept per release. Read the version that matches the
 service you run: its console and portal link to their own version's pages,
-and every page of a version links only inside that version.
+and every page of a version links only inside that version. The box in
+the header searches the version of the page you are reading. From this
+page it searches the latest.
 
 | Version | |
 |---|---|
