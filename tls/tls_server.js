@@ -2346,21 +2346,39 @@ function describePem(pem) {
 // secure context is built, which can be before the certificate authority has
 // started, and a truststore must never be the thing that fails to build.
 // ---------------------------------------------------------------------------
+// The Root, and since #2292 every realm's Intermediate and client Issuing CAs
+// beneath it (`tls_client_certificates.issuerPems()`, which argues why that
+// trusts nothing more): node names each in the CertificateRequest, so a
+// client holding only its leaf finds its issuer there. An anchor somebody
+// added with the same PEM is not added twice.
 function issuedClientCertificateAnchor(trust) {
   log.debug("Entering issuedClientCertificateAnchor().");
-  let pem = '';
+  let pems = [];
   try {
-    pem = require('../common/tls_client_certificates').trustAnchorPem(trust);
+    const issued = require('../common/tls_client_certificates');
+    const root = issued.trustAnchorPem(trust);
+    pems = root ? [root].concat(issued.issuerPems(trust)) : [];
   } catch (e) {
     log.debug("Caught in issuedClientCertificateAnchor(): " +
               ((e && e.message) || e));
-    pem = '';
+    pems = [];
   }
-  const already = !!pem && anchors.some(function (anchor) {
-    return String(anchor.pem).trim() === String(pem).trim();
+  const out = pems.filter(function (pem) {
+    return !anchors.some(function (anchor) {
+      return String(anchor.pem).trim() === String(pem).trim();
+    });
   });
-  log.debug("Leaving issuedClientCertificateAnchor().");
-  return pem && !already ? [pem] : [];
+  log.debug("Leaving issuedClientCertificateAnchor(). " + out.length);
+  return out;
+}
+
+// What the issued anchors are now, as one string, so that a change of them
+// re-applies the listeners (#2292).
+function issuedAnchorsSignature() {
+  log.debug("Entering issuedAnchorsSignature().");
+  const out = issuedClientCertificateAnchor().join('');
+  log.debug("Leaving issuedAnchorsSignature().");
+  return out;
 }
 
 // What the truststore report says about the Root added above, or null in a
@@ -3984,8 +4002,14 @@ function forgetListener(server) {
 // owns. Existing connections keep the context they were made under — node says
 // so and it is the behaviour worth having, since a connection judged under one
 // truststore should not silently change its mind halfway through.
+// What the listeners were last handed by `applyAnchors()` (#2292). A `var`,
+// because `applyAnchors()` may run while this module is still loading.
+// eslint-disable-next-line no-var
+var issuedAnchorsApplied = null;
+
 function applyAnchors() {
   log.debug('Entering applyAnchors(). anchors=' + anchors.length);
+  issuedAnchorsApplied = issuedAnchorsSignature();
   // EVERY listener is an external one since 2026-09-16: this module creates
   // none of its own any more, so the list that was "our two, plus theirs" is
   // now just theirs — the main HTTPS port and the debugger's.
@@ -4119,6 +4143,36 @@ if (typeof config.onOverridesChanged === 'function') {
 }
 realms.onChange(function () {
   reapplyPolicy();
+});
+
+// THE CLIENT CA NAMES FOLLOW THE HIERARCHIES (#2292). A realm's branch is
+// built, adopted from another process or node, reissued or dropped long
+// after the listeners were created, and `issuedClientCertificateAnchor()`
+// names its Intermediate and client Issuing CAs, so the keystore's held
+// hierarchies are observed. A build writes several of them in one turn, so
+// the re-application is put off to the next turn (a debounce, not periodic
+// work) and made only when what the listeners would be handed changed.
+let issuedAnchorsQueued = false;
+
+function reapplyIssuedAnchors() {
+  log.debug("Entering reapplyIssuedAnchors().");
+  issuedAnchorsQueued = false;
+  const now = issuedAnchorsSignature();
+  if (now !== issuedAnchorsApplied && externalServers.length) {
+    log.info('tls: this service\'s certificate authorities changed, so ' +
+             'the listeners name ' + issuedClientCertificateAnchor().length +
+             ' of them to clients and were re-applied.');
+    applyAnchors();
+  }
+  log.debug("Leaving reapplyIssuedAnchors().");
+}
+
+require('../common/keystore').onPkiChange(function () {
+  if (issuedAnchorsQueued) {
+    return;
+  }
+  issuedAnchorsQueued = true;
+  setImmediate(reapplyIssuedAnchors);
 });
 
 // ---------------------------------------------------------------------------

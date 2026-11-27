@@ -1614,6 +1614,78 @@ function trustAnchorPem(trust) {
 }
 
 // ---------------------------------------------------------------------------
+// THE ISSUERS BENEATH THAT ROOT, NAMED TO EVERY CLIENT (#2292).
+//
+// node builds a listener's CertificateRequest `certificate_authorities` from
+// the subjects of its `ca` list, so with the Root alone a client is told
+// "a certificate under iya-sts Root CA". A client holding only its leaf has
+// to build the path to that name itself, and Firefox (NSS's
+// `FilterPotentialClientCertificatesByCANames`) drops a smart card's
+// certificate when it cannot, sending none: found with a YubiKey whose
+// piv-auth leaf came from a realm's EST Issuing CA. A client matches a
+// name against the leaf's ISSUER too, so naming every realm's Intermediate
+// and the Issuing CAs that issue client certificates makes the leaf
+// acceptable with no path built.
+//
+// IT TRUSTS NOTHING THE ROOT DID NOT ALREADY. Each is a CA this service's
+// own Root signed, already trusted through it. OpenSSL, without
+// X509_V_FLAG_PARTIAL_CHAIN (node never sets it), ends a path only at a
+// SELF-SIGNED trusted certificate, so an Intermediate in `ca` is an issuer
+// it may use, never an anchor: a leaf still verifies only through the Root,
+// and a branch the Root no longer signs verifies nothing. Revocation of a
+// leaf is `revocation_status.js`'s, as before; what an identity is stays
+// `identityOf()`'s. The list follows the same switch as the Root.
+// ---------------------------------------------------------------------------
+const CLIENT_ISSUER_USE_CASES = ['tls-client', 'est', 'acme', 'scep',
+                                 'spiffe'];
+
+/**
+ * Answers the CA certificates beneath the service Root that the client
+ * truststore names: every built realm's Intermediate and its Issuing CAs
+ * for client certificates, read on each call.
+ *
+ * @param trust - a listener's own trustIssuedClientCertificates, or
+ *   undefined for the service's
+ * @returns PEMs, without the Root; empty when the switch is off or there is
+ *   no hierarchy
+ */
+function issuerPems(trust) {
+  log.debug("Entering issuerPems().");
+  if (!trustAnchorPem(trust)) {
+    log.debug("Leaving issuerPems(). No Root.");
+    return [];
+  }
+  const out = [];
+  const seen = new Set();
+  const add = function (tier) {
+    const pem = tier && tier.certificatePem;
+    if (pem && !seen.has(pem)) {
+      seen.add(pem);
+      out.push(pem);
+    }
+  };
+  realms.list().forEach(function (realm) {
+    let row = null;
+    try {
+      row = pki.rawRowFor(realm.id);
+    } catch (e) {
+      // A realm whose branch is not readable here names nothing.
+      log.debug("Caught in issuerPems(): " + ((e && e.message) || e));
+      row = null;
+    }
+    if (!row || !row.intermediate) {
+      return;
+    }
+    add(row.intermediate);
+    CLIENT_ISSUER_USE_CASES.forEach(function (useCase) {
+      add((row.issuing || {})[useCase]);
+    });
+  });
+  log.debug("Leaving issuerPems(). " + out.length);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // RECOGNISE.
 //
 // `input` is `revocation_status.fromSocket()`'s shape — `{ leaf, chain,
@@ -2615,6 +2687,8 @@ module.exports = {
   revoke: revoke,
   forgetDeletedHolder: forgetDeletedHolder,
   trustAnchorPem: trustAnchorPem,
+  issuerPems: issuerPems,
+  CLIENT_ISSUER_USE_CASES: CLIENT_ISSUER_USE_CASES,
   identityOf: identityOf,
   checkSocket: checkSocket,
   checkCertificate: checkCertificate,

@@ -420,6 +420,38 @@ ambient realm. `/tls/sign-in` has one too, being a route like any other, and
 still does not use it: the session goes in the realm of the authority that
 signed the leaf, because that is the realm the certificate names.
 
+## AND THE ISSUERS BENEATH THE ROOT ARE NAMED TOO (#2292, 2026-11-27)
+
+**A YubiKey's piv-auth leaf, from a realm's EST Issuing CA, signed nobody in
+from Firefox.** The card holds the leaf alone; node builds the
+CertificateRequest's `certificate_authorities` from the subjects in `ca`,
+which held the Root alone; and Firefox (NSS's
+`FilterPotentialClientCertificatesByCANames`, its log: *no client
+certificates available after filtering by CA*) dropped the certificate and
+sent none. The listener could not have verified a leaf sent alone either.
+
+* **`issuedClientCertificateAnchor()` is the Root plus
+  `tls_client_certificates.issuerPems()`**: every built realm's Intermediate
+  and its `CLIENT_ISSUER_USE_CASES` Issuing CAs (`tls-client`, `est`, `acme`,
+  `scep`, `spiffe`), read per call, behind the same switch as the Root. A
+  client matches the leaf's ISSUER against the names, so it needs no path.
+* **IT TRUSTS NOTHING MORE.** OpenSSL ends a path only at a SELF-SIGNED
+  trusted certificate unless `X509_V_FLAG_PARTIAL_CHAIN` is set, and node
+  never sets it, so an Intermediate in `ca` is an issuer OpenSSL may use,
+  never an anchor: a leaf still verifies only through the Root.
+  `tests/client_ca_names.js` C holds an outside leaf refused.
+* **A BRANCH BUILT LATER REACHES THE LISTENERS.** `common/keystore.js`'s held
+  hierarchies are an `ObservedPkiMap` whose `set`/`delete` call
+  `onPkiChange()` observers (`STS-KEYS-0218` for one that throws), so a
+  branch built, adopted from another process or node, or dropped is seen
+  whichever of the ten write sites made it. This module coalesces a turn's
+  notifications (`setImmediate`, a debounce) and calls `applyAnchors()` only
+  when `issuedAnchorsSignature()` differs from what `applyAnchors()` last
+  applied.
+* **The cost is the request's size**: about seventy bytes per name, six names
+  per realm. A deployment with hundreds of realms sends a CertificateRequest
+  of tens of kilobytes; no client in reach has refused one.
+
 ## A PRESENTED CERTIFICATE'S REVOCATION IS CONSULTED (2026-09-12)
 
 `common/revocation_status.js` is the check and `common/CLAUDE.md` 3ad argues it.

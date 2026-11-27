@@ -353,6 +353,19 @@ are in [Hardware tokens](hardware-tokens.md#piv-key-attestation); the
 A government PIV or CAC card from somebody else's CA is under
 [Smart-card and certificate sign-in](#smart-card-and-certificate-sign-in).
 
+**The card needs only its own certificate.** A smart card holds the leaf
+and not the chain above it. When a listener asks for a client certificate,
+it names the authorities it accepts: the service Root, every realm's
+Intermediate, and each realm's Issuing CAs for client certificates (TLS
+client, EST, ACME, SCEP and SPIFFE). A browser such as Firefox offers a
+card's certificate only when its issuer, or a path to the Root, is on that
+list. The listener also holds those certificates, so it can verify a leaf
+presented alone. Nothing beyond the Root is trusted: every one of them is
+signed by the Root, and a path still has to end there. A realm created later
+is added to the list when its authorities are built, with no restart. All of
+this follows `tls.trustIssuedClientCertificates`; turned off, none of this
+service's authorities are named.
+
 ### A certificate from your own CA
 
 Taken from `sts_main_port_pooling.js`, which mints a Root, an Issuing CA and a

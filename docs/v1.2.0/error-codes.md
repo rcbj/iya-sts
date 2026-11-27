@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6191** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6192** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 36
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 90
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 206
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 207
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 299
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
@@ -879,6 +879,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0215` | An HSM operation was refused because keys.pkcs11QueueLimit operations were already waiting for a session of the token in this thread (#2220). | — |
 | `STS-KEYS-0216` | An HSM operation, or the wait for a session to run it on, took longer than keys.pkcs11TimeoutMs: it is refused, and a session whose operation outlived its caller is discarded when the module answers (#2220). | — |
 | `STS-KEYS-0217` | The keys.encryption-key-rotate job could not replace a realm's request-decryption keys (#2220): the key set could not be replaced (a newer generation was already held, or the store refused the write). The keys go on as they are and the next run tries again. | an error log line and a failure audit row; the scheduler run fails with this code |
+| `STS-KEYS-0218` | An observer of the certificate authority hierarchies threw when a hierarchy was set or dropped (#2292). The hierarchy is held as written; what the observer keeps in step with it (the TLS listeners' client CA names) may be behind until the next change. | a warning log line |
 
 ## STS-PKI
 
