@@ -101,6 +101,37 @@ async function csrFor(alg, names, opts) {
   return { der: Buffer.from(csr.der), pair: pair };
 }
 
+// A P-256 request for CN=alice carrying one extensionRequest attribute
+// with the given value, signed by its own key, the shape ykman writes
+// (#2290). Built with asn1js and node's signer, because the vendored
+// encoder writes no empty attribute.
+function csrWithExtensionRequest(value) {
+  log.debug("Entering csrWithExtensionRequest().");
+  const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const spki = pair.publicKey.export({ type: 'spki', format: 'der' });
+  const name = new asn1js.Sequence({ value: [new asn1js.Set({ value: [
+    new asn1js.Sequence({ value: [
+      new asn1js.ObjectIdentifier({ value: '2.5.4.3' }),
+      new asn1js.Utf8String({ value: 'alice' })] })] })] });
+  const attributes = new asn1js.Constructed({
+    idBlock: { tagClass: 3, tagNumber: 0 },
+    value: [new asn1js.Sequence({ value: [
+      new asn1js.ObjectIdentifier({ value: '1.2.840.113549.1.9.14' }),
+      new asn1js.Set({ value: [value] })] })] });
+  const info = new asn1js.Sequence({ value: [
+    new asn1js.Integer({ value: 0 }), name,
+    asn1js.fromBER(new Uint8Array(spki)).result, attributes] });
+  const infoDer = Buffer.from(info.toBER(false));
+  const signature = nodeCrypto.sign('sha256', infoDer, pair.privateKey);
+  const request = new asn1js.Sequence({ value: [
+    asn1js.fromBER(new Uint8Array(infoDer)).result,
+    new asn1js.Sequence({ value: [
+      new asn1js.ObjectIdentifier({ value: '1.2.840.10045.4.3.2' })] }),
+    new asn1js.BitString({ valueHex: new Uint8Array(signature) })] });
+  log.debug("Leaving csrWithExtensionRequest().");
+  return Buffer.from(request.toBER(false));
+}
+
 // A leaf-first chain verified with node's own verifier. See the header.
 function chainVerifies(leafPem, chainPems, rootPem) {
   log.debug("Entering chainVerifies().");
@@ -278,6 +309,20 @@ async function checkCsr(t) {
           'read as its first value');
   t.equal(codeOf(await core.parseCsr(Buffer.alloc(0))), 'STS-ENROLL-0030',
           'an empty body is refused');
+  // #2290: ykman's `piv certificates request` writes an extensionRequest
+  // whose Extensions SEQUENCE is empty. It requests nothing, and was
+  // refused as unreadable (STS-ENROLL-0034) until it was read that way.
+  const empty = csrWithExtensionRequest(new asn1js.Sequence());
+  const emptyParsed = await core.parseCsr(empty);
+  t.check(emptyParsed.ok, 'a request whose extensionRequest is an empty ' +
+          'SEQUENCE (ykman) is read', JSON.stringify(emptyParsed.errors));
+  t.equal(emptyParsed.commonName, 'alice', 'its subject is still read');
+  t.equal(JSON.stringify(emptyParsed.requested.dns), '[]',
+          'and it requests no name');
+  const notSequence = csrWithExtensionRequest(new asn1js.Integer({
+    value: 1 }));
+  t.equal(codeOf(await core.parseCsr(notSequence)), 'STS-ENROLL-0034',
+          'an extensionRequest that is not a SEQUENCE is still refused');
   // #35 (2026-11-15): an RSA key below 2048 bits is a key this authority
   // cannot certify, in every mode; ACME, EST and SCEP all read it here.
   for (const bits of [1024, 1536]) {
