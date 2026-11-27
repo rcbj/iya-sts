@@ -193,8 +193,11 @@ async function thePrimitives(t) {
     // it is counted beside the truststore rather than in it.
     const issuedRoot = function () {
       log.debug("Entering issuedRoot().");
-      const held = require('../common/tls_client_certificates')
-        .trustAnchorPem() ? 1 : 0;
+      // The Root and, since #2292, the Intermediates and client Issuing
+      // CAs beneath it.
+      const issued = require('../common/tls_client_certificates');
+      const held = issued.trustAnchorPem()
+        ? 1 + issued.issuerPems().length : 0;
       log.debug("Leaving issuedRoot().");
       return held;
     };

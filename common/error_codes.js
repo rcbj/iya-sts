@@ -4206,6 +4206,12 @@ const CODES = [
       'tries again.',
     spec: 'an error log line and a failure audit row; the scheduler run ' +
       'fails with this code' },
+  { code: 'STS-KEYS-0218',
+    summary: 'An observer of the certificate authority hierarchies threw ' +
+      'when a hierarchy was set or dropped (#2292). The hierarchy is held ' +
+      'as written; what the observer keeps in step with it (the TLS ' +
+      'listeners\' client CA names) may be behind until the next change.',
+    spec: 'a warning log line' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

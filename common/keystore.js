@@ -5482,7 +5482,64 @@ const PKI_ROW_PREFIX = 'pki:';
 // The scope `pki.js` keeps the service Root in (its SERVICE_SCOPE), whose
 // `revoked.root` list is where a replaced Intermediate is superseded.
 const PKI_SERVICE_SCOPE = '*service';
-const pkiHeld = new Map();       // realm id -> the hierarchy, in the clear
+// THE HELD HIERARCHIES TELL WHOEVER ASKED WHEN ONE CHANGES (#2292). The TLS
+// listeners name every realm's Intermediate and client Issuing CAs in their
+// CertificateRequest, so a branch built, adopted from another process or
+// dropped has to reach them. Ten places in this file write the Map, so the
+// Map notifies rather than each of them: a write site added later cannot
+// forget. An observer's throw is logged and never reaches the writer.
+const pkiObservers = [];
+
+class ObservedPkiMap extends Map {
+  set(key, value) {
+    super.set(key, value);
+    notifyPkiObservers(key);
+    return this;
+  }
+
+  delete(key) {
+    const had = super.delete(key);
+    if (had) {
+      notifyPkiObservers(key);
+    }
+    return had;
+  }
+}
+
+/**
+ * Tells every observer that a held hierarchy changed.
+ *
+ * @param scopeId - the scope whose hierarchy was set or dropped
+ */
+function notifyPkiObservers(scopeId) {
+  log.debug("Entering notifyPkiObservers(). scope=" + scopeId);
+  pkiObservers.forEach(function (fn) {
+    try {
+      fn(String(scopeId));
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-KEYS-0218') + 'keystore: an observer ' +
+               'of the certificate authority hierarchies failed: ' +
+               ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving notifyPkiObservers().");
+}
+
+/**
+ * Registers a function told the scope id each time a held hierarchy is set
+ * or dropped, in this process.
+ *
+ * @param fn - the observer
+ */
+function onPkiChange(fn) {
+  log.debug("Entering onPkiChange().");
+  if (typeof fn === 'function') {
+    pkiObservers.push(fn);
+  }
+  log.debug("Leaving onPkiChange().");
+}
+
+const pkiHeld = new ObservedPkiMap(); // realm id -> the hierarchy, in the clear
 
 // Described to `/admin/caches` (#74, rule 3ap): a row is a scope and
 // nothing of the hierarchy, which holds CA private keys. A hit is a signing
@@ -7122,6 +7179,7 @@ module.exports = {
   adoptPki: adoptPki,
   pkiAll: pkiAll,
   pkiFor: pkiFor,
+  onPkiChange: onPkiChange,
   attachPki: attachPki,
   // THE STORE AS THE ARBITER BETWEEN NODES (#46). See the block above
   // `arbitrates()`.
