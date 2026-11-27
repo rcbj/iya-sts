@@ -41,6 +41,7 @@
 "piv.noProfiles": "Dieser Dienst stellt hier kein PIV-Zertifikatsprofil aus. Wenden Sie sich an Ihren Administrator.",
 "piv.issuedHeading": "Ihr neues Zertifikat",
 "piv.issuedWhat": "Speichern Sie es als cert.pem und schreiben Sie es in den Slot mit: ykman piv certificates import {slot} cert.pem",
+"piv.save": "cert.pem herunterladen",
 "escrow.heading": "Hinterlegte Verschlüsselungsschlüssel",
 "escrow.intro": "Schlüssel für Slot 9d, die dieser Dienst erzeugt hat und versiegelt aufbewahrt, damit Sie alte verschlüsselte E-Mails lesen können, wenn Ihr Schlüssel oder Ihre Karte verloren geht. Ein hinterlegter Schlüssel ist kein Hardwareschlüssel. Die Wiederherstellung verlangt eine erneute Anmeldung.",
 "escrow.none": "Für Sie ist kein hinterlegter Schlüssel vorhanden.",

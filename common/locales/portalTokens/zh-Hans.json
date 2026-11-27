@@ -41,6 +41,7 @@
 "piv.noProfiles": "本服务在此处不签发任何 PIV 证书配置文件。请咨询您的管理员。",
 "piv.issuedHeading": "您的新证书",
 "piv.issuedWhat": "将其保存为 cert.pem，并使用以下命令写入插槽：ykman piv certificates import {slot} cert.pem",
+"piv.save": "下载 cert.pem",
 "escrow.heading": "托管的加密密钥",
 "escrow.intro": "本服务为插槽 9d 生成并密封保存的密钥，以便在您的密钥或卡丢失时仍能阅读旧的加密邮件。托管密钥不是硬件密钥。恢复托管密钥需要重新登录。",
 "escrow.none": "没有为您保存任何托管密钥。",

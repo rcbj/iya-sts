@@ -41,6 +41,7 @@
 "piv.noProfiles": "Walang inilalabas na PIV certificate profile ang serbisyong ito rito. Magtanong sa iyong administrator.",
 "piv.issuedHeading": "Ang iyong bagong sertipiko",
 "piv.issuedWhat": "I-save ito bilang cert.pem at isulat ito sa slot gamit ang: ykman piv certificates import {slot} cert.pem",
+"piv.save": "I-download ang cert.pem",
 "escrow.heading": "Mga naka-escrow na encryption key",
 "escrow.intro": "Mga key para sa slot 9d na binuo ng serbisyong ito at iniingatang selyado, para mabasa mo ang lumang naka-encrypt na mail kung mawala ang iyong key o card. Hindi hardware key ang isang naka-escrow na key. Ang pagbawi nito ay humihingi ng bagong sign-in.",
 "escrow.none": "Walang naka-escrow na key na iniingatan para sa iyo.",

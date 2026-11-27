@@ -41,6 +41,7 @@
 "piv.noProfiles": "Este servicio no emite aquí ningún perfil de certificado PIV. Consulte a su administrador.",
 "piv.issuedHeading": "Su nuevo certificado",
 "piv.issuedWhat": "Guárdelo como cert.pem y escríbalo en la ranura con: ykman piv certificates import {slot} cert.pem",
+"piv.save": "Descargar cert.pem",
 "escrow.heading": "Claves de cifrado en custodia",
 "escrow.intro": "Claves para la ranura 9d que este servicio generó y guarda selladas, para que pueda leer correo cifrado antiguo si pierde su llave o su tarjeta. Una clave en custodia no es una clave de hardware. Recuperarla exige un nuevo inicio de sesión.",
 "escrow.none": "No se guarda ninguna clave en custodia a su nombre.",
