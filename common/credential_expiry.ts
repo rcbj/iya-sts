@@ -26,10 +26,10 @@
 //     (`stsEnrolledCertificate`, `common/cert_enrollment.ts`'s records),
 //     renewed on the portal's Certificates page;
 //   * `piv` — the same records under a PIV slot profile (`piv-*`), renewed
-//     on the portal's Security keys page;
+//     on the PIV tab of Tokens and keys;
 //   * `smime` — an S/MIME certificate mail is encrypted to
-//     (`userSMIMECertificate`), replaced on the portal's OpenPGP and mail
-//     encryption page;
+//     (`userSMIMECertificate`), replaced on the OpenPGP and S/MIME tab
+//     of Tokens and keys;
 //   * `tls-client` — a TLS client certificate this realm issued the person
 //     from the portal's Signing keys page or an administrator's page
 //     (`common/tls_client_certificates.js`), the one certificate sign-in
@@ -97,8 +97,8 @@
 // THE PIV RE-ISSUE ACTIVITY STAYS AS IT WAS (`common/post_login_piv.ts`,
 // off by default). It is not a reminder but the step that renews at a
 // sign-in, and a realm that wants it turns it on; this reminder tells every
-// holder, whether or not it is on, and names the Security keys page, where
-// the same enrolment form is.
+// holder, whether or not it is on, and names the PIV tab of Tokens and
+// keys, where the same enrolment form is.
 //
 // A LIBRARY (rule 3): it registers no route, and its job and its watcher
 // when it is built. The directory and the mail uses are required LAZILY,

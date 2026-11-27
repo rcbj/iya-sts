@@ -14586,7 +14586,8 @@ module's header argues the design; what a maintainer needs beside it:
 - **SSH user certificates are not followed** (an hour at most), nor
   anything that does not expire here. The PIV `piv-reissue` activity is
   unchanged and off by default: it renews at a sign-in, and the reminder
-  names the Security keys page for every holder whether or not it is on.
+  names the PIV tab of Tokens and keys for every holder whether or not
+  it is on.
 
 `tests/credential_expiry_mail.js` holds it in process.
 

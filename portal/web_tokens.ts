@@ -6,21 +6,22 @@
 // File: web_tokens.ts
 //
 // ---------------------------------------------------------------------------
-// `/portal/tokens`, DRAWN IN THE BROWSER (#1955 P1), from `GET
-// /account-api/tokens` (`account_tokens.ts`): the person's hardware tokens —
-// each physical security key or smart card the register recorded from its
-// attestation — with the credentials of theirs on it, and an "I lost this
-// key" button on each active one, which posts `lost` to `POST
-// /portal/tokens` (the account API's `actOnTokens`). Since #1955 P4 a
-// second card: CLAIM a one-time code token an administrator imported, by
-// the serial printed on it and a code it shows now (`claim`, the same
-// operation).
+// THE CARDS THAT WERE `/portal/tokens` (#1955 P1), drawn on Tokens and
+// keys (#2053). #2308 took the page out of the column: it repeated the
+// Hardware tokens, OATH claim and PIV tabs. The forms still post to
+// `POST /portal/tokens` (the account API's `actOnTokens`), and a bookmark
+// of the old address opens the Hardware tokens tab.
 //
-// #1955 P2 adds two cards: the PIV enrolment form (the slot profile, the
-// certificate request and the two attestation certificates, `enrol-piv`),
-// with the certificate it issued drawn once; and the person's escrowed
-// piv-key-management keys, each with "Recover key" (`recover-key`, the key
-// drawn once) and "It is on this key" (`attach-key`).
+// The cards: the person's hardware tokens — each physical security key or
+// smart card the register recorded from its attestation — with the
+// credentials of theirs on it, and an "I lost this key" button on each
+// active one (`lost`). Since #1955 P4, CLAIM a one-time code token an
+// administrator imported, by the serial printed on it and a code it shows
+// now (`claim`). #1955 P2 adds the PIV enrolment form (`enrol-piv`), the
+// certificates the person holds (#2299) and the escrowed
+// piv-key-management keys (`recover-key`, `attach-key`).
+//
+// `PATH` stays the form target. There is no page in this module.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -28,12 +29,12 @@
 import kit = require('./web_portal_kit');
 
 type Json = any;
-type PortalPage = import('../types/account-api').PortalPage;
 
 const PATH = kit.BASE + '/tokens';
 
 /**
- * `/portal/tokens`. A static utility class.
+ * The token and PIV cards Tokens and keys draws. A static utility class.
+ * `/portal/tokens` is their form target (#2308).
  */
 class TokensPages {
   /**
@@ -218,21 +219,6 @@ class TokensPages {
   }
 
   /**
-   * The page's body.
-   *
-   * @param view - `GET /account-api/tokens`' answer
-   * @param ctx - the render context
-   * @returns the HTML
-   */
-  static render(view: Json, ctx: Json): string {
-    const t = ctx.t;
-    return TokensPages.heldCard(view, t) + TokensPages.claimCard(t) +
-      TokensPages.enrolCard(view, t) +
-      TokensPages.certificatesCard(view, t) +
-      TokensPages.escrowCard(view, t);
-  }
-
-  /**
    * The PIV certificates the person holds (#2299), newest first: what an
    * enrolment made, after its one-time answer above is gone. The one just
    * issued is the highlighted row, as the Certificates page marks a fresh
@@ -276,8 +262,9 @@ class TokensPages {
           t.html('portalTokens.piv.certs.none') + '</p>') + '</div>';
   }
 
-  // THE TOKENS THEMSELVES, the first card: drawn here and on the Hardware
-  // tokens tab of Tokens and keys (#2053), one card on both.
+  // THE TOKENS THEMSELVES: the Hardware tokens tab of Tokens and keys
+  // (#2053). The Security keys page that drew this card left the column
+  // in #2308.
   /**
    * The person's tokens, each with "I lost this key".
    *
@@ -339,14 +326,6 @@ class TokensPages {
       '<button type="submit">' + t.html('portalTokens.claim.button') +
       '</button></form></div>';
   }
-
-  /**
-   * The pages, for `web_portal_pages.ts`.
-   */
-  static readonly PAGES: PortalPage[] = [
-    { path: PATH, operation: '/account-api/tokens',
-      render: TokensPages.render }
-  ];
 }
 
 export = TokensPages;

@@ -46,14 +46,17 @@ have the same names in the same order, or on the central Directory page.
 Each kind's settings are on a Protocols page of its own, a **Metadata** tab
 and a **Settings** tab.
 
-| Kind | On the entry | Portal tab (and the older page, which still works) | Central console page | Settings |
+| Kind | On the entry | Portal | Central console page | Settings |
 |---|---|---|---|---|
-| Hardware tokens | `stsHardwareToken` | **Hardware tokens** (`/portal/tokens`) | Directory → Hardware tokens, *Hardware tokens* tab | Protocols → Hardware tokens (`/admin/hardware-tokens-settings`) |
-| [OATH tokens](one-time-code-tokens.md) (HOTP, PSKC) | `stsOathToken` | **OATH tokens** (`/portal/tokens`, `/portal/mfa`) | Directory → Hardware tokens, *OATH tokens* tab | Protocols → OATH tokens (`/admin/oath-tokens`) |
-| [YubiKey OTP](yubiotp.md) | `stsYubiOtpToken` | **YubiKey OTP** (`/portal/mfa`) | Directory → Hardware tokens, *YubiKey OTP* tab (the inventory and the CSV import) | Protocols → YubiKey OTP (`/admin/yubiotp`) |
-| [PIV certificates](#piv-key-attestation) | `stsEnrolledCertificate`, and the card in `stsHardwareToken` | **PIV** (`/portal/tokens`) | Directory → Hardware tokens, *Enrol PIV* and *Escrowed keys* tabs | Protocols → PIV (`/admin/piv`) |
-| [SSH user certificates](pki.md#openssh-user-certificates) | `stsSshUserCertificate` | **SSH user certificates** | Directory → Hardware tokens, *SSH certificates* tab (list, issue, revoke) | Protocols → SSH user certificates (`/admin/ssh-user-ca`) |
-| [OpenPGP keys and S/MIME certificates](openpgp.md) | `stsOpenPgpKey`, `userSMIMECertificate` | **OpenPGP and S/MIME** (`/portal/openpgp`) | Directory → OpenPGP keys (`/admin/openpgp`) | Protocols → OpenPGP (`/admin/openpgp-settings`) |
+| Hardware tokens | `stsHardwareToken` | **Hardware tokens** (`/portal/tokens-and-keys#tk-hardware-tokens`) | Directory → Hardware tokens, *Hardware tokens* tab | Protocols → Hardware tokens (`/admin/hardware-tokens-settings`) |
+| [OATH tokens](one-time-code-tokens.md) (HOTP, PSKC) | `stsOathToken` | **OATH tokens** (`/portal/tokens-and-keys#tk-oath-tokens`), and **Authenticator app** (`/portal/mfa`) for a token you set up yourself | Directory → Hardware tokens, *OATH tokens* tab | Protocols → OATH tokens (`/admin/oath-tokens`) |
+| [YubiKey OTP](yubiotp.md) | `stsYubiOtpToken` | **YubiKey OTP** (`/portal/tokens-and-keys#tk-yubiotp`), and **Authenticator app** (`/portal/mfa`) | Directory → Hardware tokens, *YubiKey OTP* tab (the inventory and the CSV import) | Protocols → YubiKey OTP (`/admin/yubiotp`) |
+| [PIV certificates](#piv-key-attestation) | `stsEnrolledCertificate`, and the card in `stsHardwareToken` | **PIV** (`/portal/tokens-and-keys#tk-piv`) | Directory → Hardware tokens, *Enrol PIV* and *Escrowed keys* tabs | Protocols → PIV (`/admin/piv`) |
+| [SSH user certificates](pki.md#openssh-user-certificates) | `stsSshUserCertificate` | **SSH user certificates** (`/portal/tokens-and-keys#tk-ssh`) | Directory → Hardware tokens, *SSH certificates* tab (list, issue, revoke) | Protocols → SSH user certificates (`/admin/ssh-user-ca`) |
+| [OpenPGP keys and S/MIME certificates](openpgp.md) | `stsOpenPgpKey`, `userSMIMECertificate` | **OpenPGP and S/MIME** (`/portal/tokens-and-keys#tk-openpgp`) | Directory → OpenPGP keys (`/admin/openpgp`) | Protocols → OpenPGP (`/admin/openpgp-settings`) |
+
+An old address still opens the tab it used to be a page for: `/portal/tokens`
+opens **Hardware tokens**, and `/portal/openpgp` opens **OpenPGP and S/MIME**.
 
 **A write of the entry by another door** — the console's attribute editor,
 `/admin-api`, SCIM, an `ldapmodify` — is held to the same rules for every
@@ -128,22 +131,21 @@ under that serial.
 
 ## Seeing them
 
-- **People** see their own tokens on the portal's **Security keys** page
-  (`/portal/tokens`, under *How I sign in*). The page draws from
-  `GET /account-api/tokens`.
-- The portal's **Tokens and keys** page (`/portal/tokens-and-keys`, also
-  under *How I sign in*) has a tab per kind a person registers: **Hardware
-  tokens**, **OATH tokens**, **YubiKey OTP**, **PIV**, **SSH user
-  certificates**, and **OpenPGP and S/MIME** — the same names and order as
-  the Credentials sub-tabs of a person's page in the console. Each tab is
-  the card of the page that already had it (Security keys, Authenticator
-  app, OpenPGP and mail encryption), and a form on it is answered on its
-  tab. The SSH tab lists your SSH user certificates, issues one for an
-  OpenSSH public key you paste and revokes one, over
-  `/account-api/ssh/certificates` (see [PKI](pki.md#openssh-user-certificates)).
-  The page draws from `GET /account-api/tokens-and-keys` and asks
-  `GET /account-api/mfa`, `GET /account-api/openpgp` and
-  `GET /account-api/ssh/certificates` for the other tabs.
+- **People** see their own tokens on the portal's **Tokens and keys** page
+  (`/portal/tokens-and-keys`, under *How I sign in*). It has a tab per kind
+  a person registers: **Hardware tokens**, **OATH tokens**, **YubiKey
+  OTP**, **PIV**, **SSH user certificates**, and **OpenPGP and S/MIME** —
+  the same names and order as the Credentials sub-tabs of a person's page
+  in the console. A form on a tab is answered on that tab. The OATH and
+  YubiKey OTP tabs are also on **Authenticator app** (`/portal/mfa`) for
+  the token you set up yourself and for YubiKey OTP. The SSH tab lists
+  your SSH user certificates, issues one for an OpenSSH public key you
+  paste and revokes one, over `/account-api/ssh/certificates` (see
+  [PKI](pki.md#openssh-user-certificates)). The page draws from
+  `GET /account-api/tokens-and-keys` and asks `GET /account-api/mfa`,
+  `GET /account-api/openpgp` and `GET /account-api/ssh/certificates` for
+  the other tabs. `/portal/tokens` opens the Hardware tokens tab, and
+  `/portal/openpgp` opens the OpenPGP and S/MIME tab.
 - **Administrators** see the realm's tokens under **Directory → Hardware
   tokens** (`/admin/hardware-tokens`). The list can be filtered by status
   and searched by serial or by person. Where the store is read on demand,
@@ -359,11 +361,12 @@ accepts that proof when a certificate is enrolled, in two ways:
    f9 certificate, and any intermediate after it. The draft defines no
    statement type for a PIV attestation, so this type is this service's
    choice: Yubico's own identifier for an attestation certificate.
-2. **On the enrolment form**: the portal's **Security keys** page and the
-   **PIV** tab of **Tokens and keys**, the console's **Directory → Hardware
-   tokens → Enrol PIV** tab, and the **PIV** sub-tab of a person's
-   Credentials (`POST /admin-api/hardware-tokens/enrol-piv`, and for a person
-   `POST /account-api/tokens` with `action` `enrol-piv`). Paste the certificate request
+2. **On the enrolment form**: the **PIV** tab of **Tokens and keys**, the
+   console's **Directory → Hardware tokens → Enrol PIV** tab, and the
+   **PIV** sub-tab of a person's Credentials
+   (`POST /admin-api/hardware-tokens/enrol-piv`, and for a person
+   `POST /account-api/tokens` with `action` `enrol-piv`). Paste the
+   certificate request
    from `ykman piv certificates request`, the slot attestation certificate and
    the f9 certificate. The form issues over the realm's EST Issuing CA, so the
    profile must be in `est.allowedProfiles`. A person enrols only themselves;
@@ -462,8 +465,8 @@ key there. How each algorithm is chosen is
 [below](#signature-algorithms).
 
 **The holder is reminded before a PIV slot certificate expires** (#2247): 30,
-7 and 1 days before by default, by mail, naming the portal's Security keys
-page, whether or not the PIV re-issue post-login activity is on. See
+7 and 1 days before by default, by mail, naming the PIV tab of Tokens and
+keys, whether or not the PIV re-issue post-login activity is on. See
 [Mail](mail.md#the-uses).
 
 ## Signature algorithms
@@ -530,8 +533,8 @@ the request is refused rather than the key kept in plain. With escrow off,
 
 - An escrowed key is **never hardware evidence**: this service had it in
   memory. Its certificate earns no `hwk`.
-- **The holder** recovers their own escrowed key on the portal's Security keys
-  page or the PIV tab of Tokens and keys, after a fresh sign-in.
+- **The holder** recovers their own escrowed key on the PIV tab of Tokens
+  and keys, after a fresh sign-in.
 - **An administrator** recovers a person's escrowed key on Directory →
   Hardware tokens → Escrowed keys, on the PIV sub-tab of the person's
   Credentials, or with

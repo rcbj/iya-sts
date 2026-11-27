@@ -403,8 +403,8 @@ before any of these of theirs expires:
 | What | How the message says to renew it |
 |---|---|
 | a certificate this realm issued over ACME, EST or SCEP | on the portal's **Certificates** page |
-| a PIV smart card or security key certificate | on the portal's **Security keys** page |
-| an S/MIME certificate mail to them is encrypted to | on the portal's **OpenPGP and mail encryption** page |
+| a PIV smart card or security key certificate | on the portal's **Tokens and keys** page, on PIV |
+| an S/MIME certificate mail to them is encrypted to | on the portal's **Tokens and keys** page, on OpenPGP and S/MIME |
 | a TLS client certificate this realm issued them, from the portal or an administrator | on the portal's **Signing keys** page |
 | a certificate stored on their entry for certificate sign-in | ask their administrator |
 

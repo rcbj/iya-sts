@@ -1588,8 +1588,9 @@ const SECTIONS = [
                'Report one lost to retire every credential on it at once.' },
       // OpenPGP KEYS (#1955 P6): a person's OpenPGP key, its Web Key
       // Directory publication, their S/MIME certificate and their mail
-      // encryption — what /portal/openpgp shows the person, for an
-      // administrator. In Directory beside the tokens: it is somebody's.
+      // encryption — what the OpenPGP and S/MIME tab of Tokens and keys
+      // shows the person, for an administrator. In Directory beside the
+      // tokens: it is somebody's.
       // Drawn by `web_openpgp.ts` from `mgmt-api/openpgp_api.ts`.
       { path: '/admin/openpgp', label: 'OpenPGP keys',
         blurb: 'One person\'s OpenPGP key, registered by signing a ' +
@@ -10169,7 +10170,8 @@ const PROTOCOL_SETTINGS_PAGES = [
             ['/admin/yubiotp', 'YubiKey OTP'],
             ['/admin/oath-tokens', 'OATH tokens'],
             ['/admin/webauthn', 'enterprise attestation'],
-            ['/portal/tokens', 'where a person sees their own']] },
+            ['/portal/tokens-and-keys#tk-hardware-tokens',
+             'where a person sees their own']] },
 
   { path: '/admin/piv', title: 'PIV',
     lead: '<strong>PIV and CAC smart cards — FIPS 201 and NIST SP 800-73 — ' +
@@ -10339,8 +10341,10 @@ const PROTOCOL_SETTINGS_PAGES = [
     lead: '<strong>OpenPGP keys — RFC 9580, and RFC 9980\'s post-quantum ' +
           'composites — registered by signing a challenge, published in ' +
           'the Web Key Directory, and used to encrypt a person\'s ' +
-          'mail.</strong> A person registers a key on ' +
-          '<code>/portal/openpgp</code> by signing the challenge with ' +
+          'mail.</strong> A person registers a key on the OpenPGP and ' +
+          'S/MIME tab of <strong>Tokens and keys</strong> ' +
+          '(<code>/portal/tokens-and-keys#tk-openpgp</code>) by signing ' +
+          'the challenge with ' +
           '<code>gpg --clearsign</code> (on a YubiKey the card signs). ' +
           'Mail this service sends them is encrypted to it (RFC 3156), or ' +
           'to their S/MIME certificate (RFC 8551). One person\'s key is <a ' +
@@ -10369,7 +10373,8 @@ const PROTOCOL_SETTINGS_PAGES = [
             ['/admin/mail', 'the mail channel'],
             ['/admin/crypto-metadata', 'every algorithm this service ' +
              'performs'],
-            ['/portal/openpgp', 'where a person registers one']] },
+            ['/portal/tokens-and-keys#tk-openpgp',
+             'where a person registers one']] },
 
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
     lead: '<strong>The authorization server\'s own settings.</strong> ' +

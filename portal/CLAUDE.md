@@ -2072,15 +2072,19 @@ pre-authorized offer).
 ## `/portal/tokens-and-keys`: A TAB PER KIND, OVER THE EXISTING CARDS (#2053, 2026-11-23)
 
 rcbj: "The user portal needs to provide a page where a user can register
-each of these application artifacts." Under *How I sign in*, beside
-Security keys: Hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH user
-certificates, and OpenPGP and S/MIME — the names and order of a person's
-Credentials sub-tabs on the console (#2052). `web_tokens_and_keys.ts`
-draws each tab with the card of the page that already had it
-(`web_tokens.ts`'s `heldCard()`, `claimCard()`, `enrolCard()`,
-`escrowCard()`; `web_mfa.ts`'s `hotpCard()`, `yubiCard()`;
-`web_openpgp.ts`'s body), so there is one copy of each, and
-`/portal/tokens`, `/portal/mfa` and `/portal/openpgp` are unchanged.
+each of these application artifacts." Under *How I sign in*: Hardware
+tokens, OATH tokens, YubiKey OTP, PIV, SSH user certificates, and OpenPGP
+and S/MIME — the names and order of a person's Credentials sub-tabs on the
+console (#2052). `web_tokens_and_keys.ts` draws each tab with the card of
+the page that already had it (`web_tokens.ts`'s `heldCard()`,
+`claimCard()`, `enrolCard()`, `certificatesCard()`, `escrowCard()`;
+`web_mfa.ts`'s `hotpCard()`, `yubiCard()`; `web_openpgp.ts`'s body), so
+there is one copy of each. **#2308 took Security keys (`/portal/tokens`)
+and OpenPGP and mail encryption (`/portal/openpgp`) out of the column**,
+because each was that copy a second time. Their cards and account-api
+operations stay; a bookmark of either address is sent to the matching tab
+(`#tk-hardware-tokens`, `#tk-openpgp`); the forms still post to those
+paths. `/portal/mfa` is unchanged.
 
 **Two runtime parts made it possible, both general.** A page may
 `compose` other GET operations into its view (each member that view, or a
@@ -2106,7 +2110,13 @@ page. `tests/portal_tokens_and_keys.js` holds it.
 
 ## `/portal/tokens`: A PERSON'S SECURITY KEYS AND SMART CARDS (#1955 P1, 2026-11-20)
 
-Under *How I sign in*, beside Passkeys: the physical tokens the register
+**#2308 took this page out of the column.** The cards are the Hardware
+tokens tab, the claim on the OATH tab, and the PIV tab of
+`/portal/tokens-and-keys`. The address opens the Hardware tokens tab.
+What follows is the account API, which the forms still post to.
+
+Under *How I sign in*, beside Passkeys, until then: the physical tokens
+the register
 (`common/hardware_tokens.ts`) records the person as holding, drawn by
 `web_tokens.ts` from `GET /account-api/tokens` (`account_tokens.ts`), and
 one act, **I lost this key** (`POST /account-api/tokens`, `action: lost`,
@@ -2577,7 +2587,12 @@ the Overview's `photo.limits` and are the server's to enforce:
 
 ## `/portal/openpgp`: A PERSON'S OpenPGP KEY AND MAIL ENCRYPTION (#1955 P6, 2026-11-20)
 
-Under *How I sign in*, beside Security keys, drawn by `web_openpgp.ts` from
+**#2308 took this page out of the column.** The cards are the OpenPGP and
+S/MIME tab of `/portal/tokens-and-keys`, and the address opens that tab.
+The account API below is unchanged, and the forms still post here.
+
+Until then, under *How I sign in*, beside Security keys, drawn by
+`web_openpgp.ts` from
 `GET /account-api/openpgp` (`account_openpgp.ts`): the registered key, the
 registration (ask for a challenge, sign it with `gpg --clearsign` — the card
 signs on a YubiKey — paste key and signed text), the Web Key Directory

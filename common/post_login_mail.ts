@@ -25,7 +25,8 @@
 //   D4  An ML-KEM S/MIME certificate is UPLOADED at this step (a KEM key
 //       cannot sign a request, so issuing one needs a proof of possession
 //       of its own; a later ticket). That ticket is #2220: the realm now
-//       issues one on `/portal/openpgp`, on an RFC 9810 challenge-response
+//       issues one on the OpenPGP and S/MIME tab of Tokens and keys, on
+//       an RFC 9810 challenge-response
 //       (`common/openpgp_keys.ts`), and a certificate issued there is what
 //       this activity then finds on the entry. The step itself still takes
 //       an upload.

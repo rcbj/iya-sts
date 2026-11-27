@@ -184,9 +184,7 @@ not drawn.
 | Your applications | `/portal/applications` |
 | Your security activity | `/portal/signals` |
 | Passkeys | `/portal/keys` |
-| Security keys and smart cards: your hardware tokens, Report lost, PIV enrolment and escrowed keys ([Hardware tokens](hardware-tokens.md)) | `/portal/tokens` |
-| Tokens and keys: a tab each for hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH user certificates, and OpenPGP and S/MIME ([Hardware tokens](hardware-tokens.md#where-each-kind-lives)) | `/portal/tokens-and-keys` |
-| OpenPGP key and mail encryption ([OpenPGP and S/MIME](openpgp.md)) | `/portal/openpgp` |
+| Tokens and keys: a tab each for hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH user certificates, and OpenPGP and S/MIME ([Hardware tokens](hardware-tokens.md#where-each-kind-lives)). An old `/portal/tokens` address opens the hardware tokens tab, and `/portal/openpgp` opens the OpenPGP and S/MIME tab | `/portal/tokens-and-keys` |
 | Authenticator app and recovery codes | `/portal/mfa` |
 | Certificates | `/portal/certificates` |
 | Who may act for you | `/portal/delegate` |

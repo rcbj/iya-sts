@@ -385,7 +385,7 @@ its three SLH-DSA algorithms first, and the classical algorithms after them
 |---|---|---|
 | `openpgp.algorithms` | every supported algorithm, post-quantum first | Which algorithms a registered key may use: RFC 9980's ML-DSA composites and SLH-DSA-SHAKE-128s, -128f and -256s (v6 keys) sign, its ML-KEM composites encrypt |
 | `openpgp.pqcOnly` | `false` | A newly registered key must use a post-quantum algorithm (a composite or SLH-DSA). Keys already registered keep working |
-| the portal's **An ML-KEM certificate from this service** (`/portal/openpgp`; the account API's `smime-kem-challenge` and `smime-kem-issue`) | | The realm's EST Issuing CA issues an ML-KEM S/MIME certificate on a proof of possession (below) |
+| the portal's **An ML-KEM certificate from this service** (the OpenPGP and S/MIME tab of Tokens and keys, `/portal/tokens-and-keys#tk-openpgp`; the account API's `smime-kem-challenge` and `smime-kem-issue`) | | The realm's EST Issuing CA issues an ML-KEM S/MIME certificate on a proof of possession (below) |
 | `openpgp.pqcAlongsideClassical` | `false` | A newly registered key must carry a post-quantum and a separate classical algorithm |
 | the `pqc-mail-encryption` post-login activity | off | Asks people whose mail is encrypted to a classical key to register an ML-KEM OpenPGP key or upload an ML-KEM S/MIME certificate. The classical OpenPGP key is kept beside the new one for the profile's `mailKeepClassical` days (90 by default) |
 

@@ -124,6 +124,18 @@ const OWN_EXTRAS = ['expect', 'another', 'login_hint'];
  * The user portal's runtime: sign-in, routing and forms.
  */
 class PortalRuntime extends SpaClient {
+  /**
+   * Addresses that used to be pages (#2308). A bookmark and a mail still
+   * name them; the column does not. Each value is the Tokens and keys
+   * tab that draws the same cards.
+   */
+  static readonly MOVED: Record<string, string> = {
+    [kit.BASE + '/tokens']:
+      kit.BASE + '/tokens-and-keys#tk-hardware-tokens',
+    [kit.BASE + '/openpgp']:
+      kit.BASE + '/tokens-and-keys#tk-openpgp'
+  };
+
   private me: Json;
   // `GET /account-api/locale`'s answer, for a page drawn for nobody: its
   // language data and the build.
@@ -1002,6 +1014,24 @@ class PortalRuntime extends SpaClient {
    */
   async route(): Promise<void> {
     const path = this.portalPath(this.env.location.pathname) || kit.BASE;
+    // THE TWO PAGES TOKENS AND KEYS REPEATED (#2308). The column no
+    // longer lists them. The shell answers every `/portal/*` path, so a
+    // bookmark would otherwise be "not a page". This runs before
+    // sign-in, so the return is the tab that is drawn. `replaceState`,
+    // so Back does not land on the old address. The destinations are
+    // not keys of `MOVED`. A `replaceState` that did not move the
+    // address must not call `route()` again.
+    const moved = PortalRuntime.MOVED[path];
+    if (moved) {
+      const next = this.prefix + moved;
+      this.env.history.replaceState(null, '', next);
+      const shown = String(this.env.location.pathname || '') +
+        String(this.env.location.hash || '');
+      if (shown === next) {
+        await this.route();
+      }
+      return;
+    }
     if (path === kit.BASE + '/callback') {
       await this.finishSignIn();
       return;

@@ -137,8 +137,8 @@ An unassigned token reaches a person in one of two ways:
   **OATH tokens** sub-tab of the person's Credentials (Directory → Users),
   or with `POST /admin-api/hardware-tokens/assign-oath` and `key` and
   `username`.
-- **The person claims it** on the portal, **Security keys**
-  (`/portal/tokens`) or the **OATH tokens** tab of **Tokens and keys**,
+- **The person claims it** on the portal, on the **OATH tokens** tab of
+  **Tokens and keys** (`/portal/tokens-and-keys#tk-oath-tokens`),
   *Claim a token you were given*: the serial printed on
   it and a code it shows now. The code is spent. A wrong serial and a wrong
   code get the same answer, so a claim cannot be used to learn which

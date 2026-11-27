@@ -6,13 +6,16 @@
 // File: web_openpgp.ts
 //
 // ---------------------------------------------------------------------------
-// `/portal/openpgp`, DRAWN IN THE BROWSER (#1955 P6), from `GET
-// /account-api/openpgp` (`account_openpgp.ts`): the person's OpenPGP key and
-// how to register one — ask for a challenge, sign it with `gpg --clearsign`
-// (on a YubiKey's OpenPGP card the card signs), paste it with the public
-// key — its publication in the Web Key Directory, their S/MIME certificate,
-// and how their mail is encrypted. Every form posts to `POST
-// /portal/openpgp` (the account API's `actOnOpenPgp`) with its `action`.
+// THE CARDS THAT WERE `/portal/openpgp` (#1955 P6), drawn as the OpenPGP
+// and S/MIME tab of Tokens and keys (#2053). #2308 took the page out of
+// the column: the tab is the same body. `render()` is that body, from
+// `GET /account-api/openpgp` (`account_openpgp.ts`): the person's OpenPGP
+// key and how to register one — ask for a challenge, sign it with
+// `gpg --clearsign` (on a YubiKey's OpenPGP card the card signs), paste it
+// with the public key — its publication in the Web Key Directory, their
+// S/MIME certificate, and how their mail is encrypted. Every form still
+// posts to `POST /portal/openpgp` (the account API's `actOnOpenPgp`) with
+// its `action`. A bookmark of the old address opens that tab.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -20,12 +23,12 @@
 import kit = require('./web_portal_kit');
 
 type Json = any;
-type PortalPage = import('../types/account-api').PortalPage;
 
 const PATH = kit.BASE + '/openpgp';
 
 /**
- * `/portal/openpgp`. A static utility class.
+ * The OpenPGP and S/MIME cards. A static utility class.
+ * `/portal/openpgp` is their form target (#2308).
  */
 class OpenPgpPages {
   /**
@@ -270,14 +273,6 @@ class OpenPgpPages {
       OpenPgpPages.keyCard(v, t) + OpenPgpPages.registerCard(v, t) +
       OpenPgpPages.wkdCard(v, t) + OpenPgpPages.mailCard(v, t);
   }
-
-  /**
-   * The pages, for `web_portal_pages.ts`.
-   */
-  static readonly PAGES: PortalPage[] = [
-    { path: PATH, operation: '/account-api/openpgp',
-      render: OpenPgpPages.render }
-  ];
 }
 
 export = OpenPgpPages;
