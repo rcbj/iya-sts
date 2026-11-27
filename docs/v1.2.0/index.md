@@ -32,7 +32,7 @@ The sidebar on every page is the full list, grouped as below. The protocol
 pages share one shape — features, what development and product mode change,
 every setting with its environment variable and default, and the design
 decisions behind the behaviour — so the same question has the same place on
-each.
+each. The box in the header searches this version.
 
 **Start here** —
 [Getting started](getting-started.md) ·

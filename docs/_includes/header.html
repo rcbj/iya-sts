@@ -1,11 +1,12 @@
 {%- comment -%}
   Replaces minima's header, which drew every page in `header_pages` across
   the top. The site's navigation is the sidebar (_includes/sidebar.html); the
-  header keeps the logo, which is the title, and on a narrow screen the
-  button that opens the sidebar. On a versioned page the logo goes to that
-  version's overview, and the switcher beside it names the version and
-  links each other one: to the same page when that version has it, and to
-  its overview when it does not. "All versions", a button, goes up to the landing page (rcbj,
+  header keeps the logo, which is the title, the search box, and on a
+  narrow screen the button that opens the sidebar. On a versioned page
+  the logo goes to that version's overview, and the switcher beside it
+  names the version and links each other one: to the same page when that
+  version has it, and to its overview when it does not. "All versions",
+  a button, goes up to the landing page (rcbj,
   2026-11-17), as does the one at the top of the sidebar.
 {%- endcomment -%}
 {%- include version.html -%}
@@ -17,6 +18,32 @@
     {%- assign home_url = doc_prefix | append: "/" %}
     <a class="site-title" rel="author" href="{{ home_url | relative_url }}"><img class="site-logo" src="{{ "/logo.png" | relative_url }}" alt="{{ site.title | escape }}" width="162" height="48"></a>
     <span class="site-tagline">documentation</span>
+    {%- assign search_folder = doc_latest.folder -%}
+    {%- if doc_version -%}
+      {%- assign search_folder = doc_version.folder -%}
+    {%- endif -%}
+    {%- assign search_label = search_folder | remove_first: "v" -%}
+    {%- assign search_index = "/" | append: search_folder
+          | append: "/search-index.json" -%}
+    <div class="doc-search"
+         data-base="{{ '/' | relative_url }}"
+         data-index="{{ search_index | relative_url }}"
+         data-label="{{ search_label | escape }}">
+      <form action="{{ '/search.html' | relative_url }}" method="get"
+            role="search">
+        <input type="hidden" name="v" value="{{ search_folder | escape }}">
+        <input type="search" name="q"
+               placeholder="Search {{ search_label | escape }}"
+               aria-label="Search the {{ search_label | escape }} guides"
+               aria-controls="doc-search-results"
+               aria-expanded="false"
+               aria-autocomplete="list"
+               autocomplete="off"
+               spellcheck="false">
+      </form>
+      <div class="doc-search-panel" id="doc-search-results" hidden
+           aria-live="polite"></div>
+    </div>
     {%- if doc_version %}
     <nav class="version-switcher" aria-label="Documentation version">
       {%- assign doc_rest = page.url | remove_first: doc_prefix %}

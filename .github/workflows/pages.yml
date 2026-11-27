@@ -24,7 +24,10 @@
 # navigation and search out of the box, and it would add a Python toolchain to a
 # repository that currently has only Node, plus a theme version that is a moving
 # part. `minima` is the theme GitHub Pages ships; the markdown stays readable in
-# the repository, which is where a maintainer actually reads it.
+# the repository, which is where a maintainer actually reads it. Search did not
+# change that choice: the box is docs/assets/search.js, and the index is written
+# after this build by .github/scripts/docs-search-index.js (docs/CLAUDE.md,
+# *Search*).
 #
 # BEFORE THE FIRST RUN, Pages has to EXIST for this repository and be set to
 # build from GitHub Actions. The paragraph that used to be here said somebody had
@@ -199,6 +202,13 @@ jobs:
       # sudo for the reason the step above copies under sudo.
       - name: Redirect the top-level addresses into the versions
         run: sudo .github/scripts/root-redirects.sh _site
+
+      # The rendered pages exist, and the API trees have been copied in
+      # (the script skips them). sudo because _site is root-owned;
+      # --preserve-env=PATH so the runner's node is the one that runs.
+      # The index is not committed (docs/CLAUDE.md, *Search*).
+      - name: Write the search index
+        run: sudo --preserve-env=PATH node .github/scripts/docs-search-index.js _site
 
       - name: Check the site is not empty
         run: |
