@@ -63,6 +63,25 @@ class TokensPages {
   };
 
   /**
+   * A file chooser for one PEM box (#2294): the file is read and checked in
+   * the browser by `web_pem_file.ts` and put in the box only when it is a
+   * PEM `kind`; it has no name, so the form never sends it.
+   *
+   * @param box - the text box's id
+   * @param kind - `certificate` or `request`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static fileChooser(box: string, kind: string, t: Json): string {
+    return '<label class="file" for="' + box + '-file">' +
+      t.html('portalTokens.piv.file') + '</label> <input type="file" id="' +
+      box + '-file" accept=".pem,.crt,.cer,.csr,.req,.txt" data-pem-file="' +
+      box + '" data-pem-kind="' + kind + '" data-pem-note="' + box +
+      '-note"><p class="note" id="' + box + '-note" role="status" ' +
+      'aria-live="polite"></p>';
+  }
+
+  /**
    * The PIV enrolment card, and what it issued once.
    *
    * @param view - the page's view
@@ -99,11 +118,16 @@ class TokensPages {
       '</label><select id="piv-profile" name="profile">' + options +
       '</select><label for="piv-csr">' + t.html('portalTokens.piv.csr') +
       '</label><textarea id="piv-csr" name="csr" rows="6"></textarea>' +
+      TokensPages.fileChooser('piv-csr', 'request', t) +
       '<label for="piv-attest">' + t.html('portalTokens.piv.attestation') +
       '</label><textarea id="piv-attest" name="attestationCertificate" ' +
-      'rows="6"></textarea><label for="piv-f9">' +
+      'rows="6"></textarea>' +
+      TokensPages.fileChooser('piv-attest', 'certificate', t) +
+      '<label for="piv-f9">' +
       t.html('portalTokens.piv.issuer') + '</label><textarea id="piv-f9" ' +
-      'name="attestationIssuer" rows="6"></textarea><p class="note">' +
+      'name="attestationIssuer" rows="6"></textarea>' +
+      TokensPages.fileChooser('piv-f9', 'certificate', t) +
+      '<p class="note">' +
       t.html(rules.requireAttestation ? 'portalTokens.piv.required'
                                       : 'portalTokens.piv.optional') +
       '</p><button type="submit">' + t.html('portalTokens.piv.button') +

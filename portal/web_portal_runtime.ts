@@ -70,6 +70,7 @@ import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
 import PhotoPicker = require('./web_photo');
+import PemFile = require('./web_pem_file');
 import WebAccounts = require('../common/web_accounts');
 import WebClipboard = require('../common/web_clipboard');
 import WebPageState = require('../common/web_page_state');
@@ -1776,6 +1777,9 @@ class PortalRuntime extends SpaClient {
     PortalRuntime.wireDependentSelects(doc);
     // The Overview's profile photo (#719): choosing a file draws the preview.
     PhotoPicker.wire(doc, this.env.window || {}, this.t);
+    // The PIV enrolment's PEM boxes (#2294): a chosen file is checked in
+    // the browser and put in its box only when it is the PEM it takes.
+    PemFile.wire(doc, this.t);
     // `/portal/delegate`'s search (2026-10-20): asked through this
     // runtime's own token, its answers drawn in place.
     DelegatePages.wire(doc, this.env.window || {}, function (path: string) {
