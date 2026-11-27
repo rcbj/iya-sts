@@ -199,6 +199,48 @@ async function run(t) {
           'cert.pem beside its box', issuedHtml.slice(0, 400));
   t.check(!!link && decodeURIComponent(link[1].replace(/&amp;/g, '&')) ===
           certPem, 'E: the download is exactly the certificate in the box');
+
+  // F. The PIV tab's layout and certificates (#2299).
+  const tr = { html: function (key) {
+    return key;
+  }, text: function (key) {
+    return key;
+  }, date: function (value) {
+    return 'D(' + value + ')';
+  } };
+  const form = pages.enrolCard({ piv: { profiles: ['piv-auth'] } }, tr);
+  t.check(['piv-csr', 'piv-attest', 'piv-f9'].every(function (box) {
+    return new RegExp('<div class="pem-row"><textarea id="' + box +
+                      '"[^>]*></textarea><span class="pem-file">')
+      .test(form);
+  }), 'F: each PEM box and its file chooser are on one row');
+  const certs = pages.certificatesCard({
+    issued: { serialHex: 'bb' },
+    pivCertificates: [
+      { serialHex: 'bb', profile: 'piv-auth', subject: 'CN=alice',
+        keyAlg: 'ec-p256', notAfter: '2027-01-01T00:00:00Z',
+        issuedAt: '2026-11-27T00:00:00Z', status: 'valid' },
+      { serialHex: 'aa', profile: 'piv-sign', subject: 'CN=<b>x</b>',
+        keyAlg: '', notAfter: '2027-01-01T00:00:00Z',
+        issuedAt: '2026-11-26T00:00:00Z', status: 'revoked' }] }, tr);
+  t.check(/<tr class="fresh-row"><td>9a<\/td><td>piv-auth \(ec-p256\)/
+            .test(certs), 'F: the certificate just issued is the ' +
+          'highlighted row, with its slot and key', certs.slice(0, 400));
+  t.check(/<td>9c<\/td>/.test(certs) &&
+          /class="state-revoked">portalTokens\.piv\.certs\.revoked/
+            .test(certs), 'F: each row shows its slot and its state, ' +
+          'coloured as the Certificates page colours it');
+  t.check(certs.indexOf('<b>x</b>') < 0 &&
+          certs.indexOf('&lt;b&gt;x&lt;/b&gt;') >= 0,
+          'F: a subject is escaped');
+  t.check(/id="piv-certificates-none"/.test(pages.certificatesCard(
+    { pivCertificates: [] }, tr)), 'F: no certificate says so');
+  const tk = require('../portal/web_tokens_and_keys');
+  const tabbed = tk.render({ piv: { profiles: ['piv-auth'] },
+    pivCertificates: [] }, { t: tr, me: {} });
+  t.check(/id="tk-piv">[\s\S]*id="piv-enrol"[\s\S]*id="piv-certificates"/
+            .test(tabbed), 'F: the PIV tab draws the certificates after ' +
+          'the enrolment form');
   log.debug("Leaving run().");
 }
 

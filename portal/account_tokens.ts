@@ -71,6 +71,10 @@ interface AccountTokensDeps {
   accountSignals(): Json;
   pivEnrolment: typeof pivEnrolment;
   config: typeof config;
+  // #2299: the certificates on the person's entry, newest first, no key
+  // (`cert_enrollment.ts`'s `enrolledOf()`, which the Certificates page
+  // reads too), reached at a view.
+  enrolledOf(username: string): Json[];
 }
 
 // The acts, in the order the unknown-action sentence names them.
@@ -109,7 +113,11 @@ class AccountTokens {
                return require('../ssf/account_signals');
              },
              pivEnrolment: pivEnrolment,
-             config: config };
+             config: config,
+             enrolledOf: function (username: string): Json[] {
+               return require('../common/cert_enrollment')
+                 .enrolledOf({ kind: 'person', id: username });
+             } };
   }
 
   // What the page draws: every token the caller holds or has a credential
@@ -128,8 +136,41 @@ class AccountTokens {
     const out = { tokens: tokens.map(AccountTokens.row),
                   escrowed: this.deps.pivEnrolment.escrowedOf(
                     caller.username),
+                  pivCertificates: this.pivCertificates(caller.username),
                   piv: this.pivRules() };
     log.debug("Leaving AccountTokens.view(). " + out.tokens.length);
+    return out;
+  }
+
+  // THE PIV CERTIFICATES THE PERSON HOLDS (#2299): every certificate on
+  // their entry issued under a PIV profile, newest first, so the PIV tab
+  // shows what an enrolment made after its one-time answer is gone. The
+  // same records the Certificates page lists; nothing of a key.
+  private pivCertificates(username: string): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountTokens.pivCertificates().");
+    let records: Json[] = [];
+    try {
+      records = this.deps.enrolledOf(username) || [];
+    } catch (e) {
+      // A directory that cannot be read lists nothing; the page says so as
+      // it says an empty list, and the enrolment form still works.
+      log.debug("Caught in AccountTokens.pivCertificates(): " +
+                ((e && e.message) || e));
+      records = [];
+    }
+    const out = records.filter(function (one: Json): boolean {
+      return PIV_PROFILES.indexOf(String(one.profile || '')) >= 0;
+    }).map(function (one: Json): Json {
+      return { serialHex: String(one.serialHex || ''),
+               profile: String(one.profile),
+               subject: String(one.subject || ''),
+               keyAlg: String(one.keyAlg || ''),
+               notAfter: String(one.notAfter || ''),
+               issuedAt: String(one.issuedAt || ''),
+               status: String(one.status || 'valid') };
+    });
+    log.debug("Leaving AccountTokens.pivCertificates(). " + out.length);
     return out;
   }
 
