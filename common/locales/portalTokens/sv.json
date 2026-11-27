@@ -41,6 +41,7 @@
 "piv.noProfiles": "Den här tjänsten utfärdar ingen PIV-certifikatprofil här. Fråga din administratör.",
 "piv.issuedHeading": "Ditt nya certifikat",
 "piv.issuedWhat": "Spara det som cert.pem och skriv det till platsen med: ykman piv certificates import {slot} cert.pem",
+"piv.save": "Ladda ned cert.pem",
 "escrow.heading": "Deponerade krypteringsnycklar",
 "escrow.intro": "Nycklar för plats 9d som den här tjänsten genererade och förvarar förseglade, så att du kan läsa gammal krypterad e-post om din nyckel eller ditt kort går förlorat. En deponerad nyckel är inte en maskinvarunyckel. Att återställa en kräver en ny inloggning.",
 "escrow.none": "Ingen deponerad nyckel förvaras för dig.",

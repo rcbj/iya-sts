@@ -41,6 +41,7 @@
 "piv.noProfiles": "本服務在此處不簽發任何 PIV 憑證設定檔。請洽詢您的管理員。",
 "piv.issuedHeading": "您的新憑證",
 "piv.issuedWhat": "將其儲存為 cert.pem，並使用下列命令寫入插槽：ykman piv certificates import {slot} cert.pem",
+"piv.save": "下載 cert.pem",
 "escrow.heading": "託管的加密金鑰",
 "escrow.intro": "本服務為插槽 9d 產生並密封保存的金鑰，讓您在金鑰或卡片遺失時仍能閱讀舊的加密郵件。託管金鑰不是硬體金鑰。復原託管金鑰需要重新登入。",
 "escrow.none": "沒有為您保存任何託管金鑰。",

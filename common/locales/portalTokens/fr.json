@@ -41,6 +41,7 @@
 "piv.noProfiles": "Ce service n'émet ici aucun profil de certificat PIV. Adressez-vous à votre administrateur.",
 "piv.issuedHeading": "Votre nouveau certificat",
 "piv.issuedWhat": "Enregistrez-le sous cert.pem et écrivez-le dans l'emplacement avec : ykman piv certificates import {slot} cert.pem",
+"piv.save": "Télécharger cert.pem",
 "escrow.heading": "Clés de chiffrement séquestrées",
 "escrow.intro": "Des clés pour l'emplacement 9d que ce service a générées et conserve scellées, afin que vous puissiez lire d'anciens courriels chiffrés si votre clé ou votre carte est perdue. Une clé séquestrée n'est pas une clé matérielle. La récupérer demande une nouvelle connexion.",
 "escrow.none": "Aucune clé séquestrée n'est conservée pour vous.",

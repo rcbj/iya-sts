@@ -96,7 +96,14 @@ class TokensPages {
       ? '<div class="card" id="piv-issued"><h2>' +
         t.html('portalTokens.piv.issuedHeading') + '</h2><p>' +
         t.html('portalTokens.piv.issuedWhat', { slot: slot }) +
-        '</p><textarea readonly rows="10" name="certificate">' +
+        // A DOWNLOAD BESIDE THE BOX (#2296), the file the import command
+        // names, as `web_openpgp.ts` offers its certificate: a data: link,
+        // so nothing is fetched again and the box stays the copy to read.
+        '</p><p><a class="btn" id="piv-issued-download" download="cert.pem" ' +
+        'href="data:application/x-pem-file;charset=utf-8,' +
+        kit.esc(encodeURIComponent(String(issued.certificatePem || ''))) +
+        '">' + t.html('portalTokens.piv.save') + '</a></p>' +
+        '<textarea readonly rows="10" name="certificate">' +
         kit.esc(issued.certificatePem) + '</textarea></div>'
       : '';
     if (!(rules.profiles || []).length) {

@@ -184,6 +184,21 @@ async function run(t) {
             .test(html) &&
           /data-pem-file="piv-f9" data-pem-kind="certificate"/.test(html),
           'D: each chooser names its box and the kind it checks');
+
+  // E. The issued certificate's download (#2296).
+  const issuedHtml = pages.enrolCard({ piv: { profiles: ['piv-auth'] },
+    issued: { profile: 'piv-auth', certificatePem: certPem } },
+  { html: function (key) {
+    return key;
+  }, text: function (key) {
+    return key;
+  } });
+  const link = /<a class="btn" id="piv-issued-download" download="cert\.pem" href="data:application\/x-pem-file;charset=utf-8,([^"]*)">portalTokens\.piv\.save<\/a>/
+    .exec(issuedHtml);
+  t.check(!!link, 'E: the new certificate has a download link named ' +
+          'cert.pem beside its box', issuedHtml.slice(0, 400));
+  t.check(!!link && decodeURIComponent(link[1].replace(/&amp;/g, '&')) ===
+          certPem, 'E: the download is exactly the certificate in the box');
   log.debug("Leaving run().");
 }
 

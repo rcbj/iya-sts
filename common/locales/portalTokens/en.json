@@ -41,6 +41,7 @@
 "piv.noProfiles": "This service issues no PIV certificate profile here. Ask your administrator.",
 "piv.issuedHeading": "Your new certificate",
 "piv.issuedWhat": "Save it as cert.pem and write it to the slot with: ykman piv certificates import {slot} cert.pem",
+"piv.save": "Download cert.pem",
 "escrow.heading": "Escrowed encryption keys",
 "escrow.intro": "Keys for slot 9d that this service generated and keeps sealed, so you can read old encrypted mail if your key or card is lost. An escrowed key is not a hardware key. Recovering one asks for a fresh sign-in.",
 "escrow.none": "No escrowed key is held for you.",
