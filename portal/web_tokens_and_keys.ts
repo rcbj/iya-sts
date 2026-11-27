@@ -174,7 +174,8 @@ class TokensAndKeysPages {
         (TokensAndKeysPages.refused(mfa, t) || MfaPages.hotpCard(mfa, t)),
       'tk-yubiotp': TokensAndKeysPages.refused(mfa, t) ||
         MfaPages.yubiCard(mfa, t),
-      'tk-piv': TokensPages.enrolCard(v, t) + TokensPages.escrowCard(v, t),
+      'tk-piv': TokensPages.enrolCard(v, t) +
+        TokensPages.certificatesCard(v, t) + TokensPages.escrowCard(v, t),
       'tk-ssh': TokensAndKeysPages.sshCards(v.ssh || null,
                                             v.sshAnswer || null, t, me),
       'tk-openpgp': TokensAndKeysPages.refused(pgp, t) ||

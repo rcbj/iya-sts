@@ -73,11 +73,31 @@ class TokensPages {
    * @returns the HTML
    */
   static fileChooser(box: string, kind: string, t: Json): string {
-    return '<label class="file" for="' + box + '-file">' +
-      t.html('portalTokens.piv.file') + '</label> <input type="file" id="' +
-      box + '-file" accept=".pem,.crt,.cer,.csr,.req,.txt" data-pem-file="' +
-      box + '" data-pem-kind="' + kind + '" data-pem-note="' + box +
-      '-note"><p class="note" id="' + box + '-note" role="status" ' +
+    return '<span class="pem-file"><label class="file" for="' + box +
+      '-file">' + t.html('portalTokens.piv.file') + '</label>' +
+      '<input type="file" id="' + box + '-file" ' +
+      'accept=".pem,.crt,.cer,.csr,.req,.txt" data-pem-file="' + box +
+      '" data-pem-kind="' + kind + '" data-pem-note="' + box +
+      '-note"></span>';
+  }
+
+  /**
+   * One PEM box and its file chooser on one row, its note under them
+   * (#2299): `.pem-row` in the portal's stylesheet.
+   *
+   * @param box - the text box's id
+   * @param name - the form field it sends
+   * @param kind - `certificate` or `request`
+   * @param label - the box's label, already HTML
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static pemField(box: string, name: string, kind: string, label: string,
+                  t: Json): string {
+    return '<label for="' + box + '">' + label + '</label>' +
+      '<div class="pem-row"><textarea id="' + box + '" name="' + name +
+      '" rows="6"></textarea>' + TokensPages.fileChooser(box, kind, t) +
+      '</div><p class="note" id="' + box + '-note" role="status" ' +
       'aria-live="polite"></p>';
   }
 
@@ -123,17 +143,14 @@ class TokensPages {
       '<input type="hidden" name="action" value="enrol-piv">' +
       '<label for="piv-profile">' + t.html('portalTokens.piv.profile') +
       '</label><select id="piv-profile" name="profile">' + options +
-      '</select><label for="piv-csr">' + t.html('portalTokens.piv.csr') +
-      '</label><textarea id="piv-csr" name="csr" rows="6"></textarea>' +
-      TokensPages.fileChooser('piv-csr', 'request', t) +
-      '<label for="piv-attest">' + t.html('portalTokens.piv.attestation') +
-      '</label><textarea id="piv-attest" name="attestationCertificate" ' +
-      'rows="6"></textarea>' +
-      TokensPages.fileChooser('piv-attest', 'certificate', t) +
-      '<label for="piv-f9">' +
-      t.html('portalTokens.piv.issuer') + '</label><textarea id="piv-f9" ' +
-      'name="attestationIssuer" rows="6"></textarea>' +
-      TokensPages.fileChooser('piv-f9', 'certificate', t) +
+      '</select>' +
+      TokensPages.pemField('piv-csr', 'csr', 'request',
+                           t.html('portalTokens.piv.csr'), t) +
+      TokensPages.pemField('piv-attest', 'attestationCertificate',
+                           'certificate',
+                           t.html('portalTokens.piv.attestation'), t) +
+      TokensPages.pemField('piv-f9', 'attestationIssuer', 'certificate',
+                           t.html('portalTokens.piv.issuer'), t) +
       '<p class="note">' +
       t.html(rules.requireAttestation ? 'portalTokens.piv.required'
                                       : 'portalTokens.piv.optional') +
@@ -211,7 +228,52 @@ class TokensPages {
     const t = ctx.t;
     return TokensPages.heldCard(view, t) + TokensPages.claimCard(t) +
       TokensPages.enrolCard(view, t) +
+      TokensPages.certificatesCard(view, t) +
       TokensPages.escrowCard(view, t);
+  }
+
+  /**
+   * The PIV certificates the person holds (#2299), newest first: what an
+   * enrolment made, after its one-time answer above is gone. The one just
+   * issued is the highlighted row, as the Certificates page marks a fresh
+   * one; its state is coloured as that page colours it.
+   *
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static certificatesCard(view: Json, t: Json): string {
+    const rows: Json[] = view.pivCertificates || [];
+    const fresh = view.issued ? String(view.issued.serialHex || '') : '';
+    const state = function (one: Json): string {
+      const word = ['valid', 'revoked', 'expired'].indexOf(one.status) >= 0
+        ? one.status : 'valid';
+      return '<span class="state-' + word + '">' +
+        t.html('portalTokens.piv.certs.' + word) + '</span>';
+    };
+    const body = rows.map(function (one: Json): string {
+      return '<tr' + (fresh && one.serialHex === fresh
+        ? ' class="fresh-row"' : '') + '><td>' +
+        kit.esc(TokensPages.SLOTS[one.profile] || '') + '</td><td>' +
+        kit.esc(one.profile) + (one.keyAlg ? ' (' + kit.esc(one.keyAlg) +
+        ')' : '') + '</td><td>' + kit.esc(one.subject) + '</td><td><code>' +
+        kit.esc(one.serialHex) + '</code></td><td>' +
+        (one.notAfter ? t.date(one.notAfter) : '') + '</td><td>' +
+        state(one) + '</td></tr>';
+    }).join('');
+    return '<div class="card" id="piv-certificates"><h2>' +
+      t.html('portalTokens.piv.certs.heading') + '</h2><p class="sub">' +
+      t.html('portalTokens.piv.certs.intro') + '</p>' +
+      (rows.length
+        ? '<table><tr><th>' + t.html('portalTokens.piv.certs.slot') +
+          '</th><th>' + t.html('portalTokens.piv.profile') + '</th><th>' +
+          t.html('portalTokens.escrow.subject') + '</th><th>' +
+          t.html('portalTokens.col.serial') + '</th><th>' +
+          t.html('portalTokens.escrow.expires') + '</th><th>' +
+          t.html('portalTokens.col.status') + '</th></tr>' + body +
+          '</table>'
+        : '<p id="piv-certificates-none">' +
+          t.html('portalTokens.piv.certs.none') + '</p>') + '</div>';
   }
 
   // THE TOKENS THEMSELVES, the first card: drawn here and on the Hardware

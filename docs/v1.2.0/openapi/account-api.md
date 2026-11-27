@@ -12786,6 +12786,14 @@ Scope: `account:manage`.
 | `piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
 | `piv.profiles[]` | string |  |  |
 | `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `pivCertificates` | list | yes | The certificates issued to the caller under a PIV profile (#2299), newest first; never a key. |
+| `pivCertificates[].issuedAt` | string | yes | When it was issued, ISO 8601. |
+| `pivCertificates[].keyAlg` | string | yes | The key's algorithm, as the request named it; empty where it was not recorded. |
+| `pivCertificates[].notAfter` | string | yes | When it expires, ISO 8601. |
+| `pivCertificates[].profile` | string | yes | The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `pivCertificates[].serialHex` | string | yes | The certificate's serial, lower-case hex. |
+| `pivCertificates[].status` | string | yes | valid, revoked or expired. |
+| `pivCertificates[].subject` | string | yes | Its subject, RFC 4514. |
 | `recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
 | `recovered.certificatePem` | string | yes |  |
 | `recovered.chainPem` | list | yes |  |
@@ -12924,6 +12932,14 @@ Scope: `account:manage`.
 | `(shape 1).view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
 | `(shape 1).view.piv.profiles[]` | string |  |  |
 | `(shape 1).view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `(shape 1).view.pivCertificates` | list | yes | The certificates issued to the caller under a PIV profile (#2299), newest first; never a key. |
+| `(shape 1).view.pivCertificates[].issuedAt` | string | yes | When it was issued, ISO 8601. |
+| `(shape 1).view.pivCertificates[].keyAlg` | string | yes | The key's algorithm, as the request named it; empty where it was not recorded. |
+| `(shape 1).view.pivCertificates[].notAfter` | string | yes | When it expires, ISO 8601. |
+| `(shape 1).view.pivCertificates[].profile` | string | yes | The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `(shape 1).view.pivCertificates[].serialHex` | string | yes | The certificate's serial, lower-case hex. |
+| `(shape 1).view.pivCertificates[].status` | string | yes | valid, revoked or expired. |
+| `(shape 1).view.pivCertificates[].subject` | string | yes | Its subject, RFC 4514. |
 | `(shape 1).view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
 | `(shape 1).view.recovered.certificatePem` | string | yes |  |
 | `(shape 1).view.recovered.chainPem` | list | yes |  |
@@ -12982,6 +12998,14 @@ Scope: `account:manage`.
 | `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
 | `view.piv.profiles[]` | string |  |  |
 | `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.pivCertificates` | list | yes | The certificates issued to the caller under a PIV profile (#2299), newest first; never a key. |
+| `view.pivCertificates[].issuedAt` | string | yes | When it was issued, ISO 8601. |
+| `view.pivCertificates[].keyAlg` | string | yes | The key's algorithm, as the request named it; empty where it was not recorded. |
+| `view.pivCertificates[].notAfter` | string | yes | When it expires, ISO 8601. |
+| `view.pivCertificates[].profile` | string | yes | The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `view.pivCertificates[].serialHex` | string | yes | The certificate's serial, lower-case hex. |
+| `view.pivCertificates[].status` | string | yes | valid, revoked or expired. |
+| `view.pivCertificates[].subject` | string | yes | Its subject, RFC 4514. |
 | `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
 | `view.recovered.certificatePem` | string | yes |  |
 | `view.recovered.chainPem` | list | yes |  |
@@ -13070,6 +13094,14 @@ Scope: `account:manage`.
 | `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
 | `view.piv.profiles[]` | string |  |  |
 | `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.pivCertificates` | list | yes | The certificates issued to the caller under a PIV profile (#2299), newest first; never a key. |
+| `view.pivCertificates[].issuedAt` | string | yes | When it was issued, ISO 8601. |
+| `view.pivCertificates[].keyAlg` | string | yes | The key's algorithm, as the request named it; empty where it was not recorded. |
+| `view.pivCertificates[].notAfter` | string | yes | When it expires, ISO 8601. |
+| `view.pivCertificates[].profile` | string | yes | The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `view.pivCertificates[].serialHex` | string | yes | The certificate's serial, lower-case hex. |
+| `view.pivCertificates[].status` | string | yes | valid, revoked or expired. |
+| `view.pivCertificates[].subject` | string | yes | Its subject, RFC 4514. |
 | `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
 | `view.recovered.certificatePem` | string | yes |  |
 | `view.recovered.chainPem` | list | yes |  |
@@ -13122,6 +13154,14 @@ Scope: `account:manage`.
 | `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
 | `view.piv.profiles[]` | string |  |  |
 | `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.pivCertificates` | list | yes | The certificates issued to the caller under a PIV profile (#2299), newest first; never a key. |
+| `view.pivCertificates[].issuedAt` | string | yes | When it was issued, ISO 8601. |
+| `view.pivCertificates[].keyAlg` | string | yes | The key's algorithm, as the request named it; empty where it was not recorded. |
+| `view.pivCertificates[].notAfter` | string | yes | When it expires, ISO 8601. |
+| `view.pivCertificates[].profile` | string | yes | The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `view.pivCertificates[].serialHex` | string | yes | The certificate's serial, lower-case hex. |
+| `view.pivCertificates[].status` | string | yes | valid, revoked or expired. |
+| `view.pivCertificates[].subject` | string | yes | Its subject, RFC 4514. |
 | `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
 | `view.recovered.certificatePem` | string | yes |  |
 | `view.recovered.chainPem` | list | yes |  |
@@ -13174,6 +13214,14 @@ Scope: `account:manage`.
 | `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
 | `view.piv.profiles[]` | string |  |  |
 | `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `view.pivCertificates` | list | yes | The certificates issued to the caller under a PIV profile (#2299), newest first; never a key. |
+| `view.pivCertificates[].issuedAt` | string | yes | When it was issued, ISO 8601. |
+| `view.pivCertificates[].keyAlg` | string | yes | The key's algorithm, as the request named it; empty where it was not recorded. |
+| `view.pivCertificates[].notAfter` | string | yes | When it expires, ISO 8601. |
+| `view.pivCertificates[].profile` | string | yes | The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `view.pivCertificates[].serialHex` | string | yes | The certificate's serial, lower-case hex. |
+| `view.pivCertificates[].status` | string | yes | valid, revoked or expired. |
+| `view.pivCertificates[].subject` | string | yes | Its subject, RFC 4514. |
 | `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
 | `view.recovered.certificatePem` | string | yes |  |
 | `view.recovered.chainPem` | list | yes |  |
@@ -13238,6 +13286,14 @@ Scope: `account:manage`.
 | `piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
 | `piv.profiles[]` | string |  |  |
 | `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `pivCertificates` | list | yes | The certificates issued to the caller under a PIV profile (#2299), newest first; never a key. |
+| `pivCertificates[].issuedAt` | string | yes | When it was issued, ISO 8601. |
+| `pivCertificates[].keyAlg` | string | yes | The key's algorithm, as the request named it; empty where it was not recorded. |
+| `pivCertificates[].notAfter` | string | yes | When it expires, ISO 8601. |
+| `pivCertificates[].profile` | string | yes | The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
+| `pivCertificates[].serialHex` | string | yes | The certificate's serial, lower-case hex. |
+| `pivCertificates[].status` | string | yes | valid, revoked or expired. |
+| `pivCertificates[].subject` | string | yes | Its subject, RFC 4514. |
 | `recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
 | `recovered.certificatePem` | string | yes |  |
 | `recovered.chainPem` | list | yes |  |

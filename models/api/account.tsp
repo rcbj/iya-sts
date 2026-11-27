@@ -4886,9 +4886,20 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
 @hoisted model HardwareTokensPortalView {
   @js(#{`description`:"Every token the caller holds or has a credential on, newest first."}) `tokens`: (HardwareTokenPortalRow)[];
   @js(#{`description`:"The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key."}) `escrowed`: (PivEscrowedPortalRow)[];
+  @js(#{`description`:"The certificates issued to the caller under a PIV profile (#2299), newest first; never a key."}) `pivCertificates`: (PivCertificatePortalRow)[];
   @js(#{`description`:"What the PIV enrolment form may issue here."}) `piv`: PivPortalRules;
   @js(#{`description`:"`enrol-piv`'s answer only: the certificate issued, drawn once."}) `issued`?: PivIssuedPortal;
   @js(#{`description`:"`recover-key`'s answer only: the escrowed key and its certificate, drawn once."}) `recovered`?: PivRecoveredPortal
+}
+
+@hoisted model PivCertificatePortalRow {
+  @js(#{`description`:"The certificate's serial, lower-case hex."}) `serialHex`: string;
+  @js(#{`description`:"The PIV profile it was issued under: piv-auth, piv-sign, piv-key-management or piv-card-auth."}) `profile`: string;
+  @js(#{`description`:"Its subject, RFC 4514."}) `subject`: string;
+  @js(#{`description`:"The key's algorithm, as the request named it; empty where it was not recorded."}) `keyAlg`: string;
+  @js(#{`description`:"When it expires, ISO 8601."}) `notAfter`: string;
+  @js(#{`description`:"When it was issued, ISO 8601."}) `issuedAt`: string;
+  @js(#{`description`:"valid, revoked or expired."}) `status`: string
 }
 
 @hoisted model PivIssuedPortal {

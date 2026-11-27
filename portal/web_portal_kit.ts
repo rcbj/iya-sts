@@ -358,6 +358,12 @@ const STYLE_AS_WRITTEN =
   'ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75em;' +
   'color:#555;background:#fafafa;border:1px solid #eee;border-radius:6px;' +
   'padding:8px}' +
+  // A PEM BOX AND ITS FILE CHOOSER ON ONE ROW (#2299, the PIV form): the
+  // box takes the room, the chooser sits beside its top, and the row wraps
+  // to two lines on a narrow screen.
+  '.pem-row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-start}' +
+  '.pem-row textarea{flex:1 1 320px;min-width:0}' +
+  '.pem-file{display:flex;flex-direction:column;gap:4px;font-size:.9em}' +
   'ol.steps{margin:6px 0 0 1.2em;padding:0;font-size:.9em}' +
   'ol.steps li{margin:0 0 4px}' +
   '.state-valid{color:#1b7a3a;font-weight:600}' +
