@@ -45,8 +45,10 @@ and `index.md`, the landing page that lists the versions.
   when it makes the key. The frozen versions keep `v1-1-0.yml` and
   `v1-0-0.yml`. The header carries the switcher: the version
   read, and each other one linked to the same page when it has it and to
-  its overview when it does not. A page of an older version opens with a
-  line naming the latest (`_layouts/default.html`).
+  its overview when it does not. A row's `status`, when it has one, is
+  drawn beside that version in the switcher (`_data/versions.yml`). A
+  page of an older version opens with a line naming the latest
+  (`_layouts/default.html`).
 
 * **THE API REFERENCE IS PER VERSION TOO** (rcbj, 2026-11-17). TypeDoc
   is not committed: `pages.yml`'s `jsdoc` job generates one reference per
@@ -69,7 +71,8 @@ and `index.md`, the landing page that lists the versions.
 on): `git mv` the pages in `v1.2.0/` to the new release's folder and
 restore `v1.2.0/` from the `v1.2.0` tag, which is what this folder did for
 1.1.0. Add the new row at the TOP of `_data/versions.yml` and its
-`_data/navigation/<nav>.yml`, and repoint every reference to the latest
+`_data/navigation/<nav>.yml`, drop `status` from the row that just
+shipped, and repoint every reference to the latest
 folder: `git grep -n 'docs/v1\.2\.0'` and `git grep -n 'iya-sts/v1\.2\.0'`
 find them, and so does a path joined as `'docs', 'v1.2.0'` (generators,
 tests, `REUSE.toml`, the prose catalogs, the `CLAUDE.md` files, the

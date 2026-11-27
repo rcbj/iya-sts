@@ -23,12 +23,12 @@
       <span class="version-label">Version</span>
       {%- for v in site.data.versions %}
       {%- if v.folder == doc_version.folder %}
-      <span class="version-current" aria-current="true">{{ v.label | escape }}{% if v.folder == doc_latest.folder %} (latest){% endif %}</span>
+      <span class="version-current" aria-current="true">{{ v.label | escape }}{% if v.folder == doc_latest.folder %} (latest){% endif %}{% if v.status %} <span class="version-status">{{ v.status | escape }}</span>{% endif %}</span>
       {%- else %}
       {%- assign same_url = "/" | append: v.folder | append: doc_rest %}
       {%- assign same_page = site.pages | where: "url", same_url | first %}
       {%- if same_page %}{% assign v_url = same_url %}{% else %}{% assign v_url = "/" | append: v.folder | append: "/" %}{% endif %}
-      <a href="{{ v_url | relative_url }}">{{ v.label | escape }}{% if v.folder == doc_latest.folder %} (latest){% endif %}</a>
+      <a href="{{ v_url | relative_url }}">{{ v.label | escape }}{% if v.folder == doc_latest.folder %} (latest){% endif %}{% if v.status %} <span class="version-status">{{ v.status | escape }}</span>{% endif %}</a>
       {%- endif %}
       {%- endfor %}
       <a class="all-versions-button" href="{{ "/" | relative_url }}">&uarr; All versions</a>

@@ -55,6 +55,15 @@ $sidebar-width: 270px;
   color: darken($brand-color, 15%);
   font-weight: 600;
 }
+.version-status {
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid $grey-color-light;
+  border-radius: 4px;
+  background: #fff;
+  color: $grey-color-dark;
+  font-weight: 600;
+}
 
 // The line an older version's pages open with (_layouts/default.html).
 .version-notice {
