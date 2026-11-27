@@ -19,7 +19,7 @@
         <div class="wrapper">
           {%- if doc_version and doc_version.folder != doc_latest.folder %}
           {%- assign latest_url = "/" | append: doc_latest.folder | append: "/" %}
-          <p class="version-notice">This is the documentation of iya-sts {{ doc_version.label | escape }}. The latest is <a href="{{ latest_url | relative_url }}">{{ doc_latest.label | escape }}</a>.</p>
+          <p class="version-notice">This is the documentation of iya-sts {{ doc_version.label | escape }}. The latest is <a href="{{ latest_url | relative_url }}">{{ doc_latest.label | escape }}</a>{% if doc_latest.status %} <span class="version-status">{{ doc_latest.status | escape }}</span>{% endif %}.</p>
           {%- endif %}
           {{ content }}
         </div>

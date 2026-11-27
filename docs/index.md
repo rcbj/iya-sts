@@ -15,7 +15,7 @@ and every page of a version links only inside that version.
 
 | Version | |
 |---|---|
-| [1.2.0](v1.2.0/index.md) | **The latest.** The documentation of the current development line. |
+| [1.2.0](v1.2.0/index.md) | **Prerelease.** The documentation of the current development line. |
 | [1.1.0](v1.1.0/index.md) | The 1.1.0 release, as it was published. It is not changed after the release. |
 | [1.0.0](v1.0.0/index.md) | The 1.0.0 release, as it was published. It is not changed after the release. |
 

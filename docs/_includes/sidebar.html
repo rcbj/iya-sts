@@ -33,7 +33,7 @@
     <ul>
       {%- for v in site.data.versions %}
       {%- assign v_url = "/" | append: v.folder | append: "/" %}
-      <li><a href="{{ v_url | relative_url }}">{{ v.label | escape }} ({{ v.note | escape }})</a></li>
+      <li><a href="{{ v_url | relative_url }}">{{ v.label | escape }} ({{ v.note | escape }}){% if v.status %} <span class="version-status">{{ v.status | escape }}</span>{% endif %}</a></li>
       {%- endfor %}
     </ul>
   </div>

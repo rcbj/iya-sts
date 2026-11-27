@@ -15,7 +15,9 @@
 # its reference is generated from the commit being deployed.
 #
 # A release snapshot adds a row here and a navigation file; docs/CLAUDE.md,
-# *The versioned site*, is the recipe.
-- { folder: v1.2.0, nav: v1-2-0, label: "1.2.0", note: "latest" }
+# *The versioned site*, is the recipe. `status`, when a row has one, is
+# drawn beside that version in the switcher. Drop it from a row when that
+# version ships.
+- { folder: v1.2.0, nav: v1-2-0, label: "1.2.0", note: "latest", status: "Prerelease" }
 - { folder: v1.1.0, nav: v1-1-0, label: "1.1.0", note: "release", ref: v1.1.0 }
 - { folder: v1.0.0, nav: v1-0-0, label: "1.0.0", note: "release", ref: v1.0.0 }
