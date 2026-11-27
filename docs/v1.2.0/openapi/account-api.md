@@ -8530,50 +8530,58 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `message` | string | yes |  |
-| `ok` | boolean | yes |  |
-| `view` | object | yes |  |
-| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
-| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
-| `view.challenge.text` | string | yes |  |
-| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
-| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
-| `view.key.armored` | string | yes | The public key, ASCII-armored. |
-| `view.key.created` | string | yes | When the key was made, ISO 8601. |
-| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
-| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
-| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
-| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
-| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
-| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
-| `view.key.userIds[]` | string |  |  |
-| `view.key.version` | integer | yes | The key version, 4 or 6. |
-| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
-| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
-| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
-| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
-| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
-| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
-| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
-| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
-| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
-| `view.smimeKemChallenge` | object, or null | yes | An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates. |
-| `view.smimeKemChallenge.algorithm` | string | yes | `ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`. |
-| `view.smimeKemChallenge.cipherText` | string | yes | The ML-KEM ciphertext, base64. |
-| `view.smimeKemChallenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
-| `view.smimeKemIssued` | object |  | In the answer of `smime-kem-issue` only: the certificate just issued, drawn once. |
-| `view.smimeKemIssued.algorithm` | string | yes |  |
-| `view.smimeKemIssued.certificate` | string | yes | The certificate, PEM. |
-| `view.smimeKemIssued.chain` | list | yes | The certificate and the chain above it, PEM, leaf first; the Root excluded. |
-| `view.smimeKemIssued.chain[]` | string |  |  |
-| `view.smimeKemIssued.serial` | string | yes |  |
-| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
-| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
-| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
-| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
-| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
-| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
-| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| (the answer) | one of 2 shapes |  |  |
+| `(shape 1)` | object |  |  |
+| `(shape 1).message` | string | yes |  |
+| `(shape 1).ok` | boolean | yes |  |
+| `(shape 1).view` | object | yes |  |
+| `(shape 1).view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
+| `(shape 1).view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `(shape 1).view.challenge.text` | string | yes |  |
+| `(shape 1).view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
+| `(shape 1).view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
+| `(shape 1).view.key.armored` | string | yes | The public key, ASCII-armored. |
+| `(shape 1).view.key.created` | string | yes | When the key was made, ISO 8601. |
+| `(shape 1).view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
+| `(shape 1).view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
+| `(shape 1).view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
+| `(shape 1).view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
+| `(shape 1).view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
+| `(shape 1).view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
+| `(shape 1).view.key.userIds[]` | string |  |  |
+| `(shape 1).view.key.version` | integer | yes | The key version, 4 or 6. |
+| `(shape 1).view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
+| `(shape 1).view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
+| `(shape 1).view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
+| `(shape 1).view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
+| `(shape 1).view.mailEncryption.smimeCertificate` | object, or null | yes |  |
+| `(shape 1).view.mailEncryption.smimeCertificate.serial` | string | yes |  |
+| `(shape 1).view.mailEncryption.smimeCertificate.subject` | string | yes |  |
+| `(shape 1).view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
+| `(shape 1).view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
+| `(shape 1).view.smimeKemChallenge` | object, or null | yes | An ML-KEM S/MIME proof-of-possession challenge (#2220): the ciphertext this service encapsulated to your ML-KEM key, which only its private key decapsulates. |
+| `(shape 1).view.smimeKemChallenge.algorithm` | string | yes | `ML-KEM-512`, `ML-KEM-768` or `ML-KEM-1024`. |
+| `(shape 1).view.smimeKemChallenge.cipherText` | string | yes | The ML-KEM ciphertext, base64. |
+| `(shape 1).view.smimeKemChallenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
+| `(shape 1).view.smimeKemIssued` | object |  | In the answer of `smime-kem-issue` only: the certificate just issued, drawn once. |
+| `(shape 1).view.smimeKemIssued.algorithm` | string | yes |  |
+| `(shape 1).view.smimeKemIssued.certificate` | string | yes | The certificate, PEM. |
+| `(shape 1).view.smimeKemIssued.chain` | list | yes | The certificate and the chain above it, PEM, leaf first; the Root excluded. |
+| `(shape 1).view.smimeKemIssued.chain[]` | string |  |  |
+| `(shape 1).view.smimeKemIssued.serial` | string | yes |  |
+| `(shape 1).view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
+| `(shape 1).view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
+| `(shape 1).view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
+| `(shape 1).view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
+| `(shape 1).view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
+| `(shape 1).view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
+| `(shape 1).view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
+| `(shape 2)` | object |  |  |
+| `(shape 2).ok` | boolean | yes |  |
+| `(shape 2).stepUp` | object | yes |  |
+| `(shape 2).stepUp.acrValues` | string |  |  |
+| `(shape 2).stepUp.maxAge` | number |  |  |
+| `(shape 2).stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -12500,14 +12508,22 @@ Scope: `account:manage`, `ssh:certificate`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `certificate` | string | yes |  |
-| `hardwareBound` | boolean | yes |  |
-| `ok` | boolean | yes |  |
-| `pqcCertificate` | string |  | The ML-DSA certificate issued beside the classical one (pki.sshUserCaPqcAlongsideClassical), in authorized-key format under ssh-mldsa-65; absent when none was. |
-| `pqcSerialHex` | string |  | Its serial, lower-case hex; revoked by `revokeSshCertificate` like the classical one's. |
-| `serialHex` | string | yes |  |
-| `validAfter` | integer | yes |  |
-| `validBefore` | integer | yes |  |
+| (the answer) | one of 2 shapes |  |  |
+| `(shape 1)` | object |  |  |
+| `(shape 1).certificate` | string | yes |  |
+| `(shape 1).hardwareBound` | boolean | yes |  |
+| `(shape 1).ok` | boolean | yes |  |
+| `(shape 1).pqcCertificate` | string |  | The ML-DSA certificate issued beside the classical one (pki.sshUserCaPqcAlongsideClassical), in authorized-key format under ssh-mldsa-65; absent when none was. |
+| `(shape 1).pqcSerialHex` | string |  | Its serial, lower-case hex; revoked by `revokeSshCertificate` like the classical one's. |
+| `(shape 1).serialHex` | string | yes |  |
+| `(shape 1).validAfter` | integer | yes |  |
+| `(shape 1).validBefore` | integer | yes |  |
+| `(shape 2)` | object |  |  |
+| `(shape 2).ok` | boolean | yes |  |
+| `(shape 2).stepUp` | object | yes |  |
+| `(shape 2).stepUp.acrValues` | string |  |  |
+| `(shape 2).stepUp.maxAge` | number |  |  |
+| `(shape 2).stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate or the key could not be issued.
 
@@ -12626,8 +12642,16 @@ Scope: `account:manage`, `ssh:certificate`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `ok` | boolean | yes |  |
-| `revoked` | boolean | yes |  |
+| (the answer) | one of 2 shapes |  |  |
+| `(shape 1)` | object |  |  |
+| `(shape 1).ok` | boolean | yes |  |
+| `(shape 1).revoked` | boolean | yes |  |
+| `(shape 2)` | object |  |  |
+| `(shape 2).ok` | boolean | yes |  |
+| `(shape 2).stepUp` | object | yes |  |
+| `(shape 2).stepUp.acrValues` | string |  |  |
+| `(shape 2).stepUp.maxAge` | number |  |  |
+| `(shape 2).stepUp.prompt` | string |  |  |
 
 **400**: The serial is invalid.
 
@@ -12875,51 +12899,59 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `message` | string | yes |  |
-| `ok` | boolean | yes |  |
-| `view` | object | yes |  |
-| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
-| `view.escrowed[].issuedAt` | string | yes |  |
-| `view.escrowed[].notAfter` | string | yes |  |
-| `view.escrowed[].profile` | string | yes |  |
-| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
-| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
-| `view.escrowed[].subject` | string | yes |  |
-| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
-| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
-| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
-| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
-| `view.issued.chainPem[]` | string |  |  |
-| `view.issued.profile` | string | yes |  |
-| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
-| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
-| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
-| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
-| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
-| `view.piv.profiles[]` | string |  |  |
-| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
-| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
-| `view.recovered.certificatePem` | string | yes |  |
-| `view.recovered.chainPem` | list | yes |  |
-| `view.recovered.chainPem[]` | string |  |  |
-| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
-| `view.recovered.serialHex` | string | yes |  |
-| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
-| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
-| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
-| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].algorithm` | string |  | The signature algorithm recorded for it, when the door that wrote it named one (an ML-DSA passkey's COSE algorithm). Absent where the credential has none. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
-| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
-| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
-| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
-| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
-| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
-| `view.tokens[].model` | string | yes |  |
-| `view.tokens[].registeredAt` | string | yes |  |
-| `view.tokens[].serial` | string | yes | The serial its attestation named. |
-| `view.tokens[].status` | string | yes | `active` or `lost`. |
-| `view.tokens[].vendor` | string | yes |  |
+| (the answer) | one of 2 shapes |  |  |
+| `(shape 1)` | object |  |  |
+| `(shape 1).message` | string | yes |  |
+| `(shape 1).ok` | boolean | yes |  |
+| `(shape 1).view` | object | yes |  |
+| `(shape 1).view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `(shape 1).view.escrowed[].issuedAt` | string | yes |  |
+| `(shape 1).view.escrowed[].notAfter` | string | yes |  |
+| `(shape 1).view.escrowed[].profile` | string | yes |  |
+| `(shape 1).view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `(shape 1).view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `(shape 1).view.escrowed[].subject` | string | yes |  |
+| `(shape 1).view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `(shape 1).view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `(shape 1).view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `(shape 1).view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `(shape 1).view.issued.chainPem[]` | string |  |  |
+| `(shape 1).view.issued.profile` | string | yes |  |
+| `(shape 1).view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `(shape 1).view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `(shape 1).view.piv` | object | yes | What the PIV enrolment form may issue here. |
+| `(shape 1).view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `(shape 1).view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `(shape 1).view.piv.profiles[]` | string |  |  |
+| `(shape 1).view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `(shape 1).view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `(shape 1).view.recovered.certificatePem` | string | yes |  |
+| `(shape 1).view.recovered.chainPem` | list | yes |  |
+| `(shape 1).view.recovered.chainPem[]` | string |  |  |
+| `(shape 1).view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `(shape 1).view.recovered.serialHex` | string | yes |  |
+| `(shape 1).view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `(shape 1).view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `(shape 1).view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `(shape 1).view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `(shape 1).view.tokens[].credentials[].algorithm` | string |  | The signature algorithm recorded for it, when the door that wrote it named one (an ML-DSA passkey's COSE algorithm). Absent where the credential has none. |
+| `(shape 1).view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
+| `(shape 1).view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `(shape 1).view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `(shape 1).view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `(shape 1).view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `(shape 1).view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `(shape 1).view.tokens[].model` | string | yes |  |
+| `(shape 1).view.tokens[].registeredAt` | string | yes |  |
+| `(shape 1).view.tokens[].serial` | string | yes | The serial its attestation named. |
+| `(shape 1).view.tokens[].status` | string | yes | `active` or `lost`. |
+| `(shape 1).view.tokens[].vendor` | string | yes |  |
+| `(shape 2)` | object |  |  |
+| `(shape 2).ok` | boolean | yes |  |
+| `(shape 2).stepUp` | object | yes |  |
+| `(shape 2).stepUp.acrValues` | string |  |  |
+| `(shape 2).stepUp.maxAge` | number |  |  |
+| `(shape 2).stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 

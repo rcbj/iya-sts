@@ -431,6 +431,23 @@ class AccountApi {
    * @param body - the answer
    * @returns nothing
    */
+  /**
+   * The answer an operation marked `recentAuth` gets in place of its own
+   * when the person's sign-in is too old: a 200 that sends the portal to
+   * sign in again (#2289). The one place it is built, so that the models
+   * that must accept it are held to this shape (`tests/account_step_up_
+   * models.js`).
+   *
+   * @returns `{ ok: false, stepUp: { prompt, maxAge } }`
+   */
+  stepUpAnswer(): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.stepUpAnswer().");
+    log.debug("Leaving AccountApi.stepUpAnswer().");
+    return { ok: false, stepUp: { prompt: 'login',
+                                  maxAge: this.recentAuthSeconds() } };
+  }
+
   // How recent a sign-in must be to change how somebody signs in (#1515, ASVS
   // 5.0.0 7.5.1), in seconds. Zero means it is not asked.
   private recentAuthSeconds(): number {
@@ -1109,8 +1126,7 @@ class AccountApi {
       res.locals.apiCaller = { name: (caller as Json).username };
       if (op.recentAuth && !this.signedInRecently(caller)) {
         log.debug("Leaving AccountApi.run(). Sign in again.");
-        return this.json(res, 200, { ok: false, stepUp: {
-          prompt: 'login', maxAge: this.recentAuthSeconds() } });
+        return this.json(res, 200, this.stepUpAnswer());
       }
       if (op.method !== 'GET' && await this.overWriteBudget(req, res,
                                                              caller)) {
@@ -1390,6 +1406,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   operations: slot.forward('operations'),
+  stepUpAnswer: slot.forward('stepUpAnswer'),
   document: slot.forward('document'),
   paths: slot.forward('paths')
 };
