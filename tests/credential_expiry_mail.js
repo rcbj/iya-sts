@@ -254,7 +254,7 @@ async function steps(t, fixture) {
               sent.length === 1 && /CN=ann\b/.test(text) &&
               /CN=ann card/.test(text) && /PIV smart card/.test(text) &&
               /Certificates page/.test(text) &&
-              /Security keys page/.test(text) &&
+              /Tokens and keys page, on PIV/.test(text) &&
               text.indexOf(new Date(fixture.t0 + 20 * DAY).toISOString()
                 .slice(0, 10)) >= 0 && /\/portal/.test(text),
               'C1. two certificates inside the 30-day step are ONE message ' +
@@ -311,7 +311,7 @@ async function steps(t, fixture) {
       });
       t.check(answer.mailed === 1 && row && row.told.join(',') === '7' &&
               /S\/MIME certificate/.test(String((sent[0] || {}).text)) &&
-              /OpenPGP and mail encryption page/.test(
+              /Tokens and keys page, on OpenPGP and S\/MIME/.test(
                 String((sent[0] || {}).text)),
               'D1. a certificate first seen inside the 30 and 7-day steps ' +
               'is told once, at the nearest', JSON.stringify(row));

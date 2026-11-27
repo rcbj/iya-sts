@@ -11,7 +11,8 @@
 //
 // **THE FORM** is the second way a PIV attestation reaches certificate
 // enrolment (`common/piv_attestation.ts` argues the first, the request's own
-// attribute). A person on the portal's Security keys page, or an
+// attribute). A person on the PIV tab of Tokens and keys
+// (`/portal/tokens-and-keys`), or an
 // administrator on Directory → Hardware tokens or `POST
 // /admin-api/hardware-tokens/enrol-piv` (rule 7, parity), pastes three PEM
 // texts: the certificate request from `ykman piv keys generate` + `ykman piv

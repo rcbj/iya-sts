@@ -18,8 +18,9 @@
 // reaches a person one of two ways:
 //
 //   * an ADMINISTRATOR ASSIGNS it by serial to a named person; or
-//   * the PERSON CLAIMS it on the portal (`/portal/tokens`) by typing the
-//     serial on the back of the token they were handed AND a code it shows
+//   * the PERSON CLAIMS it on the OATH tab of Tokens and keys (the form
+//     posts to `/portal/tokens`) by typing the serial on the back of the
+//     token they were handed AND a code it shows
 //     now, which proves they hold that token and not merely know its
 //     number. A claim spends that code.
 //

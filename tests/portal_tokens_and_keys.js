@@ -95,7 +95,7 @@ module.exports = {
             html.indexOf(TokensPages.enrolCard(view, T)) >= 0 &&
             html.indexOf(MfaPages.hotpCard(view.mfa, T)) >= 0 &&
             html.indexOf(MfaPages.yubiCard(view.mfa, T)) >= 0,
-            '3. each tab is the card of the page that already had it');
+            '3. each tab is the card its page used to draw');
     const actions = (html.match(/<form[^>]*action="([^"]+)"/g) || [])
       .map(function (f) { return /action="([^"]+)"/.exec(f)[1]; });
     const members = row.members || {};
@@ -104,8 +104,8 @@ module.exports = {
     }) && members['/portal/tokens'] === '' &&
             members['/portal/mfa'] === 'mfa' &&
             members['/portal/openpgp'] === 'openpgp',
-            '3. every form posts where its card always did, and each such ' +
-            'page has the tab its answer goes back to',
+            '3. every form posts where its card always did, and each post ' +
+            'path has the tab its answer goes back to',
             JSON.stringify({ actions: actions, members: members }));
 
     t.log.info('=== 4. SSH ===');
@@ -145,6 +145,23 @@ module.exports = {
             JSON.stringify(empty) === '{"principals":["erin"]}',
             '5. a list and a number reach the operation typed, an empty ' +
             'number left out', JSON.stringify([fields, empty]));
+
+    t.log.info('=== 6. the two pages the column no longer lists ===');
+    const nav = PortalPages.kit.navPages().map(function (item) {
+      return item.path;
+    });
+    t.check(PortalPages.find('/portal/tokens') === null &&
+            PortalPages.find('/portal/openpgp') === null &&
+            nav.indexOf('/portal/tokens') < 0 &&
+            nav.indexOf('/portal/openpgp') < 0 &&
+            nav.indexOf('/portal/mfa') >= 0 &&
+            PortalRuntime.MOVED['/portal/tokens'] ===
+              '/portal/tokens-and-keys#tk-hardware-tokens' &&
+            PortalRuntime.MOVED['/portal/openpgp'] ===
+              '/portal/tokens-and-keys#tk-openpgp',
+            '6. Security keys and OpenPGP are not pages; a bookmark of ' +
+            'either opens its tab, and Authenticator app stays',
+            JSON.stringify({ nav: nav, moved: PortalRuntime.MOVED }));
     log.debug('Leaving run().');
   }
 };

@@ -473,25 +473,15 @@ const NAV = [
       // every kind, security keys included; the path is unchanged.
       { path: BASE + '/keys', label: 'Passkeys',
         heading: 'Passkeys' },
-      // SECURITY KEYS AND SMART CARDS (#1955 P1): the physical tokens the
-      // passkeys and certificates above are ON, beside them, with the one
-      // act a token has of its own — reporting it lost. Drawn by
-      // `web_tokens.ts` from `account_tokens.ts`.
-      { path: BASE + '/tokens', label: 'Security keys',
-        heading: 'Your security keys and smart cards' },
       // TOKENS AND KEYS (#2053): one page, a tab per kind a person
       // registers — hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH
-      // user certificates, OpenPGP and S/MIME — each tab the card of the
-      // page beside it. Drawn by `web_tokens_and_keys.ts`.
+      // user certificates, OpenPGP and S/MIME. Security keys
+      // (`/portal/tokens`) and OpenPGP and mail encryption
+      // (`/portal/openpgp`) drew those same cards and left the column in
+      // #2308. Their addresses open this page's tabs, and their forms
+      // still post where they did. Drawn by `web_tokens_and_keys.ts`.
       { path: BASE + '/tokens-and-keys', label: 'Tokens and keys',
         heading: 'Your tokens, certificates and keys' },
-      // OpenPGP AND MAIL ENCRYPTION (#1955 P6): the person's OpenPGP key,
-      // registered by signing a challenge (on a YubiKey's OpenPGP card the
-      // card signs), its Web Key Directory publication, their S/MIME
-      // certificate and how their mail is encrypted. Drawn by
-      // `web_openpgp.ts` from `account_openpgp.ts`.
-      { path: BASE + '/openpgp', label: 'OpenPGP and mail encryption',
-        heading: 'Your OpenPGP key and mail encryption' },
       // THE AUTHENTICATOR APP (2026-09-10). Its own page beside the keys
       // rather than a card on that one, for the reason this column exists at
       // all: the enrolment is a QR code, a transcribable secret, a code field

@@ -12947,8 +12947,8 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   ststotpcredential: '/portal/mfa, or /admin/users (clear)',
   // #1955 P4: an HOTP token's secret and counter, written only by its
   // enrolment, an imported token's assignment and the verifier.
-  stshotpcredential: '/portal/mfa, /portal/tokens (claim), or ' +
-    '/admin/hardware-tokens (assign)',
+  stshotpcredential: '/portal/mfa, the OATH tab of ' +
+    '/portal/tokens-and-keys, or /admin/hardware-tokens (assign)',
   // #1955 P5: a YubiKey OTP's public identity and sealed AES key.
   stsyubiotpcredential: '/portal/mfa, or /admin/hardware-tokens (assign)',
   stsbackupcodes: '/portal/mfa, or /admin/users (clear)',

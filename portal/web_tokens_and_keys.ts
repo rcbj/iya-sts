@@ -14,14 +14,16 @@
 // OpenPGP and S/MIME.
 //
 // EACH TAB IS THE EXISTING PORTAL CARD, not a copy: `web_tokens.ts`'s
-// `heldCard()`, `claimCard()`, `enrolCard()` and `escrowCard()`,
-// `web_mfa.ts`'s `hotpCard()` and `yubiCard()`, and `web_openpgp.ts`'s page
-// body. Their forms post where they always did — `/portal/tokens`,
-// `/portal/mfa`, `/portal/openpgp` — so every one reaches the same
-// `/account-api` operation, and the runtime puts what it answers back into
-// this page's member for that tab (`members`), so the page, its address and
-// its tab stay. `/portal/tokens`, `/portal/mfa` and `/portal/openpgp` are
-// unchanged.
+// `heldCard()`, `claimCard()`, `enrolCard()`, `certificatesCard()` and
+// `escrowCard()`, `web_mfa.ts`'s `hotpCard()` and `yubiCard()`, and
+// `web_openpgp.ts`'s body. Their forms post where they always did —
+// `/portal/tokens`, `/portal/mfa`, `/portal/openpgp` — so every one
+// reaches the same `/account-api` operation, and the runtime puts what
+// it answers back into this page's member for that tab (`members`), so
+// the page, its address and its tab stay. `/portal/mfa` is still its own
+// page. `/portal/tokens` and `/portal/openpgp` are form targets only
+// (#2308): the column no longer lists them, and a bookmark of either
+// opens this page on the matching tab.
 //
 // THE ONE NEW CARD IS SSH's: the person's SSH user certificates, issuing one
 // for a pasted OpenSSH public key, and revoking one, over the account API's

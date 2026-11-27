@@ -16,9 +16,9 @@ for a person who chose it or a message the realm named.
 
 ## Registering a key
 
-On the portal, **OpenPGP and mail encryption** (`/portal/openpgp`), or the
-**OpenPGP and S/MIME** tab of **Tokens and keys**
-(`/portal/tokens-and-keys`), which draws the same page:
+On the portal, the **OpenPGP and S/MIME** tab of **Tokens and keys**
+(`/portal/tokens-and-keys#tk-openpgp`). An old address, `/portal/openpgp`,
+opens that tab:
 
 1. Choose **Get a challenge**. The page shows a few lines of text naming the
    realm, your account, your address and a random value. It is good for
