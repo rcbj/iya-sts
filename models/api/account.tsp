@@ -5081,7 +5081,7 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `ok`: boolean;
     `message`: string;
     `view`: HardwareTokensPortalView
-  },
+  } | AccountStepUpAnswer,
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
@@ -5240,7 +5240,7 @@ op `issueSshCertificate`(
     @js(#{`description`:"Base64 of the OpenSSH security-key attestation file (`ssh-keygen -O write-attestation=`), for an `sk-*` key; without it the key is issued the shorter lifetime.",`maxLength`:87384}) `attestation`?: string;
     @js(#{`description`:"Base64 of the challenge ssh-keygen was given (`-O challenge=`), which the attestation signed; required with `attestation`.",`maxLength`:2048}) `attestationChallenge`?: string
   },
-  `responses/200/content/application~1json/schema`: SshUserCertificateAnswer,
+  `responses/200/content/application~1json/schema`: SshUserCertificateAnswer | AccountStepUpAnswer,
   @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
     `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
@@ -5304,7 +5304,7 @@ op `revokeSshCertificate`(
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;
     `revoked`: boolean
-  },
+  } | AccountStepUpAnswer,
   @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
     `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
@@ -5465,7 +5465,7 @@ op `actOnOpenPgp`(`requestBody/content/application~1json/schema`: {
     `ok`: boolean;
     `message`: string;
     `view`: OpenPgpPortalView
-  },
+  } | AccountStepUpAnswer,
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];

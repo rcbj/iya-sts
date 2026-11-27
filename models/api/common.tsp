@@ -825,6 +825,14 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithAcrValuesPromptMaxAge {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}
 
+// THE "SIGN IN AGAIN" ANSWER (#2289): what `/account-api` sends, with 200,
+// in place of an operation's own answer when the operation is marked
+// `recentAuth` and the person's sign-in is older than
+// `account.recentAuthMinutes` (`AccountApi.stepUpAnswer()`). An operation
+// whose own 200 answer cannot hold it is answered with the union of the two
+// (`tests/account_step_up_models.js`).
+@hoisted model AccountStepUpAnswer {`ok`: boolean; `stepUp`: WithAcrValuesPromptMaxAge}
+
 @hoisted model WithFamilySubjectsWho {`family`?: string; `subjects`?: integer; `who`?: (string)[]}
 
 @hoisted model WithValueSource2 { `value`?: StringOrNumericOrBooleanEtc4; `source`?: string }
