@@ -1839,6 +1839,23 @@ class CertEnrollment {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
   }
 
+  /**
+   * Whether an ASN.1 value is a SEQUENCE with nothing in it, the value
+   * ykman gives an extensionRequest that requests nothing (#2290).
+   *
+   * @param value - an asn1js value, or anything
+   * @returns true for an empty SEQUENCE only
+   */
+  emptySequence(value) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.emptySequence().");
+    const empty = !!value && value instanceof asn1js.Sequence &&
+      Array.isArray(value.valueBlock.value) &&
+      value.valueBlock.value.length === 0;
+    log.debug("Leaving CertEnrollment.emptySequence(). " + empty);
+    return empty;
+  }
+
   stringOfAsn1(value) {
     const { log } = this.deps;
     log.debug("Entering CertEnrollment.stringOfAsn1().");
@@ -1988,8 +2005,18 @@ class CertEnrollment {
             self.stringOfAsn1((attribute.values || [])[0]);
         }
         if (attribute.type === '1.2.840.113549.1.9.14') {
-          const extensions = new pkijs.Extensions({
-            schema: (attribute.values || [])[0] });
+          // AN EMPTY extensionRequest REQUESTS NOTHING (#2290). RFC 5280's
+          // Extensions is SIZE (1..MAX), but ykman's `piv certificates
+          // request` writes the attribute with an empty SEQUENCE, and
+          // OpenSSL reads it without complaint. pkijs throws on it, which
+          // refused the whole request here as unreadable
+          // (STS-ENROLL-0034). A value that is not a SEQUENCE still reaches
+          // pkijs and is still refused.
+          const first = (attribute.values || [])[0];
+          if (self.emptySequence(first)) {
+            return;
+          }
+          const extensions = new pkijs.Extensions({ schema: first });
           (extensions.extensions || []).forEach(function (extension) {
             if (extension.extnID !== '2.5.29.17') {
               return;
