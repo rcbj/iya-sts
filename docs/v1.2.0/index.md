@@ -40,33 +40,48 @@ each.
 [Certifications](certifications.md) ·
 [Architecture](architecture.md) ·
 [Where a request waits](request-path.md) ·
+[What is not checked](what-is-not-checked.md)
+
+**Configuration** —
 [Configuration](configuration.md) ·
 [Configuration dump](configuration-dump.md) ·
-[Endpoints](endpoints.md) ·
-[Specifications](specifications.md) ·
 [Trust realms](trust-realms.md) ·
-[Listeners and hosted applications](listeners.md) ·
-[Words a password may not contain](password-words.md) ·
-[Malware scanning](malware-scanning.md) ·
-[What is not checked](what-is-not-checked.md) ·
+[Listeners and hosted applications](listeners.md)
+
+**Pages people read** —
+[User-facing pages](user-facing-pages.md) ·
+[Languages and regions](languages.md) ·
+[Browser requirements](browser-requirements.md)
+
+**Security** —
 [Security in product mode](product-security.md) ·
+[Authentication pathways](authentication-pathways.md) ·
+[Words a password may not contain](password-words.md) ·
 [Input validation](validation.md) ·
 [Data classification](data-classification.md) ·
-[Logging inventory](logging-inventory.md) ·
-[Key management](key-management.md) ·
-[Keys in a hardware security module](hsm.md) ·
 [Field-level access](field-access.md) ·
+[Logging inventory](logging-inventory.md) ·
 [Communication inventory](communications.md) ·
 [File uploads](file-uploads.md) ·
-[Risky third-party components](risky-components.md) ·
+[Malware scanning](malware-scanning.md) ·
 [Dangerous functionality](dangerous-functionality.md) ·
-[Authentication pathways](authentication-pathways.md) ·
-[Availability and resource limits](availability.md) ·
-[Conformance suites](conformance.md) ·
+[Risky third-party components](risky-components.md)
+
+**Key management** —
+[Key management](key-management.md) ·
+[Keys in a hardware security module](hsm.md) ·
+[Post-quantum migration plan](post-quantum-migration.md)
+
+**Specifications and reference** —
+[Specifications](specifications.md) ·
 [Departures from the specifications](spec-departures.md) ·
+[Conformance suites](conformance.md) ·
+[Endpoints](endpoints.md) ·
 [Accepted tokens](accepted-tokens.md) ·
 [Token samples](token-samples.md) ·
-[Error codes](error-codes.md)
+[Error codes](error-codes.md) ·
+[OpenAPI reference](openapi/) ·
+[API reference](api/), generated from the source
 
 **Protocol debugger** —
 [The protocol debugger](debugger/index.md): the identity protocol debugger
@@ -178,6 +193,8 @@ macOS apps.
 
 **Operating it** —
 [The compose stack](docker-compose.md) ·
+[Availability and resource limits](availability.md) ·
+[Dependencies, limits and timeouts](dependencies.md) ·
 [Persistence](persistence.md) ·
 [PostgreSQL schema](postgres-schema.md) ·
 [Encryption at rest](encryption-at-rest.md) ·
